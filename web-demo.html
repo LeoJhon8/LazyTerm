@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lazy Terminal - Web Version</title>
+  <link rel="stylesheet" href="src/renderer/styles.css">
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .terminal-container {
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      max-width: 900px;
+      width: 100%;
+      height: 600px;
+    }
+  </style>
+</head>
+<body>
+  <div class="terminal-container">
+    <div class="terminal-header">
+      <div class="terminal-title">Lazy Terminal - Web Demo</div>
+      <div class="terminal-controls">
+        <div class="control-dot red"></div>
+        <div class="control-dot yellow"></div>
+        <div class="control-dot green"></div>
+      </div>
+    </div>
+    <div class="terminal-wrapper" id="terminalWrapper">
+      <div class="terminal-content" id="terminalContent">
+        <div class="output-line success">Lazy Terminal Web v1.0.0</div>
+        <div class="output-line">这是 Web 版本演示。桌面版本需要重新安装 Electron。</div>
+        <div class="output-line"></div>
+      </div>
+      <div class="input-line">
+        <span class="prompt" id="prompt">❯</span>
+        <input type="text" id="commandInput" class="command-input" autofocus autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+  </div>
+  <script src="src/renderer/web-terminal.js"></script>
+</body>
+</html>

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lazy Terminal</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
+    <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
+    <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  </head>
+<body>
+  <div class="terminal-container">
+    <div class="terminal-header">
+      <div class="terminal-title">Lazy Terminal</div>
+      <div class="terminal-controls">
+        <button class="toggle-shortcut-btn" id="toggleShortcutBtn" title="Toggle Quick Commands">⚡</button>
+        <button class="toggle-history-btn" id="toggleHistoryBtn" title="Toggle Command History">📜</button>
+        <div class="control-dot red"></div>
+        <div class="control-dot yellow"></div>
+        <div class="control-dot green"></div>
+      </div>
+    </div>
+    <div class="main-content">
+      <div class="session-sidebar" id="sessionSidebar">
+        <div class="session-header">
+          <span class="session-title">Sessions</span>
+          <button class="add-session-btn" id="addSessionBtn" title="New Session (+)">+</button>
+        </div>
+        <div class="session-list" id="sessionList">
+        </div>
+      </div>
+      <div class="right-content">
+        <div class="tabs-container">
+          <div class="tabs-wrapper" id="tabsWrapper">
+          </div>
+          <button class="new-tab-btn" id="newTabBtn" title="New Tab (+)">+</button>
+        </div>
+        <div class="terminal-wrapper" id="terminalWrapper">
+          <div id="xterm-container" style="height: 100%;"></div>
+        </div>
+        <div class="shortcut-bar" id="shortcutBar">
+          <button class="shortcut-btn" draggable="true" data-command="help" data-alias="help">help</button>
+          <button class="shortcut-btn" draggable="true" data-command="clear" data-alias="clear">clear</button>
+          <button class="shortcut-btn" draggable="true" data-command="history" data-alias="history">history</button>
+          <button class="shortcut-btn" draggable="true" data-command="dir" data-alias="dir">dir</button>
+          <button class="shortcut-btn" draggable="true" data-command="pwd" data-alias="pwd">pwd</button>
+          <button class="shortcut-btn" draggable="true" data-command="echo $USERPROFILE" data-alias="echo">echo</button>
+          <button class="add-shortcut-btn" id="addShortcutBtn" title="Add Shortcut">+</button>
+        </div>
+      </div>
+
+      <div class="history-sidebar" id="historySidebar">
+        <div class="history-header">
+          <span class="history-title">Command History</span>
+          <button class="clear-history-btn" id="clearHistoryBtn" title="Clear History">🗑️</button>
+        </div>
+        <div class="history-list" id="historyList">
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Shortcut Modal -->
+    <div class="modal-overlay" id="addShortcutModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="addShortcutModalTitle">Add New Shortcut</h3>
+          <button class="modal-close" id="closeShortcutModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="shortcutLabel">Display Text:</label>
+            <input type="text" id="shortcutLabel" placeholder="e.g., ls" maxlength="20">
+          </div>
+          <div class="form-group">
+            <label for="shortcutCommand">Command:</label>
+            <textarea id="shortcutCommand" placeholder="e.g., dir /b" rows="4"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-btn cancel" id="cancelBtn">Cancel</button>
+          <button class="modal-btn confirm" id="confirmBtn">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shortcut Context Menu -->
+    <div class="context-menu" id="shortcutContextMenu">
+      <div class="context-menu-item" id="editShortcutBtn">
+        <span>✏️</span>
+        <span>Edit</span>
+      </div>
+      <div class="context-menu-item danger" id="deleteShortcutBtn">
+        <span>🗑️</span>
+        <span>Delete</span>
+      </div>
+    </div>
+
+    <!-- New Connection Modal -->
+    <div class="modal-overlay" id="newConnectionModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>New Connection</h3>
+          <button class="modal-close" id="closeConnectionModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="connectionType">Connection Type:</label>
+            <select id="connectionType">
+              <option value="local">Local Shell</option>
+              <option value="ssh">SSH</option>
+              <option value="telnet">Telnet</option>
+            </select>
+          </div>
+          <div id="sshFields">
+            <div class="form-group">
+              <label for="sshHost">Host:</label>
+              <input type="text" id="sshHost" placeholder="e.g., 192.168.1.1 or example.com">
+            </div>
+            <div class="form-group">
+              <label for="sessionName">Session Name:</label>
+              <input type="text" id="sessionName" placeholder="Auto-filled from Host">
+            </div>
+            <div class="form-group">
+              <label for="sshPort">Port:</label>
+              <input type="number" id="sshPort" value="22" min="1" max="65535">
+            </div>
+            <div class="form-group">
+              <label for="sshUser">Username:</label>
+              <input type="text" id="sshUser" placeholder="e.g., root or user">
+            </div>
+            <div class="form-group">
+              <label for="sshPassword">Password:</label>
+              <input type="password" id="sshPassword" placeholder="Enter SSH password">
+            </div>
+            <div class="form-group">
+              <label for="sshKeyPath">Private Key Path:</label>
+              <input type="text" id="sshKeyPath" placeholder="e.g., ~/.ssh/id_rsa">
+            </div>
+          </div>
+          <div id="telnetFields" style="display: none;">
+            <div class="form-group">
+              <label for="telnetHost">Host:</label>
+              <input type="text" id="telnetHost" placeholder="e.g., 192.168.1.1">
+            </div>
+            <div class="form-group">
+              <label for="telnetPort">Port:</label>
+              <input type="number" id="telnetPort" value="23" min="1" max="65535">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-btn confirm" id="connectBtn">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save Session Modal -->
+    <div class="modal-overlay" id="saveSessionModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Save Session</h3>
+          <button class="modal-close" id="closeSaveSessionModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="sessionNameInput">Session Name:</label>
+            <input type="text" id="sessionNameInput" placeholder="e.g., My Server">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-btn cancel" id="cancelSaveBtn">Cancel</button>
+          <button class="modal-btn confirm" id="confirmSaveBtn">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="terminal.js"></script>
+  </body>
+</html>
