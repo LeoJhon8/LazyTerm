@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist/renderer",
+    "rootDir": "./src/renderer",
+    "lib": ["ES2020", "DOM"],
+    "types": ["electron"]
+  },
+  "include": ["src/renderer/**/*", "src/types/**/*"],
+  "exclude": ["node_modules", "dist", "build", "**/*.test.ts", "**/*.spec.ts"]
+}
