@@ -12,7 +12,7 @@ import {
   IpcResult, 
   SSHParams,
   LocalParams
-} from '../types/electron';
+} from '../types/types';
 
 // --- 常量与工具 ---
 
@@ -64,6 +64,12 @@ function createWindow(): void {
     ptyService.closeAll();
     mainWindow = null;
   });
+    // 开发环境加载 Vite 服务器，生产环境加载构建文件
+  if (process.env.VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  }
 }
 
 // --- 生命周期 ---
@@ -239,3 +245,4 @@ ipcMain.handle('get-working-directory', () => {
 ipcMain.handle('get-platform', () => {
   return process.platform;
 });
+

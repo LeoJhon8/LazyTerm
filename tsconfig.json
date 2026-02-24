@@ -1,5 +1,30 @@
 {
-  "extends": "./tsconfig.base.json",
-  "include": ["src/main/**/*"],
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020", "DOM"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": false,
+    "resolveJsonModule": true,
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "removeComments": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "strictFunctionTypes": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitReturns": false,
+    "noFallthroughCasesInSwitch": false,
+    "types": ["node", "electron"]
+  },
+  "include": ["src/main/**/*", "src/renderer/**/*", "src/types/**/*"],
   "exclude": ["node_modules", "dist", "build", "**/*.test.ts", "**/*.spec.ts"]
 }

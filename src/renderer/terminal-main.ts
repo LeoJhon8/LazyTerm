@@ -1,16 +1,11 @@
 // terminal-main.ts
-import { TabsUI, TabsUIConfig, TabData } from './tabs-ui';
-import { SessionUI } from './session-ui';
-import { HistoryUI } from './history-ui';
-import { QuickCmdUI } from './quickcmd-ui';
-import type { ConnectionType, ConnectionConfig } from '../../types/electron';
+import { TabsUI, TabsUIConfig, TabData } from './tabs';
+import { SessionUI } from './session';
+import { HistoryUI } from './history';
+import { QuickCmdUI } from './quickcmd';
+import type { SessionType } from '../types/types';
 import { Logger } from './logger';
-
-declare global {
-  interface Window {
-    app?: any;
-  }
-}
+import '@xterm/xterm/css/xterm.css';
 
 class TerminalMain extends TabsUI {
   private sessionUI = new SessionUI();
@@ -54,7 +49,7 @@ class TerminalMain extends TabsUI {
     window.app = {
       activeTab: this.getActiveTab(),
       addCommandToHistory: (cmd: string) => this.historyUI.addCommand(cmd),
-      createNewTab: (title: string, type: ConnectionType, params: any) => this.createNewTab(title, type, params)
+      createNewTab: (title: string, type: SessionType, params: any) => this.createNewTab(title, type, params)
     };
   }
 
@@ -72,7 +67,7 @@ class TerminalMain extends TabsUI {
     }));
   }
 
-  public override async createNewTab(title = 'LazyTerm', type: ConnectionType = 'local', params: any = {}): Promise<TabData | null> {
+  public override async createNewTab(title = 'LazyTerm', type: SessionType = 'local', params: any = {}): Promise<TabData | null> {
     const tabData = await super.createNewTab(title, type, params);
     if (!tabData) return null;
 
@@ -81,15 +76,17 @@ class TerminalMain extends TabsUI {
     container.innerHTML = ''; 
 
     try {
-      const { default: XtermWrapper } = await import('../xtermWrapper');
+      const { default: XtermWrapper } = await import('./xtermWrapper');
       const xtermWrapper = new XtermWrapper(container, { fontSize: this.fontSize });
       
       this.updateTabSession(tabData.id, "", xtermWrapper);
 
       // 构造符合 .d.ts 定义的单对象参数
+      // 确保 params 至少包含 name 字段（LocalParams / SSHParams / TelnetParams 都需要）
+      const sessionParams: any = params.name ? params : { ...params, name: title };
       const config: any = { 
         type, 
-        params, 
+        params: sessionParams,
         tabId: tabData.id,
         cols: 80, 
         rows: 24 
@@ -100,6 +97,7 @@ class TerminalMain extends TabsUI {
         this.updateTabSession(tabData.id, result.data.sessionId, xtermWrapper);
         xtermWrapper.setSession(result.data.sessionId);
         xtermWrapper.connect();
+        xtermWrapper.focus();
       } else {
         xtermWrapper.writeln(`\r\n\x1b[31mError: ${result.message}\x1b[0m`);
       }
@@ -115,6 +113,11 @@ class TerminalMain extends TabsUI {
       await window.electronAPI.ptyClose(tab.sessionId);
     }
     await super.closeTab(id, e);
+    
+    // 当最后一个会话关闭时，自动创建本地终端
+    if ((this as any).tabs.size === 0) {
+      this.createNewTab('LazyTerm', 'local');
+    }
   }
 
   public changeFontSize(delta: number): void {

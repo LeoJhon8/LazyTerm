@@ -1,5 +1,3 @@
-import { IpcRendererEvent } from 'electron';
-
 // --- 基础协议定义 ---
 export type SessionType = 'local' | 'ssh' | 'telnet';
 
@@ -18,12 +16,14 @@ export interface SSHParams extends BaseParams {
   user: string;
   password?: string;
   keyPath?: string;
+  timeout?: number;
 }
 
 export interface TelnetParams extends BaseParams {
   type: 'telnet';
   host: string;
   port: number;
+  timeout?: number;
 }
 
 export interface LocalParams extends BaseParams {
@@ -56,33 +56,118 @@ export class SessionFactory {
    * @param input 包含 type 的扁平参数对象
    */
   static createConfig(input: AllSessionParams): SessionConfig {
-    // 使用解构：提取 type，剩下的部分作为 params
+    // 验证输入参数
+    if (!input.type || !['local', 'ssh', 'telnet'].includes(input.type)) {
+      throw new Error(`Invalid connection type: ${input.type}`);
+    }
+
     const { type, ...rest } = input;
+
+    // 构造完整的参数对象
+    const baseParams: BaseParams = { type, name: input.name };
 
     // 根据类型返回符合 SessionConfig 定义的结构
     switch (type) {
       case 'ssh':
-        return { type: 'ssh', params: rest as Omit<SSHParams, 'type'> };
+        return { 
+          type: 'ssh', 
+          params: { 
+            ...baseParams,
+            host: (rest as any).host,
+            port: (rest as any).port,
+            user: (rest as any).user,
+            password: (rest as any).password,
+            keyPath: (rest as any).keyPath,
+            timeout: (rest as any).timeout
+          } as SSHParams 
+        };
       case 'telnet':
-        return { type: 'telnet', params: rest as Omit<TelnetParams, 'type'> };
+        return { 
+          type: 'telnet', 
+          params: { 
+            ...baseParams,
+            host: (rest as any).host,
+            port: (rest as any).port,
+            timeout: (rest as any).timeout
+          } as TelnetParams 
+        };
       case 'local':
-        return { type: 'local', params: rest as Omit<LocalParams, 'type'> };
+        return { 
+          type: 'local', 
+          params: { 
+            ...baseParams,
+            cwd: (rest as any).cwd,
+            shell: (rest as any).shell,
+            env: (rest as any).env
+          } as LocalParams 
+        };
       default:
         throw new Error(`Unsupported connection type: ${(input as any).type}`);
+    }
+  }
+
+  /**
+   * 验证 SessionConfig 是否有效
+   */
+  static validateConfig(config: SessionConfig): boolean {
+    switch (config.type) {
+      case 'ssh':
+        return !!config.params.host && 
+               typeof config.params.port === 'number' && 
+               config.params.port > 0 && 
+               config.params.port <= 65535 &&
+               !!config.params.user;
+      case 'telnet':
+        return !!config.params.host && 
+               typeof config.params.port === 'number' && 
+               config.params.port > 0 && 
+               config.params.port <= 65535;
+      case 'local':
+        return true; // local 类型总是有效的
+      default:
+        return false;
     }
   }
 }
 
 // --- PTY 数据负载 ---
-export interface PTYEventPayload { sessionId: string; data: string; }
-export interface PTYExitPayload { sessionId: string; code: number; }
-export interface PTYErrorPayload { sessionId: string; error: string; }
+export interface PTYEventPayload { 
+  sessionId: string; 
+  data: string; 
+  timestamp?: Date;
+}
+
+export interface PTYExitPayload { 
+  sessionId: string; 
+  code: number; 
+  signal?: string;
+}
+
+export interface PTYErrorPayload { 
+  sessionId: string; 
+  error: string; 
+  stack?: string;
+}
+
+// 终端包装器接口
+export interface XtermWrapper {
+  sessionId: string;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  focus(): void;
+  blur(): void;
+  dispose(): void;
+  cols: number;
+  rows: number;
+  isActive: boolean;
+}
 
 // 定义一个创建 PTY 时的专用配置类型
 export type PtyCreateOptions = SessionConfig & {
   tabId?: number;
   cols?: number;
   rows?: number;
+  termType?: string;
 };
 
 // --- Electron API 接口 ---
@@ -103,12 +188,15 @@ export interface ElectronAPI {
   ptyCloseAllByTab: (tabId: number) => Promise<IpcResult>;
   ptySetTab: (sessionId: string, tabId: number) => Promise<IpcResult>;
   ptyGetActiveSession: (tabId: number) => Promise<IpcResult<{ sessionId: string }>>;
+  ptyIsActive: (sessionId: string) => Promise<IpcResult<{ active: boolean }>>;
 
-  // 事件监听：采用“取消订阅”模式 (Unsubscribe Pattern)
+  // 事件监听：采用"取消订阅"模式 (Unsubscribe Pattern)
   // 这种模式比 removeListener 更安全，不会导致误删其他组件的监听器
   onPtyData: (callback: (payload: PTYEventPayload) => void) => () => void;
   onPtyExit: (callback: (payload: PTYExitPayload) => void) => () => void;
   onPtyError: (callback: (payload: PTYErrorPayload) => void) => () => void;
+  onPtyConnect: (callback: (sessionId: string) => void) => () => void;
+  onPtyDisconnect: (callback: (sessionId: string) => void) => () => void;
 }
 
 // --- 全局对象扩展 ---
@@ -118,6 +206,8 @@ declare global {
     /** xterm.js 全局实例 (如果是通过 script 引入) */
     Terminal: any;
     FitAddon: any;
+    WebLinksAddon: any;
+    SerializeAddon: any;
     app: any;
   }
 }

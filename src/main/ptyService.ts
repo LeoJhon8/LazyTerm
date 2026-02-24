@@ -13,7 +13,7 @@ import {
   PTYEventPayload,
   PTYExitPayload,
   PTYErrorPayload
-} from '../types/electron';
+} from '../types/types';
 
 export class PTYSession {
   private pty: pty.IPty | null = null;

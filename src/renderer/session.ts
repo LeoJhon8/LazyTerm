@@ -1,5 +1,5 @@
 import { Logger } from './logger';
-import { SessionType, SessionConfig, SessionFactory } from '../../types/electron';
+import { SessionType, SessionConfig, SessionFactory } from '../types/types';
 
 export class SessionUI {
   // DOM 元素引用

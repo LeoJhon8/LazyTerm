@@ -333,11 +333,11 @@ flowchart LR
 ### Renderer 文件
 - `src/renderer/index.html` - HTML 入口，加载应用
 - `src/renderer/ui/terminal-main.ts` - 主控制器，协调所有 UI 模块
-- `src/renderer/ui/tabs-ui.ts` - 标签页管理
-- `src/renderer/ui/pty-ui.ts` - PTY 会话管理
-- `src/renderer/ui/session-ui.ts` - SSH/会话管理
-- `src/renderer/ui/history-ui.ts` - 命令历史管理
-- `src/renderer/ui/quickcmd-ui.ts` - 快捷命令管理
+- `src/renderer/ui/tabs.ts` - 标签页管理
+- `src/renderer/ui/pty.ts` - PTY 会话管理
+- `src/renderer/ui/session.ts` - SSH/会话管理
+- `src/renderer/ui/history.ts` - 命令历史管理
+- `src/renderer/ui/quickcmd.ts` - 快捷命令管理
 - `src/renderer/ui/logger.ts` - 日志工具
 
 ### 核心依赖

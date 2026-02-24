@@ -5,10 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lazy Terminal</title>
     <!-- 保持外部资源引用 -->
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
-    <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
-    <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+    <link rel="stylesheet" href="./src/renderer/styles.css">
+    <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
 </head>
 <body>
     <div class="terminal-container">
@@ -167,7 +165,7 @@
     </nav>
 
     <script type="module">
-      import TerminalMain from './ui/terminal-main.js';
+      import TerminalMain from './src/renderer/terminal-main.js';
 
       document.addEventListener('DOMContentLoaded', () => {
         const app = new TerminalMain({

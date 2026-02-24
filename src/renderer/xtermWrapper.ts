@@ -1,8 +1,5 @@
-// 建议：如果通过 npm 安装了 xterm，请使用 import type
-// import { Terminal } from '@xterm/xterm';
-
-const Terminal = (globalThis as any).Terminal;
-const FitAddon = (globalThis as any).FitAddon;
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
 
 /** 默认终端主题配置 */
 const DEFAULT_THEME = {
@@ -29,8 +26,8 @@ const DEFAULT_THEME = {
 };
 
 export class XtermWrapper {
-  private terminal: any;
-  private fitAddon: any;
+  private terminal: Terminal;
+  private fitAddon: FitAddon;
   private resizeObserver: ResizeObserver;
   private sessionId: string | null = null;
   private isConnected = false;
@@ -44,7 +41,7 @@ export class XtermWrapper {
       lineHeight: 1.1,
       cursorBlink: true,
       cursorStyle: 'block',
-      scrollback: 5000, // 增加回滚行数
+      scrollback: 5000,
       allowProposedApi: true,
       ...options,
     });
@@ -52,32 +49,22 @@ export class XtermWrapper {
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
 
-    // 初始化事件处理
     this.setupTerminalEvents();
-
-    // 渲染终端
     this.terminal.open(container);
     
-    // 使用 ResizeObserver 监听容器大小变化
     this.resizeObserver = new ResizeObserver(() => this.debouncedFit());
     this.resizeObserver.observe(container);
 
-    // 初始自适应
     this.safeFit();
   }
 
-  /**
-   * 设置终端核心事件
-   */
   private setupTerminalEvents(): void {
-    // 处理用户输入输入
     this.terminal.onData((data: string) => {
       if (this.isConnected && this.sessionId) {
         (globalThis as any).electronAPI.ptyWrite(this.sessionId, data);
       }
     });
 
-    // 处理终端内部 Resize
     this.terminal.onResize((size: { cols: number; rows: number }) => {
       if (this.isConnected && this.sessionId) {
         (globalThis as any).electronAPI.ptyResize(this.sessionId, size.cols, size.rows);
@@ -85,24 +72,17 @@ export class XtermWrapper {
     });
   }
 
-  /**
-   * 防抖的 Fit 处理，防止 UI 抖动和 PTY 性能损耗
-   */
   private debouncedFit(): void {
     if (this.resizeDebounceTimer) {
       window.clearTimeout(this.resizeDebounceTimer);
     }
     this.resizeDebounceTimer = window.setTimeout(() => {
       this.safeFit();
-    }, 100); // 100ms 防抖
+    }, 100);
   }
 
-  /**
-   * 安全地执行适配逻辑
-   */
   private safeFit(): void {
     try {
-      // 如果容器被隐藏（如切换到了其他 Tab），fit() 会失效，需加保护
       if (this.container.offsetWidth > 0 && this.container.offsetHeight > 0) {
         this.fitAddon.fit();
       }
@@ -111,15 +91,13 @@ export class XtermWrapper {
     }
   }
 
-  // --- 公共 API ---
-
   setSession(sessionId: string): void {
     this.sessionId = sessionId;
   }
 
   connect(): void {
     this.isConnected = true;
-    this.safeFit(); // 连接时立即适配一次
+    this.safeFit();
   }
 
   disconnect(): void {
@@ -148,9 +126,6 @@ export class XtermWrapper {
     this.terminal.blur();
   }
 
-  /**
-   * 动态设置字体大小
-   */
   setFontSize(size: number): void {
     if (this.terminal.options.fontSize !== size) {
       this.terminal.options.fontSize = size;
@@ -158,9 +133,6 @@ export class XtermWrapper {
     }
   }
 
-  /**
-   * 彻底销毁资源
-   */
   dispose(): void {
     this.isConnected = false;
     if (this.resizeDebounceTimer) {
@@ -169,11 +141,9 @@ export class XtermWrapper {
     this.resizeObserver.disconnect();
     this.fitAddon.dispose();
     this.terminal.dispose();
-    // 移除容器引用，防止闭包导致无法 GC
     (this as any).container = null;
   }
 
-  // 别名，兼容部分旧代码
   destroy(): void {
     this.dispose();
   }

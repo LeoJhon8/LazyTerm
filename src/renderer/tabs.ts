@@ -1,4 +1,4 @@
-// tabs-ui.ts
+// tabs.ts
 export interface TabData {
   id: number;
   title: string;
