@@ -2,11 +2,12 @@
 export interface TabData {
   id: number;
   title: string;
-  connectionType: 'local' | 'ssh' | 'telnet';
+  connectionType: 'local' | 'ssh' | 'telnet' | 'git-bash';
   connectionParams: any;
   isConnected: boolean;
   sessionId: string | null;
-  xtermWrapper: any; 
+  xtermWrapper: any;
+  container: HTMLElement | null;
   scrollTop?: number;
 }
 
@@ -80,7 +81,7 @@ export class TabsUI {
     const id = this.nextTabId++;
     const tab: TabData = {
       id, title, connectionType: type, connectionParams: params,
-      isConnected: false, sessionId: null, xtermWrapper: null
+      isConnected: false, sessionId: null, xtermWrapper: null, container: null
     };
     this.tabs.set(id, tab);
     this.switchTab(id);
@@ -110,7 +111,7 @@ export class TabsUI {
     }
   }
 
-  public updateTabSession(tabId: number, sessionId: string, xtermWrapper: any): void {
+  protected updateTabSession(tabId: number, sessionId: string, xtermWrapper: any, container?: HTMLElement | null): void {
     const tab = this.tabs.get(tabId);
     if (tab) {
       tab.sessionId = sessionId;

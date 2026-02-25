@@ -1,5 +1,5 @@
 // --- 基础协议定义 ---
-export type SessionType = 'local' | 'ssh' | 'telnet';
+export type SessionType = 'local' | 'ssh' | 'telnet' | 'git-bash';
 
 // --- 辨析联合类型 (Discriminated Unions) ---
 // 确保不同类型的连接拥有正确的参数约束
@@ -33,11 +33,19 @@ export interface LocalParams extends BaseParams {
   env?: Record<string, string>;
 }
 
+export interface GitBashParams extends BaseParams {
+  type: 'git-bash';
+  cwd?: string;
+  bashPath?: string;
+  env?: Record<string, string>;
+}
+
 /** 核心配置：将类型与参数绑定 */
 export type SessionConfig =
   | { type: 'local'; params: LocalParams }
   | { type: 'ssh'; params: SSHParams }
-  | { type: 'telnet'; params: TelnetParams };
+  | { type: 'telnet'; params: TelnetParams }
+  | { type: 'git-bash'; params: GitBashParams };
 
 // --- IPC 响应结构 ---
 export interface IpcResult<T = void> {
@@ -48,7 +56,7 @@ export interface IpcResult<T = void> {
   code?: number;
 }
 
-export type AllSessionParams = SSHParams | TelnetParams | LocalParams;
+export type AllSessionParams = SSHParams | TelnetParams | LocalParams | GitBashParams;
 
 export class SessionFactory {
   /**
@@ -57,7 +65,7 @@ export class SessionFactory {
    */
   static createConfig(input: AllSessionParams): SessionConfig {
     // 验证输入参数
-    if (!input.type || !['local', 'ssh', 'telnet'].includes(input.type)) {
+    if (!input.type || !['local', 'ssh', 'telnet', 'git-bash'].includes(input.type)) {
       throw new Error(`Invalid connection type: ${input.type}`);
     }
 
@@ -124,6 +132,8 @@ export class SessionFactory {
                config.params.port <= 65535;
       case 'local':
         return true; // local 类型总是有效的
+      case 'git-bash':
+        return true; // git-bash 类型总是有效的
       default:
         return false;
     }

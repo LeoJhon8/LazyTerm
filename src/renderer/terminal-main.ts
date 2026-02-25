@@ -20,13 +20,10 @@ class TerminalMain extends TabsUI {
   }
 
   public override init(): void {
-    // 1. 初始化子模块
-    [this.sessionUI, this.historyUI, this.quickCmdUI].forEach(ui => ui.init());
-    
-    // 2. 运行父类初始化流程 (会按序调用下面 override 的方法)
+    this.sessionUI.init();
+    this.historyUI.init();
+    this.quickCmdUI.init();
     super.init();
-
-    // 3. 启动终端特有的 PTY 监听
     this.initPTYListeners();
   }
 
@@ -42,7 +39,7 @@ class TerminalMain extends TabsUI {
   }
 
   protected override bindSubModuleEvents(): void {
-    (this.sessionUI as any).openSessionInNewTab = (s: any) => this.createNewTab(s.name, s.type, s.params);
+    (this.sessionUI as any).createTabFromSession = (s: any) => this.createNewTab(s.params.name, s.type, s.params);
   }
 
   protected override mountGlobalAPI(): void {
@@ -86,15 +83,21 @@ class TerminalMain extends TabsUI {
     const tabData = await super.createNewTab(title, type, params);
     if (!tabData) return null;
 
-    const container = document.getElementById('xterm-container');
-    if (!container) return null;
-    container.innerHTML = ''; 
+    const terminalWrapper = document.getElementById('terminalWrapper');
+    if (!terminalWrapper) return null;
 
     try {
       const { default: XtermWrapper } = await import('./xtermWrapper');
+      
+      const container = document.createElement('div');
+      container.className = 'terminal-container';
+      container.id = `terminal-container-${tabData.id}`;
+      container.style.display = 'none';
+      terminalWrapper.appendChild(container);
+      
       const xtermWrapper = new XtermWrapper(container, { fontSize: this.fontSize });
       
-      this.updateTabSession(tabData.id, "", xtermWrapper);
+      this.updateTabSession(tabData.id, "", xtermWrapper, container);
 
       const sessionParams: any = params.name ? params : { ...params, name: title };
       const config: any = { 
@@ -110,9 +113,11 @@ class TerminalMain extends TabsUI {
       console.log(`[TerminalMain] PTY create result:`, result);
       
       if (result.success && result.data) {
-        this.updateTabSession(tabData.id, result.data.sessionId, xtermWrapper);
+        this.updateTabSession(tabData.id, result.data.sessionId, xtermWrapper, container);
         xtermWrapper.setSession(result.data.sessionId);
         xtermWrapper.connect();
+        
+        container.style.display = 'block';
         xtermWrapper.focus();
         console.log(`[TerminalMain] Session ${result.data.sessionId} created and connected`);
       } else {
@@ -124,14 +129,39 @@ class TerminalMain extends TabsUI {
     return tabData;
   }
 
+  public override switchTab(id: number): void {
+    const prevTab = this.getActiveTab();
+    super.switchTab(id);
+    
+    const nextTab = this.getActiveTab();
+    
+    if (prevTab && prevTab.container) {
+      prevTab.container.style.display = 'none';
+      prevTab.xtermWrapper?.blur();
+    }
+    
+    if (nextTab && nextTab.container) {
+      nextTab.container.style.display = 'block';
+      setTimeout(() => {
+        nextTab.xtermWrapper?.focus();
+        nextTab.xtermWrapper?.refit();
+      }, 0);
+    }
+  }
+
   public override async closeTab(id: number, e?: Event): Promise<void> {
     const tab = this.getTabById(id);
     if (tab?.sessionId) {
       await window.electronAPI.ptyClose(tab.sessionId);
     }
+    
+    if (tab?.container) {
+      tab.xtermWrapper?.dispose();
+      tab.container.remove();
+    }
+    
     await super.closeTab(id, e);
     
-    // 当最后一个会话关闭时，自动创建本地终端
     if ((this as any).tabs.size === 0) {
       this.createNewTab('LazyTerm', 'local');
     }
@@ -145,6 +175,16 @@ class TerminalMain extends TabsUI {
       tab.xtermWrapper.refit();
     }
     localStorage.setItem('terminalFontSize', this.fontSize.toString());
+  }
+
+  protected updateTabSession(tabId: number, sessionId: string, xtermWrapper: any, container?: HTMLElement | null): void {
+    const tab = this.tabs.get(tabId);
+    if (tab) {
+      tab.sessionId = sessionId;
+      tab.xtermWrapper = xtermWrapper;
+      tab.container = container;
+      tab.isConnected = !!sessionId;
+    }
   }
 }
 

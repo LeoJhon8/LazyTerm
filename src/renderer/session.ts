@@ -18,6 +18,7 @@ export class SessionUI {
     local: '💻',
     ssh: '🔐',
     telnet: '🌐',
+    'git-bash': '🦊',
     default: '📡'
   };
 
