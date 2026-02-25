@@ -56,12 +56,17 @@ export class XtermWrapper {
     this.resizeObserver.observe(container);
 
     this.safeFit();
+    console.log('[XtermWrapper] Constructor completed, terminal opened');
   }
 
   private setupTerminalEvents(): void {
     this.terminal.onData((data: string) => {
+      console.log(`[XtermWrapper] Input captured:`, JSON.stringify(data));
       if (this.isConnected && this.sessionId) {
+        console.log(`[XtermWrapper] Sending to PTY session ${this.sessionId}`);
         (globalThis as any).electronAPI.ptyWrite(this.sessionId, data);
+      } else {
+        console.warn(`[XtermWrapper] Not connected or no sessionId (connected=${this.isConnected}, sessionId=${this.sessionId})`);
       }
     });
 
@@ -92,10 +97,12 @@ export class XtermWrapper {
   }
 
   setSession(sessionId: string): void {
+    console.log(`[XtermWrapper] Setting sessionId to ${sessionId}`);
     this.sessionId = sessionId;
   }
 
   connect(): void {
+    console.log(`[XtermWrapper] Connecting with sessionId=${this.sessionId}`);
     this.isConnected = true;
     this.safeFit();
   }
@@ -119,6 +126,7 @@ export class XtermWrapper {
   }
 
   focus(): void {
+    console.log('[XtermWrapper] Focusing terminal');
     this.terminal.focus();
   }
 

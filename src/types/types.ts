@@ -192,9 +192,9 @@ export interface ElectronAPI {
 
   // 事件监听：采用"取消订阅"模式 (Unsubscribe Pattern)
   // 这种模式比 removeListener 更安全，不会导致误删其他组件的监听器
-  onPtyData: (callback: (payload: PTYEventPayload) => void) => () => void;
-  onPtyExit: (callback: (payload: PTYExitPayload) => void) => () => void;
-  onPtyError: (callback: (payload: PTYErrorPayload) => void) => () => void;
+  onPtyData: (callback: (event: any, payload: PTYEventPayload) => void) => () => void;
+  onPtyExit: (callback: (event: any, payload: PTYExitPayload) => void) => () => void;
+  onPtyError: (callback: (event: any, payload: PTYErrorPayload) => void) => () => void;
   onPtyConnect: (callback: (sessionId: string) => void) => () => void;
   onPtyDisconnect: (callback: (sessionId: string) => void) => () => void;
 }

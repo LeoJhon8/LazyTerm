@@ -60,8 +60,7 @@ class TerminalMain extends TabsUI {
       return;
     }
 
-    this.disposables.push(api.onPtyData((event, payload) => {
-      const { sessionId, data } = payload || {};
+    this.disposables.push(api.onPtyData(({ sessionId, data }) => {
       console.log(`[TerminalMain] Received PTY data for session ${sessionId}:`, data ? data.substring(0, 100) : '(empty)');
       const tab = this.getTabBySessionId(sessionId);
       if (!tab) {
@@ -75,8 +74,7 @@ class TerminalMain extends TabsUI {
       tab.xtermWrapper.write(data);
     }));
 
-    this.disposables.push(api.onPtyExit((event, payload) => {
-      const { sessionId, code } = payload || {};
+    this.disposables.push(api.onPtyExit(({ sessionId, code }) => {
       Logger.info('Main', `Session ${sessionId} exited (${code})`);
       this.getTabBySessionId(sessionId)?.xtermWrapper?.writeln('\r\n[Process Exited]');
     }));

@@ -55,26 +55,36 @@ export class PTYSession {
   }
 
   private async spawnLocalProcess(win: BrowserWindow | null, params: LocalParams) {
+    console.log(`[PTYService spawnLocalProcess] Session ID: ${this.id}`);
     const isWindows = process.platform === 'win32';
     const shell = params.shell || (isWindows ? 'powershell.exe' : 'bash');
+    console.log(`[PTYService spawnLocalProcess] Shell: ${shell}, Platform: ${process.platform}`);
     
     if (this.pty) return;
+
+    const env: any = { ...process.env, TERM: 'xterm-256color', ...params.env };
+    if (isWindows && (shell.includes('powershell') || shell.includes('pwsh'))) {
+      env['PowerShell_UseMitaUTF8Encoding'] = '1';
+      env['PowerShell_UseBestEffortUTF8Encoding'] = '1';
+    }
 
     this.pty = pty.spawn(shell, [], {
       name: 'xterm-256color',
       cols: this.options.cols || 80,
       rows: this.options.rows || 24,
       cwd: params.cwd || process.env.HOME || process.env.USERPROFILE,
-      env: { ...process.env, TERM: 'xterm-256color', ...params.env } as any,
+      env: env,
       useConpty: isWindows,
     });
 
     this.pty.onData(data => {
+      console.log(`[PTYService PTY ${this.id}] onData: ${data ? data.substring(0, 50) : '(empty)'}`);
       const payload: PTYEventPayload = { sessionId: this.id, data };
       this.sendToClient(win, 'pty-data', payload);
     });
 
     this.pty.onExit(({ exitCode }) => {
+      console.log(`[PTYService PTY ${this.id}] onExit: code=${exitCode}`);
       const payload: PTYExitPayload = { sessionId: this.id, code: exitCode };
       this.sendToClient(win, 'pty-exit', payload);
       this.onExitCallback(this.id);
@@ -144,6 +154,7 @@ export class PTYSession {
   }
 
   private sendToClient(win: BrowserWindow | null, channel: string, payload: any) {
+    console.log(`[PTYService sendToClient] Channel: ${channel}, Session: ${this.id}, Payload:`, typeof payload === 'object' && 'data' in payload ? { sessionId: payload.sessionId, dataLength: (payload.data as string).length } : payload);
     if (win && !win.isDestroyed() && !this.isDestroyed) {
       win.webContents.send(channel, payload);
     }
@@ -208,10 +219,13 @@ const cleanupSessionRecord = (sessionId: string) => {
 
 export const ptyService = {
   setMainWindow: (win: BrowserWindow) => {
+    console.log('[PTYService] Setting mainWindow');
     mainWindow = win;
   },
 
   createSession: async (options: PtyCreateOptions) => {
+    console.log('[PTYService createSession] Options:', JSON.stringify(options, null, 2));
+    console.log('[PTYService] Setting mainWindow');
     const id = `${options.type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     
     const session = new PTYSession(id, options, (sid) => {
@@ -227,11 +241,15 @@ export const ptyService = {
       tabToSessionIds.get(options.tabId)!.add(id);
     }
 
+    console.log(`[PTYService createSession] Starting session ${id}...`);
     await session.start(mainWindow);
+    console.log(`[PTYService createSession] Session ${id} started successfully`);
     return id;
   },
 
   write: (sessionId: string, data: string) => {
+    const session = sessions.get(sessionId);
+    console.log(`[PTYService write] Session ID: ${sessionId}, Data: ${JSON.stringify(data)}`);
     sessions.get(sessionId)?.write(data);
   },
 

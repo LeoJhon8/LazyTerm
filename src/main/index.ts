@@ -166,11 +166,16 @@ ipcMain.handle('execute-command', async (_, command: string, config?: SessionCon
 /**
  * 2. PTY 会话生命周期
  */
-ipcMain.handle('pty-create', async (_, options: PtyCreateOptions): Promise<IpcResult<{ sessionId: string }>> => {
+ipcMain.handle('pty-create', async (event, options: PtyCreateOptions): Promise<IpcResult<{ sessionId: string }>> => {
+  console.log('[Main Process] pty-create called with options:', JSON.stringify(options));
+  console.log('[Main Process] mainWindow =', mainWindow ? (mainWindow.isDestroyed() ? 'destroyed' : 'valid') : 'null');
+  console.log('[Main Process] event.senderId =', event.sender.id);
   try {
     const sessionId = await ptyService.createSession(options);
+    console.log('[Main Process] pty-create success, sessionId =', sessionId);
     return { success: true, sessionId, data: { sessionId } };
   } catch (err) {
+    console.error('[Main Process] pty-create failed:', err);
     return { success: false, sessionId: '', message: (err as Error).message };
   }
 });

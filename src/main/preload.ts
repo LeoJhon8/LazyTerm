@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('test-connection', connectionType, params),
 
   // --- PTY 核心控制 ---
-  ptyCreate: (type: string, params?: any) => ipcRenderer.invoke('pty-create', type, params),
+  ptyCreate: (config: any) => ipcRenderer.invoke('pty-create', config),
   ptyWrite: (sessionId: string, data: string) => ipcRenderer.invoke('pty-write', sessionId, data),
   ptyResize: (sessionId: string, cols: number, rows: number) =>
     ipcRenderer.invoke('pty-resize', sessionId, cols, rows),
