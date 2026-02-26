@@ -3,6 +3,8 @@ import { TabsUI, TabsUIConfig, TabData } from './tabs';
 import { SessionUI } from './session';
 import { HistoryUI } from './history';
 import { QuickCmdUI } from './quickcmd';
+import { SettingsUI } from './settings';
+import { ThemeManager } from './themeManager';
 import type { SessionType } from '../types/types';
 import { Logger } from './logger';
 import '@xterm/xterm/css/xterm.css';
@@ -11,9 +13,10 @@ class TerminalMain extends TabsUI {
   private sessionUI = new SessionUI();
   private historyUI = new HistoryUI();
   private quickCmdUI = new QuickCmdUI();
+  private settingsUI = SettingsUI.getInstance();
+  private themeManager = new ThemeManager();
   private fontSize: number;
   private disposables: Array<() => void> = [];
-
   constructor(config: TabsUIConfig) {
     super(config);
     this.fontSize = this.loadFontSize();
@@ -28,13 +31,9 @@ class TerminalMain extends TabsUI {
   }
 
   protected override setupGlobalEventListeners(): void {
-    const handlers: Record<string, () => void> = {
-      'toggleShortcutBtn': () => this.quickCmdUI.toggle(),
-      'toggleHistoryBtn': () => this.historyUI.toggle(),
-    };
-    Object.entries(handlers).forEach(([id, fn]) => {
-      const el = document.getElementById(id);
-      if (el) el.onclick = fn;
+    // Settings button
+    document.getElementById('openSettingsBtn')?.addEventListener('click', () => {
+      this.settingsUI.open();
     });
   }
 

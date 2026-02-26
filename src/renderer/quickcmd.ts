@@ -8,17 +8,31 @@ export interface ShortcutCommand {
 
 export class QuickCmdUI {
   // DOM 元素引用
-  private readonly elements = {
-    bar: document.getElementById('shortcutBar'),
-    toggleBtn: document.getElementById('toggleShortcutBtn'),
-    addBtn: document.getElementById('addShortcutBtn'),
-    contextMenu: document.getElementById('shortcutContextMenu'),
-    modal: document.getElementById('addShortcutModal'),
-    modalTitle: document.getElementById('addShortcutModalTitle'),
-    labelInput: document.getElementById('shortcutLabel') as HTMLInputElement,
-    commandInput: document.getElementById('shortcutCommand') as HTMLTextAreaElement,
-    confirmBtn: document.getElementById('confirmBtn')
+  private elements = {
+    bar: null as HTMLElement | null,
+    toggleBtn: null as HTMLElement | null,
+    addBtn: null as HTMLElement | null,
+    contextMenu: null as HTMLElement | null,
+    modal: null as HTMLElement | null,
+    modalTitle: null as HTMLElement | null,
+    labelInput: null as HTMLInputElement | null,
+    commandInput: null as HTMLTextAreaElement | null,
+    confirmBtn: null as HTMLElement | null
   };
+
+  private initElements(): void {
+    this.elements = {
+      bar: document.getElementById('shortcutBar'),
+      toggleBtn: document.getElementById('toggleShortcutBtn'),
+      addBtn: document.getElementById('addShortcutBtn'),
+      contextMenu: document.getElementById('shortcutContextMenu'),
+      modal: document.getElementById('addShortcutModal'),
+      modalTitle: document.getElementById('addShortcutModalTitle'),
+      labelInput: document.getElementById('shortcutLabel') as HTMLInputElement,
+      commandInput: document.getElementById('shortcutCommand') as HTMLTextAreaElement,
+      confirmBtn: document.getElementById('confirmBtn')
+    };
+  }
 
   private readonly DEFAULT_SHORTCUTS: ShortcutCommand[] = [
     { label: 'help', command: 'help', alias: 'help' },
@@ -39,6 +53,7 @@ export class QuickCmdUI {
   }
 
   init(): void {
+    this.initElements();
     this.loadShortcuts();
     this.initEventListeners();
     this.renderShortcuts();
@@ -202,7 +217,23 @@ export class QuickCmdUI {
   public toggle(): void {
     const isVisible = this.elements.bar?.classList.toggle('visible');
     this.elements.toggleBtn?.classList.toggle('active');
+    
+    // Toggle右侧内容区类 - 用于调整terminal-wrapper高度
+    const rightContent = this.elements.bar?.closest('.right-content') as HTMLElement;
+    if (rightContent) {
+      if (isVisible) {
+        rightContent.classList.add('shortcuts-visible');
+      } else {
+        rightContent.classList.remove('shortcuts-visible');
+      }
+    }
+    
     localStorage.setItem('shortcutVisible', String(isVisible));
+    
+    // 触发xterm重新调整大小
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 250);
   }
 
   private showContextMenu(e: MouseEvent, index: number): void {
@@ -286,6 +317,11 @@ export class QuickCmdUI {
     if (localStorage.getItem('shortcutVisible') === 'true') {
       this.elements.bar?.classList.add('visible');
       this.elements.toggleBtn?.classList.add('active');
+
+      const rightContent = this.elements.bar?.closest('.right-content') as HTMLElement;
+      if (rightContent) {
+        rightContent.classList.add('shortcuts-visible');
+      }
     }
   }
 

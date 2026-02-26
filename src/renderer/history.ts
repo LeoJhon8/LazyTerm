@@ -7,12 +7,21 @@ export interface HistoryItem {
 
 export class HistoryUI {
   // 缓存 DOM 引用
-  private readonly elements = {
-    list: document.getElementById('historyList'),
-    sidebar: document.getElementById('historySidebar'),
-    clearBtn: document.getElementById('clearHistoryBtn'),
-    toggleBtn: document.getElementById('toggleHistoryBtn'),
+  private elements = {
+    list: null as HTMLElement | null,
+    sidebar: null as HTMLElement | null,
+    clearBtn: null as HTMLElement | null,
+    toggleBtn: null as HTMLElement | null
   };
+
+  private initElements(): void {
+    this.elements = {
+      list: document.getElementById('historyList'),
+      sidebar: document.getElementById('historySidebar'),
+      clearBtn: document.getElementById('clearHistoryBtn'),
+      toggleBtn: document.getElementById('toggleHistoryBtn')
+    };
+  }
 
   private history: HistoryItem[] = [];
   private readonly MAX_HISTORY_SIZE = 200;
@@ -24,6 +33,7 @@ export class HistoryUI {
   }
 
   init(): void {
+    this.initElements();
     this.loadHistory();
     this.initListeners();
     this.render();

@@ -1,0 +1,53 @@
+<!-- Settings Modal -->
+<dialog id="settingsModal" class="modal">
+  <div class="modal-content">
+    <header class="modal-header">
+      <h3>Settings</h3>
+      <button class="close-btn" data-close>&times;</button>
+    </header>
+    <form method="dialog" class="modal-body">
+      <!-- Theme Selection -->
+      <div class="form-group">
+        <label for="themeSelect">Theme:</label>
+        <select id="themeSelect">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="solarized-dark">Solarized Dark</option>
+          <option value="dracula">Dracula</option>
+          <option value="monokai">Monokai</option>
+          <option value="ocean">Ocean</option>
+        </select>
+      </div>
+
+      <!-- Theme Preview -->
+      <div class="form-group">
+        <label>Theme Preview:</label>
+        <div id="themePreview" class="theme-preview"></div>
+      </div>
+
+      <!-- Font Size -->
+      <div class="form-group">
+        <label for="fontSizeSlider">Font Size: <span id="fontSizeValue">14</span>px</label>
+        <input type="range" id="fontSizeSlider" min="10" max="24" value="14" step="1" />
+      </div>
+
+      <!-- Font Family -->
+      <div class="form-group">
+        <label for="fontFamilySelect">Font Family:</label>
+        <select id="fontFamilySelect">
+          <option value="Menlo, Monaco, Consolas, 'Courier New', monospace">
+            Menlo, Monaco, Consolas
+          </option>
+          <option value="'Courier New', monospace">Courier New</option>
+          <option value="'Roboto Mono', monospace">Roboto Mono</option>
+          <option value="'Fira Code', monospace">Fira Code</option>
+          <option value="'Source Code Pro', monospace">Source Code Pro</option>
+        </select>
+      </div>
+    </form>
+    <footer class="modal-footer">
+      <button type="button" class="btn cancel" id="cancelSettingsBtn">Cancel</button>
+      <button type="submit" class="btn confirm" id="saveSettingsBtn">Save</button>
+    </footer>
+  </div>
+</dialog>

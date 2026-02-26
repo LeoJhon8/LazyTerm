@@ -43,6 +43,10 @@
   
   /* 字体大小 */
   --font-size-xs: 10px;
+  /* 快捷栏高度 */
+  --shortcut-bar-height: 48px;
+  --shortcut-bar-hidden-height: 0px;
+
   --font-size-sm: 11px;
   --font-size-base: 12px;
   --font-size-md: 13px;
@@ -359,11 +363,12 @@ body {
 
 .history-sidebar {
   width: 280px;
-  background: #1a1a1a;
-  border-left: 1px solid #2d2d2d;
+  background: #1e1e1e;
+  border-left: 1px solid #3d3d3d;
   display: none;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.3);
 }
 
 .history-sidebar.visible {
@@ -411,18 +416,19 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  background: #1e1e1e;
-  border: 1px solid #2d2d2d;
+  padding: 12px 14px;
+  background: #252525;
+  border: 1px solid #3d3d3d;
   border-radius: 6px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .history-item:hover {
   background: #2d2d2d;
-  border-color: #3d3d3d;
+  border-color: #4d4d4d;
+  transform: translateX(-2px);
 }
 
 .history-item:hover .history-item-actions {
@@ -430,10 +436,12 @@ body {
 }
 
 .history-item-index {
-  color: #6a6a6a;
-  font-size: 11px;
+  color: #8a8a8a;
+  font-size: 12px;
   font-family: 'Courier New', monospace;
-  min-width: 20px;
+  font-weight: bold;
+  min-width: 25px;
+  text-align: right;
 }
 
 .history-item-content {
@@ -442,20 +450,20 @@ body {
 }
 
 .history-item-command {
-  color: #d4d4d4;
-  font-size: 12px;
+  color: #e8e8e8;
+  font-size: 13px;
   font-family: 'Courier New', monospace;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .history-item-time {
-  color: #6a6a6a;
-  font-size: 10px;
+  color: #7a7a7a;
+  font-size: 11px;
   margin-top: 2px;
 }
-
 .history-item-actions {
   display: flex;
   gap: 4px;
@@ -854,10 +862,14 @@ body {
   display: none;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 12px;
+  padding: 10px 12px;
   background: #1a1a1a;
   border-top: 1px solid #2d2d2d;
   flex-shrink: 0;
+  height: 48px;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .shortcut-bar.visible {
@@ -1201,7 +1213,61 @@ body {
 }
 
 
-#xterm-container {
+
+
+/* Theme Preview */
+.theme-preview {
+  min-height: 120px;
+  border-radius: var(--radius-lg);
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 12px;
+  transition: all 0.3s ease;
+}
+
+/* Settings Modal - Range Slider */
+#settingsModal input[type="range"] {
   width: 100%;
-  height: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-bg-hover);
+  outline: none;
+  -webkit-appearance: none;
+}
+
+#settingsModal input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+#settingsModal input[type="range"]::-webkit-slider-thumb:hover {
+  background: var(--color-primary-hover);
+}
+
+#settingsModal input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  cursor: pointer;
+  border: none;
+  transition: background 0.2s ease;
+}
+
+#settingsModal input[type="range"]::-moz-range-thumb:hover {
+  background: var(--color-primary-hover);
+}
+
+/* Terminal-wrapper height adjustment based on shortcut bar visibility */
+.terminal-wrapper {
+  height: calc(100vh - var(--header-height, 40px) - var(--tabs-container-height, 36px) - var(--shortcut-bar-hidden-height));
+  transition: height 0.2s ease;
+}
+
+.right-content.shortcuts-visible .terminal-wrapper {
+  height: calc(100vh - var(--header-height, 40px) - var(--tabs-container-height, 36px) - var(--shortcut-bar-height));
 }

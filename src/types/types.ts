@@ -170,6 +170,8 @@ export interface XtermWrapper {
   dispose(): void;
   refit(): void;
   setFontSize(size: number): void;
+  setFontFamily(fontFamily: string): void;
+  updateTheme(theme: any): void;
   setSession(sessionId: string): void;
   connect(): void;
   disconnect(): void;

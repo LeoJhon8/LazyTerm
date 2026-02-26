@@ -154,6 +154,16 @@ export class XtermWrapper {
     }
   }
 
+  setFontFamily(fontFamily: string): void {
+    if (this.terminal.options.fontFamily !== fontFamily) {
+      this.terminal.options.fontFamily = fontFamily;
+    }
+  }
+
+  updateTheme(theme: any): void {
+    this.terminal.options.theme = theme;
+  }
+
   refit(): void {
     this.safeFit();
   }
@@ -169,7 +179,6 @@ export class XtermWrapper {
   get isActive(): boolean {
     return this.terminal.textarea === document.activeElement;
   }
-
   dispose(): void {
     this.isConnected = false;
     if (this.resizeDebounceTimer) {
