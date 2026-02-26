@@ -50,6 +50,7 @@ export class QuickCmdUI {
 
   constructor() {
     this.handleGlobalClick = this.handleGlobalClick.bind(this);
+    this.handleResize = this.handleResize.bind(this);
   }
 
   init(): void {
@@ -58,6 +59,8 @@ export class QuickCmdUI {
     this.initEventListeners();
     this.renderShortcuts();
     this.restoreVisibility();
+    // 添加窗口大小监听
+    window.addEventListener('resize', this.handleResize);
     Logger.debug('QuickCmdUI', 'Initialized');
   }
 
@@ -299,6 +302,14 @@ export class QuickCmdUI {
       b.classList.remove('dragging', 'drag-over');
     });
     this.draggedIndex = null;
+  }
+
+  // 监听窗口大小变化 - 仅用于触发重绘，不隐藏快捷栏
+  private handleResize(): void {
+    // 在窗口大小改变时触发终端重新调整
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 100);
   }
 
   // --- 数据持久化 ---

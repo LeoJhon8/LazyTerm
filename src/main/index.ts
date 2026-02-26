@@ -46,6 +46,8 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: Math.min(1200, width),
     height: Math.min(800, height),
+    minWidth: 800,  // 最小宽度 800px
+    minHeight: 600, // 最小高度 600px
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

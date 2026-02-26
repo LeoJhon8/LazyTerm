@@ -719,11 +719,14 @@ body {
 }
 
 
+/* 主要的terminal-wrapper定义 - 使用flex布局保持正常文档流 */
 .terminal-wrapper {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
+  position: relative;
 }
 
 .terminal-content {
@@ -870,6 +873,7 @@ body {
   align-items: center;
   overflow-x: auto;
   overflow-y: hidden;
+  z-index: 100;
 }
 
 .shortcut-bar.visible {
@@ -1262,12 +1266,13 @@ body {
   background: var(--color-primary-hover);
 }
 
-/* Terminal-wrapper height adjustment based on shortcut bar visibility */
-.terminal-wrapper {
-  height: calc(100vh - var(--header-height, 40px) - var(--tabs-container-height, 36px) - var(--shortcut-bar-hidden-height));
-  transition: height 0.2s ease;
+/* 当快捷命令栏显示时，调整right-content的布局 */
+.right-content.shortcuts-visible {
+  display: flex;
+  flex-direction: column;
 }
 
 .right-content.shortcuts-visible .terminal-wrapper {
-  height: calc(100vh - var(--header-height, 40px) - var(--tabs-container-height, 36px) - var(--shortcut-bar-height));
+  flex: 1;
+  min-height: 0;
 }
