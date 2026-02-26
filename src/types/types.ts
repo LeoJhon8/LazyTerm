@@ -163,10 +163,16 @@ export interface PTYErrorPayload {
 export interface XtermWrapper {
   sessionId: string;
   write(data: string): void;
+  writeln(data: string): void;
   resize(cols: number, rows: number): void;
   focus(): void;
   blur(): void;
   dispose(): void;
+  refit(): void;
+  setFontSize(size: number): void;
+  setSession(sessionId: string): void;
+  connect(): void;
+  disconnect(): void;
   cols: number;
   rows: number;
   isActive: boolean;

@@ -209,10 +209,12 @@ let mainWindow: BrowserWindow | null = null;
 
 const cleanupSessionRecord = (sessionId: string) => {
   const session = sessions.get(sessionId);
-  if (session?.tabId !== null) {
-    const set = tabToSessionIds.get(session.tabId!);
+  if (!session) return; // Already cleaned up
+  
+  if (session.tabId !== null) {
+    const set = tabToSessionIds.get(session.tabId);
     set?.delete(sessionId);
-    if (set?.size === 0) tabToSessionIds.delete(session.tabId!);
+    if (set?.size === 0) tabToSessionIds.delete(session.tabId);
   }
   sessions.delete(sessionId);
 };

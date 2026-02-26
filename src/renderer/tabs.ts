@@ -65,10 +65,11 @@ export class TabsUI {
   // --- Tab 核心逻辑 ---
 
   private initTabBaseEvents(): void {
+
     this.tabsWrapper?.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
       const tabEl = target.closest('.tab') as HTMLElement;
-      if (!tabEl) return;
+      if (!tabEl || !tabEl.dataset) return;
       const id = parseInt(tabEl.dataset.tabId || '0');
       if (target.classList.contains('tab-close')) this.closeTab(id, e);
       else this.switchTab(id);

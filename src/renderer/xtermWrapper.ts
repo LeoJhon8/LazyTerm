@@ -33,7 +33,10 @@ export class XtermWrapper {
   private isConnected = false;
   private resizeDebounceTimer: number | null = null;
 
-  constructor(private container: HTMLElement, options: any = {}) {
+  constructor(
+    private container: HTMLElement,
+    options: any = {}
+  ) {
     this.terminal = new Terminal({
       theme: DEFAULT_THEME,
       fontFamily: 'Menlo, Monaco, Consolas, "Courier New", monospace',
@@ -51,7 +54,7 @@ export class XtermWrapper {
 
     this.setupTerminalEvents();
     this.terminal.open(container);
-    
+
     this.resizeObserver = new ResizeObserver(() => this.debouncedFit());
     this.resizeObserver.observe(container);
 
@@ -66,7 +69,9 @@ export class XtermWrapper {
         console.log(`[XtermWrapper] Sending to PTY session ${this.sessionId}`);
         (globalThis as any).electronAPI.ptyWrite(this.sessionId, data);
       } else {
-        console.warn(`[XtermWrapper] Not connected or no sessionId (connected=${this.isConnected}, sessionId=${this.sessionId})`);
+        console.warn(
+          `[XtermWrapper] Not connected or no sessionId (connected=${this.isConnected}, sessionId=${this.sessionId})`
+        );
       }
     });
 
@@ -125,6 +130,14 @@ export class XtermWrapper {
     this.terminal.clear();
   }
 
+  resize(cols: number, rows: number): void {
+    try {
+      this.terminal.resize(cols, rows);
+    } catch (e) {
+      console.warn('[XtermWrapper] Resize failed:', e);
+    }
+  }
+
   focus(): void {
     console.log('[XtermWrapper] Focusing terminal');
     this.terminal.focus();
@@ -137,8 +150,24 @@ export class XtermWrapper {
   setFontSize(size: number): void {
     if (this.terminal.options.fontSize !== size) {
       this.terminal.options.fontSize = size;
-      this.debouncedFit();
+      this.refit();
     }
+  }
+
+  refit(): void {
+    this.safeFit();
+  }
+
+  get cols(): number {
+    return this.terminal.cols;
+  }
+
+  get rows(): number {
+    return this.terminal.rows;
+  }
+
+  get isActive(): boolean {
+    return this.terminal.textarea === document.activeElement;
   }
 
   dispose(): void {
