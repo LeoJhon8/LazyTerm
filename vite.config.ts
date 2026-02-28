@@ -1,46 +1,20 @@
-// vite.config.ts
-import { defineConfig } from 'vite';
-import electron from 'vite-plugin-electron';
-import renderer from 'vite-plugin-electron-renderer';
-import path from 'path';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
 
+// https://vite.dev/config/
 export default defineConfig({
-  build: {
-    outDir: 'dist/renderer',
-    emptyOutDir: true,
-  },
-  
   plugins: [
-    electron([
-      {
-        entry: 'src/main/index.ts',
-        vite: {
-          build: {
-            outDir: 'dist/main',
-            rollupOptions: {
-              external: ['electron', 'node-pty', 'ssh2'],
-            },
-          },
-        },
+    react({
+      babel: {
+        plugins: [['babel-plugin-react-compiler']],
       },
-      {
-        entry: 'src/main/preload.ts',
-        onstart(options) {
-          options.reload();
-        },
-        vite: {
-          build: {
-            outDir: 'dist/main',
-          },
-        },
-      },
-    ]),
-    renderer(),
+    }),
   ],
-  
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src/renderer'),
+      // 使用 path.resolve 确保路径正确
+      '@': path.resolve(__dirname, './src'),
     },
   },
-});
+})
