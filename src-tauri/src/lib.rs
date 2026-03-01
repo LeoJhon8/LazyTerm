@@ -13,7 +13,7 @@ struct TerminalSession {
     // 存储 master 用于 resize 和获取会话状态
     #[allow(dead_code)]
     master: Box<dyn MasterPty + Send>,
-    // 专门存储 writer 用于写入数据，类型直接设为 Box<dyn Write + Send>
+    // 专门存储 writer 用于写入数据
     writer: Box<dyn Write + Send>,
 }
 
@@ -34,7 +34,7 @@ async fn create_terminal<R: Runtime>(
     
     let pty_system = native_pty_system();
     
-    // 使用 openpty
+    // 打开 PTY 配对
     let pair = pty_system
         .openpty(PtySize {
             rows: 24,
@@ -44,55 +44,75 @@ async fn create_terminal<R: Runtime>(
         })
         .map_err(|e| format!("无法打开PTY: {}", e))?;
 
+    // 1. 确定默认 Shell
     let default_shell = if cfg!(target_os = "windows") {
         "powershell.exe".to_string()
     } else {
-        "bash".to_string()
+        std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string())
     };
     
-    let mut cmd = CommandBuilder::new(shell.unwrap_or(default_shell));
-    if let Some(path) = cwd {
-        if !path.is_empty() {
+    let target_shell = shell.unwrap_or(default_shell);
+    let mut cmd = CommandBuilder::new(target_shell);
+
+    // 2. 【核心修复】注入当前系统的所有环境变量
+    // 这能确保 PowerShell 加载配置文件（Prompt 样式、颜色、PATH 等）
+    for (key, val) in std::env::vars() {
+        cmd.env(key, val);
+    }
+
+    // 3. 优化工作目录处理
+    if let Some(mut path) = cwd {
+        if path.is_empty() || path == "/" || path == "\\" {
+            // 如果路径无效，直接清空，让它使用系统默认路径
+            // 或者手动指定为用户主目录
+            if let Ok(home) = std::env::var("USERPROFILE") {
+                cmd.cwd(home);
+            }
+        } else {
             cmd.cwd(path);
         }
     }
 
+    // 4. 启动 Shell 进程
     let _child = pair.slave.spawn_command(cmd)
         .map_err(|e| format!("无法启动进程: {}", e))?;
     
+    // 释放 slave，因为 master 会持有引用
     drop(pair.slave);
 
     let master = pair.master;
     
-    // 获取写入器：take_writer 返回的是 Box<dyn Write + Send>
+    // 获取写入器
     let writer = master.take_writer()
         .map_err(|e| format!("无法获取写入器: {}", e))?;
 
-    // 获取读取器
+    // 获取读取器用于线程监听输出
     let mut reader = master.try_clone_reader()
         .map_err(|e| format!("无法创建读取器: {}", e))?;
     
     let session_id_clone = session_id.clone();
     
-    // 读取线程
+    // 5. 启动读取线程：将 PTY 输出转发到前端
     thread::spawn(move || {
         let mut buffer = [0u8; 1024 * 8];
         loop {
             match reader.read(&mut buffer) {
                 Ok(n) if n > 0 => {
+                    // 使用 lossy 确保即使有不完整的 UTF-8 字符也不会 crash
                     let data = String::from_utf8_lossy(&buffer[..n]).to_string();
                     let event_name = format!("terminal-data-{}", session_id_clone);
+                    // 发送事件到前端
                     if let Err(_) = app.emit(&event_name, data) {
-                        break; 
+                        break; // 前端连接断开或 app 销毁时退出
                     }
                 }
-                Ok(_) => break,
-                Err(_) => break,
+                Ok(_) => break, // EOF
+                Err(_) => break, // 读取错误
             }
         }
     });
 
-    // 存入 sessions
+    // 6. 存入全局状态管理
     let mut sessions = state.sessions.lock().unwrap();
     sessions.insert(session_id.clone(), TerminalSession { master, writer });
 
@@ -108,7 +128,6 @@ fn write_to_terminal(
     let mut sessions = state.sessions.lock().unwrap();
     
     if let Some(session) = sessions.get_mut(&session_id) {
-        // 直接使用 session.writer，因为它已经是 Box<dyn Write + Send>
         session.writer
             .write_all(data.as_bytes())
             .map_err(|e| format!("写入失败: {}", e))?;

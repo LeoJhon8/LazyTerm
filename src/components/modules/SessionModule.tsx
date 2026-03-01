@@ -3,16 +3,18 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, FolderPlus, Server, Terminal } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
+import { homeDir } from '@tauri-apps/api/path';
+
 
 export function SessionModule() {
   const { addSession } = useTabsStore();
   const [open, setOpen] = useState(false);
-
-  const handleCreateLocalSession = () => {
+  const handleCreateLocalSession = async () => {
+    const home = await homeDir();
     addSession({
       title: `Local-${Date.now()}`,
       type: "local",
-      cwd: process.cwd(),
+      cwd: home,
     });
     setOpen(false);
   };
@@ -28,7 +30,7 @@ export function SessionModule() {
               新建
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent aria-describedby={undefined}>
             <DialogHeader>
               <DialogTitle>新建会话</DialogTitle>
             </DialogHeader>
