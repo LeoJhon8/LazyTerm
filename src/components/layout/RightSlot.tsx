@@ -1,38 +1,53 @@
-import { useState } from "react";
+import { useSlotConfigStore } from "@/store/slot-config";
 import { Button } from "@/components/ui/button";
-import { SettingsModule } from "../modules/SettingsModule";
-import { PluginsModule } from "../modules/PluginsModule";
-import { Settings, Puzzle } from "lucide-react";
+import { HistoryModule } from "@/components/modules/HistoryModule";
+import { PluginsModule } from "@/components/modules/PluginsModule";
+import { History, Plug } from "lucide-react";
+
+const MODULE_COMPONENTS: Record<string, React.ComponentType> = {
+  HistoryModule: HistoryModule,
+  PluginsModule: PluginsModule,
+};
+
+const MODULE_ICONS: Record<string, React.ReactNode> = {
+  HistoryModule: <History className="h-4 w-4" />,
+  PluginsModule: <Plug className="h-4 w-4" />,
+};
 
 export function RightSlot() {
-  const [activeModule, setActiveModule] = useState<"settings" | "plugins">("settings");
+  const { currentConfig, setActiveModule } = useSlotConfigStore();
+  const { modules, activeModule } = currentConfig.right;
+
+  if (modules.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center text-muted-foreground">
+        <p>未配置模块</p>
+      </div>
+    );
+  }
+
+  const ActiveComponent = MODULE_COMPONENTS[activeModule];
 
   return (
     <div className="h-full flex">
       {/* 模块内容区 */}
       <div className="flex-1 overflow-hidden">
-        {activeModule === "settings" && <SettingsModule />}
-        {activeModule === "plugins" && <PluginsModule />}
+        {ActiveComponent && <ActiveComponent />}
       </div>
 
       {/* 模块导航栏 */}
       <div className="w-12 bg-muted flex flex-col items-center py-2 border-l">
-        <Button
-          variant={activeModule === "settings" ? "secondary" : "ghost"}
-          size="icon"
-          className="mb-2"
-          onClick={() => setActiveModule("settings")}
-        >
-          <Settings className="h-4 w-4" />
-        </Button>
-        <Button
-          variant={activeModule === "plugins" ? "secondary" : "ghost"}
-          size="icon"
-          className="mb-2"
-          onClick={() => setActiveModule("plugins")}
-        >
-          <Puzzle className="h-4 w-4" />
-        </Button>
+        {modules.map((moduleId) => (
+          <Button
+            key={moduleId}
+            variant={activeModule === moduleId ? "secondary" : "ghost"}
+            size="icon"
+            className="mb-2"
+            onClick={() => setActiveModule("right", moduleId)}
+          >
+            {MODULE_ICONS[moduleId]}
+          </Button>
+        ))}
       </div>
     </div>
   );

@@ -30,7 +30,7 @@ export function HistoryModule() {
           >
             <div className="flex items-start justify-between">
               <code className="text-sm font-mono break-all">{item.command}</code>
-              <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0 ml-2" />
+              <Clock className="h-4 w-4 text-muted-foreground shrink-0 ml-2" />
             </div>
             <div className="text-xs text-muted-foreground mt-1">
               {item.time} • {item.cwd}

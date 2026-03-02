@@ -1,22 +1,27 @@
-import { useTabsStore } from "@/store/tabs";
-import { TabBar } from "../modules/TabBar";
+import { useSlotConfigStore } from "@/store/slot-config";
+import { TabBar } from "@/components/modules/TabBar";
+
+const MODULE_COMPONENTS: Record<string, React.ComponentType> = {
+  TabModule: TabBar,
+};
 
 export function TopSlot() {
-  // 1. 将 tabs 改为 sessions，并推荐使用 Selector 模式
-  const sessions = useTabsStore((state) => state.sessions);
+  const { currentConfig } = useSlotConfigStore();
+  const { module } = currentConfig.top;
+  
+  const Component = MODULE_COMPONENTS[module];
 
-  // 2. 这里的逻辑同步修改为 sessions.length
-  if (sessions.length === 0) {
+  if (!Component) {
     return (
       <div className="h-full flex items-center px-4 text-sm text-muted-foreground">
-        欢迎使用 Lazy Terminal
+        未配置模块
       </div>
     );
   }
 
   return (
     <div className="h-full">
-      <TabBar />
+      <Component />
     </div>
   );
 }

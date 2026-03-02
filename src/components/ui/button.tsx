@@ -1,8 +1,8 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot"; // 导入 Slot
 import { type VariantProps } from "class-variance-authority";
-import { cn } from "@/components/ui/utils";
-import { buttonVariants } from "./button-variants"; // 导入刚才拆分的变量
+import { cn } from "@/lib/utils";
+import { buttonVariants } from "@/components/ui/button-variants"; // 导入刚才拆分的变量
 
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,

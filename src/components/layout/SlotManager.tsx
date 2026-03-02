@@ -1,8 +1,8 @@
 import { useSettingsStore } from "@/store/settings";
-import { LeftSlot } from "./LeftSlot";
-import { RightSlot } from "./RightSlot";
-import { TopSlot } from "./TopSlot";
-import { BottomSlot } from "./BottomSlot";
+import { LeftSlot } from "@/components/layout/LeftSlot";
+import { RightSlot } from "@/components/layout/RightSlot";
+import { TopSlot } from "@/components/layout/TopSlot";
+import { BottomSlot } from "@/components/layout/BottomSlot";
 
 export function SlotManager() {
   const {
@@ -15,6 +15,7 @@ export function SlotManager() {
     topPanelCollapsed,
     bottomPanelCollapsed,
   } = useSettingsStore();
+  
 
   return (
     <>

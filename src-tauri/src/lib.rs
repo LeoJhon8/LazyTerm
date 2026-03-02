@@ -61,7 +61,7 @@ async fn create_terminal<R: Runtime>(
     }
 
     // 3. 优化工作目录处理
-    if let Some(mut path) = cwd {
+    if let Some(path) = cwd {
         if path.is_empty() || path == "/" || path == "\\" {
             // 如果路径无效，直接清空，让它使用系统默认路径
             // 或者手动指定为用户主目录
