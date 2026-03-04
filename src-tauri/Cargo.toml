@@ -8,8 +8,6 @@ repository = ""
 edition = "2021"
 rust-version = "1.77.2"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -18,9 +16,22 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5.4", features = [] }
 
 [dependencies]
-tauri = { version = "2.0.0", features = [] } # 或者 1.x，取决于你的版本
+# Tauri 核心
+tauri = { version = "2.0.0", features = [] } 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-portable-pty = "0.8" # 核心 PTY 处理
-uuid = { version = "1.0", features = ["v4"] } # 用于生成会话 ID
-tokio = { version = "1.0", features = ["full"] } # 异步任务
+
+# 本地 PTY 支持 (保留你原有的功能)
+portable-pty = "0.8" 
+
+# 异步 SSH 支持 (方案 B 核心)
+russh = "0.40"        # 异步 SSH 协议实现
+russh-keys = "0.40"   # SSH 密钥处理
+async-trait = "0.1"   # russh 必须的 trait 宏
+
+# 异步运行时与工具
+tokio = { version = "1.0", features = ["full"] } 
+uuid = { version = "1.0", features = ["v4"] }
+futures = "0.3"       # 提供 Stream 处理工具
+
+# 移除 ssh2 = "0.9" 因为它会导致 UI 线程阻塞

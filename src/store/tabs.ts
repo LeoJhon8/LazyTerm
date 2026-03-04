@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { ITerminalConnector } from "@/types/terminal";
+import type { ITerminalConnector, SSHConfig } from "@/types/terminal";
 import { LocalConnector } from "@/connectors/LocalConnector";
+import { SshConnector } from "@/connectors/SshConnector";
 
 /**
  * 终端会话配置接口
@@ -11,6 +12,7 @@ export interface SessionConfig {
   shell?: string;
   host?: string;
   port?: number;
+  sshConfig?: SSHConfig;
 }
 
 /**
@@ -45,6 +47,8 @@ interface TabsState {
   closeOtherSessions: (id: string) => void;
   /** 关闭所有会话 */
   closeAllSessions: () => void;
+  /** 获取所有会话的连接器 */
+  getAllConnectors: () => ITerminalConnector[];
 }
 
 export const useTabsStore = create<TabsState>()(
@@ -69,12 +73,16 @@ export const useTabsStore = create<TabsState>()(
             });
             break;
           case "ssh":
-            // TODO: 后续通过 Rust 实现 SSH 逻辑
-            throw new Error("SSH 连接器目前尚未在 Rust 后端实现");
+            // 使用 SSH 连接器
+            if (!sessionData.config?.sshConfig) {
+              throw new Error("SSH 配置不能为空");
+            }
+            connector = new SshConnector(sessionData.config.sshConfig);
+            break;
           case "telnet":
-            throw new Error("Telnet 连接器目前尚未在 Rust 后端实现");
+            throw new Error("Telnet 连接器目前尚未实现");
           default:
-            throw new Error(`不支持的连接类型: ${sessionData.type}`);
+            throw new Error(`不支持的连接类型：${sessionData.type}`);
         }
 
         const newSession: TerminalSession = {
@@ -158,6 +166,12 @@ export const useTabsStore = create<TabsState>()(
           sessions: [],
           activeSessionId: null,
         });
+      },
+
+      getAllConnectors: () => {
+        return get().sessions
+          .map(session => session.connector)
+          .filter((connector): connector is ITerminalConnector => connector !== undefined);
       },
     }),
     {

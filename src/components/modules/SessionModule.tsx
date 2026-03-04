@@ -4,11 +4,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Plus, FolderPlus, Server, Terminal } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
 import { homeDir } from '@tauri-apps/api/path';
-
+import { SshConnectDialog } from "@/components/dialogs/SshConnectDialog";
+import type { SSHConfig } from "@/types/terminal";
 
 export function SessionModule() {
   const { addSession } = useTabsStore();
   const [open, setOpen] = useState(false);
+  const [sshDialogOpen, setSshDialogOpen] = useState(false);
+
   const handleCreateLocalSession = async () => {
     const home = await homeDir();
     addSession({
@@ -16,6 +19,24 @@ export function SessionModule() {
       type: "local",
       cwd: home,
     });
+    setOpen(false);
+  };
+
+  const handleSshConnect = (config: SSHConfig) => {
+    const title = config.nickname || `${config.username}@${config.host}`;
+    
+    addSession({
+      title,
+      type: "ssh",
+      host: config.host,
+      config: {
+        host: config.host,
+        port: config.port,
+        sshConfig: config,
+      },
+    });
+    
+    setSshDialogOpen(false);
     setOpen(false);
   };
 
@@ -43,9 +64,16 @@ export function SessionModule() {
                 <Terminal className="h-4 w-4 mr-2" />
                 本地终端
               </Button>
-              <Button variant="outline" className="justify-start" disabled>
+              <Button 
+                variant="outline" 
+                className="justify-start"
+                onClick={() => {
+                  setOpen(false);
+                  setSshDialogOpen(true);
+                }}
+              >
                 <Server className="h-4 w-4 mr-2" />
-                SSH连接 (开发中)
+                SSH 连接
               </Button>
               <Button variant="outline" className="justify-start" disabled>
                 <FolderPlus className="h-4 w-4 mr-2" />
@@ -62,6 +90,13 @@ export function SessionModule() {
           点击上方按钮创建新会话
         </div>
       </div>
+
+      {/* SSH 连接对话框 */}
+      <SshConnectDialog
+        open={sshDialogOpen}
+        onOpenChange={setSshDialogOpen}
+        onConnect={handleSshConnect}
+      />
     </div>
   );
 }

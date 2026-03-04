@@ -1,86 +1,187 @@
 import { useEffect, useRef } from "react";
 import { useTabsStore } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
+import { useHistoryStore } from "@/store/history";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 
 export function TerminalView() {
   const { activeSessionId, sessions } = useTabsStore();
+  const { addCommand: addHistoryCommand } = useHistoryStore();
   
   // 优化：从 Hook 中解构设置，这样设置改变时 UI 会自动刷新
-  const { 
-    fontSize, fontFamily, theme,
-    leftPanelCollapsed, leftPanelWidth,
-    rightPanelCollapsed, rightPanelWidth,
-    topPanelCollapsed, topPanelHeight,
-    bottomPanelCollapsed, bottomPanelHeight
-  } = useSettingsStore();
+  const { fontSize, fontFamily, theme } = useSettingsStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const commandBufferRef = useRef<string>(""); // 缓存当前输入的命令
+  const lastCommandRef = useRef<string>(""); // 记录上一条命令，用于去重
 
   const activeSession = sessions.find(session => session.id === activeSessionId);
 
   // 初始化终端
   useEffect(() => {
-    // 1. 增加对 connector 的检查
-    if (!containerRef.current || !activeSession || !activeSession.connector) return;
-
-    const terminal = new Terminal({
-      fontFamily: fontFamily || "monospace",
-      fontSize: fontSize || 14,
-      theme: {
-        background: theme === "light" ? "#ffffff" : "#1e1e1e",
-        foreground: theme === "light" ? "#333333" : "#cccccc",
-      },
-      cursorBlink: true,
-      scrollback: 10000,
-      tabStopWidth: 4,
-    });
-
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
+    console.log("[TerminalView] useEffect triggered for session:", activeSessionId);
     
-    try {
-      const webglAddon = new WebglAddon();
-      terminal.loadAddon(webglAddon);
-    } catch (error) {
-      console.warn("WebGL addon failed to load:", error);
+    // 1. 基础检查
+    if (!containerRef.current || !activeSession || !activeSession.connector) {
+      console.log("[TerminalView] Waiting for valid session and connector", {
+        hasContainer: !!containerRef.current,
+        hasSession: !!activeSession,
+        hasConnector: !!activeSession?.connector,
+        sessionId: activeSession?.connector ? "exists" : "missing"
+      });
+      return;
     }
 
-    terminal.open(containerRef.current);
-    
-    // 确保 DOM 计算完成后再 fit
-    requestAnimationFrame(() => {
-      fitAddon.fit();
-    });
+    // 清理之前的终端实例（如果有）
+    if (terminalRef.current) {
+      console.log("[TerminalView] Disposing previous terminal instance");
+      terminalRef.current.dispose();
+      terminalRef.current = null;
+    }
+    if (fitAddonRef.current) {
+      fitAddonRef.current = null;
+    }
 
-    terminalRef.current = terminal;
-    fitAddonRef.current = fitAddon;
-
-    // 2. 此时 connector 已经被上面的 if 保证一定存在
     const { connector } = activeSession;
-    
-    // 终端输入 -> 发送到连接器
-    const { dispose: disposeDataListener } = terminal.onData((data) => {
-      connector.write(data);
-    });
+    let isMounted = true;
+    let cleanupFn: (() => void) | null = null;
 
-    // 连接器数据 -> 写入终端
-    // 注意：如果是生产环境，建议这里也返回一个 dispose 函数用于清理监听
-    connector.onData((data) => {
-      terminal.write(data);
-    });
+    console.log("[TerminalView] Starting terminal initialization");
+
+    // 2. 等待 connector 的 sessionId 就绪
+    const waitForSessionId = async () => {
+      // 轮询等待 sessionId 可用，没有超时限制，直到连接建立
+      while (!connector.isConnected && isMounted) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      if (!isMounted || !connector.isConnected) {
+        console.log("[TerminalView] Connector not ready or unmounted");
+        return;
+      }
+
+      console.log("[TerminalView] Session ID ready, initializing terminal");
+
+      const terminal = new Terminal({
+        fontFamily: fontFamily || "monospace",
+        fontSize: fontSize || 14,
+        theme: {
+          background: theme === "light" ? "#ffffff" : "#1e1e1e",
+          foreground: theme === "light" ? "#333333" : "#cccccc",
+        },
+        cursorBlink: true,
+        scrollback: 10000,
+        tabStopWidth: 4,
+      });
+
+      const fitAddon = new FitAddon();
+      terminal.loadAddon(fitAddon);
+      
+      try {
+        const webglAddon = new WebglAddon();
+        terminal.loadAddon(webglAddon);
+      } catch (error) {
+        console.warn("WebGL addon failed to load:", error);
+      }
+
+      // 确保 container 存在且可见
+      if (!containerRef.current) {
+        console.error("[TerminalView] Container ref is null after waiting");
+        return;
+      }
+
+      // 检查容器尺寸
+      const rect = containerRef.current.getBoundingClientRect();
+      console.log("[TerminalView] Container dimensions:", rect.width, "x", rect.height);
+
+      terminal.open(containerRef.current);
+      
+      // 确保 DOM 计算完成后再 fit
+      requestAnimationFrame(() => {
+        fitAddon.fit();
+      });
+
+      // 使用 ResizeObserver 监听容器尺寸变化
+      const resizeObserver = new ResizeObserver(() => {
+        if (fitAddonRef.current && terminalRef.current) {
+          fitAddonRef.current.fit();
+        }
+      });
+      resizeObserver.observe(containerRef.current);
+
+      terminalRef.current = terminal;
+      fitAddonRef.current = fitAddon;
+
+      // 记录历史命令：监听用户的输入
+      let currentInput = "";
+      const { dispose: disposeDataListener } = terminal.onData((data) => {
+        connector.write(data);
+        
+        // 调试：查看接收到的数据
+        console.log("[TerminalView] onData received:", JSON.stringify(data));
+        
+        // 解析用户输入，记录命令历史
+        if (data === "\r" || data === "\n") {
+          // 回车键或换行键，发送命令
+          const trimmedInput = currentInput.trim();
+          console.log("[TerminalView] Command entered:", trimmedInput);
+          if (trimmedInput && trimmedInput !== lastCommandRef.current) {
+            console.log("[TerminalView] Adding to history:", trimmedInput);
+            addHistoryCommand(trimmedInput);
+            lastCommandRef.current = trimmedInput;
+          }
+          currentInput = "";
+        } else if (data === "\u007F" || data === "\b" || data === "\x7f") {
+          // 退格键
+          currentInput = currentInput.slice(0, -1);
+        } else if (data.startsWith("\x1b[")) {
+          // ANSI 转义序列，忽略（如光标移动、颜色等）
+          console.log("[TerminalView] Ignored ANSI escape:", JSON.stringify(data));
+        } else if (data.startsWith("\x1b")) {
+          // 其他转义序列，忽略
+          console.log("[TerminalView] Ignored escape:", JSON.stringify(data));
+        } else {
+          // 可打印字符，添加到输入缓冲区
+          currentInput += data;
+        }
+      });
+
+      // 连接器数据 -> 写入终端
+      try {
+        await connector.onData((data) => {
+          console.log("[TerminalView] Received data from connector:", data.length, "bytes");
+          console.log("[TerminalView] Data preview:", data.substring(0, 100));
+          terminal.write(data);
+        });
+        console.log("[TerminalView] Data listener registered successfully");
+      } catch (error) {
+        console.error("Failed to setup data listener:", error);
+      }
+
+      cleanupFn = () => {
+        console.log("[TerminalView] Cleanup for session:", activeSessionId);
+        disposeDataListener();
+        resizeObserver.disconnect();
+        terminal.dispose();
+        terminalRef.current = null;
+        fitAddonRef.current = null;
+      };
+    };
+
+    waitForSessionId();
 
     return () => {
-      disposeDataListener();
-      terminal.dispose();
-      terminalRef.current = null;
-      fitAddonRef.current = null;
+      console.log("[TerminalView] useEffect cleanup for session:", activeSessionId);
+      isMounted = false;
+      if (cleanupFn) {
+        cleanupFn();
+      }
     };
-  }, [activeSessionId, fontFamily, fontSize, theme, activeSession]); // 增加 activeSession 依赖
+  }, [activeSessionId, fontFamily, fontSize, theme, addHistoryCommand]);
 
   // 适配终端大小
   useEffect(() => {
@@ -132,15 +233,21 @@ export function TerminalView() {
 
   return (
     <main
-      className="absolute inset-0 transition-all duration-200"
+      id="slot-mid-main"
+      className="relative h-full w-full overflow-hidden"
       style={{
-        marginLeft: leftPanelCollapsed ? 0 : leftPanelWidth,
-        marginRight: rightPanelCollapsed ? 0 : rightPanelWidth,
-        marginTop: topPanelCollapsed ? 0 : topPanelHeight,
-        marginBottom: bottomPanelCollapsed ? 0 : bottomPanelHeight,
+        gridArea: "mid-main",
+        backgroundColor: theme === "light" ? "#ffffff" : "#1e1e1e",
       }}
     >
-      <div ref={containerRef} className="h-full w-full bg-[#1e1e1e]" />
+      <div 
+        ref={containerRef} 
+        className="h-full w-full"
+        style={{
+          minHeight: "100%",
+          minWidth: "100%",
+        }}
+      />
     </main>
   );
 }

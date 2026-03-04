@@ -31,9 +31,30 @@ export class LocalConnector implements ITerminalConnector {
 
   // 修改 onData 以监听来自 Rust 的事件
   async onData(handler: (data: string) => void): Promise<void> {
-    if (!this.sessionId) return;
+    // 等待 sessionId 可用
+    if (!this.sessionId) {
+      // 轮询等待 sessionId 被设置（open() 完成后）
+      await new Promise<void>((resolve) => {
+        const checkInterval = setInterval(() => {
+          if (this.sessionId) {
+            clearInterval(checkInterval);
+            resolve();
+          }
+        }, 10);
+        
+        // 5 秒超时
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          resolve();
+        }, 5000);
+      });
+      
+      if (!this.sessionId) {
+        throw new Error("Session ID not available after timeout");
+      }
+    }
 
-    // 2. 监听属于这个 sessionId 的数据事件
+    // 监听属于这个 sessionId 的数据事件
     this.unlistenFn = await listen<string>(`terminal-data-${this.sessionId}`, (event) => {
       handler(event.payload);
     });

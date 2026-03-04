@@ -22,10 +22,11 @@ export function SlotManager() {
       {/* 左侧插槽 */}
       <aside
         id="slot-left"
-        className="absolute left-0 top-0 bottom-0 z-10 bg-background border-r border-border transition-all duration-300"
+        className="bg-background border-r border-border transition-all duration-300 overflow-hidden"
         style={{
+          gridArea: "left",
+          gridRow: "1 / 4",
           width: leftPanelCollapsed ? "0px" : `${leftPanelWidth}px`,
-          visibility: leftPanelCollapsed ? "hidden" : "visible",
         }}
       >
         <LeftSlot />
@@ -34,12 +35,10 @@ export function SlotManager() {
       {/* 顶部插槽 */}
       <header
         id="slot-mid-top"
-        className="absolute left-0 right-0 top-0 z-10 bg-background border-b border-border transition-all duration-300"
+        className="bg-background border-b border-border transition-all duration-300 overflow-hidden"
         style={{
+          gridArea: "mid-top",
           height: topPanelCollapsed ? "0px" : `${topPanelHeight}px`,
-          visibility: topPanelCollapsed ? "hidden" : "visible",
-          marginLeft: leftPanelCollapsed ? "0px" : `${leftPanelWidth}px`,
-          marginRight: rightPanelCollapsed ? "0px" : `${rightPanelWidth}px`,
         }}
       >
         <TopSlot />
@@ -48,12 +47,10 @@ export function SlotManager() {
       {/* 底部插槽 */}
       <footer
         id="slot-mid-bottom"
-        className="absolute left-0 right-0 bottom-0 z-10 bg-background border-t border-border transition-all duration-300"
+        className="bg-background border-t border-border transition-all duration-300 overflow-hidden"
         style={{
+          gridArea: "mid-bottom",
           height: bottomPanelCollapsed ? "0px" : `${bottomPanelHeight}px`,
-          visibility: bottomPanelCollapsed ? "hidden" : "visible",
-          marginLeft: leftPanelCollapsed ? "0px" : `${leftPanelWidth}px`,
-          marginRight: rightPanelCollapsed ? "0px" : `${rightPanelWidth}px`,
         }}
       >
         <BottomSlot />
@@ -62,10 +59,11 @@ export function SlotManager() {
       {/* 右侧插槽 */}
       <aside
         id="slot-right"
-        className="absolute right-0 top-0 bottom-0 z-10 bg-background border-l border-border transition-all duration-300"
+        className="bg-background border-l border-border transition-all duration-300 overflow-hidden"
         style={{
+          gridArea: "right",
+          gridRow: "1 / 4",
           width: rightPanelCollapsed ? "0px" : `${rightPanelWidth}px`,
-          visibility: rightPanelCollapsed ? "hidden" : "visible",
         }}
       >
         <RightSlot />
