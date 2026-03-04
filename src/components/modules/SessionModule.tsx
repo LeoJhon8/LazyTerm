@@ -1,16 +1,97 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, FolderPlus, Server, Terminal } from "lucide-react";
+import { Plus, FolderPlus, Server, Terminal, GripVertical } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
 import { homeDir } from '@tauri-apps/api/path';
 import { SshConnectDialog } from "@/components/dialogs/SshConnectDialog";
 import type { SSHConfig } from "@/types/terminal";
+import { useSshProfilesStore, type SSHProfile } from "@/store/ssh-profiles";
+import {
+  DndContext,
+  closestCenter,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  KeyboardSensor,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+// 列表项组件，用于显示单条 SSH 配置并支持拖拽句柄
+interface ProfileListItemProps {
+  profile: SSHProfile;
+  onConnect: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+function ProfileListItem({ profile, onConnect, onEdit, onDelete }: ProfileListItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: profile.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center justify-between p-2 bg-white rounded shadow-sm hover:bg-gray-50"
+    >
+      <div className="flex items-center gap-2 flex-1 cursor-pointer" onClick={onConnect}>
+        <span
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </span>
+        <span className="truncate">
+          {profile.config.nickname || `${profile.config.username}@${profile.config.host}`}
+        </span>
+      </div>
+      <div className="flex items-center gap-1">
+        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onEdit(); }}>
+          编辑
+        </Button>
+        <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+          删除
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export function SessionModule() {
   const { addSession } = useTabsStore();
   const [open, setOpen] = useState(false);
   const [sshDialogOpen, setSshDialogOpen] = useState(false);
+  const {
+    profiles,
+    addProfile,
+    updateProfile,
+    removeProfile,
+    reorderProfiles,
+  } = useSshProfilesStore();
+
+  const [editingProfile, setEditingProfile] = useState<SSHProfile | null>(null);
 
   const handleCreateLocalSession = async () => {
     const home = await homeDir();
@@ -22,9 +103,21 @@ export function SessionModule() {
     setOpen(false);
   };
 
-  const handleSshConnect = (config: SSHConfig) => {
+  // 保存新配置或更新已有配置
+  const handleSaveProfile = (config: SSHConfig) => {
+    if (editingProfile) {
+      updateProfile(editingProfile.id, config);
+    } else {
+      addProfile(config);
+    }
+    setEditingProfile(null);
+    setSshDialogOpen(false);
+    setOpen(false);
+  };
+
+  // 使用配置发起会话
+  const connectProfile = (config: SSHConfig) => {
     const title = config.nickname || `${config.username}@${config.host}`;
-    
     addSession({
       title,
       type: "ssh",
@@ -35,9 +128,27 @@ export function SessionModule() {
         sshConfig: config,
       },
     });
-    
-    setSshDialogOpen(false);
-    setOpen(false);
+  };
+
+  // dnd-kit 传感器配置
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: { active: { id: string | number }; over: { id: string | number } | null }) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const ids = profiles.map(p => p.id);
+      const oldIndex = ids.indexOf(active.id as string);
+      const newIndex = ids.indexOf(over.id as string);
+      const newOrder = arrayMove(ids, oldIndex, newIndex);
+      reorderProfiles(newOrder);
+    }
   };
 
   return (
@@ -85,17 +196,44 @@ export function SessionModule() {
       </div>
       
       <div className="flex-1 overflow-y-auto p-2">
-        <div className="text-sm text-muted-foreground text-center py-8">
-          暂无会话<br />
-          点击上方按钮创建新会话
-        </div>
+        {profiles.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-8">
+            暂无 SSH 配置<br />
+            请使用上方按钮添加
+          </div>
+        ) : (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={profiles.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-1">
+                {profiles
+                  .sort((a, b) => a.order - b.order)
+                  .map((p) => (
+                    <ProfileListItem
+                      key={p.id}
+                      profile={p}
+                      onConnect={() => connectProfile(p.config)}
+                      onEdit={() => {
+                        setEditingProfile(p);
+                        setSshDialogOpen(true);
+                      }}
+                      onDelete={() => removeProfile(p.id)}
+                    />
+                  ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        )}
       </div>
 
-      {/* SSH 连接对话框 */}
+      {/* SSH 配置对话框 */}
       <SshConnectDialog
         open={sshDialogOpen}
-        onOpenChange={setSshDialogOpen}
-        onConnect={handleSshConnect}
+        onOpenChange={(o) => {
+          setSshDialogOpen(o);
+          if (!o) setEditingProfile(null);
+        }}
+        onSave={handleSaveProfile}
+        initialConfig={editingProfile?.config}
       />
     </div>
   );
