@@ -13,9 +13,18 @@ export function TerminalView() {
   // 优化：从 Hook 中解构设置，这样设置改变时 UI 会自动刷新
   const { fontSize, fontFamily, theme } = useSettingsStore();
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  // each session gets its own container element
+  const containerMap = useRef(new Map<string, HTMLDivElement>());
+  // refs for current active terminal (aliases to map entry)
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  // store terminals by session id so they persist across tab switches
+  const terminalMap = useRef(new Map<string, {
+    terminal: Terminal;
+    fitAddon: FitAddon;
+    resizeObserver: ResizeObserver;
+    disposeData?: () => void;
+  }>());
   const commandBufferRef = useRef<string>(""); // 缓存当前输入的命令
   const lastCommandRef = useRef<string>(""); // 记录上一条命令，用于去重
 
@@ -26,9 +35,10 @@ export function TerminalView() {
     console.log("[TerminalView] useEffect triggered for session:", activeSessionId);
     
     // 1. 基础检查
-    if (!containerRef.current || !activeSession || !activeSession.connector) {
-      console.log("[TerminalView] Waiting for valid session and connector", {
-        hasContainer: !!containerRef.current,
+    const containerEl = containerMap.current.get(activeSessionId);
+    if (!containerEl || !activeSession || !activeSession.connector) {
+      console.log("[TerminalView] Waiting for valid session/container/connector", {
+        hasContainer: !!containerEl,
         hasSession: !!activeSession,
         hasConnector: !!activeSession?.connector,
         sessionId: activeSession?.connector ? "exists" : "missing"
@@ -36,14 +46,15 @@ export function TerminalView() {
       return;
     }
 
-    // 清理之前的终端实例（如果有）
-    if (terminalRef.current) {
-      console.log("[TerminalView] Disposing previous terminal instance");
-      terminalRef.current.dispose();
-      terminalRef.current = null;
-    }
-    if (fitAddonRef.current) {
-      fitAddonRef.current = null;
+    // no need to clear; each session has its own stable div
+
+    // 如果已经存在该 session 的 terminal，则直接复用
+    if (terminalMap.current.has(activeSessionId)) {
+      const { terminal, fitAddon } = terminalMap.current.get(activeSessionId)!;
+      terminalRef.current = terminal;
+      fitAddonRef.current = fitAddon;
+      console.log("[TerminalView] Reusing existing terminal for session", activeSessionId);
+      return;
     }
 
     const { connector } = activeSession;
@@ -88,17 +99,18 @@ export function TerminalView() {
         console.warn("WebGL addon failed to load:", error);
       }
 
-      // 确保 container 存在且可见
-      if (!containerRef.current) {
-        console.error("[TerminalView] Container ref is null after waiting");
+      // 获取对应的 container 元素
+      const containerEl = containerMap.current.get(activeSessionId);
+      if (!containerEl) {
+        console.error("[TerminalView] no container element for session", activeSessionId);
         return;
       }
 
       // 检查容器尺寸
-      const rect = containerRef.current.getBoundingClientRect();
+      const rect = containerEl.getBoundingClientRect();
       console.log("[TerminalView] Container dimensions:", rect.width, "x", rect.height);
 
-      terminal.open(containerRef.current);
+      terminal.open(containerEl);
       
       // 确保 DOM 计算完成后再 fit
       requestAnimationFrame(() => {
@@ -107,48 +119,54 @@ export function TerminalView() {
 
       // 使用 ResizeObserver 监听容器尺寸变化
       const resizeObserver = new ResizeObserver(() => {
+        // check current phi from ref (should be set)
         if (fitAddonRef.current && terminalRef.current) {
           fitAddonRef.current.fit();
+        } else {
+          // fallback: look up map entry
+          const entry = terminalMap.current.get(activeSessionId);
+          if (entry) {
+            entry.fitAddon.fit();
+          }
         }
       });
-      resizeObserver.observe(containerRef.current);
+      resizeObserver.observe(containerEl);
 
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;
 
-      // 记录历史命令：监听用户的输入
-      let currentInput = "";
+      // 记录历史命令：监听用户回车时从终端缓冲读取整行
       const { dispose: disposeDataListener } = terminal.onData((data) => {
         connector.write(data);
-        
-        // 调试：查看接收到的数据
-        console.log("[TerminalView] onData received:", JSON.stringify(data));
-        
-        // 解析用户输入，记录命令历史
-        if (data === "\r" || data === "\n") {
-          // 回车键或换行键，发送命令
-          const trimmedInput = currentInput.trim();
-          console.log("[TerminalView] Command entered:", trimmedInput);
-          if (trimmedInput && trimmedInput !== lastCommandRef.current) {
-            console.log("[TerminalView] Adding to history:", trimmedInput);
-            addHistoryCommand(trimmedInput);
-            lastCommandRef.current = trimmedInput;
+      });
+      // onKey 用于捕获回车按键
+      const { dispose: disposeKeyListener } = terminal.onKey(({ key, domEvent }) => {
+        if (domEvent.key === "Enter") {
+          // 读取当前光标所在行文本
+          const buffer = terminal.buffer.active;
+          const cursorY = buffer.cursorY;
+          const line = buffer.getLine(cursorY);
+          if (line) {
+            let text = line.translateToString(true).trimEnd();
+            // remove leading prompt containing user@host or ending with $/#
+            const lastPrompt = Math.max(text.lastIndexOf('$'), text.lastIndexOf('#'));
+            if (lastPrompt !== -1) {
+              text = text.slice(lastPrompt + 1).trim();
+            }
+            if (text && text !== lastCommandRef.current) {
+              addHistoryCommand(text);
+              lastCommandRef.current = text;
+            }
           }
-          currentInput = "";
-        } else if (data === "\u007F" || data === "\b" || data === "\x7f") {
-          // 退格键
-          currentInput = currentInput.slice(0, -1);
-        } else if (data.startsWith("\x1b[")) {
-          // ANSI 转义序列，忽略（如光标移动、颜色等）
-          console.log("[TerminalView] Ignored ANSI escape:", JSON.stringify(data));
-        } else if (data.startsWith("\x1b")) {
-          // 其他转义序列，忽略
-          console.log("[TerminalView] Ignored escape:", JSON.stringify(data));
-        } else {
-          // 可打印字符，添加到输入缓冲区
-          currentInput += data;
         }
       });
+      // update cleanupFn to dispose both
+      cleanupFn = () => {
+        console.log("[TerminalView] Setup cleanup listener for session:", activeSessionId);
+        disposeDataListener();
+        disposeKeyListener();
+        // resize observer left attached; store for future cleanup if needed
+      };
 
       // 连接器数据 -> 写入终端
       try {
@@ -163,13 +181,19 @@ export function TerminalView() {
       }
 
       cleanupFn = () => {
-        console.log("[TerminalView] Cleanup for session:", activeSessionId);
+        console.log("[TerminalView] Setup cleanup listener for session:", activeSessionId);
+        // keep terminal alive but remove data listener when session closed manually
         disposeDataListener();
-        resizeObserver.disconnect();
-        terminal.dispose();
-        terminalRef.current = null;
-        fitAddonRef.current = null;
+        // resize observer left attached; store for future cleanup if needed
       };
+
+      // record the terminal in map so switching back reuses it
+      terminalMap.current.set(activeSessionId, {
+        terminal,
+        fitAddon,
+        resizeObserver,
+        disposeData: cleanupFn,
+      });
     };
 
     waitForSessionId();
@@ -177,11 +201,28 @@ export function TerminalView() {
     return () => {
       console.log("[TerminalView] useEffect cleanup for session:", activeSessionId);
       isMounted = false;
+      // do not dispose terminal on tab switch; leave in map
       if (cleanupFn) {
         cleanupFn();
       }
     };
   }, [activeSessionId, fontFamily, fontSize, theme, addHistoryCommand]);
+
+  // 清理已经被删除的会话终端实例
+  useEffect(() => {
+    const currentIds = new Set(sessions.map(s => s.id));
+    for (const id of Array.from(terminalMap.current.keys())) {
+      if (!currentIds.has(id)) {
+        const entry = terminalMap.current.get(id);
+        if (entry) {
+          console.log("[TerminalView] disposing terminal for removed session", id);
+          entry.terminal.dispose();
+          entry.resizeObserver.disconnect();
+          terminalMap.current.delete(id);
+        }
+      }
+    }
+  }, [sessions]);
 
   // 适配终端大小
   useEffect(() => {
@@ -240,14 +281,19 @@ export function TerminalView() {
         backgroundColor: theme === "light" ? "#ffffff" : "#1e1e1e",
       }}
     >
-      <div 
-        ref={containerRef} 
-        className="h-full w-full"
-        style={{
-          minHeight: "100%",
-          minWidth: "100%",
-        }}
-      />
+      {sessions.map((s) => (
+        <div
+          key={s.id}
+          ref={(el) => {
+            if (el) containerMap.current.set(s.id, el);
+          }}
+          className={
+            s.id === activeSessionId
+              ? "h-full w-full absolute inset-0"
+              : "hidden"
+          }
+        />
+      ))}
     </main>
   );
 }

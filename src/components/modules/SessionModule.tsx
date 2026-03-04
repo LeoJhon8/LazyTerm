@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, FolderPlus, Server, Terminal, GripVertical } from "lucide-react";
+import { Plus, FolderPlus, Server, Terminal, GripVertical, Pencil, Trash2 } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
 import { homeDir } from '@tauri-apps/api/path';
 import { SshConnectDialog } from "@/components/dialogs/SshConnectDialog";
@@ -53,26 +53,39 @@ function ProfileListItem({ profile, onConnect, onEdit, onDelete }: ProfileListIt
       ref={setNodeRef}
       style={style}
       className="flex items-center justify-between p-2 bg-white rounded shadow-sm hover:bg-gray-50"
+      title={profile.config.nickname || `${profile.config.username}@${profile.config.host}`}
     >
-      <div className="flex items-center gap-2 flex-1 cursor-pointer" onClick={onConnect}>
+      <div className="flex items-center gap-2 flex-1 cursor-pointer min-w-0" onClick={onConnect}>
         <span
           {...attributes}
           {...listeners}
           className="cursor-grab active:cursor-grabbing"
           onClick={(e) => e.stopPropagation()}
         >
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
+          <GripVertical className="h-3 w-3 text-muted-foreground" />
         </span>
-        <span className="truncate">
+        <span className="truncate text-xs">
           {profile.config.nickname || `${profile.config.username}@${profile.config.host}`}
         </span>
       </div>
-      <div className="flex items-center gap-1">
-        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onEdit(); }}>
-          编辑
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0 hover:bg-accent hover:text-accent-foreground"
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          title="编辑配置"
+        >
+          <Pencil className="h-3 w-3" />
         </Button>
-        <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
-          删除
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0 hover:bg-destructive hover:text-destructive-foreground"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          title="删除配置"
+        >
+          <Trash2 className="h-3 w-3" />
         </Button>
       </div>
     </div>
