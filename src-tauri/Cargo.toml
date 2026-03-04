@@ -25,8 +25,9 @@ serde_json = "1.0"
 portable-pty = "0.8" 
 
 # 异步 SSH 支持 (方案 B 核心)
-russh = "0.40"        # 异步 SSH 协议实现
-russh-keys = "0.40"   # SSH 密钥处理
+russh = "0.45"        # 异步 SSH 协议实现
+russh-keys = { version = "0.45", features = ["openssl"] }
+openssl = { version = "0.10", features = ["vendored"] }
 async-trait = "0.1"   # russh 必须的 trait 宏
 
 # 异步运行时与工具

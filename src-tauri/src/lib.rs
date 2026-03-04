@@ -13,32 +13,31 @@ use uuid::Uuid;
 
 // --- 数据结构定义 ---
 
-/// SSH 内部控制消息，用于从 Tauri 指令向后台任务发送指令
+/// 用于控制 SSH 后台任务的内部消息
 enum SshControlMsg {
     SendData(Vec<u8>),
     Resize(u32, u32),
     Close,
 }
 
-/// 本地 PTY 会话结构
+/// 本地终端会话管理
 struct LocalTerminalSession {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
 }
 
-/// SSH 会话结构
+/// SSH 终端会话管理
 struct SshTerminalSession {
-    // 存储发送器，用于向运行中的 SSH 任务发送数据或调整大小
     control_tx: mpsc::UnboundedSender<SshControlMsg>,
 }
 
-/// 全局应用状态
+/// 全局应用状态，存储所有活动会话
 struct AppState {
     local_sessions: Arc<StdMutex<HashMap<String, LocalTerminalSession>>>,
     ssh_sessions: Arc<TokioMutex<HashMap<String, SshTerminalSession>>>,
 }
 
-// --- Russh 客户端处理 ---
+// --- Russh 客户端回调处理 ---
 
 #[derive(Clone)]
 struct Client;
@@ -47,16 +46,17 @@ struct Client;
 impl client::Handler for Client {
     type Error = russh::Error;
 
-    // 适配 russh 0.40 的 check_server_key 签名
+    /// 适配 russh 0.45 的服务器公钥检查逻辑
     async fn check_server_key(
-        self,
+        &mut self,
         _server_public_key: &key::PublicKey,
-    ) -> Result<(Self, bool), Self::Error> {
-        Ok((self, true))
+    ) -> Result<bool, Self::Error> {
+        // 在生产环境建议对比已知指纹，此处默认允许
+        Ok(true)
     }
 }
 
-/// SSH 连接配置
+/// 前端传入的 SSH 配置
 #[derive(serde::Deserialize, Debug)]
 pub struct SshConnectConfig {
     pub host: String,
@@ -64,11 +64,24 @@ pub struct SshConnectConfig {
     pub username: String,
     pub password: Option<String>,
     pub private_key_path: Option<String>,
+    pub private_key_passphrase: Option<String>, // 如果私钥有密码
+}
+
+// --- 私钥解析工具函数 ---
+
+/// 核心功能：使用 russh-keys 解析多种格式的私钥
+fn load_ssh_key(path: &str, passphrase: Option<String>) -> Result<key::KeyPair, String> {
+    let key_content = std::fs::read_to_string(path)
+        .map_err(|e| format!("无法读取密钥文件: {}", e))?;
+
+    // decode_secret_key 支持: OpenSSH, PKCS#1, PKCS#8 以及多种加密算法
+    russh_keys::decode_secret_key(&key_content, passphrase.as_deref())
+        .map_err(|e| format!("私钥解析失败: {:?}. 请检查格式或密码。", e))
 }
 
 // --- Tauri 指令实现 ---
 
-/// 1. 创建本地终端 (Portable-PTY)
+/// 创建本地终端 (Portable-PTY)
 #[tauri::command]
 async fn create_terminal<R: Runtime>(
     app: AppHandle<R>,
@@ -98,9 +111,6 @@ async fn create_terminal<R: Runtime>(
     if let Some(path) = cwd {
         cmd.cwd(path);
     }
-    for (key, val) in std::env::vars() {
-        cmd.env(key, val);
-    }
 
     let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
@@ -116,17 +126,19 @@ async fn create_terminal<R: Runtime>(
         while let Ok(n) = reader.read(&mut buffer) {
             if n == 0 { break; }
             let data = String::from_utf8_lossy(&buffer[..n]).to_string();
-            if app.emit(&event_name, data).is_err() { break; }
+            let _ = app.emit(&event_name, data);
         }
     });
 
-    let mut sessions = state.local_sessions.lock().unwrap();
-    sessions.insert(session_id.clone(), LocalTerminalSession { master, writer });
+    state.local_sessions.lock().unwrap().insert(
+        session_id.clone(),
+        LocalTerminalSession { master, writer },
+    );
 
     Ok(session_id)
 }
 
-/// 2. 创建 SSH 终端 (Russh 异步模式)
+/// 创建 SSH 终端 (异步全格式支持)
 #[tauri::command]
 async fn create_ssh_session<R: Runtime>(
     app: AppHandle<R>,
@@ -137,26 +149,38 @@ async fn create_ssh_session<R: Runtime>(
     let ssh_config = Arc::new(client::Config::default());
     let addr = format!("{}:{}", config.host, config.port);
 
-    // 建立连接
+    // 1. 建立连接
     let mut handle = client::connect(ssh_config, addr, Client)
         .await
-        .map_err(|e| format!("连接失败: {:?}", e))?;
+        .map_err(|e| format!("网络连接失败: {:?}", e))?;
 
-    // 身份认证
-    let auth_success = if let Some(key_path) = config.private_key_path {
-        let key_pair = russh_keys::load_secret_key(key_path, None).map_err(|e| e.to_string())?;
-        handle.authenticate_publickey(config.username, Arc::new(key_pair)).await.map_err(|e| e.to_string())?
-    } else if let Some(password) = config.password {
-        handle.authenticate_password(config.username, password).await.map_err(|e| e.to_string())?
-    } else {
-        return Err("缺少密码或私钥".to_string());
-    };
+    // 2. 身份认证流程
+    let mut authenticated = false;
 
-    if !auth_success {
-        return Err("SSH 认证失败".to_string());
+    // 优先尝试私钥认证
+    if let Some(key_path) = config.private_key_path {
+        let key_pair = load_ssh_key(&key_path, config.private_key_passphrase)?;
+        authenticated = handle
+            .authenticate_publickey(config.username.clone(), Arc::new(key_pair))
+            .await
+            .map_err(|e| format!("私钥认证异常: {:?}", e))?;
     }
 
-    // 打开会话和 PTY
+    // 如果私钥失败，尝试密码认证
+    if !authenticated {
+        if let Some(password) = config.password {
+            authenticated = handle
+                .authenticate_password(config.username, password)
+                .await
+                .map_err(|e| format!("密码认证异常: {:?}", e))?;
+        }
+    }
+
+    if !authenticated {
+        return Err("SSH 认证失败：密钥或密码错误".to_string());
+    }
+
+    // 3. 打开 Channel 并请求 PTY
     let mut channel = handle.channel_open_session().await.map_err(|e| e.to_string())?;
     channel.request_pty(true, "xterm-256color", 80, 24, 0, 0, &[]).await.map_err(|e| e.to_string())?;
     channel.request_shell(true).await.map_err(|e| e.to_string())?;
@@ -164,49 +188,42 @@ async fn create_ssh_session<R: Runtime>(
     let (control_tx, mut control_rx) = mpsc::unbounded_channel::<SshControlMsg>();
     let session_id_clone = session_id.clone();
 
-    // 核心后台循环：处理数据读取与指令写入
+    // 4. 后台任务：处理 SSH 双向数据流
     tokio::spawn(async move {
         let event_name = format!("terminal-data-{}", session_id_clone);
         loop {
             tokio::select! {
-                // 监听服务器传回的数据
-                res = channel.wait() => {
-                    match res {
+                // 读取远程服务器输出
+                msg = channel.wait() => {
+                    match msg {
                         Some(russh::ChannelMsg::Data { data }) => {
-                            let text = String::from_utf8_lossy(&data).to_string();
-                            let _ = app.emit(&event_name, text);
+                            let _ = app.emit(&event_name, String::from_utf8_lossy(&data).to_string());
                         }
                         Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) | None => break,
                         _ => {}
                     }
                 }
-                // 监听来自 Tauri 指令的控制请求
+                // 处理本地控制请求
                 Some(ctrl) = control_rx.recv() => {
                     match ctrl {
-                        SshControlMsg::SendData(data) => {
-                            let _ = channel.data(&data[..]).await;
-                        }
-                        SshControlMsg::Resize(cols, rows) => {
-                            // 在 Channel 对象上直接调用 window_change，避免 Handle 的泛型推导错误
-                            let _ = channel.window_change(cols, rows, 0, 0).await;
-                        }
-                        SshControlMsg::Close => {
-                            let _ = channel.close().await;
-                            break;
-                        }
+                        SshControlMsg::SendData(data) => { let _ = channel.data(&data[..]).await; }
+                        SshControlMsg::Resize(cols, rows) => { let _ = channel.window_change(cols, rows, 0, 0).await; }
+                        SshControlMsg::Close => { let _ = channel.close().await; break; }
                     }
                 }
             }
         }
     });
 
-    let mut sessions = state.ssh_sessions.lock().await;
-    sessions.insert(session_id.clone(), SshTerminalSession { control_tx });
+    state.ssh_sessions.lock().await.insert(
+        session_id.clone(),
+        SshTerminalSession { control_tx },
+    );
 
     Ok(session_id)
 }
 
-// --- 数据交互指令 ---
+// --- 通用交互指令 ---
 
 #[tauri::command]
 fn write_to_terminal(state: State<'_, AppState>, session_id: String, data: String) -> Result<(), String> {
@@ -216,7 +233,7 @@ fn write_to_terminal(state: State<'_, AppState>, session_id: String, data: Strin
         session.writer.flush().map_err(|e| e.to_string())?;
         Ok(())
     } else {
-        Err("会话不存在".to_string())
+        Err("本地会话不存在".to_string())
     }
 }
 
@@ -227,7 +244,7 @@ async fn write_to_ssh_session(state: State<'_, AppState>, session_id: String, da
         session.control_tx.send(SshControlMsg::SendData(data.into_bytes())).map_err(|e| e.to_string())?;
         Ok(())
     } else {
-        Err("会话不存在".to_string())
+        Err("SSH会话不存在".to_string())
     }
 }
 
@@ -245,29 +262,25 @@ async fn resize_ssh_session(state: State<'_, AppState>, session_id: String, cols
     let sessions = state.ssh_sessions.lock().await;
     if let Some(session) = sessions.get(&session_id) {
         session.control_tx.send(SshControlMsg::Resize(cols as u32, rows as u32)).map_err(|e| e.to_string())?;
-        Ok(())
-    } else {
-        Err("会话不存在".to_string())
     }
+    Ok(())
 }
 
 #[tauri::command]
 fn close_terminal(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
-    let mut sessions = state.local_sessions.lock().unwrap();
-    sessions.remove(&session_id);
+    state.local_sessions.lock().unwrap().remove(&session_id);
     Ok(())
 }
 
 #[tauri::command]
 async fn close_ssh_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
-    let mut sessions = state.ssh_sessions.lock().await;
-    if let Some(session) = sessions.remove(&session_id) {
+    if let Some(session) = state.ssh_sessions.lock().await.remove(&session_id) {
         let _ = session.control_tx.send(SshControlMsg::Close);
     }
     Ok(())
 }
 
-// --- 入口函数 ---
+// --- 程序入口 ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
