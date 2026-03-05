@@ -67,7 +67,7 @@ function ThemeSettings({ theme, setTheme, fontSize, setFontSize }: any) {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <Label className="text-base font-semibold">全局字体大小</Label>
-            <span className="text-sm text-muted-foreground bg-primary/10 text-primary px-3 py-1 rounded-full font-mono">
+            <span className="text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-mono">
               {fontSize}px
             </span>
           </div>
