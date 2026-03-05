@@ -5,7 +5,7 @@ import { useHistoryStore } from "@/store/history";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager"; 
+import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalInstance {
@@ -18,7 +18,7 @@ interface TerminalInstance {
 export function TerminalView() {
   const { activeSessionId, sessions } = useTabsStore();
   const { addCommand: addHistoryCommand } = useHistoryStore();
-  const { fontSize, fontFamily, theme } = useSettingsStore();
+  const { fontSize, fontFamily, theme, setSettings } = useSettingsStore();
 
   const containerMap = useRef(new Map<string, HTMLDivElement>());
   const terminalMap = useRef(new Map<string, TerminalInstance>());
@@ -26,7 +26,7 @@ export function TerminalView() {
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
-  // --- 逻辑 1：处理终端的初始化 ---
+  // --- 逻辑 1：初始化终端实例 ---
   useEffect(() => {
     if (!activeSessionId || !activeSession || !activeSession.connector) return;
     if (terminalMap.current.has(activeSessionId)) return;
@@ -44,8 +44,8 @@ export function TerminalView() {
       if (!isMounted || !connector.isConnected) return;
 
       const term = new Terminal({
-        fontFamily: fontFamily || "monospace",
-        fontSize: fontSize || 14,
+        fontFamily: fontFamily,
+        fontSize: fontSize,
         theme: {
           background: theme === "light" ? "#ffffff" : "#1e1e1e",
           foreground: theme === "light" ? "#333333" : "#cccccc",
@@ -55,7 +55,6 @@ export function TerminalView() {
         },
         cursorBlink: true,
         cursorStyle: "bar",
-        cursorWidth: 2,
         scrollback: 10000,
         allowProposedApi: true,
       });
@@ -70,6 +69,30 @@ export function TerminalView() {
       }
 
       term.open(containerEl);
+
+      // --- 核心修复：强制拦截滚轮事件 ---
+      const handleWheel = (e: WheelEvent) => {
+        if (e.ctrlKey) {
+          // 1. 阻止浏览器默认行为（如缩放页面）
+          e.preventDefault(); 
+          // 2. 停止事件冒泡，防止触发父级滚动
+          e.stopPropagation();
+          // 3. 关键：停止立即传播，防止 xterm 内部逻辑收到此滚轮事件进行滚动
+          e.stopImmediatePropagation();
+
+          const currentSize = useSettingsStore.getState().fontSize;
+          const delta = e.deltaY > 0 ? -1 : 1;
+          const newSize = Math.max(6, Math.min(100, currentSize + delta));
+          
+          setSettings({ fontSize: newSize });
+        }
+      };
+
+      // 使用 capture: true 在捕获阶段拦截，并在 xterm 处理之前将其切断
+      containerEl.addEventListener("wheel", handleWheel, { 
+        passive: false, 
+        capture: true 
+      });
 
       const dataDisposable = term.onData((data) => {
         connector.write(data);
@@ -91,20 +114,16 @@ export function TerminalView() {
         }
       });
 
-      const unbindData = await connector.onData((data) => {
+      // 绑定输出 (由 connector.close() 统一清理)
+      await connector.onData((data) => {
         term.write(data);
       });
 
-      // 原生自动复制
       const selectionDisposable = term.onSelectionChange(async () => {
         if (term.hasSelection()) {
           const selection = term.getSelection();
           if (selection) {
-            try {
-              await writeText(selection);
-            } catch (e) {
-              console.error("Native copy failed", e);
-            }
+            try { await writeText(selection); } catch (e) { console.error(e); }
           }
         }
       });
@@ -123,10 +142,10 @@ export function TerminalView() {
         fitAddon,
         resizeObserver,
         dispose: () => {
+          containerEl.removeEventListener("wheel", handleWheel, { capture: true });
           dataDisposable.dispose();
           keyDisposable.dispose();
           selectionDisposable.dispose();
-          unbindData();
           resizeObserver.disconnect();
           term.dispose();
         },
@@ -140,19 +159,35 @@ export function TerminalView() {
 
     initTerminal();
     return () => { isMounted = false; };
-  }, [activeSessionId, activeSession, fontFamily, fontSize, theme, addHistoryCommand]);
+  }, [activeSessionId, activeSession, addHistoryCommand, setSettings]);
 
-  // --- 逻辑 2：处理 Tab 切换聚焦 ---
+  // --- 逻辑 2：响应设置实时变化 (热更新) ---
   useEffect(() => {
-    if (!activeSessionId) return;
-    const instance = terminalMap.current.get(activeSessionId);
-    if (instance) {
+    terminalMap.current.forEach((instance, id) => {
+      const { terminal, fitAddon } = instance;
+      
+      if (terminal.options.fontSize !== fontSize) terminal.options.fontSize = fontSize;
+      if (terminal.options.fontFamily !== fontFamily) terminal.options.fontFamily = fontFamily;
+      
+      terminal.options.theme = {
+        background: theme === "light" ? "#ffffff" : "#1e1e1e",
+        foreground: theme === "light" ? "#333333" : "#cccccc",
+        cursor: theme === "light" ? "#007acc" : "#528bff",
+        cursorAccent: theme === "light" ? "#ffffff" : "#1e1e1e",
+        selectionBackground: "rgba(82, 139, 255, 0.4)",
+      };
+
       requestAnimationFrame(() => {
-        instance.fitAddon.fit();
-        instance.terminal.focus();
+        fitAddon.fit();
+        if (id === activeSessionId) {
+          const dims = fitAddon.proposeDimensions();
+          if (dims && activeSession?.connector) {
+            activeSession.connector.resize(dims.cols, dims.rows);
+          }
+        }
       });
-    }
-  }, [activeSessionId]);
+    });
+  }, [fontSize, fontFamily, theme, activeSessionId, activeSession?.connector]);
 
   // --- 逻辑 3：清理会话 ---
   useEffect(() => {
@@ -165,7 +200,19 @@ export function TerminalView() {
     });
   }, [sessions]);
 
-  // --- 逻辑 4：窗口大小刷新 ---
+  // --- 逻辑 4：Tab 切换聚焦 ---
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const instance = terminalMap.current.get(activeSessionId);
+    if (instance) {
+      requestAnimationFrame(() => {
+        instance.fitAddon.fit();
+        instance.terminal.focus();
+      });
+    }
+  }, [activeSessionId]);
+
+  // --- 逻辑 5：窗口 Resize ---
   useEffect(() => {
     const handleGlobalResize = () => {
       if (!activeSessionId) return;
@@ -175,25 +222,19 @@ export function TerminalView() {
     return () => window.removeEventListener("resize", handleGlobalResize);
   }, [activeSessionId]);
 
-  // --- 逻辑 5：右键点击处理 (原生粘贴) ---
+  // --- 逻辑 6：右键粘贴 ---
   const handleContextMenu = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!activeSessionId || !activeSession?.connector) return;
-
     const instance = terminalMap.current.get(activeSessionId);
     if (!instance) return;
 
-    const { terminal: term } = instance;
-
-    if (term.hasSelection()) {
-      term.clearSelection();
+    if (instance.terminal.hasSelection()) {
+      instance.terminal.clearSelection();
     } else {
       try {
-        // 使用 Tauri v2 原生读取
         const text = await readText();
-        if (text) {
-          activeSession.connector.write(text);
-        }
+        if (text) activeSession.connector.write(text);
       } catch (err) {
         console.error("Native paste failed", err);
       }

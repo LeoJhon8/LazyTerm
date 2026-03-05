@@ -1,13 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-interface SettingsState {
-  // 外观设置
+interface SettingsData {
   theme: "light" | "dark" | "system";
   fontSize: number;
   fontFamily: string;
-  
-  // 布局设置
   leftPanelWidth: number;
   rightPanelWidth: number;
   topPanelHeight: number;
@@ -16,26 +13,22 @@ interface SettingsState {
   rightPanelCollapsed: boolean;
   topPanelCollapsed: boolean;
   bottomPanelCollapsed: boolean;
-
-  // 终端设置
   cursorBlink: boolean;
   scrollback: number;
   tabStopWidth: number;
+}
 
-  // 方法
-  setTheme: (theme: "light" | "dark" | "system") => void;
-  setFontSize: (size: number) => void;
-  setFontFamily: (family: string) => void;
-  updateLayout: (layout: Partial<Omit<SettingsState, 
-    'theme' | 'fontSize' | 'fontFamily' | 'cursorBlink' | 'scrollback' | 'tabStopWidth' | 
-    'setTheme' | 'setFontSize' | 'setFontFamily' | 'updateLayout' | 'resetSettings'>>) => void;
+interface SettingsActions {
+  setSettings: (settings: Partial<SettingsData>) => void;
   resetSettings: () => void;
 }
 
-const defaultSettings = {
-  theme: "dark" as const,
+export type SettingsState = SettingsData & SettingsActions;
+
+const defaultSettings: SettingsData = {
+  theme: "dark",
   fontSize: 14,
-  fontFamily: "monospace",
+  fontFamily: "Menlo, Monaco, 'Courier New', monospace",
   leftPanelWidth: 250,
   rightPanelWidth: 250,
   topPanelHeight: 40,
@@ -53,17 +46,16 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       ...defaultSettings,
-
-      setTheme: (theme) => set({ theme }),
-      setFontSize: (fontSize) => set({ fontSize }),
-      setFontFamily: (fontFamily) => set({ fontFamily }),
-      
-      updateLayout: (layout) => set((state) => ({ ...state, ...layout })),
-
+      setSettings: (newSettings) => set((state) => ({ ...state, ...newSettings })),
       resetSettings: () => set(defaultSettings),
     }),
     {
       name: "lazy-terminal-settings",
+      // 只持久化数据，不持久化方法
+      partialize: (state) => {
+        const { setSettings, resetSettings, ...data } = state;
+        return data;
+      },
     }
   )
 );
