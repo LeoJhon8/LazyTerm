@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
-import { AVAILABLE_MODULES } from "@/config/default-slot-config";
+import { AVAILABLE_MODULES, LOCKED_MODULES } from "@/config/default-slot-config";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useSettingsStore } from "@/store/settings";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -29,104 +29,112 @@ interface SlotConfigDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-// 假设这些类型来自于你的 store，如果没有可以手动定义
 type ThemeType = "light" | "dark" | "system";
 
-// --- 子组件 1：主题设置 (移出主组件外部) ---
-interface ThemeSettingsProps {
-  theme: ThemeType;
-  setTheme: (theme: ThemeType) => void;
-  fontSize: number;
-  setFontSize: (size: number) => void;
-}
-
-function ThemeSettings({ theme, setTheme, fontSize, setFontSize }: ThemeSettingsProps) {
+// --- 子组件 1：主题设置 ---
+function ThemeSettings({ theme, setTheme, fontSize, setFontSize }: any) {
   return (
     <div className="space-y-6 py-4">
-      <div className="grid gap-2">
-        <Label>外观主题</Label>
-        <Select value={theme} onValueChange={(v: ThemeType) => setTheme(v)}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="light">浅色模式</SelectItem>
-            <SelectItem value="dark">深色模式</SelectItem>
-            <SelectItem value="system">系统跟随</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
       <div className="grid gap-4">
-        <div className="flex justify-between">
-          <Label>全局字体大小</Label>
-          <span className="text-sm text-muted-foreground">{fontSize}px</span>
+        <Label className="text-base font-semibold">外观主题</Label>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { value: "light", label: "浅色模式", icon: "☀️" },
+            { value: "dark", label: "深色模式", icon: "🌙" },
+            { value: "system", label: "系统跟随", icon: "💻" }
+          ].map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setTheme(option.value as ThemeType)}
+              className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                theme === option.value
+                  ? "border-primary bg-primary/5 shadow-md"
+                  : "border-muted hover:border-primary/50 hover:bg-muted/50"
+              }`}
+            >
+              <div className="flex flex-col items-center space-y-2">
+                <span className="text-2xl">{option.icon}</span>
+                <span className="text-sm font-medium">{option.label}</span>
+              </div>
+            </button>
+          ))}
         </div>
-        <input
-          type="range"
-          min="12"
-          max="20"
-          step="1"
-          value={fontSize}
-          onChange={(e) => setFontSize(parseInt(e.target.value))}
-          className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer"
-        />
+      </div>
+      
+      <Separator className="bg-muted" />
+      
+      <div className="grid gap-6">
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <Label className="text-base font-semibold">全局字体大小</Label>
+            <span className="text-sm text-muted-foreground bg-primary/10 text-primary px-3 py-1 rounded-full font-mono">
+              {fontSize}px
+            </span>
+          </div>
+          <div className="relative px-2">
+            <input
+              type="range" min="12" max="20" step="1" value={fontSize}
+              onChange={(e) => setFontSize(parseInt(e.target.value))}
+              className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-// --- 子组件 2：布局设置 (移出主组件外部) ---
-interface SlotSettingsProps {
-  tempConfig: any; // 建议替换为具体的 SlotConfig 类型
-  moduleMap: Map<string, string>;
-  onToggle: (side: "left" | "right", id: string) => void;
-  onSingleChange: (pos: "top" | "bottom", id: string) => void;
-  onActiveChange: (side: "left" | "right", id: string) => void;
-}
-
-function SlotSettings({ tempConfig, moduleMap, onToggle, onSingleChange, onActiveChange }: SlotSettingsProps) {
+// --- 子组件 2：布局设置 ---
+function SlotSettings({ tempConfig, onToggle, onActiveChange }: any) {
+  // 1. 过滤掉锁定的模块 (Tabs, QuickCmd)
+  // 2. 额外过滤掉“设置”模块，使其不支持调整位置
+  const displayModules = AVAILABLE_MODULES.filter(mod => 
+    !LOCKED_MODULES.includes(mod.id) && 
+    mod.id !== "SettingModule" && // 假设设置模块ID为这个，若不同请修改
+    mod.id !== "settings"
+  );
+  
   return (
-    <div className="space-y-8 py-4">
+    <div className="space-y-6 py-4">
       <div className="grid grid-cols-2 gap-8">
         {(["left", "right"] as const).map((side) => (
           <div key={side} className="space-y-4">
-            <Label className="text-base font-bold capitalize">
-              {side === "left" ? "左侧栏" : "右侧栏"}
-            </Label>
-            <div className="grid gap-3 p-3 border rounded-lg bg-muted/10">
-              {AVAILABLE_MODULES.map((mod) => {
-                const occupiedBy = moduleMap.get(mod.id);
-                const isThisSlot = tempConfig[side].modules.includes(mod.id);
+            <div className="flex items-center justify-between border-b pb-2">
+              <Label className="text-sm font-bold uppercase">
+                {side === "left" ? "← 左侧栏模块" : "右侧栏模块 →"}
+              </Label>
+            </div>
+
+            <div className="grid gap-1.5 p-2 border rounded-xl bg-muted/10">
+              {displayModules.map((mod) => {
+                const isChecked = tempConfig[side].modules.includes(mod.id);
                 return (
-                  <div key={mod.id} className="flex items-center space-x-2">
+                  <div 
+                    key={mod.id} 
+                    className={`flex items-center space-x-3 p-2 rounded-md transition-all cursor-pointer ${
+                      isChecked ? 'bg-primary/10' : 'hover:bg-muted/50'
+                    }`}
+                    onClick={() => onToggle(side, mod.id)} // 点击整行即可切换
+                  >
                     <Checkbox
                       id={`${side}-${mod.id}`}
-                      checked={isThisSlot}
-                      onCheckedChange={() => onToggle(side, mod.id)}
-                      disabled={!!occupiedBy && !isThisSlot}
+                      checked={isChecked}
+                      className="pointer-events-none" // 让点击由外层div处理
                     />
-                    <label
-                      htmlFor={`${side}-${mod.id}`}
-                      className={`text-sm ${
-                        occupiedBy && !isThisSlot ? "text-muted-foreground line-through" : ""
-                      }`}
-                    >
-                      {mod.name}
-                      {occupiedBy && !isThisSlot && ` (${occupiedBy})`}
-                    </label>
+                    <span className="text-sm font-medium">{mod.name}</span>
                   </div>
                 );
               })}
             </div>
+
             {tempConfig[side].modules.length > 0 && (
-              <div className="space-y-2">
-                <Label className="text-xs">默认展示模块</Label>
+              <div className="space-y-2 pt-2">
+                <Label className="text-[11px] text-muted-foreground ml-1">默认展示模块</Label>
                 <Select
                   value={tempConfig[side].activeModule}
                   onValueChange={(v) => onActiveChange(side, v)}
                 >
-                  {/* 注意：此处移除了非法的 size 属性，改用 className 控制高度 */}
-                  <SelectTrigger className="h-8">
+                  <SelectTrigger className="h-9 bg-background">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -142,35 +150,6 @@ function SlotSettings({ tempConfig, moduleMap, onToggle, onSingleChange, onActiv
           </div>
         ))}
       </div>
-
-      <Separator />
-
-      <div className="grid grid-cols-2 gap-8">
-        {(["top", "bottom"] as const).map((pos) => (
-          <div key={pos} className="space-y-2">
-            <Label className="text-base font-bold capitalize">
-              {pos === "top" ? "页头" : "页脚"}
-            </Label>
-            <Select value={tempConfig[pos].module} onValueChange={(v) => onSingleChange(pos, v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="选择固定模块" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">无</SelectItem>
-                {AVAILABLE_MODULES.map((mod) => {
-                  const occupiedBy = moduleMap.get(mod.id);
-                  const isThisSlot = tempConfig[pos].module === mod.id;
-                  return (
-                    <SelectItem key={mod.id} value={mod.id} disabled={!!occupiedBy && !isThisSlot}>
-                      {mod.name} {occupiedBy && !isThisSlot ? `(${occupiedBy})` : ""}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -182,99 +161,61 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
 
   const [tempConfig, setTempConfig] = useState(currentConfig);
 
-  // 修复报错 1: 避免同步 setState。
-  // 通过 key={open} 强制 DialogContent 在打开时重新挂载，自动初始化状态
-  // 或者在 useEffect 中加判断，确保只在从 false 变为 true 时同步一次
   useEffect(() => {
-    if (open) {
-      setTempConfig(JSON.parse(JSON.stringify(currentConfig)));
-    }
+    if (open) setTempConfig(JSON.parse(JSON.stringify(currentConfig)));
   }, [open, currentConfig]);
 
-  const moduleMap = useMemo(() => {
-    const map = new Map<string, string>();
-    tempConfig.left.modules.forEach((id: string) => map.set(id, "左侧"));
-    tempConfig.right.modules.forEach((id: string) => map.set(id, "右侧"));
-    if (tempConfig.top.module && tempConfig.top.module !== "none") map.set(tempConfig.top.module, "顶部");
-    if (tempConfig.bottom.module && tempConfig.bottom.module !== "none") map.set(tempConfig.bottom.module, "底部");
-    return map;
-  }, [tempConfig]);
-
-  const removeFromAll = (config: any, moduleId: string) => {
-    config.left.modules = config.left.modules.filter((id: string) => id !== moduleId);
-    config.right.modules = config.right.modules.filter((id: string) => id !== moduleId);
-    if (config.top.module === moduleId) config.top.module = "none";
-    if (config.bottom.module === moduleId) config.bottom.module = "none";
-  };
-
-  const toggleMultiModule = useCallback((slot: "left" | "right", moduleId: string) => {
+  const toggleModule = useCallback((side: "left" | "right", moduleId: string) => {
     setTempConfig((prev) => {
       const next = JSON.parse(JSON.stringify(prev));
-      const list = [...next[slot].modules];
-      const index = list.indexOf(moduleId);
+      const isAlreadyInThisSide = next[side].modules.includes(moduleId);
 
-      if (index > -1) {
-        list.splice(index, 1);
-        next[slot].modules = list;
-        if (next[slot].activeModule === moduleId) {
-          next[slot].activeModule = list[0] || "";
+      if (isAlreadyInThisSide) {
+        // 如果已在当前侧，则移除
+        next[side].modules = next[side].modules.filter((id: string) => id !== moduleId);
+        if (next[side].activeModule === moduleId) {
+          next[side].activeModule = next[side].modules[0] || "";
         }
       } else {
-        removeFromAll(next, moduleId);
-        next[slot].modules.push(moduleId);
-        if (!next[slot].activeModule) next[slot].activeModule = moduleId;
+        // 如果在另一侧，先从另一侧移除（保证唯一性）
+        const otherSide = side === "left" ? "right" : "left";
+        next[otherSide].modules = next[otherSide].modules.filter((id: string) => id !== moduleId);
+        if (next[otherSide].activeModule === moduleId) {
+          next[otherSide].activeModule = next[otherSide].modules[0] || "";
+        }
+        // 加入当前侧
+        next[side].modules.push(moduleId);
+        if (!next[side].activeModule) next[side].activeModule = moduleId;
       }
       return next;
     });
   }, []);
 
-  const setSingleModule = useCallback((slot: "top" | "bottom", moduleId: string) => {
-    setTempConfig((prev) => {
-      const next = JSON.parse(JSON.stringify(prev));
-      if (moduleId !== "none") removeFromAll(next, moduleId);
-      next[slot].module = moduleId;
-      return next;
-    });
-  }, []);
-
-  const handleSave = () => {
-    updateSlotConfig(tempConfig);
-    onOpenChange(false);
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl h-[85vh] flex flex-col p-0">
-        <DialogHeader className="p-6 pb-0">
-          <DialogTitle>系统配置</DialogTitle>
+      <DialogContent className="max-w-4xl h-[80vh] flex flex-col p-0">
+        <DialogHeader className="p-6 pb-4 border-b">
+          <DialogTitle>系统设置</DialogTitle>
         </DialogHeader>
 
         <Tabs defaultValue="theme" className="flex-1 flex overflow-hidden">
-          <TabsList className="w-40 flex flex-col h-full bg-muted/50 rounded-none border-r p-2 justify-start space-y-1">
-            <TabsTrigger value="theme" className="w-full justify-start">
-              个性化主题
-            </TabsTrigger>
-            <TabsTrigger value="slots" className="w-full justify-start">
-              布局与插槽
-            </TabsTrigger>
+          <TabsList className="w-40 flex flex-col h-full bg-muted/20 rounded-none border-r p-2 justify-start">
+            <TabsTrigger value="theme" className="w-full justify-start gap-2">🎨 主题</TabsTrigger>
+            <TabsTrigger value="slots" className="w-full justify-start gap-2">🧱 布局</TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="flex-1 p-6">
+          <ScrollArea className="flex-1 p-8">
             <TabsContent value="theme" className="m-0 focus-visible:outline-none">
               <ThemeSettings
-                theme={theme as ThemeType}
-                setTheme={setTheme}
-                fontSize={fontSize}
-                setFontSize={setFontSize}
+                theme={theme} setTheme={setTheme}
+                fontSize={fontSize} setFontSize={setFontSize}
               />
             </TabsContent>
             <TabsContent value="slots" className="m-0 focus-visible:outline-none">
               <SlotSettings
                 tempConfig={tempConfig}
-                moduleMap={moduleMap}
-                onToggle={toggleMultiModule}
-                onSingleChange={setSingleModule}
-                onActiveChange={(side, val) =>
+                onToggle={toggleModule}
+                onActiveChange={(side: any, val: any) =>
                   setTempConfig((p) => ({ ...p, [side]: { ...p[side], activeModule: val } }))
                 }
               />
@@ -282,24 +223,13 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
           </ScrollArea>
         </Tabs>
 
-        <DialogFooter className="p-4 border-t bg-muted/20">
-          <div className="flex justify-between w-full">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                resetToDefault();
-                onOpenChange(false);
-              }}
-            >
-              重置为默认
-            </Button>
-            <div className="space-x-2">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                取消
-              </Button>
-              <Button onClick={handleSave}>保存更改</Button>
-            </div>
-          </div>
+        <DialogFooter className="p-4 border-t bg-muted/5">
+          <Button variant="ghost" size="sm" onClick={() => resetToDefault()}>恢复默认</Button>
+          <div className="flex-1" />
+          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button onClick={() => { updateSlotConfig(tempConfig); onOpenChange(false); }}>
+            保存更改
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

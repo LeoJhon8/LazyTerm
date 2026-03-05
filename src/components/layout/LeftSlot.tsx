@@ -56,7 +56,7 @@ export function LeftSlot() {
         ))}
         
         {/* 设置按钮 - 总是显示在最后 */}
-        {hasSettingsModule && (
+        {
           <Button
             variant="ghost"
             size="icon"
@@ -65,7 +65,7 @@ export function LeftSlot() {
           >
             <Settings className="h-4 w-4" />
           </Button>
-        )}
+        }
       </div>
 
       {/* 模块内容区 */}

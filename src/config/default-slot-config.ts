@@ -42,3 +42,6 @@ export const AVAILABLE_MODULES = [
   { id: 'TabModule', name: '标签页', icon: 'Tabs' },
   { id: 'QuickCmdModule', name: '快捷命令', icon: 'Bolt' }
 ];
+
+// 锁定的模块配置（不可更改）
+export const LOCKED_MODULES = ['TabModule', 'QuickCmdModule', 'SettingsModule'];
