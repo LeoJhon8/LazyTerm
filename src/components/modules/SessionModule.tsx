@@ -1,253 +1,250 @@
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, FolderPlus, Server, Terminal, GripVertical, Pencil, Trash2 } from "lucide-react";
-import { useTabsStore } from "@/store/tabs";
-import { homeDir } from '@tauri-apps/api/path';
-import { SshConnectDialog } from "@/components/dialogs/SshConnectDialog";
-import type { SSHConfig } from "@/types/terminal";
-import { useSshProfilesStore, type SSHProfile } from "@/store/ssh-profiles";
-import {
-  DndContext,
-  closestCenter,
-  useSensor,
-  useSensors,
-  PointerSensor,
-  KeyboardSensor,
+import React, { useState, useMemo, useEffect } from "react";
+import { 
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, 
+  useDraggable, useDroppable
 } from "@dnd-kit/core";
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { 
+  Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, 
+  Pencil, Trash2, Terminal, GripVertical 
+} from "lucide-react";
 
-// 列表项组件，用于显示单条 SSH 配置并支持拖拽句柄
-interface ProfileListItemProps {
-  profile: SSHProfile;
-  onConnect: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { useSshProfilesStore, type SessionNode } from "@/store/ssh-profiles";
+import { useTabsStore } from "@/store/tabs";
+import { SshConnectDialog } from "@/components/dialogs/SshConnectDialog";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator } from "@/components/ui/context-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+
+function getSortedFlattenedNodes(nodes: SessionNode[], parentId: string | null = null, depth = 0): (SessionNode & { depth: number })[] {
+  return nodes
+    .filter(n => n.parentId === parentId)
+    .sort((a, b) => a.order - b.order)
+    .reduce((acc, node) => {
+      acc.push({ ...node, depth });
+      if (node.type === 'folder' && node.isExpanded) {
+        acc.push(...getSortedFlattenedNodes(nodes, node.id, depth + 1));
+      }
+      return acc;
+    }, [] as any[]);
 }
 
-function ProfileListItem({ profile, onConnect, onEdit, onDelete }: ProfileListItemProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: profile.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
+function NodeRowContent({ 
+  node, depth, isDragging, isOver, dropPos, isOverlay 
+}: { 
+  node: SessionNode, depth: number, isDragging?: boolean, isOver?: boolean, dropPos?: any, isOverlay?: boolean 
+}) {
+  const isFolder = node.type === "folder";
   return (
     <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center justify-between p-2 bg-white rounded shadow-sm hover:bg-gray-50"
-      title={profile.config.nickname || `${profile.config.username}@${profile.config.host}`}
+      style={{ paddingLeft: `${isOverlay ? 8 : depth * 14 + 6}px` }}
+      className={cn(
+        "flex items-center gap-2 py-1.5 px-2 rounded-sm text-sm transition-all relative border-y border-transparent",
+        !isOverlay && "group hover:bg-accent/40",
+        isOverlay && "bg-background border shadow-xl opacity-90 w-[240px] z-50 pointer-events-none",
+        
+        // 放置指示器
+        isOver && !isDragging && dropPos === 'before' && [
+          "before:content-[''] before:absolute before:top-[-1px] before:left-0 before:right-0 before:h-[2px] before:bg-primary before:z-[100]"
+        ],
+        isOver && !isDragging && dropPos === 'after' && [
+          "after:content-[''] after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-[2px] after:bg-primary after:z-[100]"
+        ],
+        isOver && !isDragging && dropPos === 'inside' && "bg-primary/20 ring-1 ring-primary/30 ring-inset"
+      )}
     >
-      <div className="flex items-center gap-2 flex-1 cursor-pointer min-w-0" onClick={onConnect}>
-        <span
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <GripVertical className="h-3 w-3 text-muted-foreground" />
+      {!node.isRoot ? (
+        <div className="p-1 text-muted-foreground/30 group-hover:text-primary transition-colors">
+          <GripVertical className="h-3.5 w-3.5" />
+        </div>
+      ) : <div className="w-5" />}
+
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        {isFolder ? (
+          <div className="flex items-center gap-1 text-muted-foreground/60">
+            {node.isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            <Folder className={cn("h-4 w-4", node.isRoot ? "text-amber-500 fill-amber-500/10" : "text-blue-500 fill-blue-500/10")} />
+          </div>
+        ) : (
+          <Server className="h-4 w-4 text-emerald-600/80" />
+        )}
+        <span className={cn("truncate flex-1 select-none", node.isRoot ? "font-bold text-foreground" : "font-medium text-muted-foreground group-hover:text-foreground")}>
+          {node.name}
         </span>
-        <span className="truncate text-xs">
-          {profile.config.nickname || `${profile.config.username}@${profile.config.host}`}
-        </span>
-      </div>
-      <div className="flex items-center gap-1 flex-shrink-0">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 w-6 p-0 hover:bg-accent hover:text-accent-foreground"
-          onClick={(e) => { e.stopPropagation(); onEdit(); }}
-          title="编辑配置"
-        >
-          <Pencil className="h-3 w-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 w-6 p-0 hover:bg-destructive hover:text-destructive-foreground"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          title="删除配置"
-        >
-          <Trash2 className="h-3 w-3" />
-        </Button>
       </div>
     </div>
   );
 }
 
-export function SessionModule() {
-  const { addSession } = useTabsStore();
-  const [open, setOpen] = useState(false);
-  const [sshDialogOpen, setSshDialogOpen] = useState(false);
-  const {
-    profiles,
-    addProfile,
-    updateProfile,
-    removeProfile,
-    reorderProfiles,
-  } = useSshProfilesStore();
+function DraggableDroppableRow({ node, depth, onAction, activeId }: { node: SessionNode, depth: number, onAction: any, activeId: string | null }) {
+  const { toggleFolder } = useSshProfilesStore();
+  const [localDropPos, setLocalDropPos] = useState<'before' | 'after' | 'inside' | null>(null);
 
-  const [editingProfile, setEditingProfile] = useState<SSHProfile | null>(null);
+  const { attributes, listeners, setNodeRef: setDraggableRef, isDragging } = useDraggable({ 
+    id: node.id, 
+    disabled: node.isRoot 
+  });
+  
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({ 
+    id: node.id,
+    data: { dropPos: localDropPos } 
+  });
 
-  const handleCreateLocalSession = async () => {
-    const home = await homeDir();
-    addSession({
-      title: `Local-${Date.now()}`,
-      type: "local",
-      cwd: home,
-    });
-    setOpen(false);
-  };
-
-  // 保存新配置或更新已有配置
-  const handleSaveProfile = (config: SSHConfig) => {
-    if (editingProfile) {
-      updateProfile(editingProfile.id, config);
-    } else {
-      addProfile(config);
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!activeId || isDragging) return;
+    
+    // 如果是根节点，只允许 "inside"
+    if (node.isRoot) {
+      setLocalDropPos('inside');
+      return;
     }
-    setEditingProfile(null);
-    setSshDialogOpen(false);
-    setOpen(false);
-  };
 
-  // 使用配置发起会话
-  const connectProfile = (config: SSHConfig) => {
-    const title = config.nickname || `${config.username}@${config.host}`;
-    addSession({
-      title,
-      type: "ssh",
-      host: config.host,
-      config: {
-        host: config.host,
-        port: config.port,
-        sshConfig: config,
-      },
-    });
-  };
-
-  // dnd-kit 传感器配置
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = (event: { active: { id: string | number }; over: { id: string | number } | null }) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      const ids = profiles.map(p => p.id);
-      const oldIndex = ids.indexOf(active.id as string);
-      const newIndex = ids.indexOf(over.id as string);
-      const newOrder = arrayMove(ids, oldIndex, newIndex);
-      reorderProfiles(newOrder);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
+    
+    if (node.type === 'folder') {
+      if (relativeY < rect.height * 0.25) setLocalDropPos('before');
+      else if (relativeY > rect.height * 0.75) setLocalDropPos('after');
+      else setLocalDropPos('inside');
+    } else {
+      if (relativeY < rect.height * 0.5) setLocalDropPos('before');
+      else setLocalDropPos('after');
     }
   };
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="p-3 border-b flex items-center justify-between">
-        <h3 className="font-medium">会话管理</h3>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" variant="outline">
-              <Plus className="h-4 w-4 mr-1" />
-              新建
-            </Button>
-          </DialogTrigger>
-          <DialogContent aria-describedby={undefined}>
-            <DialogHeader>
-              <DialogTitle>新建会话</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-3 py-4">
-              <Button 
-                variant="outline" 
-                className="justify-start"
-                onClick={handleCreateLocalSession}
-              >
-                <Terminal className="h-4 w-4 mr-2" />
-                本地终端
-              </Button>
-              <Button 
-                variant="outline" 
-                className="justify-start"
-                onClick={() => {
-                  setOpen(false);
-                  setSshDialogOpen(true);
-                }}
-              >
-                <Server className="h-4 w-4 mr-2" />
-                SSH 连接
-              </Button>
-              <Button variant="outline" className="justify-start" disabled>
-                <FolderPlus className="h-4 w-4 mr-2" />
-                Telnet (开发中)
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+    <ContextMenu>
+      <ContextMenuTrigger>
+        <div 
+          ref={setDroppableRef} 
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => setLocalDropPos(null)}
+          onClick={() => node.type === 'folder' ? toggleFolder(node.id) : onAction('connect', node)}
+        >
+          <div ref={setDraggableRef} {...attributes} {...listeners} className={cn(isDragging && "opacity-20")}>
+            <NodeRowContent 
+              node={node} 
+              depth={depth} 
+              isDragging={isDragging} 
+              isOver={isOver} 
+              dropPos={localDropPos} 
+            />
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-48">
+        {node.type === 'folder' ? (
+          <>
+            <ContextMenuItem onClick={() => onAction('new-ssh', node)}><Plus className="mr-2 h-4 w-4" /> 新建连接</ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> 新建子文件夹</ContextMenuItem>
+          </>
+        ) : (
+          <ContextMenuItem onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> 连接会话</ContextMenuItem>
+        )}
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" /> 重命名 / 编辑</ContextMenuItem>
+        {!node.isRoot && <ContextMenuItem onClick={() => onAction('delete', node)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> 删除</ContextMenuItem>}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+export function SessionModule() {
+  const { nodes, addFolder, addProfile, removeNode, updateNode, moveNode, ensureRoot } = useSshProfilesStore();
+  const { addSession } = useTabsStore();
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [sshOpen, setSshOpen] = useState(false);
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [targetNode, setTargetNode] = useState<SessionNode | null>(null);
+  const [editNode, setEditNode] = useState<SessionNode | null>(null);
+  const [tempName, setTempName] = useState("");
+
+  useEffect(() => { ensureRoot(); }, []);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
+
+  const handleAction = (type: string, node: SessionNode) => {
+    if (type === 'connect' && node.config) {
+      addSession({ title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } });
+    } else if (type === 'new-ssh') { setTargetNode(node); setEditNode(null); setSshOpen(true); }
+    else if (type === 'new-folder') { setTargetNode(node); setEditNode(null); setFolderOpen(true); }
+    else if (type === 'edit') { 
+      setEditNode(node); 
+      if (node.type === 'folder') { setTempName(node.name); setFolderOpen(true); } 
+      else setSshOpen(true);
+    } else if (type === 'delete') { setTargetNode(node); setDeleteOpen(true); }
+  };
+
+  return (
+    <div className="h-full flex flex-col bg-background/50 border-r">
+      <div className="p-3 border-b bg-muted/20">
+        <h3 className="text-xs font-bold uppercase text-muted-foreground tracking-widest select-none">会话管理</h3>
       </div>
       
-      <div className="flex-1 overflow-y-auto p-2">
-        {profiles.length === 0 ? (
-          <div className="text-sm text-muted-foreground text-center py-8">
-            暂无 SSH 配置<br />
-            请使用上方按钮添加
+      <div className="flex-1 overflow-y-auto py-2 px-1">
+        <DndContext 
+          sensors={sensors} 
+          collisionDetection={closestCenter} 
+          onDragStart={(e) => setActiveId(e.active.id as string)}
+          onDragEnd={(e) => {
+            const { active, over } = e;
+            if (over && active.id !== over.id) {
+              const dropPos = over.data.current?.dropPos;
+              if (dropPos) moveNode(active.id as string, over.id as string, dropPos);
+            }
+            setActiveId(null);
+          }}
+        >
+          <div className="flex flex-col">
+            {sortedNodes.map((fn) => (
+              <DraggableDroppableRow key={fn.id} node={fn} depth={fn.depth} onAction={handleAction} activeId={activeId} />
+            ))}
           </div>
-        ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={profiles.map((p) => p.id)} strategy={verticalListSortingStrategy}>
-              <div className="space-y-1">
-                {profiles
-                  .sort((a, b) => a.order - b.order)
-                  .map((p) => (
-                    <ProfileListItem
-                      key={p.id}
-                      profile={p}
-                      onConnect={() => connectProfile(p.config)}
-                      onEdit={() => {
-                        setEditingProfile(p);
-                        setSshDialogOpen(true);
-                      }}
-                      onDelete={() => removeProfile(p.id)}
-                    />
-                  ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-        )}
+
+          <DragOverlay dropAnimation={null} style={{ pointerEvents: 'none' }}>
+            {activeId ? (
+              <NodeRowContent isOverlay node={nodes.find(n => n.id === activeId)!} depth={0} />
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       </div>
 
-      {/* SSH 配置对话框 */}
-      <SshConnectDialog
-        open={sshDialogOpen}
-        onOpenChange={(o) => {
-          setSshDialogOpen(o);
-          if (!o) setEditingProfile(null);
-        }}
-        onSave={handleSaveProfile}
-        initialConfig={editingProfile?.config}
-      />
+      <Dialog open={folderOpen} onOpenChange={setFolderOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{editNode ? "重命名" : "新建文件夹"}</DialogTitle></DialogHeader>
+          <Input 
+            value={tempName} 
+            onChange={(e) => setTempName(e.target.value)} 
+            placeholder="请输入名称" 
+            autoFocus 
+            onKeyDown={e => e.key === 'Enter' && (editNode ? updateNode(editNode.id, { name: tempName }) : targetNode && addFolder(tempName, targetNode.id), setFolderOpen(false), setTempName(""))}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setFolderOpen(false)}>取消</Button>
+            <Button onClick={() => {
+              if (editNode) updateNode(editNode.id, { name: tempName });
+              else if (targetNode) addFolder(tempName, targetNode.id);
+              setFolderOpen(false); setTempName("");
+            }}>确定</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <SshConnectDialog open={sshOpen} onOpenChange={setSshOpen} initialConfig={editNode?.config} onSave={(cfg) => {
+        if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
+        else if (targetNode) addProfile(cfg, targetNode.id);
+        setSshOpen(false);
+      }} />
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>确认删除 "{targetNode?.name}"？</AlertDialogTitle></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction className="bg-destructive" onClick={() => targetNode && removeNode(targetNode.id)}>删除</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
