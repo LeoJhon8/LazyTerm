@@ -35,5 +35,6 @@ tokio = { version = "1.0", features = ["full"] }
 uuid = { version = "1.0", features = ["v4"] }
 futures = "0.3"       # 提供 Stream 处理工具
 tauri-plugin-dialog = "2.6.0"
+tauri-plugin-clipboard-manager = "2.3.2"
 
 # 移除 ssh2 = "0.9" 因为它会导致 UI 线程阻塞

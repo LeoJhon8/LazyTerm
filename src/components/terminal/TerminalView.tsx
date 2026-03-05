@@ -5,9 +5,9 @@ import { useHistoryStore } from "@/store/history";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager"; 
 import "@xterm/xterm/css/xterm.css";
 
-// 定义存储在 Map 中的终端实例接口
 interface TerminalInstance {
   terminal: Terminal;
   fitAddon: FitAddon;
@@ -20,19 +20,15 @@ export function TerminalView() {
   const { addCommand: addHistoryCommand } = useHistoryStore();
   const { fontSize, fontFamily, theme } = useSettingsStore();
 
-  // 引用容器和实例
   const containerMap = useRef(new Map<string, HTMLDivElement>());
   const terminalMap = useRef(new Map<string, TerminalInstance>());
   const lastCommandRef = useRef<string>("");
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
-  // --- 逻辑 1：处理终端的初始化 (仅在实例不存在时执行) ---
+  // --- 逻辑 1：处理终端的初始化 ---
   useEffect(() => {
-    // 类型守卫：确保 activeSessionId 和相关对象存在
     if (!activeSessionId || !activeSession || !activeSession.connector) return;
-    
-    // 如果该 session 已经有终端实例了，不执行初始化
     if (terminalMap.current.has(activeSessionId)) return;
 
     const { connector } = activeSession;
@@ -42,26 +38,24 @@ export function TerminalView() {
     let isMounted = true;
 
     const initTerminal = async () => {
-      // 1. 等待连接就绪
       while (!connector.isConnected && isMounted) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       if (!isMounted || !connector.isConnected) return;
 
-      // 2. 创建实例
       const term = new Terminal({
         fontFamily: fontFamily || "monospace",
         fontSize: fontSize || 14,
         theme: {
           background: theme === "light" ? "#ffffff" : "#1e1e1e",
           foreground: theme === "light" ? "#333333" : "#cccccc",
-          // --- 优化光标颜色 ---
-          cursor: theme === "light" ? "#007acc" : "#528bff", // 类似 VS Code 的蓝色光标
-          cursorAccent: theme === "light" ? "#ffffff" : "#1e1e1e", // 光标重叠处的文字颜色
+          cursor: theme === "light" ? "#007acc" : "#528bff",
+          cursorAccent: theme === "light" ? "#ffffff" : "#1e1e1e",
+          selectionBackground: "rgba(82, 139, 255, 0.4)",
         },
-        cursorBlink: true,       // 启用光标闪烁
-        cursorStyle: "bar",      // 修改样式：'block' (方块), 'underline' (下划线), 'bar' (竖线)
-        cursorWidth: 2,          // 当样式为 'bar' 时，光标的宽度
+        cursorBlink: true,
+        cursorStyle: "bar",
+        cursorWidth: 2,
         scrollback: 10000,
         allowProposedApi: true,
       });
@@ -75,15 +69,12 @@ export function TerminalView() {
         console.warn("WebGL Addon failed", e);
       }
 
-      // 3. 挂载到 DOM
       term.open(containerEl);
 
-      // 4. 绑定数据流 (Terminal -> Connector)
       const dataDisposable = term.onData((data) => {
         connector.write(data);
       });
 
-      // 5. 绑定命令历史记录
       const keyDisposable = term.onKey(({ domEvent }) => {
         if (domEvent.key === "Enter") {
           const buffer = term.buffer.active;
@@ -100,12 +91,24 @@ export function TerminalView() {
         }
       });
 
-      // 6. 绑定数据流 (Connector -> Terminal)
-      const connectorDisposable = await connector.onData((data) => {
+      const unbindData = await connector.onData((data) => {
         term.write(data);
       });
 
-      // 7. 响应式布局
+      // 原生自动复制
+      const selectionDisposable = term.onSelectionChange(async () => {
+        if (term.hasSelection()) {
+          const selection = term.getSelection();
+          if (selection) {
+            try {
+              await writeText(selection);
+            } catch (e) {
+              console.error("Native copy failed", e);
+            }
+          }
+        }
+      });
+
       const resizeObserver = new ResizeObserver(() => {
         if (containerEl.clientWidth > 0 && containerEl.clientHeight > 0) {
           fitAddon.fit();
@@ -115,7 +118,6 @@ export function TerminalView() {
       });
       resizeObserver.observe(containerEl);
 
-      // 8. 存储到 Map 中以便复用
       terminalMap.current.set(activeSessionId, {
         terminal: term,
         fitAddon,
@@ -123,13 +125,13 @@ export function TerminalView() {
         dispose: () => {
           dataDisposable.dispose();
           keyDisposable.dispose();
-          connectorDisposable?.dispose?.(); 
+          selectionDisposable.dispose();
+          unbindData();
           resizeObserver.disconnect();
           term.dispose();
         },
       });
 
-      // 初始渲染
       requestAnimationFrame(() => {
         fitAddon.fit();
         term.focus();
@@ -137,16 +139,14 @@ export function TerminalView() {
     };
 
     initTerminal();
+    return () => { isMounted = false; };
   }, [activeSessionId, activeSession, fontFamily, fontSize, theme, addHistoryCommand]);
 
-  // --- 逻辑 2：处理 Tab 切换时的聚焦和尺寸刷新 ---
+  // --- 逻辑 2：处理 Tab 切换聚焦 ---
   useEffect(() => {
-    // 修复：确保 activeSessionId 不为 null
     if (!activeSessionId) return;
-
     const instance = terminalMap.current.get(activeSessionId);
     if (instance) {
-      // 必须在 requestAnimationFrame 中执行，确保 DOM 的 'hidden' 类已经移除，容器有了尺寸
       requestAnimationFrame(() => {
         instance.fitAddon.fit();
         instance.terminal.focus();
@@ -154,7 +154,7 @@ export function TerminalView() {
     }
   }, [activeSessionId]);
 
-  // --- 逻辑 3：清理已关闭会话的内存 ---
+  // --- 逻辑 3：清理会话 ---
   useEffect(() => {
     const currentIds = new Set(sessions.map((s) => s.id));
     terminalMap.current.forEach((instance, id) => {
@@ -165,22 +165,41 @@ export function TerminalView() {
     });
   }, [sessions]);
 
-  // --- 逻辑 4：窗口大小改变时刷新当前终端 ---
+  // --- 逻辑 4：窗口大小刷新 ---
   useEffect(() => {
     const handleGlobalResize = () => {
-      // 修复：确保 activeSessionId 不为 null
       if (!activeSessionId) return;
-
-      const instance = terminalMap.current.get(activeSessionId);
-      if (instance) {
-        instance.fitAddon.fit();
-      }
+      terminalMap.current.get(activeSessionId)?.fitAddon.fit();
     };
     window.addEventListener("resize", handleGlobalResize);
     return () => window.removeEventListener("resize", handleGlobalResize);
   }, [activeSessionId]);
 
-  // 空状态渲染
+  // --- 逻辑 5：右键点击处理 (原生粘贴) ---
+  const handleContextMenu = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!activeSessionId || !activeSession?.connector) return;
+
+    const instance = terminalMap.current.get(activeSessionId);
+    if (!instance) return;
+
+    const { terminal: term } = instance;
+
+    if (term.hasSelection()) {
+      term.clearSelection();
+    } else {
+      try {
+        // 使用 Tauri v2 原生读取
+        const text = await readText();
+        if (text) {
+          activeSession.connector.write(text);
+        }
+      } catch (err) {
+        console.error("Native paste failed", err);
+      }
+    }
+  };
+
   if (sessions.length === 0 || !activeSession) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-background">
@@ -195,31 +214,23 @@ export function TerminalView() {
 
   return (
     <main
-      id="slot-mid-main"
       className="relative h-full w-full overflow-hidden"
       style={{
         gridArea: "mid-main",
         backgroundColor: theme === "light" ? "#ffffff" : "#1e1e1e",
       }}
       onClick={() => {
-        // 修复：确保 activeSessionId 不为 null
         if (activeSessionId) {
-          const instance = terminalMap.current.get(activeSessionId);
-          instance?.terminal.focus();
+          terminalMap.current.get(activeSessionId)?.terminal.focus();
         }
       }}
+      onContextMenu={handleContextMenu}
     >
       {sessions.map((s) => (
         <div
           key={s.id}
-          ref={(el) => {
-            if (el) containerMap.current.set(s.id, el);
-          }}
-          className={
-            s.id === activeSessionId
-              ? "h-full w-full absolute inset-0"
-              : "hidden"
-          }
+          ref={(el) => { if (el) containerMap.current.set(s.id, el); }}
+          className={s.id === activeSessionId ? "h-full w-full absolute inset-0 px-2" : "hidden"}
         />
       ))}
     </main>

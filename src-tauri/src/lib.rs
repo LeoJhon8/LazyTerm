@@ -285,6 +285,7 @@ async fn close_ssh_session(state: State<'_, AppState>, session_id: String) -> Re
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init()) // <--- 添加这一行
         .manage(AppState {
             local_sessions: Arc::new(StdMutex::new(HashMap::new())),
