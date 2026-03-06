@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import type { SSHConfig } from "@/types/terminal";
-// 1. 修复命名冲突：使用别名 openFileDialog
+// 修复命名冲突：使用别名 openFileDialog
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 
 interface SshConnectDialogProps {
@@ -33,7 +33,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig }: 
     setNickname("");
   };
 
-  // 2. 优化同步逻辑，解决 "cascading renders" 警告
+  // 优化同步逻辑，解决 "cascading renders" 警告
   // 仅在对话框由关闭变为打开时，同步初始数据
   useEffect(() => {
     if (open) {
@@ -72,7 +72,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig }: 
 
   const handleSelectKey = async () => {
     try {
-      // 3. 使用别名调用 Tauri API
+      // 使用别名调用 Tauri API
       const selected = await openFileDialog({
         multiple: false,
         directory: false,

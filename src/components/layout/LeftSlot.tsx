@@ -35,9 +35,8 @@ export function LeftSlot() {
 
   const ActiveComponent = MODULE_COMPONENTS[activeModule];
 
-  // 过滤掉SettingsModule，因为我们单独处理它
+  // 过滤掉 SettingsModule，因为我们单独处理它
   const displayModules = modules.filter(moduleId => moduleId !== 'SettingsModule');
-  const hasSettingsModule = modules.includes('SettingsModule');
 
   return (
     <div className="h-full flex">

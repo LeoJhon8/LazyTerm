@@ -18,10 +18,19 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 import { AVAILABLE_MODULES, LOCKED_MODULES } from "@/config/default-slot-config";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useSettingsStore } from "@/store/settings";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { useSshProfilesStore } from "@/store/ssh-profiles";
+import { useQuickCommandsStore } from "@/store/quick-commands";
+import { useTabsStore } from "@/store/tabs";
+import { FileJson, Upload, Trash2 } from "lucide-react";
+
+// 引入 Tauri 原生 API 进行文件保存
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
 
 // --- 类型定义 ---
 interface SlotConfigDialogProps {
@@ -32,7 +41,17 @@ interface SlotConfigDialogProps {
 type ThemeType = "light" | "dark" | "system";
 
 // --- 子组件 1：主题设置 ---
-function ThemeSettings({ theme, setTheme, fontSize, setFontSize }: any) {
+function ThemeSettings({ theme, fontSize }: any) {
+  const { setSettings } = useSettingsStore();
+
+  const setTheme = (newTheme: ThemeType) => {
+    setSettings({ theme: newTheme });
+  };
+
+  const setFontSize = (newFontSize: number) => {
+    setSettings({ fontSize: newFontSize });
+  };
+
   return (
     <div className="space-y-6 py-4">
       <div className="grid gap-4">
@@ -86,11 +105,9 @@ function ThemeSettings({ theme, setTheme, fontSize, setFontSize }: any) {
 
 // --- 子组件 2：布局设置 ---
 function SlotSettings({ tempConfig, onToggle, onActiveChange }: any) {
-  // 1. 过滤掉锁定的模块 (Tabs, QuickCmd)
-  // 2. 额外过滤掉“设置”模块，使其不支持调整位置
   const displayModules = AVAILABLE_MODULES.filter(mod => 
     !LOCKED_MODULES.includes(mod.id) && 
-    mod.id !== "SettingModule" && // 假设设置模块ID为这个，若不同请修改
+    mod.id !== "SettingModule" && 
     mod.id !== "settings"
   );
   
@@ -114,12 +131,12 @@ function SlotSettings({ tempConfig, onToggle, onActiveChange }: any) {
                     className={`flex items-center space-x-3 p-2 rounded-md transition-all cursor-pointer ${
                       isChecked ? 'bg-primary/10' : 'hover:bg-muted/50'
                     }`}
-                    onClick={() => onToggle(side, mod.id)} // 点击整行即可切换
+                    onClick={() => onToggle(side, mod.id)}
                   >
                     <Checkbox
                       id={`${side}-${mod.id}`}
                       checked={isChecked}
-                      className="pointer-events-none" // 让点击由外层div处理
+                      className="pointer-events-none"
                     />
                     <span className="text-sm font-medium">{mod.name}</span>
                   </div>
@@ -154,10 +171,177 @@ function SlotSettings({ tempConfig, onToggle, onActiveChange }: any) {
   );
 }
 
+// --- 子组件 3：数据导入导出 ---
+function DataImportExport() {
+  const { importProfiles, exportProfiles } = useSshProfilesStore();
+  const { commands } = useQuickCommandsStore();
+  const { sessions } = useTabsStore();
+  
+  const [importData, setImportData] = useState("");
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
+
+  // 统一的完整导出，使用 Tauri 原生弹窗
+  const handleExportAll = async () => {
+    try {
+      const exportData = {
+        version: "1.0",
+        exportDate: new Date().toISOString(),
+        sshProfiles: exportProfiles(),
+        quickCommands: commands,
+        sessions: sessions.map(s => ({
+          title: s.title,
+          type: s.type,
+          cwd: s.cwd,
+          host: s.host,
+          config: s.config
+        }))
+      };
+
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const defaultFileName = `lazy-terminal-backup-${new Date().toISOString().split('T')[0]}.json`;
+
+      // 1. 唤起系统原生的保存文件对话框
+      const filePath = await save({
+        title: "保存备份文件",
+        defaultPath: defaultFileName,
+        filters: [
+          { name: "JSON 配置文件", extensions: ["json"] },
+          { name: "所有文件", extensions: ["*"] }
+        ]
+      });
+
+      // 如果用户点击了“取消”，则 filePath 为 null
+      if (!filePath) {
+        return;
+      }
+
+      // 2. 将数据写入用户选择的本地文件路径
+      await writeTextFile(filePath, jsonString);
+
+      setImportMessage(`备份成功！文件已保存至：${filePath}`);
+      setMessageType('success');
+    } catch (error: any) {
+      console.error("备份失败:", error);
+      setImportMessage(`备份失败：${error.message || String(error)}`);
+      setMessageType('error');
+    }
+  };
+
+  // 导入数据
+  const handleImport = () => {
+    try {
+      if (!importData.trim()) throw new Error("请先粘贴导入数据");
+      const data = JSON.parse(importData);
+      
+      if (!data.version) {
+        throw new Error("无效的导入文件格式");
+      }
+
+      if (!confirm("导入将覆盖当前的 SSH配置与快捷命令，确定要继续吗？")) {
+        return;
+      }
+
+      let importedCount = 0;
+
+      // 导入 SSH 配置 (全量替换)
+      if (data.sshProfiles && Array.isArray(data.sshProfiles)) {
+        importProfiles(data.sshProfiles);
+        importedCount += data.sshProfiles.length;
+      }
+
+      // 导入快捷命令 (全量替换)
+      if (data.quickCommands && Array.isArray(data.quickCommands)) {
+        useQuickCommandsStore.setState({ commands: data.quickCommands });
+        importedCount += data.quickCommands.length;
+      }
+
+      setImportMessage(`成功恢复 ${importedCount} 条配置数据！`);
+      setMessageType('success');
+      setImportData("");
+    } catch (error: any) {
+      setImportMessage(`导入失败：${error.message}`);
+      setMessageType('error');
+    }
+  };
+
+  // 清空所有数据
+  const handleClearAll = () => {
+    if (confirm("确定要清空所有会话配置和快捷命令吗？此操作不可恢复！")) {
+      useSshProfilesStore.setState({ 
+        nodes: [{ id: "root-folder", type: "folder", name: "我的会话", parentId: null, isExpanded: true, isRoot: true, order: 0 }] 
+      });
+      useQuickCommandsStore.setState({ commands: [] });
+      setImportMessage("所有配置数据已清空！");
+      setMessageType('success');
+    }
+  };
+
+  return (
+    <div className="space-y-6 py-4">
+      {/* 导出区域 */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Label className="text-base font-semibold">备份数据</Label>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <Button onClick={handleExportAll} variant="outline" className="h-auto py-4 flex flex-col items-center gap-2">
+            <FileJson className="h-6 w-6" />
+            <span>完整备份配置</span>
+            <span className="text-xs text-muted-foreground">包含所有配置和数据</span>
+          </Button>
+        </div>
+      </div>
+
+      <Separator className="bg-muted" />
+
+      {/* 导入区域 */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Label className="text-base font-semibold">导入恢复</Label>
+          <Button onClick={handleClearAll} variant="destructive" size="sm">
+            <Trash2 className="h-4 w-4 mr-2" />
+            清空所有
+          </Button>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="import-data" className="text-sm text-muted-foreground">
+            粘贴 JSON 格式的备份数据
+          </Label>
+          <Textarea
+            id="import-data"
+            value={importData}
+            onChange={(e) => setImportData(e.target.value)}
+            placeholder='{"version":"1.0","sshProfiles":[],"quickCommands":[]}'
+            rows={8}
+            className="font-mono text-sm"
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={handleImport} className="flex-1">
+            <Upload className="h-4 w-4 mr-2" />
+            立即导入并覆盖
+          </Button>
+        </div>
+        
+        {importMessage && (
+          <div className={`p-3 rounded-md text-sm break-all ${
+            messageType === 'success' 
+              ? 'bg-green-100 text-green-800 border border-green-200' 
+              : 'bg-red-100 text-red-800 border border-red-200'
+          }`}>
+            {importMessage}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // --- 主组件 ---
 export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) {
   const { currentConfig, updateSlotConfig, resetToDefault } = useSlotConfigStore();
-  const { theme, setTheme, fontSize, setFontSize } = useSettingsStore();
+  const { theme, fontSize } = useSettingsStore();
 
   const [tempConfig, setTempConfig] = useState(currentConfig);
 
@@ -171,19 +355,16 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
       const isAlreadyInThisSide = next[side].modules.includes(moduleId);
 
       if (isAlreadyInThisSide) {
-        // 如果已在当前侧，则移除
         next[side].modules = next[side].modules.filter((id: string) => id !== moduleId);
         if (next[side].activeModule === moduleId) {
           next[side].activeModule = next[side].modules[0] || "";
         }
       } else {
-        // 如果在另一侧，先从另一侧移除（保证唯一性）
         const otherSide = side === "left" ? "right" : "left";
         next[otherSide].modules = next[otherSide].modules.filter((id: string) => id !== moduleId);
         if (next[otherSide].activeModule === moduleId) {
           next[otherSide].activeModule = next[otherSide].modules[0] || "";
         }
-        // 加入当前侧
         next[side].modules.push(moduleId);
         if (!next[side].activeModule) next[side].activeModule = moduleId;
       }
@@ -202,23 +383,24 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
           <TabsList className="w-40 flex flex-col h-full bg-muted/20 rounded-none border-r p-2 justify-start">
             <TabsTrigger value="theme" className="w-full justify-start gap-2">🎨 主题</TabsTrigger>
             <TabsTrigger value="slots" className="w-full justify-start gap-2">🧱 布局</TabsTrigger>
+            <TabsTrigger value="data" className="w-full justify-start gap-2">💾 数据</TabsTrigger>
           </TabsList>
 
           <ScrollArea className="flex-1 p-8">
             <TabsContent value="theme" className="m-0 focus-visible:outline-none">
-              <ThemeSettings
-                theme={theme} setTheme={setTheme}
-                fontSize={fontSize} setFontSize={setFontSize}
-              />
+              <ThemeSettings theme={theme} fontSize={fontSize} />
             </TabsContent>
             <TabsContent value="slots" className="m-0 focus-visible:outline-none">
               <SlotSettings
                 tempConfig={tempConfig}
                 onToggle={toggleModule}
-                onActiveChange={(side: any, val: any) =>
-                  setTempConfig((p) => ({ ...p, [side]: { ...p[side], activeModule: val } }))
+                onActiveChange={(side: "left" | "right", val: string) =>
+                  setTempConfig((p: any) => ({ ...p, [side]: { ...p[side], activeModule: val } }))
                 }
               />
+            </TabsContent>
+            <TabsContent value="data" className="m-0 focus-visible:outline-none">
+              <DataImportExport />
             </TabsContent>
           </ScrollArea>
         </Tabs>

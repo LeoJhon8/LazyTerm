@@ -24,6 +24,8 @@ interface SSHProfilesState {
   removeNode: (id: string) => void;
   toggleFolder: (id: string) => void;
   moveNode: (activeId: string, overId: string, position: 'before' | 'after' | 'inside') => void;
+  importProfiles: (profiles: any[]) => void;
+  exportProfiles: () => any[];
 }
 
 const isDescendant = (nodes: SessionNode[], parentId: string, targetId: string): boolean => {
@@ -92,9 +94,8 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
         let newParentId: string | null = overNode.parentId;
         let newOrder = overNode.order;
 
-        // 特殊逻辑：如果目标是根节点，或者试图移到和根同级
         if (overNode.isRoot) {
-          newParentId = overNode.id; // 强制移入根
+          newParentId = overNode.id; 
           newOrder = -1;
         } else if (position === 'inside' && overNode.type === 'folder') {
           newParentId = overNode.id;
@@ -105,7 +106,6 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
           newOrder = overNode.order - 0.5;
         }
 
-        // 二次保护：绝对不允许 parentId 为空（除非是 root 本身）
         if (newParentId === null) newParentId = 'root-folder';
 
         const updated = state.nodes.map(n => {
@@ -121,6 +121,40 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
 
         return { nodes: finalNodes };
       }),
+
+      importProfiles: (profiles) => set((state) => {
+        if (!profiles || !Array.isArray(profiles) || profiles.length === 0) return state;
+
+        // 【覆盖模式导入】完整恢复配置保证原有的树形结构完美存在
+        const validProfiles = [...profiles];
+        
+        // 确保导入数据包含合法 root，如果没有容错创建一个
+        let root = validProfiles.find((n) => n.isRoot || n.parentId === null);
+        
+        if (!root) {
+          root = { 
+            id: "root-folder", type: "folder", name: "我的会话", 
+            parentId: null, isExpanded: true, isRoot: true, order: 0 
+          };
+          validProfiles.unshift(root);
+        } else {
+          root.isRoot = true;
+          root.parentId = null;
+        }
+
+        // 把可能游离的节点的 parentId 指回 root.id
+        validProfiles.forEach(p => {
+          if (p.id !== root!.id && !p.parentId) p.parentId = root!.id;
+        });
+
+        return { nodes: validProfiles };
+      }),
+
+      exportProfiles: () => {
+        const { nodes } = get();
+        // 直接返回完整的节点数组，保留所有字段维持树形结构
+        return nodes;
+      },
     }),
     { name: "terminal-sessions-v10", storage: createJSONStorage(() => localStorage) }
   )
