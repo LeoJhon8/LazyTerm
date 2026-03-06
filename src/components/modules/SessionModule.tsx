@@ -144,7 +144,7 @@ function DraggableDroppableRow({ node, depth, onAction, activeId }: { node: Sess
           <ContextMenuItem onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> 连接会话</ContextMenuItem>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" /> 重命名 / 编辑</ContextMenuItem>
+        <ContextMenuItem onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" />编辑</ContextMenuItem>
         {!node.isRoot && <ContextMenuItem onClick={() => onAction('delete', node)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> 删除</ContextMenuItem>}
       </ContextMenuContent>
     </ContextMenu>
