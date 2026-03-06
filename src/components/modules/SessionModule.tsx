@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useEffect } from "react";
+﻿import React, { useState, useMemo, useEffect } from "react";
 import { 
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, 
   useDraggable, useDroppable
 } from "@dnd-kit/core";
 import { 
   Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, 
-  Pencil, Trash2, Terminal, GripVertical 
+  Pencil, Trash2, Terminal
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -55,12 +55,6 @@ function NodeRowContent({
         isOver && !isDragging && dropPos === 'inside' && "bg-primary/20 ring-1 ring-primary/30 ring-inset"
       )}
     >
-      {!node.isRoot ? (
-        <div className="p-1 text-muted-foreground/30 group-hover:text-primary transition-colors">
-          <GripVertical className="h-3.5 w-3.5" />
-        </div>
-      ) : <div className="w-5" />}
-
       <div className="flex items-center gap-2 flex-1 min-w-0">
         {isFolder ? (
           <div className="flex items-center gap-1 text-muted-foreground/60">

@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Plus, Settings, Trash2, GripVertical } from "lucide-react";
+import { Play, Plus, Settings, Trash2 } from "lucide-react";
 import { useQuickCommandsStore, type QuickCommand } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
 import {
@@ -73,18 +73,9 @@ function SortableQuickCommand({
             onClick={onClick}
             title={cmd.autoExecute ? "自动执行" : "仅输入"}
             disabled={isDragging}
+            {...attributes}
+            {...listeners}
           >
-            <span
-              {...attributes}
-              {...listeners}
-              className="cursor-grab active:cursor-grabbing flex items-center justify-center"
-              onClick={(e) => {
-                e.stopPropagation();
-                listeners.onDragStart?.(e as unknown as React.MouseEvent);
-              }}
-            >
-              <GripVertical className="h-3 w-3 text-muted-foreground" />
-            </span>
             {cmd.label}
           </Button>
         </ContextMenuTrigger>
