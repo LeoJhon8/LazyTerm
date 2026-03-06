@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Plus, Settings, Trash2 } from "lucide-react";
+import { Play, Plus, Trash2, Pencil } from "lucide-react";
 import { useQuickCommandsStore, type QuickCommand } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
 import {
@@ -13,7 +13,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -42,10 +41,14 @@ function SortableQuickCommand({
   cmd,
   onClick,
   onContextMenu,
+  onEdit,
+  onDelete,
 }: {
   cmd: QuickCommand;
   onClick: () => void;
   onContextMenu: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   const {
     attributes,
@@ -71,7 +74,7 @@ function SortableQuickCommand({
             size="sm"
             className="h-7 text-xs whitespace-nowrap gap-1"
             onClick={onClick}
-            title={cmd.autoExecute ? "自动执行" : "仅输入"}
+            title={`命令：${cmd.command.split('\n')[0].substring(0, 30)}${cmd.command.length > 30 ? '...' : ''}`}
             disabled={isDragging}
             {...attributes}
             {...listeners}
@@ -80,6 +83,14 @@ function SortableQuickCommand({
           </Button>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          <ContextMenuItem onClick={onEdit}>
+            <Pencil className="mr-2 h-4 w-4" />
+            编辑
+          </ContextMenuItem>
+          <ContextMenuItem onClick={onDelete}>
+            <Trash2 className="mr-2 h-4 w-4" />
+            删除
+          </ContextMenuItem>
           <ContextMenuItem onClick={onContextMenu}>
             发送到所有标签页
           </ContextMenuItem>
@@ -93,6 +104,7 @@ export function QuickCmdBar() {
   const { commands, addCommand, removeCommand, updateCommand, reorderCommands } = useQuickCommandsStore();
   const { activeSessionId, sessions, getAllConnectors } = useTabsStore();
   const [configOpen, setConfigOpen] = useState(false);
+  const [editingCmd, setEditingCmd] = useState<QuickCommand | null>(null);
 
   // 排序命令
   const sortedCommands = useMemo(() => 
@@ -112,24 +124,14 @@ export function QuickCmdBar() {
     })
   );
 
-  // 发送命令到当前激活的终端
+// 发送命令到当前激活的终端
   const handleCommandClick = (cmd: QuickCommand) => {
-    const activeSession = sessions.find((s) => s.id === activeSessionId);
+    const activeSession = sessions.find((s: any) => s.id === activeSessionId);
     if (activeSession?.connector) {
-      if (cmd.autoExecute) {
-        // 多行命令，每行分开执行
-        const lines = cmd.command.split('\n').filter(line => line.trim());
-        lines.forEach((line) => {
-          // 每行都发送回车执行
-          const commandToSend = line.trimEnd() + "\r";
-          if (activeSession?.connector) {
-            activeSession.connector.write(commandToSend);
-          }
-        });
-      } else {
-        // 仅输入，不自动执行
-        activeSession.connector.write(cmd.command);
-      }
+      // 将 textarea 产生的换行符 \n 统一替换为终端执行符 \r
+      // 这样恰好完美实现：有几个换行，就触发几次执行。最后一行没有换行，就只粘贴不执行。
+      const commandsToExecute = cmd.command.replace(/\r?\n/g, '\r');
+      activeSession.connector.write(commandsToExecute);
     }
   };
 
@@ -138,18 +140,10 @@ export function QuickCmdBar() {
     const connectors = getAllConnectors();
     if (connectors.length === 0) return;
 
-    connectors.forEach((connector) => {
-      if (cmd.autoExecute) {
-        // 多行命令，每行分开执行
-        const lines = cmd.command.split('\n').filter(line => line.trim());
-        lines.forEach((line) => {
-          const commandToSend = line.trimEnd() + "\r";
-          connector.write(commandToSend);
-        });
-      } else {
-        // 仅输入，不自动执行
-        connector.write(cmd.command);
-      }
+    // 同样的处理逻辑
+    const commandsToExecute = cmd.command.replace(/\r?\n/g, '\r');
+    connectors.forEach((connector: any) => {
+      connector.write(commandsToExecute);
     });
   };
 
@@ -174,6 +168,17 @@ export function QuickCmdBar() {
     addCommand(newCommand);
   };
 
+  // 编辑命令
+  const handleEditCommand = (cmd: QuickCommand) => {
+    setEditingCmd(cmd);
+    setConfigOpen(true);
+  };
+
+  // 删除命令
+  const handleDeleteCommand = (cmd: QuickCommand) => {
+    removeCommand(cmd.id);
+  };
+
   return (
     <div className="flex items-center gap-2 h-full px-2">
       <Play className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -194,31 +199,35 @@ export function QuickCmdBar() {
                 cmd={cmd}
                 onClick={() => handleCommandClick(cmd)}
                 onContextMenu={() => sendToAllSessions(cmd)}
+                onEdit={() => handleEditCommand(cmd)}
+                onDelete={() => handleDeleteCommand(cmd)}
               />
             ))}
           </div>
         </SortableContext>
       </DndContext>
 
-      {/* 配置按钮 */}
+      {/* 添加命令按钮 */}
       <Dialog open={configOpen} onOpenChange={setConfigOpen}>
         <DialogTrigger asChild>
           <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-            <Settings className="h-3 w-3" />
+            <Plus className="h-3 w-3" />
           </Button>
         </DialogTrigger>
         
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle>快捷命令配置</DialogTitle>
+            <DialogTitle>{editingCmd ? '编辑快捷命令' : '添加快捷命令'}</DialogTitle>
           </DialogHeader>
           
           <QuickCommandForm 
             onAdd={handleAddCommand}
-            onRemove={removeCommand}
             onUpdate={updateCommand}
-            commands={commands}
-            onClose={() => setConfigOpen(false)}
+            onClose={() => {
+              setConfigOpen(false);
+              setEditingCmd(null);
+            }}
+            editingCmd={editingCmd}
           />
         </DialogContent>
       </Dialog>
@@ -229,93 +238,67 @@ export function QuickCmdBar() {
 // 快捷命令配置表单组件
 function QuickCommandForm({
   onAdd,
-  onRemove,
   onUpdate,
-  commands,
-  onClose
+  onClose,
+  editingCmd
 }: {
   onAdd: (cmd: Omit<QuickCommand, "id">) => void;
-  onRemove: (id: string) => void;
   onUpdate: (id: string, updates: Partial<QuickCommand>) => void;
-  commands: QuickCommand[];
   onClose: () => void;
+  editingCmd?: QuickCommand | null;
 }) {
-  const [label, setLabel] = useState("");
-  const [command, setCommand] = useState("");
-  const [autoExecute, setAutoExecute] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [label, setLabel] = useState(editingCmd?.label || "");
+  const [command, setCommand] = useState(editingCmd?.command || "");
+  const [editingId, setEditingId] = useState<string | null>(editingCmd?.id || null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!label.trim() || !command.trim()) return;
+    if (!label.trim() || !command) return;
     
     if (editingId) {
       onUpdate(editingId, { 
         label: label.trim(), 
-        command: command.trim(),
-        autoExecute 
+        command: command
       });
       setEditingId(null);
+      setLabel("");
+      setCommand("");
     } else {
       onAdd({ 
         label: label.trim(), 
-        command: command.trim(), 
-        autoExecute,
-        order: commands.length 
+        command: command, 
+        order: 0,
+        autoExecute: false // 保留该字段以兼容类型定义
       });
+      setLabel("");
+      setCommand("");
     }
-    
-    setLabel("");
-    setCommand("");
-    setAutoExecute(false);
   };
 
   const handleEdit = (cmd: QuickCommand) => {
     setEditingId(cmd.id);
     setLabel(cmd.label);
     setCommand(cmd.command);
-    setAutoExecute(cmd.autoExecute);
   };
 
   const handleCancel = () => {
     setEditingId(null);
     setLabel("");
     setCommand("");
-    setAutoExecute(false);
   };
 
   return (
     <div className="space-y-4">
       {/* 添加/编辑命令表单 */}
       <form onSubmit={handleSubmit} className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="label">名称</Label>
-            <Input
-              id="label"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="如：清屏"
-            />
-          </div>
-          <div className="space-y-2 flex items-end">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="autoExecute"
-                checked={autoExecute}
-                onCheckedChange={(checked) => setAutoExecute(checked as boolean)}
-              />
-              <Label
-                htmlFor="autoExecute"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-              >
-                自动执行
-              </Label>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              选中后每行命令自动发送回车执行
-            </p>
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="label">名称</Label>
+          <Input
+            id="label"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="如：清屏"
+          />
         </div>
         
         <div className="space-y-2">
@@ -324,8 +307,8 @@ function QuickCommandForm({
             id="command"
             value={command}
             onChange={(e) => setCommand(e.target.value)}
-            placeholder="输入命令，支持多行&#10;如：&#10;cd project&#10;npm install"
-            rows={4}
+            placeholder={`输入命令，支持换行&#10;例如：&#10;cd project&#10;npm install&#10;&#10;提示：输入完命令后按回车换行，会自动执行上面的命令`}
+            rows={6}
           />
         </div>
         
@@ -339,54 +322,16 @@ function QuickCommandForm({
               type="button" 
               variant="outline" 
               size="sm"
-              onClick={handleCancel}
+              onClick={() => {
+                handleCancel();
+                onClose();
+              }}
             >
               取消
             </Button>
           )}
         </div>
       </form>
-
-      {/* 命令列表 */}
-      <div className="space-y-2 max-h-[300px] overflow-y-auto">
-        <Label>已有命令（点击删除）</Label>
-        {commands.map((cmd) => (
-          <div
-            key={cmd.id}
-            className="flex items-center justify-between p-2 border rounded-md group"
-          >
-            <div className="flex-1 min-w-0">
-              <div className="font-medium text-sm truncate">{cmd.label}</div>
-              <div className="text-xs text-muted-foreground truncate font-mono whitespace-pre-wrap">
-                {cmd.command}
-              </div>
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`text-xs px-1.5 py-0.5 rounded ${cmd.autoExecute ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                  {cmd.autoExecute ? "自动执行" : "仅输入"}
-                </span>
-              </div>
-            </div>
-            <div className="flex gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => handleEdit(cmd)}
-              >
-                编辑
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                onClick={() => onRemove(cmd.id)}
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
 
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={onClose}>
