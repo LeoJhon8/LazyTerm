@@ -49,6 +49,8 @@ interface TabsState {
   closeAllSessions: () => void;
   /** 获取所有会话的连接器 */
   getAllConnectors: () => ITerminalConnector[];
+  /** 切换会话的连接器（用于 SSH 超时后切换到本地） */
+  switchConnector: (sessionId: string, newType: "local" | "ssh") => void;
 }
 
 export const useTabsStore = create<TabsState>()(
@@ -73,11 +75,18 @@ export const useTabsStore = create<TabsState>()(
             });
             break;
           case "ssh":
-            // 使用 SSH 连接器
+            // 使用 SSH 连接器，注册断开连接回调
             if (!sessionData.config?.sshConfig) {
               throw new Error("SSH 配置不能为空");
             }
-            connector = new SshConnector(sessionData.config.sshConfig);
+            connector = new SshConnector(
+              sessionData.config.sshConfig,
+              () => {
+                // SSH 断开连接时自动切换到本地连接
+                console.log(`[Store] SSH disconnected for session ${id}, switching to local...`);
+                get().switchConnector(id, "local");
+              }
+            );
             break;
           case "telnet":
             throw new Error("Telnet 连接器目前尚未实现");
@@ -172,6 +181,64 @@ export const useTabsStore = create<TabsState>()(
         return get().sessions
           .map(session => session.connector)
           .filter((connector): connector is ITerminalConnector => connector !== undefined);
+      },
+
+      switchConnector: (sessionId, newType) => {
+        set((state) => {
+          const sessionIndex = state.sessions.findIndex(s => s.id === sessionId);
+          if (sessionIndex === -1) {
+            console.error(`Session ${sessionId} not found`);
+            return state;
+          }
+
+          const oldSession = state.sessions[sessionIndex];
+          const title = oldSession.title; // 保持标题不变
+          
+          // 关闭旧的连接器（释放后端资源）
+          if (oldSession.connector) {
+            console.log(`[Store] Closing old connector for session ${sessionId}...`);
+            oldSession.connector.close();
+          }
+
+          // 创建新的连接器
+          let newConnector: ITerminalConnector;
+          if (newType === "local") {
+            newConnector = new LocalConnector({ 
+              cwd: oldSession.config?.cwd,
+              shell: oldSession.config?.shell
+            });
+          } else if (newType === "ssh") {
+            if (!oldSession.config?.sshConfig) {
+              throw new Error("SSH 配置不能为空");
+            }
+            newConnector = new SshConnector(oldSession.config.sshConfig);
+          } else {
+            throw new Error(`不支持的连接类型：${newType}`);
+          }
+
+          // 更新会话
+          const newSessions = [...state.sessions];
+          newSessions[sessionIndex] = {
+            ...oldSession,
+            type: newType,
+            connector: newConnector,
+          };
+
+          console.log(`[Store] Switched session ${sessionId} from ${oldSession.type} to ${newType}, title remains: ${title}`);
+
+          // 异步打开新连接
+          newConnector.open().catch((error: unknown) => {
+            console.error("[Tauri] 切换连接器后创建失败:", error);
+          });
+
+          // 强制触发终端重新初始化：通过修改 session 对象触发 React 重新渲染
+          // 不直接操作 activeSessionId，而是通过更改 connector 引用来触发 TerminalView 重建
+          // TerminalView 的 useEffect 依赖 activeSession，当 connector 变化时会重新初始化
+
+          return {
+            sessions: newSessions,
+          };
+        });
       },
     }),
     {

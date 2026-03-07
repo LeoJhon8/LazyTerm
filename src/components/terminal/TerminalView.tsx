@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useTabsStore } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
 import { useHistoryStore } from "@/store/history";
+import type { ITerminalConnector } from "@/types/terminal";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -12,6 +13,10 @@ interface TerminalInstance {
   terminal: Terminal;
   fitAddon: FitAddon;
   resizeObserver: ResizeObserver;
+  connector?: ITerminalConnector; // 当前绑定的连接器
+  isConnectorBound: boolean; // 标记是否已绑定 connector 输出
+  savedBuffer: string; // 保存的终端缓冲区内容
+  inputDisposable?: { dispose(): void }; // 输入监听解绑函数
   dispose: () => void;
 }
 
@@ -29,8 +34,7 @@ export function TerminalView() {
   // --- 逻辑 1：初始化终端实例 ---
   useEffect(() => {
     if (!activeSessionId || !activeSession || !activeSession.connector) return;
-    if (terminalMap.current.has(activeSessionId)) return;
-
+    
     const { connector } = activeSession;
     const containerEl = containerMap.current.get(activeSessionId);
     if (!containerEl) return;
@@ -38,11 +42,77 @@ export function TerminalView() {
     let isMounted = true;
 
     const initTerminal = async () => {
+      // 等待连接器就绪
       while (!connector.isConnected && isMounted) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       if (!isMounted || !connector.isConnected) return;
 
+      // 检查是否已存在终端实例（复用 Terminal，不清空内容）
+      const existingInstance = terminalMap.current.get(activeSessionId);
+      
+      if (existingInstance) {
+        // Terminal 已存在，只需要切换 connector 的数据绑定
+        console.log(`[TerminalView] Switching connector for session ${activeSessionId}, preserving terminal content...`);
+        
+        // 1. 保存当前终端内容
+        const buffer = existingInstance.terminal.buffer.active;
+        let savedContent = '';
+        for (let i = 0; i < buffer.length; i++) {
+          const line = buffer.getLine(i);
+          if (line) {
+            savedContent += line.translateToString(true) + '\n';
+          }
+        }
+        existingInstance.savedBuffer = savedContent;
+        console.log(`[TerminalView] Saved buffer content: ${savedContent.length} chars`);
+        
+        // 2. 断开旧的输入监听
+        if (existingInstance.inputDisposable) {
+          existingInstance.inputDisposable.dispose();
+        }
+        
+        // 3. 标记旧的 connector 为未绑定（停止接收数据）
+        existingInstance.isConnectorBound = false;
+        
+        // 4. 更新 connector 引用
+        existingInstance.connector = connector;
+        existingInstance.isConnectorBound = true;
+        
+        // 5. 重新绑定输出
+        const boundConnector = connector;
+        await boundConnector.onData((data) => {
+          if (existingInstance.isConnectorBound && existingInstance.connector === boundConnector) {
+            existingInstance.terminal.write(data);
+          }
+        });
+        
+        // 6. 重新绑定输入（关键修复！）
+        const termRef = existingInstance.terminal;
+        const newInputDisposable = termRef.onData((data) => {
+          console.log(`[TerminalView] Input data after switch:`, data.substring(0, 50));
+          connector.write(data);
+        });
+        existingInstance.inputDisposable = newInputDisposable;
+        console.log(`[TerminalView] Input listener rebound to new connector`);
+        
+        // 7. 恢复终端内容（如果有）
+        if (savedContent) {
+          console.log(`[TerminalView] Restoring buffer content...`);
+          existingInstance.terminal.clear();
+          existingInstance.terminal.write(savedContent);
+        }
+        
+        // 8. 确保焦点
+        requestAnimationFrame(() => {
+          existingInstance.terminal.focus();
+        });
+        
+        console.log(`[TerminalView] Connector switched successfully!`);
+        return; // 直接返回，不重新创建 Terminal
+      }
+
+      // --- 首次创建 Terminal ---
       const term = new Terminal({
         fontFamily: fontFamily,
         fontSize: fontSize,
@@ -95,9 +165,10 @@ export function TerminalView() {
       });
 
       const dataDisposable = term.onData((data) => {
+        console.log(`[TerminalView] Initial input data:`, data.substring(0, 50));
         connector.write(data);
       });
-
+            
       const keyDisposable = term.onKey(({ domEvent }) => {
         if (domEvent.key === "Enter") {
           const buffer = term.buffer.active;
@@ -115,7 +186,7 @@ export function TerminalView() {
       });
 
       // 绑定输出 (由 connector.close() 统一清理)
-      await connector.onData((data) => {
+      const connectorDataUnlisten = await connector.onData((data) => {
         term.write(data);
       });
 
@@ -141,6 +212,10 @@ export function TerminalView() {
         terminal: term,
         fitAddon,
         resizeObserver,
+        connector,
+        isConnectorBound: true,
+        savedBuffer: '',
+        inputDisposable: dataDisposable,
         dispose: () => {
           containerEl.removeEventListener("wheel", handleWheel, { capture: true });
           dataDisposable.dispose();
@@ -159,7 +234,7 @@ export function TerminalView() {
 
     initTerminal();
     return () => { isMounted = false; };
-  }, [activeSessionId, activeSession, addHistoryCommand, setSettings]);
+  }, [activeSessionId, activeSession?.connector, addHistoryCommand, setSettings]);
 
   // --- 逻辑 2：响应设置实时变化 (热更新) ---
   useEffect(() => {

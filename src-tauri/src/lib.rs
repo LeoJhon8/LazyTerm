@@ -191,6 +191,7 @@ async fn create_ssh_session<R: Runtime>(
     // 4. 后台任务：处理 SSH 双向数据流
     tokio::spawn(async move {
         let event_name = format!("terminal-data-{}", session_id_clone);
+        let close_event_name = format!("terminal-close-{}", session_id_clone);
         loop {
             tokio::select! {
                 // 读取远程服务器输出
@@ -199,7 +200,11 @@ async fn create_ssh_session<R: Runtime>(
                         Some(russh::ChannelMsg::Data { data }) => {
                             let _ = app.emit(&event_name, String::from_utf8_lossy(&data).to_string());
                         }
-                        Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) | None => break,
+                        Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) | None => {
+                            // 发送连接关闭事件
+                            let _ = app.emit(&close_event_name, ());
+                            break;
+                        }
                         _ => {}
                     }
                 }
@@ -208,7 +213,11 @@ async fn create_ssh_session<R: Runtime>(
                     match ctrl {
                         SshControlMsg::SendData(data) => { let _ = channel.data(&data[..]).await; }
                         SshControlMsg::Resize(cols, rows) => { let _ = channel.window_change(cols, rows, 0, 0).await; }
-                        SshControlMsg::Close => { let _ = channel.close().await; break; }
+                        SshControlMsg::Close => { 
+                            let _ = app.emit(&close_event_name, ());
+                            let _ = channel.close().await; 
+                            break; 
+                        }
                     }
                 }
             }

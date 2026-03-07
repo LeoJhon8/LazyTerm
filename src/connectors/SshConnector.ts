@@ -7,9 +7,11 @@ export class SshConnector implements ITerminalConnector {
   private config: SSHConfig;
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
+  private onDisconnectCallback?: () => void;
 
-  constructor(config: SSHConfig) {
+  constructor(config: SSHConfig, onDisconnect?: () => void) {
     this.config = config;
+    this.onDisconnectCallback = onDisconnect;
   }
 
   get isConnected(): boolean {
@@ -63,6 +65,10 @@ export class SshConnector implements ITerminalConnector {
     }
   }
 
+  setOnDisconnect(callback: () => void): void {
+    this.onDisconnectCallback = callback;
+  }
+
   async onData(handler: (data: string) => void): Promise<void> {
     // 等待 sessionId 可用
     if (!this.sessionId) {
@@ -97,6 +103,28 @@ export class SshConnector implements ITerminalConnector {
     });
     
     console.log(`[SSH Connector] Event listener registered`);
+    
+    // 监听 SSH 连接断开事件（当后端关闭连接时）
+    const closeEventName = `terminal-close-${this.sessionId}`;
+    const closeUnlisten = await listen(closeEventName, () => {
+      console.log(`[SSH Connector] Connection closed event received`);
+      this.handleDisconnect();
+    });
+    
+    // 存储关闭事件的 unlisten 函数
+    const originalUnlistenFn = this.unlistenFn;
+    this.unlistenFn = () => {
+      if (originalUnlistenFn) originalUnlistenFn();
+      closeUnlisten();
+    };
+  }
+
+  private handleDisconnect(): void {
+    console.log('[SSH Connector] Handling disconnection...');
+    this.sessionId = null;
+    if (this.onDisconnectCallback) {
+      this.onDisconnectCallback();
+    }
   }
 
   write(data: string | Uint8Array): void {
