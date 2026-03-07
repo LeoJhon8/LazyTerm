@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useTabsStore } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
 import { useHistoryStore } from "@/store/history";
@@ -13,10 +13,8 @@ interface TerminalInstance {
   terminal: Terminal;
   fitAddon: FitAddon;
   resizeObserver: ResizeObserver;
-  connector?: ITerminalConnector; // 当前绑定的连接器
-  isConnectorBound: boolean; // 标记是否已绑定 connector 输出
-  savedBuffer: string; // 保存的终端缓冲区内容
-  inputDisposable?: { dispose(): void }; // 输入监听解绑函数
+  connector?: ITerminalConnector;
+  inputDisposable?: { dispose(): void };
   dispose: () => void;
 }
 
@@ -30,6 +28,32 @@ export function TerminalView() {
   const lastCommandRef = useRef<string>("");
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
+
+  // --- 逻辑 0：统一封装的终端激活与刷新机制 ---
+  const activateTerminal = useCallback((sessionId?: string | null, requireFocus: boolean = true) => {
+    if (!sessionId) return;
+    const instance = terminalMap.current.get(sessionId);
+    const container = containerMap.current.get(sessionId);
+
+    if (instance && container) {
+      requestAnimationFrame(() => {
+        try {
+          if (container.clientWidth > 0 && container.clientHeight > 0) {
+            instance.fitAddon.fit();
+            const dims = instance.fitAddon.proposeDimensions();
+            if (dims && instance.connector) {
+              instance.connector.resize(dims.cols, dims.rows);
+            }
+          }
+          if (requireFocus) {
+            instance.terminal.focus();
+          }
+        } catch (error) {
+          console.warn("[TerminalView] 激活/重载终端失败:", error);
+        }
+      });
+    }
+  }, []);
 
   // --- 逻辑 1：初始化终端实例 ---
   useEffect(() => {
@@ -48,68 +72,54 @@ export function TerminalView() {
       }
       if (!isMounted || !connector.isConnected) return;
 
-      // 检查是否已存在终端实例（复用 Terminal，不清空内容）
       const existingInstance = terminalMap.current.get(activeSessionId);
       
       if (existingInstance) {
-        // Terminal 已存在，只需要切换 connector 的数据绑定
-        console.log(`[TerminalView] Switching connector for session ${activeSessionId}, preserving terminal content...`);
-        
-        // 1. 保存当前终端内容
-        const buffer = existingInstance.terminal.buffer.active;
-        let savedContent = '';
-        for (let i = 0; i < buffer.length; i++) {
-          const line = buffer.getLine(i);
-          if (line) {
-            savedContent += line.translateToString(true) + '\n';
-          }
+        // 只是正常的 Tab 来回切换，直接返回
+        if (existingInstance.connector === connector) {
+          return;
         }
-        existingInstance.savedBuffer = savedContent;
-        console.log(`[TerminalView] Saved buffer content: ${savedContent.length} chars`);
-        
-        // 2. 断开旧的输入监听
+
+        // --- 核心逻辑：会话降级/重连，仅切换数据流，保留所有终端输出 ---
+        console.log(`[TerminalView] 检测到连接器变更 ${activeSessionId}...`);
+
+        // 1. 清理旧的输入监听器（防止 Xterm 按键发给旧连接）
         if (existingInstance.inputDisposable) {
           existingInstance.inputDisposable.dispose();
         }
         
-        // 3. 标记旧的 connector 为未绑定（停止接收数据）
-        existingInstance.isConnectorBound = false;
-        
-        // 4. 更新 connector 引用
+        // 2. 更新为新的连接器
         existingInstance.connector = connector;
-        existingInstance.isConnectorBound = true;
         
-        // 5. 重新绑定输出
-        const boundConnector = connector;
-        await boundConnector.onData((data) => {
-          if (existingInstance.isConnectorBound && existingInstance.connector === boundConnector) {
-            existingInstance.terminal.write(data);
+        // 3. 重新绑定新的输出流 (终极防清屏 + 防重叠策略)
+        const connectionSwitchTime = Date.now();
+        await connector.onData((data) => {
+          // 在连接切换的最初 2 秒内，进行精准拦截
+          if (Date.now() - connectionSwitchTime < 2000) {
+            data = data
+              // 1. 拦截彻底清屏 (2J) 和清空历史缓冲区 (3J)
+              .replace(/\x1b\[[23]J/g, '')
+              // 2. 拦截终端硬重置 (Reset)
+              .replace(/\x1bc/g, '')
+              // 3. 将“光标回到屏幕左上角”(H 或 1;1H) 替换为“回车符”(\r)
+              // 这样本地 Shell 就会在黄色警告语的下一行立刻开始输出，而不是跳回屏幕顶部覆盖！
+              .replace(/\x1b\[1?;?1?[Hf]/g, '\r');
+              
+              // 注意：这里绝不过滤 \x1b[K，保留终端原生清理当前行的能力，防止新旧字符重叠！
           }
+          existingInstance.terminal.write(data);
         });
-        
-        // 6. 重新绑定输入（关键修复！）
-        const termRef = existingInstance.terminal;
-        const newInputDisposable = termRef.onData((data) => {
-          console.log(`[TerminalView] Input data after switch:`, data.substring(0, 50));
+
+        // 4. 打印会话切换提示日志
+        existingInstance.terminal.write('\r\n\x1b[33m ⚠️ Session connection changed. Output preserved. \x1b[0m\r\n');
+        // 5. 重新绑定新的输入流
+        existingInstance.inputDisposable = existingInstance.terminal.onData((data) => {
           connector.write(data);
         });
-        existingInstance.inputDisposable = newInputDisposable;
-        console.log(`[TerminalView] Input listener rebound to new connector`);
         
-        // 7. 恢复终端内容（如果有）
-        if (savedContent) {
-          console.log(`[TerminalView] Restoring buffer content...`);
-          existingInstance.terminal.clear();
-          existingInstance.terminal.write(savedContent);
-        }
-        
-        // 8. 确保焦点
-        requestAnimationFrame(() => {
-          existingInstance.terminal.focus();
-        });
-        
-        console.log(`[TerminalView] Connector switched successfully!`);
-        return; // 直接返回，不重新创建 Terminal
+        // 6. 激活终端
+        activateTerminal(activeSessionId);
+        return; 
       }
 
       // --- 首次创建 Terminal ---
@@ -140,14 +150,10 @@ export function TerminalView() {
 
       term.open(containerEl);
 
-      // --- 核心修复：强制拦截滚轮事件 ---
       const handleWheel = (e: WheelEvent) => {
         if (e.ctrlKey) {
-          // 1. 阻止浏览器默认行为（如缩放页面）
           e.preventDefault(); 
-          // 2. 停止事件冒泡，防止触发父级滚动
           e.stopPropagation();
-          // 3. 关键：停止立即传播，防止 xterm 内部逻辑收到此滚轮事件进行滚动
           e.stopImmediatePropagation();
 
           const currentSize = useSettingsStore.getState().fontSize;
@@ -158,14 +164,12 @@ export function TerminalView() {
         }
       };
 
-      // 使用 capture: true 在捕获阶段拦截，并在 xterm 处理之前将其切断
       containerEl.addEventListener("wheel", handleWheel, { 
         passive: false, 
         capture: true 
       });
 
       const dataDisposable = term.onData((data) => {
-        console.log(`[TerminalView] Initial input data:`, data.substring(0, 50));
         connector.write(data);
       });
             
@@ -185,8 +189,8 @@ export function TerminalView() {
         }
       });
 
-      // 绑定输出 (由 connector.close() 统一清理)
-      const connectorDataUnlisten = await connector.onData((data) => {
+      // 首次创建时，正常绑定输出，不拦截清屏指令
+      await connector.onData((data) => {
         term.write(data);
       });
 
@@ -200,46 +204,40 @@ export function TerminalView() {
       });
 
       const resizeObserver = new ResizeObserver(() => {
-        if (containerEl.clientWidth > 0 && containerEl.clientHeight > 0) {
-          fitAddon.fit();
-          const dims = fitAddon.proposeDimensions();
-          if (dims) connector.resize(dims.cols, dims.rows);
-        }
+        activateTerminal(activeSessionId, false);
       });
       resizeObserver.observe(containerEl);
 
-      terminalMap.current.set(activeSessionId, {
+      const instance: TerminalInstance = {
         terminal: term,
         fitAddon,
         resizeObserver,
         connector,
-        isConnectorBound: true,
-        savedBuffer: '',
         inputDisposable: dataDisposable,
         dispose: () => {
           containerEl.removeEventListener("wheel", handleWheel, { capture: true });
-          dataDisposable.dispose();
+          instance.inputDisposable?.dispose();
           keyDisposable.dispose();
           selectionDisposable.dispose();
           resizeObserver.disconnect();
           term.dispose();
         },
-      });
+      };
 
-      requestAnimationFrame(() => {
-        fitAddon.fit();
-        term.focus();
-      });
+      terminalMap.current.set(activeSessionId, instance);
+
+      // 首次加载完毕，统一入口激活
+      activateTerminal(activeSessionId);
     };
 
     initTerminal();
     return () => { isMounted = false; };
-  }, [activeSessionId, activeSession?.connector, addHistoryCommand, setSettings]);
+  }, [activeSessionId, activeSession?.connector, addHistoryCommand, setSettings, activateTerminal]);
 
   // --- 逻辑 2：响应设置实时变化 (热更新) ---
   useEffect(() => {
     terminalMap.current.forEach((instance, id) => {
-      const { terminal, fitAddon } = instance;
+      const { terminal } = instance;
       
       if (terminal.options.fontSize !== fontSize) terminal.options.fontSize = fontSize;
       if (terminal.options.fontFamily !== fontFamily) terminal.options.fontFamily = fontFamily;
@@ -252,19 +250,13 @@ export function TerminalView() {
         selectionBackground: "rgba(82, 139, 255, 0.4)",
       };
 
-      requestAnimationFrame(() => {
-        fitAddon.fit();
-        if (id === activeSessionId) {
-          const dims = fitAddon.proposeDimensions();
-          if (dims && activeSession?.connector) {
-            activeSession.connector.resize(dims.cols, dims.rows);
-          }
-        }
-      });
+      if (id === activeSessionId) {
+        activateTerminal(id, false);
+      }
     });
-  }, [fontSize, fontFamily, theme, activeSessionId, activeSession?.connector]);
+  }, [fontSize, fontFamily, theme, activeSessionId, activateTerminal]);
 
-  // --- 逻辑 3：清理会话 ---
+  // --- 逻辑 3：清理已删除的会话 ---
   useEffect(() => {
     const currentIds = new Set(sessions.map((s) => s.id));
     terminalMap.current.forEach((instance, id) => {
@@ -277,27 +269,30 @@ export function TerminalView() {
 
   // --- 逻辑 4：Tab 切换聚焦 ---
   useEffect(() => {
-    if (!activeSessionId) return;
-    const instance = terminalMap.current.get(activeSessionId);
-    if (instance) {
-      requestAnimationFrame(() => {
-        instance.fitAddon.fit();
-        instance.terminal.focus();
-      });
-    }
-  }, [activeSessionId]);
+    activateTerminal(activeSessionId);
+  }, [activeSessionId, activateTerminal]);
 
-  // --- 逻辑 5：窗口 Resize ---
+  // --- 逻辑 5：浏览器可见性事件 (由其他 Tab/窗口 切回时) ---
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        activateTerminal(activeSessionId);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [activeSessionId, activateTerminal]);
+
+  // --- 逻辑 6：窗口 Resize ---
   useEffect(() => {
     const handleGlobalResize = () => {
-      if (!activeSessionId) return;
-      terminalMap.current.get(activeSessionId)?.fitAddon.fit();
+      activateTerminal(activeSessionId, false);
     };
     window.addEventListener("resize", handleGlobalResize);
     return () => window.removeEventListener("resize", handleGlobalResize);
-  }, [activeSessionId]);
+  }, [activeSessionId, activateTerminal]);
 
-  // --- 逻辑 6：右键粘贴 ---
+  // --- 逻辑 7：右键粘贴 ---
   const handleContextMenu = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!activeSessionId || !activeSession?.connector) return;
@@ -335,11 +330,7 @@ export function TerminalView() {
         gridArea: "mid-main",
         backgroundColor: theme === "light" ? "#ffffff" : "#1e1e1e",
       }}
-      onClick={() => {
-        if (activeSessionId) {
-          terminalMap.current.get(activeSessionId)?.terminal.focus();
-        }
-      }}
+      onClick={() => activateTerminal(activeSessionId)}
       onContextMenu={handleContextMenu}
     >
       {sessions.map((s) => (
