@@ -42,7 +42,14 @@ export function TerminalView() {
             instance.fitAddon.fit();
             const dims = instance.fitAddon.proposeDimensions();
             if (dims && instance.connector) {
-              instance.connector.resize(dims.cols, dims.rows);
+              // 关键修复：只有当行列数真正变化时才通知连接器调整大小
+              // 防止仅字体大小变化时触发不必要的 resize 导致 shell 重新输出欢迎信息
+              const currentCols = instance.terminal.cols;
+              const currentRows = instance.terminal.rows;
+              
+              if (dims.cols !== currentCols || dims.rows !== currentRows) {
+                instance.connector.resize(dims.cols, dims.rows);
+              }
             }
           }
           if (requireFocus) {
