@@ -83,7 +83,28 @@ export function TerminalView() {
 
     let isMounted = true;
 
+    // 【修复1：早期缓冲区】防止后端刚连接上时发出的欢迎信息（MOTD）因前端还没准备好而丢失
+    let tempBuffer = ""; 
+    let currentTermInstance: TerminalInstance | null = null;
+    let isCurrentConnector = true;
+
+    // 立即监听数据流，不要等 isConnected 的 while 循环
+    const setupEarlyListener = async () => {
+      return await connector.onData((data) => {
+        if (!isCurrentConnector) return;
+        if (currentTermInstance) {
+          currentTermInstance.terminal.write(data);
+        } else {
+          tempBuffer += data; // 终端 DOM 还没准备好，先存入内存缓冲区
+        }
+      });
+    };
+    
+    // 保存可能的解除监听函数，防止内存泄漏
+    const unsubPromise = setupEarlyListener();
+
     const initTerminal = async () => {
+      // 仍然等待 isConnected 以确保连接状态，但数据不会丢，因为已经缓存在 tempBuffer 中
       while (!connector.isConnected && isMounted) {
         await new Promise((r) => setTimeout(r, 100));
       }
@@ -100,13 +121,11 @@ export function TerminalView() {
 
         console.log("Connector changed:", activeSessionId);
 
-        // 1. 切断旧连接的数据流，防止延迟包污染屏幕
         existingInstance.dataUnsubscribe?.();
         existingInstance.inputDisposable?.dispose();
         existingInstance.connector?.close();
         existingInstance.connector = connector;
 
-        // 2. 开启指令拦截保护 (2秒窗口期)
         existingInstance.termState.isTransitioning = true;
         if (existingInstance.termState.timeoutId) {
           clearTimeout(existingInstance.termState.timeoutId);
@@ -115,31 +134,33 @@ export function TerminalView() {
           existingInstance.termState.isTransitioning = false;
         }, 2000);
 
-        // 3. 构建 "垫片行"，把当前屏幕内容安全地推入上方 Scrollback 历史记录中
         let spacer = "\r\n";
         for (let i = 0; i < existingInstance.terminal.rows; i++) {
           spacer += "\r\n";
         }
 
-        // 打印警告并将原屏幕顶出可视区
         existingInstance.terminal.write(
           "\r\n\x1b[33m ⚠️ Session connection changed. Output preserved. \x1b[0m" + spacer
         );
 
-        // 4. 重建新数据流监听，并使用闭包 flag 防止串流
-        let isCurrentConnector = true;
-        connector.onData((data) => {
-          if (isCurrentConnector) {
-            existingInstance.terminal.write(data);
-          }
-        });
-
+        // 接管输入输出
+        currentTermInstance = existingInstance;
         existingInstance.dataUnsubscribe = () => {
           isCurrentConnector = false;
+          // 【修复 TS 报错】：使用 any 断言，兼容 onData 返回 void 的情况
+          unsubPromise.then((unsub: any) => { 
+            if(typeof unsub === 'function') unsub(); 
+          });
         };
         existingInstance.inputDisposable = existingInstance.terminal.onData((data) => {
           connector.write(data);
         });
+
+        // 写入重连期间积压的数据
+        if (tempBuffer) {
+          existingInstance.terminal.write(tempBuffer);
+          tempBuffer = "";
+        }
 
         activateTerminal(activeSessionId);
         return;
@@ -166,23 +187,15 @@ export function TerminalView() {
         },
       });
 
-      // ---- 核心保护逻辑：利用 xterm 的 Parser 拦截破坏历史的指令 ----
-      // 1. 拦截 Hard Reset (ESC c)
       term.parser.registerEscHandler({ final: "c" }, () => {
-        if (termState.isTransitioning) return true; // 返回 true 代表拦截该指令
+        if (termState.isTransitioning) return true; 
         return false;
       });
 
-      // 2. 拦截 Clear Scrollback (CSI 3 J)
       term.parser.registerCsiHandler({ final: "J" }, (params) => {
-        // params[0] === 3 代表清空滚动条历史； params[0] === 2 代表只清空可视区
-        if (termState.isTransitioning && params[0] === 3) {
-          return true; // 拦截清除历史指令
-        }
-        // 对于 2J (清屏)，我们不拦截，保证新 Shell 排版不出错
+        if (termState.isTransitioning && params[0] === 3) return true; 
         return false;
       });
-      // -----------------------------------------------------------
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
@@ -195,19 +208,27 @@ export function TerminalView() {
 
       term.open(containerEl);
 
+      // 【修复2：强制触发初始 Resize】部分后端 Shell 需要明确知道终端尺寸才会打印欢迎信息
+      try {
+        fitAddon.fit();
+        const dims = fitAddon.proposeDimensions();
+        if (dims && connector.resize) {
+          connector.resize(dims.cols, dims.rows);
+        }
+      } catch (e) {
+        console.warn("Initial fit failed:", e);
+      }
+
       // =============================
-      // Ctrl + 滚轮 触发字体缩放
+      // 事件绑定
       // =============================
       const handleWheel = (e: WheelEvent) => {
         if (e.ctrlKey) {
           e.preventDefault();
           e.stopPropagation();
-
           const currentSize = useSettingsStore.getState().fontSize;
           const delta = e.deltaY > 0 ? -1 : 1;
           const newSize = Math.max(6, Math.min(100, currentSize + delta));
-
-          // 这会触发下方负责监听 fontSize 变化的 useEffect
           setSettings({ fontSize: newSize });
         }
       };
@@ -217,26 +238,18 @@ export function TerminalView() {
         capture: true,
       });
 
-      // =============================
-      // 输入输出流绑定
-      // =============================
       const inputDisposable = term.onData((data) => {
         connector.write(data);
       });
 
-      let isCurrentConnector = true;
-      await connector.onData((data) => {
-        if (isCurrentConnector) {
-          term.write(data);
-        }
-      });
       const dataUnsubscribe = () => {
         isCurrentConnector = false;
+        // 真正触发 Tauri 的解除监听函数，防止内存泄漏
+        unsubPromise.then((unsub: any) => { 
+          if(typeof unsub === 'function') unsub(); 
+        });
       };
 
-      // =============================
-      // 提取历史命令记录
-      // =============================
       const keyDisposable = term.onKey(({ domEvent }) => {
         if (domEvent.key === "Enter") {
           const buffer = term.buffer.active;
@@ -258,9 +271,6 @@ export function TerminalView() {
         }
       });
 
-      // =============================
-      // 选中文本自动复制
-      // =============================
       const selectionDisposable = term.onSelectionChange(async () => {
         if (term.hasSelection()) {
           try {
@@ -271,9 +281,6 @@ export function TerminalView() {
         }
       });
 
-      // =============================
-      // 容器大小改变监听
-      // =============================
       const resizeObserver = new ResizeObserver(() => {
         activateTerminal(activeSessionId, false);
       });
@@ -303,6 +310,13 @@ export function TerminalView() {
 
       terminalMap.current.set(activeSessionId, instance);
 
+      // 【将实例标记为 ready，并将积攒的缓冲数据一次性写入】
+      currentTermInstance = instance;
+      if (tempBuffer) {
+        term.write(tempBuffer);
+        tempBuffer = "";
+      }
+
       activateTerminal(activeSessionId);
     };
 
@@ -310,6 +324,11 @@ export function TerminalView() {
 
     return () => {
       isMounted = false;
+      isCurrentConnector = false;
+      // 保证组件卸载时及时清理监听器，同样使用 any 断言防止 TS 报错
+      unsubPromise.then((unsub: any) => { 
+        if(typeof unsub === 'function') unsub(); 
+      });
     };
   }, [activeSessionId, activeSession?.connector, activateTerminal, addHistoryCommand, fontFamily, theme]);
 
@@ -320,7 +339,6 @@ export function TerminalView() {
     terminalMap.current.forEach((instance, id) => {
       const { terminal, fitAddon, connector } = instance;
 
-      // 1. 将 Zustand store 中的新设置应用到 xterm 实例上
       terminal.options.fontSize = fontSize;
       terminal.options.fontFamily = fontFamily;
       terminal.options.theme = {
@@ -331,7 +349,6 @@ export function TerminalView() {
         selectionBackground: "rgba(82,139,255,0.4)",
       };
 
-      // 2. 字体改变会直接影响终端行列数，必须立即重新计算自适应并通知后端
       if (id === activeSessionId) {
         requestAnimationFrame(() => {
           try {
