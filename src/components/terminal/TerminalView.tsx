@@ -83,28 +83,25 @@ export function TerminalView() {
 
     let isMounted = true;
 
-    // 【修复1：早期缓冲区】防止后端刚连接上时发出的欢迎信息（MOTD）因前端还没准备好而丢失
-    let tempBuffer = ""; 
+    // 早期缓冲区：防止后端刚连接上时发出的欢迎信息丢失
+    let tempBuffer = "";
     let currentTermInstance: TerminalInstance | null = null;
     let isCurrentConnector = true;
 
-    // 立即监听数据流，不要等 isConnected 的 while 循环
     const setupEarlyListener = async () => {
       return await connector.onData((data) => {
         if (!isCurrentConnector) return;
         if (currentTermInstance) {
           currentTermInstance.terminal.write(data);
         } else {
-          tempBuffer += data; // 终端 DOM 还没准备好，先存入内存缓冲区
+          tempBuffer += data;
         }
       });
     };
-    
-    // 保存可能的解除监听函数，防止内存泄漏
+
     const unsubPromise = setupEarlyListener();
 
     const initTerminal = async () => {
-      // 仍然等待 isConnected 以确保连接状态，但数据不会丢，因为已经缓存在 tempBuffer 中
       while (!connector.isConnected && isMounted) {
         await new Promise((r) => setTimeout(r, 100));
       }
@@ -143,20 +140,17 @@ export function TerminalView() {
           "\r\n\x1b[33m ⚠️ Session connection changed. Output preserved. \x1b[0m" + spacer
         );
 
-        // 接管输入输出
         currentTermInstance = existingInstance;
         existingInstance.dataUnsubscribe = () => {
           isCurrentConnector = false;
-          // 【修复 TS 报错】：使用 any 断言，兼容 onData 返回 void 的情况
-          unsubPromise.then((unsub: any) => { 
-            if(typeof unsub === 'function') unsub(); 
+          unsubPromise.then((unsub: any) => {
+            if (typeof unsub === "function") unsub();
           });
         };
         existingInstance.inputDisposable = existingInstance.terminal.onData((data) => {
           connector.write(data);
         });
 
-        // 写入重连期间积压的数据
         if (tempBuffer) {
           existingInstance.terminal.write(tempBuffer);
           tempBuffer = "";
@@ -188,12 +182,12 @@ export function TerminalView() {
       });
 
       term.parser.registerEscHandler({ final: "c" }, () => {
-        if (termState.isTransitioning) return true; 
+        if (termState.isTransitioning) return true;
         return false;
       });
 
       term.parser.registerCsiHandler({ final: "J" }, (params) => {
-        if (termState.isTransitioning && params[0] === 3) return true; 
+        if (termState.isTransitioning && params[0] === 3) return true;
         return false;
       });
 
@@ -208,7 +202,6 @@ export function TerminalView() {
 
       term.open(containerEl);
 
-      // 【修复2：强制触发初始 Resize】部分后端 Shell 需要明确知道终端尺寸才会打印欢迎信息
       try {
         fitAddon.fit();
         const dims = fitAddon.proposeDimensions();
@@ -219,9 +212,6 @@ export function TerminalView() {
         console.warn("Initial fit failed:", e);
       }
 
-      // =============================
-      // 事件绑定
-      // =============================
       const handleWheel = (e: WheelEvent) => {
         if (e.ctrlKey) {
           e.preventDefault();
@@ -244,10 +234,49 @@ export function TerminalView() {
 
       const dataUnsubscribe = () => {
         isCurrentConnector = false;
-        // 真正触发 Tauri 的解除监听函数，防止内存泄漏
-        unsubPromise.then((unsub: any) => { 
-          if(typeof unsub === 'function') unsub(); 
+        unsubPromise.then((unsub: any) => {
+          if (typeof unsub === "function") unsub();
         });
+      };
+
+      // =============================
+      // 提取历史命令记录 (智能过滤 Prompt 提示符)
+      // =============================
+      const extractCommand = (lineText: string) => {
+        let text = lineText.trim();
+        if (!text) return "";
+
+        // 1. PowerShell (兼容 Windows/Linux) "PS C:\xxx> " 或 "PS /home/user> "
+        if (text.startsWith("PS ")) {
+          const idx = text.indexOf("> ");
+          if (idx !== -1) return text.substring(idx + 2).trim();
+        }
+
+        // 2. Windows CMD "C:\xxx> " 或 "D:\> "
+        if (/^[A-Za-z]:[\\/]/.test(text)) {
+          const idx = text.indexOf("> ");
+          if (idx !== -1) return text.substring(idx + 2).trim();
+        }
+
+        // 3. Unix 经典格式 "user@host:~/dir$ " 或 "user@mac ~ % "
+        const unixMatch = text.match(/^[^@\s]+@[^:\s\\]+[:\s][^#\$%]*?[#\$%]\s+/);
+        if (unixMatch) {
+          return text.substring(unixMatch[0].length).trim();
+        }
+
+        // 4. 精简版/美化版终端格式 "~ % ", "$ ", "❯ ", "➜ ", "/var/log # "
+        const minimalMatch = text.match(/^([a-zA-Z0-9_\-\/\.~]+\s?)?[#\$%❯➜]\s+/);
+        if (minimalMatch) {
+          return text.substring(minimalMatch[0].length).trim();
+        }
+
+        // 5. 简单箭头 ">>> " (Python REPL), "> " 
+        const arrowMatch = text.match(/^[>]{1,3}\s+/);
+        if (arrowMatch) {
+          return text.substring(arrowMatch[0].length).trim();
+        }
+
+        return text;
       };
 
       const keyDisposable = term.onKey(({ domEvent }) => {
@@ -256,21 +285,20 @@ export function TerminalView() {
           const line = buffer.getLine(buffer.cursorY + buffer.baseY);
 
           if (line) {
-            let text = line.translateToString(true).trimEnd();
-            const lastPrompt = Math.max(text.lastIndexOf("$"), text.lastIndexOf("#"));
+            const rawText = line.translateToString(true);
+            const command = extractCommand(rawText);
 
-            if (lastPrompt !== -1) {
-              text = text.slice(lastPrompt + 1).trim();
-            }
-
-            if (text && text !== lastCommandRef.current) {
-              addHistoryCommand(text);
-              lastCommandRef.current = text;
+            if (command && command !== lastCommandRef.current) {
+              addHistoryCommand(command);
+              lastCommandRef.current = command;
             }
           }
         }
       });
 
+      // =============================
+      // 其他事件绑定
+      // =============================
       const selectionDisposable = term.onSelectionChange(async () => {
         if (term.hasSelection()) {
           try {
@@ -310,7 +338,6 @@ export function TerminalView() {
 
       terminalMap.current.set(activeSessionId, instance);
 
-      // 【将实例标记为 ready，并将积攒的缓冲数据一次性写入】
       currentTermInstance = instance;
       if (tempBuffer) {
         term.write(tempBuffer);
@@ -325,9 +352,8 @@ export function TerminalView() {
     return () => {
       isMounted = false;
       isCurrentConnector = false;
-      // 保证组件卸载时及时清理监听器，同样使用 any 断言防止 TS 报错
-      unsubPromise.then((unsub: any) => { 
-        if(typeof unsub === 'function') unsub(); 
+      unsubPromise.then((unsub: any) => {
+        if (typeof unsub === "function") unsub();
       });
     };
   }, [activeSessionId, activeSession?.connector, activateTerminal, addHistoryCommand, fontFamily, theme]);
