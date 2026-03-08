@@ -15,7 +15,14 @@ interface TerminalInstance {
   resizeObserver: ResizeObserver;
   connector?: ITerminalConnector;
   inputDisposable?: { dispose(): void };
+  dataUnsubscribe?: () => void;
   dispose: () => void;
+
+  // 用于在切换连接的一瞬间拦截终端破坏性重置指令的状态
+  termState: {
+    isTransitioning: boolean;
+    timeoutId?: number;
+  };
 }
 
 export function TerminalView() {
@@ -29,43 +36,47 @@ export function TerminalView() {
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
-  // --- 逻辑 0：统一封装的终端激活与刷新机制 ---
-  const activateTerminal = useCallback((sessionId?: string | null, requireFocus: boolean = true) => {
-    if (!sessionId) return;
-    const instance = terminalMap.current.get(sessionId);
-    const container = containerMap.current.get(sessionId);
+  // =============================
+  // 激活终端 & 调整自适应大小
+  // =============================
+  const activateTerminal = useCallback(
+    (sessionId?: string | null, requireFocus: boolean = true) => {
+      if (!sessionId) return;
+      const instance = terminalMap.current.get(sessionId);
+      const container = containerMap.current.get(sessionId);
 
-    if (instance && container) {
-      requestAnimationFrame(() => {
-        try {
-          if (container.clientWidth > 0 && container.clientHeight > 0) {
-            instance.fitAddon.fit();
-            const dims = instance.fitAddon.proposeDimensions();
-            if (dims && instance.connector) {
-              // 关键修复：只有当行列数真正变化时才通知连接器调整大小
-              // 防止仅字体大小变化时触发不必要的 resize 导致 shell 重新输出欢迎信息
-              const currentCols = instance.terminal.cols;
-              const currentRows = instance.terminal.rows;
-              
-              if (dims.cols !== currentCols || dims.rows !== currentRows) {
-                instance.connector.resize(dims.cols, dims.rows);
+      if (instance && container) {
+        requestAnimationFrame(() => {
+          try {
+            if (container.clientWidth > 0 && container.clientHeight > 0) {
+              instance.fitAddon.fit();
+              const dims = instance.fitAddon.proposeDimensions();
+
+              if (dims && instance.connector) {
+                if (
+                  dims.cols !== instance.terminal.cols ||
+                  dims.rows !== instance.terminal.rows
+                ) {
+                  instance.connector.resize?.(dims.cols, dims.rows);
+                }
               }
             }
+            if (requireFocus) instance.terminal.focus();
+          } catch (error) {
+            console.warn("Terminal activate failed:", error);
           }
-          if (requireFocus) {
-            instance.terminal.focus();
-          }
-        } catch (error) {
-          console.warn("[TerminalView] 激活/重载终端失败:", error);
-        }
-      });
-    }
-  }, []);
+        });
+      }
+    },
+    []
+  );
 
-  // --- 逻辑 1：初始化终端实例 ---
+  // =============================
+  // 初始化终端核心逻辑
+  // =============================
   useEffect(() => {
-    if (!activeSessionId || !activeSession || !activeSession.connector) return;
-    
+    if (!activeSessionId || !activeSession?.connector) return;
+
     const { connector } = activeSession;
     const containerEl = containerMap.current.get(activeSessionId);
     if (!containerEl) return;
@@ -73,78 +84,105 @@ export function TerminalView() {
     let isMounted = true;
 
     const initTerminal = async () => {
-      // 等待连接器就绪
       while (!connector.isConnected && isMounted) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((r) => setTimeout(r, 100));
       }
+
       if (!isMounted || !connector.isConnected) return;
 
       const existingInstance = terminalMap.current.get(activeSessionId);
-      
+
+      // =============================
+      // Connector 切换 (降级/重连) 处理
+      // =============================
       if (existingInstance) {
-        // 只是正常的 Tab 来回切换，直接返回
-        if (existingInstance.connector === connector) {
-          return;
-        }
+        if (existingInstance.connector === connector) return;
 
-        // --- 核心逻辑：会话降级/重连，仅切换数据流，保留所有终端输出 ---
-        console.log(`[TerminalView] 检测到连接器变更 ${activeSessionId}...`);
+        console.log("Connector changed:", activeSessionId);
 
-        // 1. 清理旧的输入监听器（防止 Xterm 按键发给旧连接）
-        if (existingInstance.inputDisposable) {
-          existingInstance.inputDisposable.dispose();
-        }
-        
-        // 2. 更新为新的连接器
+        // 1. 切断旧连接的数据流，防止延迟包污染屏幕
+        existingInstance.dataUnsubscribe?.();
+        existingInstance.inputDisposable?.dispose();
+        existingInstance.connector?.close();
         existingInstance.connector = connector;
-        
-        // 3. 重新绑定新的输出流 (终极防清屏 + 防重叠策略)
-        const connectionSwitchTime = Date.now();
-        await connector.onData((data) => {
-          // 在连接切换的最初 2 秒内，进行精准拦截
-          if (Date.now() - connectionSwitchTime < 2000) {
-            data = data
-              // 1. 拦截彻底清屏 (2J) 和清空历史缓冲区 (3J)
-              .replace(/\x1b\[[23]J/g, '')
-              // 2. 拦截终端硬重置 (Reset)
-              .replace(/\x1bc/g, '')
-              // 3. 将“光标回到屏幕左上角”(H 或 1;1H) 替换为“回车符”(\r)
-              // 这样本地 Shell 就会在黄色警告语的下一行立刻开始输出，而不是跳回屏幕顶部覆盖！
-              .replace(/\x1b\[1?;?1?[Hf]/g, '\r');
-              
-              // 注意：这里绝不过滤 \x1b[K，保留终端原生清理当前行的能力，防止新旧字符重叠！
+
+        // 2. 开启指令拦截保护 (2秒窗口期)
+        existingInstance.termState.isTransitioning = true;
+        if (existingInstance.termState.timeoutId) {
+          clearTimeout(existingInstance.termState.timeoutId);
+        }
+        existingInstance.termState.timeoutId = window.setTimeout(() => {
+          existingInstance.termState.isTransitioning = false;
+        }, 2000);
+
+        // 3. 构建 "垫片行"，把当前屏幕内容安全地推入上方 Scrollback 历史记录中
+        let spacer = "\r\n";
+        for (let i = 0; i < existingInstance.terminal.rows; i++) {
+          spacer += "\r\n";
+        }
+
+        // 打印警告并将原屏幕顶出可视区
+        existingInstance.terminal.write(
+          "\r\n\x1b[33m ⚠️ Session connection changed. Output preserved. \x1b[0m" + spacer
+        );
+
+        // 4. 重建新数据流监听，并使用闭包 flag 防止串流
+        let isCurrentConnector = true;
+        connector.onData((data) => {
+          if (isCurrentConnector) {
+            existingInstance.terminal.write(data);
           }
-          existingInstance.terminal.write(data);
         });
 
-        // 4. 打印会话切换提示日志
-        existingInstance.terminal.write('\r\n\x1b[33m ⚠️ Session connection changed. Output preserved. \x1b[0m\r\n');
-        // 5. 重新绑定新的输入流
+        existingInstance.dataUnsubscribe = () => {
+          isCurrentConnector = false;
+        };
         existingInstance.inputDisposable = existingInstance.terminal.onData((data) => {
           connector.write(data);
         });
-        
-        // 6. 激活终端
+
         activateTerminal(activeSessionId);
-        return; 
+        return;
       }
 
-      // --- 首次创建 Terminal ---
+      // =============================
+      // 创建全新 Terminal 实例
+      // =============================
+      const termState = { isTransitioning: false, timeoutId: undefined };
+
       const term = new Terminal({
-        fontFamily: fontFamily,
-        fontSize: fontSize,
+        fontFamily,
+        fontSize,
+        cursorBlink: true,
+        cursorStyle: "bar",
+        scrollback: 10000,
+        allowProposedApi: true,
         theme: {
           background: theme === "light" ? "#ffffff" : "#1e1e1e",
           foreground: theme === "light" ? "#333333" : "#cccccc",
           cursor: theme === "light" ? "#007acc" : "#528bff",
           cursorAccent: theme === "light" ? "#ffffff" : "#1e1e1e",
-          selectionBackground: "rgba(82, 139, 255, 0.4)",
+          selectionBackground: "rgba(82,139,255,0.4)",
         },
-        cursorBlink: true,
-        cursorStyle: "bar",
-        scrollback: 10000,
-        allowProposedApi: true,
       });
+
+      // ---- 核心保护逻辑：利用 xterm 的 Parser 拦截破坏历史的指令 ----
+      // 1. 拦截 Hard Reset (ESC c)
+      term.parser.registerEscHandler({ final: "c" }, () => {
+        if (termState.isTransitioning) return true; // 返回 true 代表拦截该指令
+        return false;
+      });
+
+      // 2. 拦截 Clear Scrollback (CSI 3 J)
+      term.parser.registerCsiHandler({ final: "J" }, (params) => {
+        // params[0] === 3 代表清空滚动条历史； params[0] === 2 代表只清空可视区
+        if (termState.isTransitioning && params[0] === 3) {
+          return true; // 拦截清除历史指令
+        }
+        // 对于 2J (清屏)，我们不拦截，保证新 Shell 排版不出错
+        return false;
+      });
+      // -----------------------------------------------------------
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
@@ -152,42 +190,66 @@ export function TerminalView() {
       try {
         term.loadAddon(new WebglAddon());
       } catch (e) {
-        console.warn("WebGL Addon failed", e);
+        console.warn("WebGL failed", e);
       }
 
       term.open(containerEl);
 
+      // =============================
+      // Ctrl + 滚轮 触发字体缩放
+      // =============================
       const handleWheel = (e: WheelEvent) => {
         if (e.ctrlKey) {
-          e.preventDefault(); 
+          e.preventDefault();
           e.stopPropagation();
-          e.stopImmediatePropagation();
 
           const currentSize = useSettingsStore.getState().fontSize;
           const delta = e.deltaY > 0 ? -1 : 1;
           const newSize = Math.max(6, Math.min(100, currentSize + delta));
-          
+
+          // 这会触发下方负责监听 fontSize 变化的 useEffect
           setSettings({ fontSize: newSize });
         }
       };
 
-      containerEl.addEventListener("wheel", handleWheel, { 
-        passive: false, 
-        capture: true 
+      containerEl.addEventListener("wheel", handleWheel, {
+        passive: false,
+        capture: true,
       });
 
-      const dataDisposable = term.onData((data) => {
+      // =============================
+      // 输入输出流绑定
+      // =============================
+      const inputDisposable = term.onData((data) => {
         connector.write(data);
       });
-            
+
+      let isCurrentConnector = true;
+      await connector.onData((data) => {
+        if (isCurrentConnector) {
+          term.write(data);
+        }
+      });
+      const dataUnsubscribe = () => {
+        isCurrentConnector = false;
+      };
+
+      // =============================
+      // 提取历史命令记录
+      // =============================
       const keyDisposable = term.onKey(({ domEvent }) => {
         if (domEvent.key === "Enter") {
           const buffer = term.buffer.active;
           const line = buffer.getLine(buffer.cursorY + buffer.baseY);
+
           if (line) {
             let text = line.translateToString(true).trimEnd();
             const lastPrompt = Math.max(text.lastIndexOf("$"), text.lastIndexOf("#"));
-            if (lastPrompt !== -1) text = text.slice(lastPrompt + 1).trim();
+
+            if (lastPrompt !== -1) {
+              text = text.slice(lastPrompt + 1).trim();
+            }
+
             if (text && text !== lastCommandRef.current) {
               addHistoryCommand(text);
               lastCommandRef.current = text;
@@ -196,20 +258,22 @@ export function TerminalView() {
         }
       });
 
-      // 首次创建时，正常绑定输出，不拦截清屏指令
-      await connector.onData((data) => {
-        term.write(data);
-      });
-
+      // =============================
+      // 选中文本自动复制
+      // =============================
       const selectionDisposable = term.onSelectionChange(async () => {
         if (term.hasSelection()) {
-          const selection = term.getSelection();
-          if (selection) {
-            try { await writeText(selection); } catch (e) { console.error(e); }
+          try {
+            await writeText(term.getSelection());
+          } catch (e) {
+            console.error(e);
           }
         }
       });
 
+      // =============================
+      // 容器大小改变监听
+      // =============================
       const resizeObserver = new ResizeObserver(() => {
         activateTerminal(activeSessionId, false);
       });
@@ -220,52 +284,76 @@ export function TerminalView() {
         fitAddon,
         resizeObserver,
         connector,
-        inputDisposable: dataDisposable,
+        inputDisposable,
+        dataUnsubscribe,
+        termState,
+
         dispose: () => {
+          dataUnsubscribe();
+          connector?.close();
           containerEl.removeEventListener("wheel", handleWheel, { capture: true });
-          instance.inputDisposable?.dispose();
+          inputDisposable.dispose();
           keyDisposable.dispose();
           selectionDisposable.dispose();
           resizeObserver.disconnect();
+          if (termState.timeoutId) clearTimeout(termState.timeoutId);
           term.dispose();
         },
       };
 
       terminalMap.current.set(activeSessionId, instance);
 
-      // 首次加载完毕，统一入口激活
       activateTerminal(activeSessionId);
     };
 
     initTerminal();
-    return () => { isMounted = false; };
-  }, [activeSessionId, activeSession?.connector, addHistoryCommand, setSettings, activateTerminal]);
 
-  // --- 逻辑 2：响应设置实时变化 (热更新) ---
+    return () => {
+      isMounted = false;
+    };
+  }, [activeSessionId, activeSession?.connector, activateTerminal, addHistoryCommand, fontFamily, theme]);
+
+  // =============================
+  // 监听设置变化 (字体缩放 & 主题)
+  // =============================
   useEffect(() => {
     terminalMap.current.forEach((instance, id) => {
-      const { terminal } = instance;
-      
-      if (terminal.options.fontSize !== fontSize) terminal.options.fontSize = fontSize;
-      if (terminal.options.fontFamily !== fontFamily) terminal.options.fontFamily = fontFamily;
-      
+      const { terminal, fitAddon, connector } = instance;
+
+      // 1. 将 Zustand store 中的新设置应用到 xterm 实例上
+      terminal.options.fontSize = fontSize;
+      terminal.options.fontFamily = fontFamily;
       terminal.options.theme = {
         background: theme === "light" ? "#ffffff" : "#1e1e1e",
         foreground: theme === "light" ? "#333333" : "#cccccc",
         cursor: theme === "light" ? "#007acc" : "#528bff",
         cursorAccent: theme === "light" ? "#ffffff" : "#1e1e1e",
-        selectionBackground: "rgba(82, 139, 255, 0.4)",
+        selectionBackground: "rgba(82,139,255,0.4)",
       };
 
+      // 2. 字体改变会直接影响终端行列数，必须立即重新计算自适应并通知后端
       if (id === activeSessionId) {
-        activateTerminal(id, false);
+        requestAnimationFrame(() => {
+          try {
+            fitAddon.fit();
+            const dims = fitAddon.proposeDimensions();
+            if (dims && connector) {
+              connector.resize?.(dims.cols, dims.rows);
+            }
+          } catch (e) {
+            console.warn("Terminal fit failed after settings change:", e);
+          }
+        });
       }
     });
-  }, [fontSize, fontFamily, theme, activeSessionId, activateTerminal]);
+  }, [fontSize, fontFamily, theme, activeSessionId]);
 
-  // --- 逻辑 3：清理已删除的会话 ---
+  // =============================
+  // 清理已被关闭的会话
+  // =============================
   useEffect(() => {
     const currentIds = new Set(sessions.map((s) => s.id));
+
     terminalMap.current.forEach((instance, id) => {
       if (!currentIds.has(id)) {
         instance.dispose();
@@ -274,35 +362,43 @@ export function TerminalView() {
     });
   }, [sessions]);
 
-  // --- 逻辑 4：Tab 切换聚焦 ---
+  // =============================
+  // 标签页切换激活
+  // =============================
   useEffect(() => {
     activateTerminal(activeSessionId);
   }, [activeSessionId, activateTerminal]);
 
-  // --- 逻辑 5：浏览器可见性事件 (由其他 Tab/窗口 切回时) ---
+  // =============================
+  // 窗口可见性改变激活
+  // =============================
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handler = () => {
       if (document.visibilityState === "visible") {
         activateTerminal(activeSessionId);
       }
     };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
   }, [activeSessionId, activateTerminal]);
 
-  // --- 逻辑 6：窗口 Resize ---
+  // =============================
+  // 窗口缩放调整终端尺寸
+  // =============================
   useEffect(() => {
-    const handleGlobalResize = () => {
-      activateTerminal(activeSessionId, false);
-    };
-    window.addEventListener("resize", handleGlobalResize);
-    return () => window.removeEventListener("resize", handleGlobalResize);
+    const handler = () => activateTerminal(activeSessionId, false);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
   }, [activeSessionId, activateTerminal]);
 
-  // --- 逻辑 7：右键粘贴 ---
+  // =============================
+  // 鼠标右键 (无选中文本时粘贴，有选中文本时取消选中)
+  // =============================
   const handleContextMenu = async (e: React.MouseEvent) => {
     e.preventDefault();
+
     if (!activeSessionId || !activeSession?.connector) return;
+
     const instance = terminalMap.current.get(activeSessionId);
     if (!instance) return;
 
@@ -312,8 +408,8 @@ export function TerminalView() {
       try {
         const text = await readText();
         if (text) activeSession.connector.write(text);
-      } catch (err) {
-        console.error("Native paste failed", err);
+      } catch (error) {
+        console.error("Failed to read clipboard:", error);
       }
     }
   };
@@ -333,18 +429,20 @@ export function TerminalView() {
   return (
     <main
       className="relative h-full w-full overflow-hidden"
-      style={{
-        gridArea: "mid-main",
-        backgroundColor: theme === "light" ? "#ffffff" : "#1e1e1e",
-      }}
       onClick={() => activateTerminal(activeSessionId)}
       onContextMenu={handleContextMenu}
     >
       {sessions.map((s) => (
         <div
           key={s.id}
-          ref={(el) => { if (el) containerMap.current.set(s.id, el); }}
-          className={s.id === activeSessionId ? "h-full w-full absolute inset-0 px-2" : "hidden"}
+          ref={(el) => {
+            if (el) containerMap.current.set(s.id, el);
+          }}
+          className={
+            s.id === activeSessionId
+              ? "h-full w-full absolute inset-0 px-2"
+              : "hidden"
+          }
         />
       ))}
     </main>

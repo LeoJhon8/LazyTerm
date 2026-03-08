@@ -9,6 +9,8 @@ export class SshConnector implements ITerminalConnector {
   private sessionId: string | null = null;
   private onDisconnectCallback?: () => void;
 
+  // 已移除： buffer 和 flushTimer （信任前端 xterm 的队列）
+
   constructor(config: SSHConfig, onDisconnect?: () => void) {
     this.config = config;
     this.onDisconnectCallback = onDisconnect;
@@ -24,7 +26,6 @@ export class SshConnector implements ITerminalConnector {
     }
 
     try {
-      // 调用 Tauri 后端创建 SSH 会话
       this.sessionId = await invoke<string>("create_ssh_session", {
         config: {
           host: this.config.host,
@@ -48,19 +49,18 @@ export class SshConnector implements ITerminalConnector {
     if (!this.sessionId) return;
 
     try {
-      // 调用后端关闭 SSH 会话
       invoke("close_ssh_session", { sessionId: this.sessionId }).catch((err) => {
         console.error("[SSH] 关闭会话失败:", err);
       });
     } catch (error) {
       console.error("[SSH] 关闭连接时出错:", error);
     } finally {
-      // 取消事件监听
       if (this.unlistenFn) {
-        this.unlistenFn();
+        try {
+          this.unlistenFn();
+        } catch {}
         this.unlistenFn = null;
       }
-      
       this.sessionId = null;
     }
   }
@@ -70,48 +70,39 @@ export class SshConnector implements ITerminalConnector {
   }
 
   async onData(handler: (data: string) => void): Promise<void> {
-    // 等待 sessionId 可用
     if (!this.sessionId) {
-      // 轮询等待 sessionId 被设置（open() 完成后）
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
+        let attempts = 0;
         const checkInterval = setInterval(() => {
+          attempts++;
           if (this.sessionId) {
             clearInterval(checkInterval);
             resolve();
+          } else if (attempts >= 500) { // 5秒超时
+            clearInterval(checkInterval);
+            reject(new Error("Session ID not available after timeout"));
           }
         }, 10);
-        
-        // 5 秒超时
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          resolve();
-        }, 5000);
       });
-      
-      if (!this.sessionId) {
-        throw new Error("Session ID not available after timeout");
-      }
     }
 
     const eventName = `terminal-data-${this.sessionId}`;
     console.log(`[SSH Connector] Listening for event: ${eventName}`);
     
-    // 监听属于这个 sessionId 的数据事件
+    // 直接将数据传递给 handler，不要使用 setTimeout 或者合并数组，xterm 底层具备极好的缓冲机制
     this.unlistenFn = await listen<string>(eventName, (event) => {
-      console.log(`[SSH Connector] Received event payload:`, event.payload?.substring(0, 50));
-      handler(event.payload);
+      const data = event.payload;
+      if (data) handler(data);
     });
     
     console.log(`[SSH Connector] Event listener registered`);
     
-    // 监听 SSH 连接断开事件（当后端关闭连接时）
     const closeEventName = `terminal-close-${this.sessionId}`;
     const closeUnlisten = await listen(closeEventName, () => {
       console.log(`[SSH Connector] Connection closed event received`);
       this.handleDisconnect();
     });
     
-    // 存储关闭事件的 unlisten 函数
     const originalUnlistenFn = this.unlistenFn;
     this.unlistenFn = () => {
       if (originalUnlistenFn) originalUnlistenFn();
