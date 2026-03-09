@@ -16,7 +16,7 @@ const MODULE_ICONS: Record<string, React.ReactNode> = {
 };
 
 export function RightSlot() {
-  const { currentConfig, setActiveModule, toggleSlotCollapse, setSlotCollapsed } = useSlotConfigStore();
+  const { currentConfig, setActiveModule, toggleSlotCollapse, setActiveAndExpand } = useSlotConfigStore();
   const { modules, activeModule, collapsed } = currentConfig.right;
 
   if (modules.length === 0) {
@@ -32,7 +32,7 @@ export function RightSlot() {
   return (
     <div className="h-full flex">
       {/* 模块内容区 */}
-      {!collapsed && (
+      {!collapsed && modules.length > 0 && (
         <div className="flex-1 overflow-hidden transition-all duration-300 animate-in slide-in-from-right-2">
           {ActiveComponent && <ActiveComponent />}
         </div>
@@ -43,15 +43,22 @@ export function RightSlot() {
         {modules.map((moduleId) => (
           <Button
             key={moduleId}
-            variant={activeModule === moduleId && !collapsed ? "secondary" : "ghost"}
+            variant={activeModule === moduleId ? "secondary" : "ghost"}
             size="icon"
-            className={cn("mb-2 transition-all", activeModule === moduleId && !collapsed && "bg-secondary")}
+            className={cn(
+              "mb-2 transition-all relative", 
+              activeModule === moduleId && "bg-secondary/80",
+              activeModule === moduleId && collapsed && "after:absolute after:left-0 after:top-1/2 after:-translate-y-1/2 after:w-1 after:h-4 after:bg-primary after:rounded-r-full"
+            )}
             onClick={() => {
-              if (activeModule === moduleId) {
-                toggleSlotCollapse("right");
+              if (collapsed) {
+                setActiveAndExpand("right", moduleId);
               } else {
-                setActiveModule("right", moduleId);
-                setSlotCollapsed("right", false);
+                if (activeModule === moduleId) {
+                  toggleSlotCollapse("right");
+                } else {
+                  setActiveModule("right", moduleId);
+                }
               }
             }}
           >

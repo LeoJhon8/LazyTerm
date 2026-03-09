@@ -19,7 +19,7 @@ const MODULE_ICONS: Record<string, React.ReactNode> = {
 };
 
 export function LeftSlot() {
-  const { currentConfig, setActiveModule, toggleSlotCollapse, setSlotCollapsed } = useSlotConfigStore();
+  const { currentConfig, setActiveModule, toggleSlotCollapse, setActiveAndExpand } = useSlotConfigStore();
   const { modules, activeModule, collapsed } = currentConfig.left;
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   console.log("Current Modules in Tauri:", modules); 
@@ -43,15 +43,22 @@ export function LeftSlot() {
         {displayModules.map((moduleId) => (
           <Button
             key={moduleId}
-            variant={activeModule === moduleId && !collapsed ? "secondary" : "ghost"}
+            variant={activeModule === moduleId ? "secondary" : "ghost"}
             size="icon"
-            className={cn("mb-2 transition-all", activeModule === moduleId && !collapsed && "bg-secondary")}
+            className={cn(
+              "mb-2 transition-all relative", 
+              activeModule === moduleId && "bg-secondary/80",
+              activeModule === moduleId && collapsed && "after:absolute after:right-0 after:top-1/2 after:-translate-y-1/2 after:w-1 after:h-4 after:bg-primary after:rounded-l-full"
+            )}
             onClick={() => {
-              if (activeModule === moduleId) {
-                toggleSlotCollapse("left");
+              if (collapsed) {
+                setActiveAndExpand("left", moduleId);
               } else {
-                setActiveModule("left", moduleId);
-                setSlotCollapsed("left", false);
+                if (activeModule === moduleId) {
+                  toggleSlotCollapse("left");
+                } else {
+                  setActiveModule("left", moduleId);
+                }
               }
             }}
           >
@@ -72,8 +79,8 @@ export function LeftSlot() {
         }
       </div>
 
-      {/* 模块内容区 */}
-      {!collapsed && (
+      {/* 模块内容区 - 只有当 displayModules 不为空且未折叠时才渲染 */}
+      {!collapsed && displayModules.length > 0 && (
         <div className="flex-1 overflow-hidden transition-all duration-300 animate-in slide-in-from-left-2">
           {ActiveComponent && <ActiveComponent />}
         </div>

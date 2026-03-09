@@ -46,14 +46,18 @@ function App() {
     }
   }, [appBackgroundColor]);
 
-  // 同步布局设置到 CSS 变量（含模块收起状态）
+  // 同步布局设置到 CSS 变量（含模块收起状态与迁移监听）
   useEffect(() => {
     const root = document.documentElement;
     
-    // 左侧：全局隐藏=0, 模块收起=48(仅图标栏), 正常=面板宽度
-    const lw = leftPanelCollapsed ? 0 : (leftSlotCollapsed ? 48 : leftPanelWidth);
-    // 右侧：同理
-    const rw = rightPanelCollapsed ? 0 : (rightSlotCollapsed ? 48 : rightPanelWidth);
+    // 过滤掉 SettingsModule 的左侧实际可见模块
+    const leftModulesCount = slotConfig.left.modules.filter(m => m !== 'SettingsModule').length;
+    const rightModulesCount = slotConfig.right.modules.length;
+
+    // 左侧：全局隐藏=0, 无业务模块=48(仅图标栏), 模块收起=48, 正常=面板宽度
+    const lw = leftPanelCollapsed ? 0 : (leftModulesCount === 0 || leftSlotCollapsed ? 48 : leftPanelWidth);
+    // 右侧：全局隐藏=0, 无模块=0, 模块收起=48, 正常=面板宽度
+    const rw = rightPanelCollapsed || rightModulesCount === 0 ? 0 : (rightSlotCollapsed ? 48 : rightPanelWidth);
     
     root.style.setProperty("--lw", `${lw}px`);
     root.style.setProperty("--rw", `${rw}px`);
@@ -62,7 +66,8 @@ function App() {
   }, [
     leftPanelWidth, rightPanelWidth, topPanelHeight, bottomPanelHeight,
     leftPanelCollapsed, rightPanelCollapsed, topPanelCollapsed, bottomPanelCollapsed,
-    leftSlotCollapsed, rightSlotCollapsed
+    leftSlotCollapsed, rightSlotCollapsed,
+    slotConfig.left.modules, slotConfig.right.modules // 监听模块列表变化，触发宽度重算
   ]);
 
   // 同步外观自定义到 CSS 变量
@@ -99,7 +104,7 @@ function App() {
           "left mid-main   right"
           "left mid-bottom right"
         `,
-        gridTemplateColumns: `var(--lw, ${leftPanelCollapsed ? 0 : (leftSlotCollapsed ? 48 : leftPanelWidth)}px) 1fr var(--rw, ${rightPanelCollapsed ? 0 : (rightSlotCollapsed ? 48 : rightPanelWidth)}px)`,
+        gridTemplateColumns: `var(--lw, ${leftPanelCollapsed ? 0 : (slotConfig.left.modules.filter(m => m !== 'SettingsModule').length === 0 || leftSlotCollapsed ? 48 : leftPanelWidth)}px) 1fr var(--rw, ${rightPanelCollapsed || slotConfig.right.modules.length === 0 ? 0 : (rightSlotCollapsed ? 48 : rightPanelWidth)}px)`,
         gridTemplateRows: `var(--th, ${topPanelCollapsed ? 0 : topPanelHeight}px) 1fr var(--bh, ${bottomPanelCollapsed ? 0 : bottomPanelHeight}px)`,
       }}
     >

@@ -655,6 +655,12 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
       if (next[otherSide].activeModule === moduleId) {
         next[otherSide].activeModule = next[otherSide].modules[0] || "";
       }
+      
+      // 如果目标侧原本为空，添加模块时自动展开
+      if (next[side].modules.length === 0) {
+        next[side].collapsed = false;
+      }
+      
       next[side].modules.push(moduleId);
       if (!next[side].activeModule) next[side].activeModule = moduleId;
     }

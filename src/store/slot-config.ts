@@ -12,6 +12,7 @@ interface SlotConfigState {
   setActiveModule: (slot: 'left' | 'right', moduleId: string) => void;
   toggleSlotCollapse: (slot: 'left' | 'right') => void;
   setSlotCollapsed: (slot: 'left' | 'right', collapsed: boolean) => void;
+  setActiveAndExpand: (slot: 'left' | 'right', moduleId: string) => void;
   addModuleToSlot: (slot: 'left' | 'right', moduleId: string) => void;
   removeModuleFromSlot: (slot: 'left' | 'right', moduleId: string) => void;
   setSingleModule: (slot: 'top' | 'bottom', moduleId: string) => void;
@@ -63,6 +64,18 @@ export const useSlotConfigStore = create<SlotConfigState>()(
           }
         })),
 
+      setActiveAndExpand: (slot, moduleId) =>
+        set((state) => ({
+          currentConfig: {
+            ...state.currentConfig,
+            [slot]: {
+              ...state.currentConfig[slot],
+              activeModule: moduleId,
+              collapsed: false
+            }
+          }
+        })),
+
       addModuleToSlot: (slot, moduleId) =>
         set((state) => {
           const currentModules = [...state.currentConfig[slot].modules];
@@ -91,8 +104,10 @@ export const useSlotConfigStore = create<SlotConfigState>()(
             currentConfig: {
               ...state.currentConfig,
               [slot]: {
+                ...state.currentConfig[slot],
                 modules: currentModules,
-                activeModule
+                activeModule,
+                collapsed: currentModules.length === 0 ? true : state.currentConfig[slot].collapsed
               }
             }
           };
