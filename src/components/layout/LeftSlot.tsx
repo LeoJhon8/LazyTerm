@@ -6,6 +6,7 @@ import { HistoryModule } from "@/components/modules/HistoryModule";
 import { PluginsModule } from "@/components/modules/PluginsModule";
 import { SlotConfigDialog } from "@/components/dialogs/SlotConfigDialog";
 import { Folder, Settings, History, Plug } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const MODULE_COMPONENTS: Record<string, React.ComponentType> = {
   SessionModule: SessionModule,
@@ -21,8 +22,8 @@ const MODULE_ICONS: Record<string, React.ReactNode> = {
 };
 
 export function LeftSlot() {
-  const { currentConfig, setActiveModule } = useSlotConfigStore();
-  const { modules, activeModule } = currentConfig.left;
+  const { currentConfig, setActiveModule, toggleSlotCollapse, setSlotCollapsed } = useSlotConfigStore();
+  const { modules, activeModule, collapsed } = currentConfig.left;
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   console.log("Current Modules in Tauri:", modules); 
   if (modules.length === 0) {
@@ -45,10 +46,17 @@ export function LeftSlot() {
         {displayModules.map((moduleId) => (
           <Button
             key={moduleId}
-            variant={activeModule === moduleId ? "secondary" : "ghost"}
+            variant={activeModule === moduleId && !collapsed ? "secondary" : "ghost"}
             size="icon"
-            className="mb-2"
-            onClick={() => setActiveModule("left", moduleId)}
+            className={cn("mb-2 transition-all", activeModule === moduleId && !collapsed && "bg-secondary")}
+            onClick={() => {
+              if (activeModule === moduleId) {
+                toggleSlotCollapse("left");
+              } else {
+                setActiveModule("left", moduleId);
+                setSlotCollapsed("left", false);
+              }
+            }}
           >
             {MODULE_ICONS[moduleId]}
           </Button>
@@ -68,9 +76,11 @@ export function LeftSlot() {
       </div>
 
       {/* 模块内容区 */}
-      <div className="flex-1 overflow-hidden">
-        {ActiveComponent && <ActiveComponent />}
-      </div>
+      {!collapsed && (
+        <div className="flex-1 overflow-hidden transition-all duration-300 animate-in slide-in-from-left-2">
+          {ActiveComponent && <ActiveComponent />}
+        </div>
+      )}
       
       {/* 设置弹窗 */}
       <SlotConfigDialog 

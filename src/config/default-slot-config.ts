@@ -3,10 +3,12 @@ export interface SlotConfig {
   left: {
     modules: string[];
     activeModule: string;
+    collapsed?: boolean;
   };
   right: {
     modules: string[];
     activeModule: string;
+    collapsed?: boolean;
   };
   top: {
     module: string;
@@ -19,11 +21,13 @@ export interface SlotConfig {
 export const DEFAULT_SLOT_CONFIG: SlotConfig = {
   left: {
     modules: ['SessionModule', 'SettingsModule'],
-    activeModule: 'SessionModule'
+    activeModule: 'SessionModule',
+    collapsed: false
   },
   right: {
     modules: ['HistoryModule'],
-    activeModule: 'HistoryModule'
+    activeModule: 'HistoryModule',
+    collapsed: false
   },
   top: {
     module: 'TabModule'

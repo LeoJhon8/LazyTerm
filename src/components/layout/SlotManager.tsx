@@ -6,12 +6,10 @@ import { BottomSlot } from "@/components/layout/BottomSlot";
 
 export function SlotManager() {
   const {
-    leftPanelWidth,
-    rightPanelWidth,
-    topPanelHeight,
-    bottomPanelHeight,
     leftPanelCollapsed,
     rightPanelCollapsed,
+    topPanelHeight,
+    bottomPanelHeight,
     topPanelCollapsed,
     bottomPanelCollapsed,
     uiOpacity,
@@ -23,18 +21,17 @@ export function SlotManager() {
   const panelOpacityStyle = backgroundImageEnabled && backgroundImage
     ? { backgroundColor: `color-mix(in srgb, var(--color-background) ${uiOpacity}%, transparent)` }
     : {};
-  
 
   return (
     <>
-      {/* 左侧插槽 */}
+      {/* 左侧插槽 - 宽度由 CSS Grid 列宽 (--lw) 控制 */}
       <aside
         id="slot-left"
         className={`border-r border-border transition-all duration-300 overflow-hidden ${backgroundImageEnabled && backgroundImage ? '' : 'bg-background'}`}
         style={{
           gridArea: "left",
           gridRow: "1 / 4",
-          width: leftPanelCollapsed ? "0px" : `${leftPanelWidth}px`,
+          width: leftPanelCollapsed ? "0px" : "100%",
           ...panelOpacityStyle,
         }}
       >
@@ -67,14 +64,14 @@ export function SlotManager() {
         <BottomSlot />
       </footer>
 
-      {/* 右侧插槽 */}
+      {/* 右侧插槽 - 宽度由 CSS Grid 列宽 (--rw) 控制 */}
       <aside
         id="slot-right"
         className="border-l border-border transition-all duration-300 overflow-hidden"
         style={{
           gridArea: "right",
           gridRow: "1 / 4",
-          width: rightPanelCollapsed ? "0px" : `${rightPanelWidth}px`,
+          width: rightPanelCollapsed ? "0px" : "100%",
           ...panelOpacityStyle,
         }}
       >

@@ -10,6 +10,8 @@ interface SlotConfigState {
   // 配置操作方法
   updateSlotConfig: (config: Partial<SlotConfig>) => void;
   setActiveModule: (slot: 'left' | 'right', moduleId: string) => void;
+  toggleSlotCollapse: (slot: 'left' | 'right') => void;
+  setSlotCollapsed: (slot: 'left' | 'right', collapsed: boolean) => void;
   addModuleToSlot: (slot: 'left' | 'right', moduleId: string) => void;
   removeModuleFromSlot: (slot: 'left' | 'right', moduleId: string) => void;
   setSingleModule: (slot: 'top' | 'bottom', moduleId: string) => void;
@@ -35,6 +37,28 @@ export const useSlotConfigStore = create<SlotConfigState>()(
             [slot]: {
               ...state.currentConfig[slot],
               activeModule: moduleId
+            }
+          }
+        })),
+      
+      toggleSlotCollapse: (slot) =>
+        set((state) => ({
+          currentConfig: {
+            ...state.currentConfig,
+            [slot]: {
+              ...state.currentConfig[slot],
+              collapsed: !state.currentConfig[slot].collapsed
+            }
+          }
+        })),
+
+      setSlotCollapsed: (slot, collapsed) =>
+        set((state) => ({
+          currentConfig: {
+            ...state.currentConfig,
+            [slot]: {
+              ...state.currentConfig[slot],
+              collapsed
             }
           }
         })),

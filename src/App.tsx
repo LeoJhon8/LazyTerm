@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useSettingsStore } from "@/store/settings";
+import { useSlotConfigStore } from "@/store/slot-config";
 import { TerminalView } from "@/components/terminal/TerminalView";
 import { SlotManager } from "@/components/layout/SlotManager";
 
@@ -22,6 +23,10 @@ function App() {
     customCSS,
   } = useSettingsStore();
 
+  const { currentConfig: slotConfig } = useSlotConfigStore();
+  const leftSlotCollapsed = slotConfig.left.collapsed;
+  const rightSlotCollapsed = slotConfig.right.collapsed;
+
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
 
   // 动态处理全局背景色和暗色模式跟班
@@ -41,16 +46,23 @@ function App() {
     }
   }, [appBackgroundColor]);
 
-  // 同步布局设置到 CSS 变量
+  // 同步布局设置到 CSS 变量（含模块收起状态）
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty("--lw", `${leftPanelCollapsed ? 0 : leftPanelWidth}px`);
-    root.style.setProperty("--rw", `${rightPanelCollapsed ? 0 : rightPanelWidth}px`);
+    
+    // 左侧：全局隐藏=0, 模块收起=48(仅图标栏), 正常=面板宽度
+    const lw = leftPanelCollapsed ? 0 : (leftSlotCollapsed ? 48 : leftPanelWidth);
+    // 右侧：同理
+    const rw = rightPanelCollapsed ? 0 : (rightSlotCollapsed ? 48 : rightPanelWidth);
+    
+    root.style.setProperty("--lw", `${lw}px`);
+    root.style.setProperty("--rw", `${rw}px`);
     root.style.setProperty("--th", `${topPanelCollapsed ? 0 : topPanelHeight}px`);
     root.style.setProperty("--bh", `${bottomPanelCollapsed ? 0 : bottomPanelHeight}px`);
   }, [
     leftPanelWidth, rightPanelWidth, topPanelHeight, bottomPanelHeight,
-    leftPanelCollapsed, rightPanelCollapsed, topPanelCollapsed, bottomPanelCollapsed
+    leftPanelCollapsed, rightPanelCollapsed, topPanelCollapsed, bottomPanelCollapsed,
+    leftSlotCollapsed, rightSlotCollapsed
   ]);
 
   // 同步外观自定义到 CSS 变量
@@ -87,7 +99,7 @@ function App() {
           "left mid-main   right"
           "left mid-bottom right"
         `,
-        gridTemplateColumns: `var(--lw, ${leftPanelCollapsed ? 0 : leftPanelWidth}px) 1fr var(--rw, ${rightPanelCollapsed ? 0 : rightPanelWidth}px)`,
+        gridTemplateColumns: `var(--lw, ${leftPanelCollapsed ? 0 : (leftSlotCollapsed ? 48 : leftPanelWidth)}px) 1fr var(--rw, ${rightPanelCollapsed ? 0 : (rightSlotCollapsed ? 48 : rightPanelWidth)}px)`,
         gridTemplateRows: `var(--th, ${topPanelCollapsed ? 0 : topPanelHeight}px) 1fr var(--bh, ${bottomPanelCollapsed ? 0 : bottomPanelHeight}px)`,
       }}
     >
