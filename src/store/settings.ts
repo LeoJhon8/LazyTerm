@@ -17,6 +17,8 @@ interface SettingsData {
   cursorBlink: boolean;
   scrollback: number;
   tabStopWidth: number;
+  defaultShell: string;
+
 
   // 外观自定义
   appBackgroundColor: "system" | "light" | "dark"; // 全局背景色 (终端外)
@@ -52,6 +54,8 @@ const defaultSettings: SettingsData = {
   cursorBlink: true,
   scrollback: 10000,
   tabStopWidth: 4,
+  defaultShell: "powershell.exe",
+
 
   // 外观自定义默认值
   appBackgroundColor: "system",

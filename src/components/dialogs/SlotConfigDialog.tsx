@@ -27,7 +27,9 @@ import { useSshProfilesStore } from "@/store/ssh-profiles";
 import { useQuickCommandsStore } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
 import { TERMINAL_THEMES, getTerminalTheme } from "@/config/themes";
-import { FileJson, Upload, Trash2, ImagePlus, X, Palette, LayoutPanelLeft, Database } from "lucide-react";
+import { FileJson, Upload, Trash2, ImagePlus, X, Palette, LayoutPanelLeft, Database, Terminal, Plus } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect as useMountedEffect } from "react";
 
 // 引入 Tauri 原生 API
 import { save, open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -100,6 +102,14 @@ function ThemeSettings() {
   const termBgHex = activeTheme.background;
   const termBgRgba = termBgHex === "transparent" ? "transparent" : (termBgHex.startsWith("#") ? hexToRgba(termBgHex, terminalOpacity / 100) : termBgHex);
 
+  const isDarkApp = appBackgroundColor === 'system'
+    ? window.matchMedia("(prefers-color-scheme: dark)").matches
+    : appBackgroundColor === 'dark';
+
+  const filteredThemes = TERMINAL_THEMES.filter(t =>
+    t.name === 'custom' || t.name === 'system-auto' || t.isDark === isDarkApp
+  );
+
   return (
     <div className="flex flex-col h-full relative">
       {/* ======================= */}
@@ -110,9 +120,9 @@ function ThemeSettings() {
           <Palette className="h-5 w-5 text-primary" />
           <Label className="text-lg font-bold">视觉预览</Label>
         </div>
-        <div 
+        <div
           className="rounded-xl border shadow-sm overflow-hidden relative group transition-all duration-300 hover:shadow-md hover:border-primary/20"
-          style={{ 
+          style={{
             height: '180px',
             backgroundColor: appBackgroundColor === 'system' ? 'var(--background)' : (appBackgroundColor === 'light' ? '#ffffff' : (appBackgroundColor === 'dark' ? '#0a0a0a' : appBackgroundColor)),
             color: 'var(--foreground)'
@@ -120,16 +130,16 @@ function ThemeSettings() {
         >
           {/* 背景图层 */}
           {backgroundImageEnabled && backgroundImage && (
-             <div className="absolute inset-0 pointer-events-none" style={{
-               zIndex: 0,
-               backgroundImage: `url(${backgroundImage})`,
-               backgroundSize: "cover",
-               backgroundPosition: "center",
-               opacity: backgroundOpacity / 100,
-               filter: backgroundBlur > 0 ? `blur(${backgroundBlur}px)` : undefined,
-             }} />
+            <div className="absolute inset-0 pointer-events-none" style={{
+              zIndex: 0,
+              backgroundImage: `url(${backgroundImage})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              opacity: backgroundOpacity / 100,
+              filter: backgroundBlur > 0 ? `blur(${backgroundBlur}px)` : undefined,
+            }} />
           )}
-          
+
           {/* UI 侧栏占位 */}
           <div className="absolute inset-y-0 left-0 w-16 border-r flex flex-col items-center py-3 z-10" style={{
             backgroundColor: (backgroundImageEnabled && backgroundImage) ? `color-mix(in srgb, var(--color-background) ${uiOpacity}%, transparent)` : undefined,
@@ -148,41 +158,128 @@ function ThemeSettings() {
             fontFamily,
             fontSize: `${fontSize}px`
           }}>
-             <div className="flex gap-2 mb-1">
-               <span style={{color: activeTheme.green === "auto" ? "#22c55e" : activeTheme.green}}>➜</span>
-               <span style={{color: activeTheme.cyan === "auto" ? "#06b6d4" : activeTheme.cyan}}>~/user/lazy-terminal</span>
-             </div>
-             <div className="mb-2">
-               <span style={{color: activeTheme.magenta === "auto" ? "#d946ef" : activeTheme.magenta}}>❯</span> npm run dev
-             </div>
-             <div style={{color: activeTheme.yellow === "auto" ? "#eab308" : activeTheme.yellow}}>Starting development server...</div>
-             <div style={{color: activeTheme.brightGreen === "auto" ? "#4ade80" : activeTheme.brightGreen, marginTop: '8px'}}>VITE v7.3.1  ready in 250 ms</div>
+            <div className="flex gap-2 mb-1">
+              <span style={{ color: activeTheme.green === "auto" ? "#22c55e" : activeTheme.green }}>➜</span>
+              <span style={{ color: activeTheme.cyan === "auto" ? "#06b6d4" : activeTheme.cyan }}>~/user/lazy-terminal</span>
+            </div>
+            <div className="mb-2">
+              <span style={{ color: activeTheme.magenta === "auto" ? "#d946ef" : activeTheme.magenta }}>❯</span> npm run dev
+            </div>
+            <div style={{ color: activeTheme.yellow === "auto" ? "#eab308" : activeTheme.yellow }}>Starting development server...</div>
+            <div style={{ color: activeTheme.brightGreen === "auto" ? "#4ade80" : activeTheme.brightGreen, marginTop: '8px' }}>VITE v7.3.1  ready in 250 ms</div>
           </div>
         </div>
       </div>
 
       <div className="space-y-8 pb-10 px-1">
-        
+
         {/* ======================= */}
         {/* 1.5. 应用背景色 */}
         {/* ======================= */}
         <div className="space-y-3">
-           <Label className="text-base font-semibold">终端以外的组件</Label>
-           <div className="flex flex-wrap gap-2 items-center">
-              {[
-                { value: "system", label: "跟随系统" },
-                { value: "light", label: "浅色" },
-                { value: "dark", label: "深色" },
-              ].map(opt => (
-                <Button
-                  key={opt.value} 
-                  variant={appBackgroundColor === opt.value ? "default" : "outline"} 
-                  size="sm"
-                  className={appBackgroundColor === opt.value ? "ring-2 ring-primary ring-offset-1" : ""}
-                  onClick={() => setSettings({ appBackgroundColor: opt.value as any })}
-                >{opt.label}</Button>
-              ))}
-           </div>
+          <Label className="text-base font-semibold">配色方案</Label>
+          <div className="flex flex-wrap gap-2 items-center">
+            {[
+              { value: "system", label: "跟随系统" },
+              { value: "light", label: "浅色" },
+              { value: "dark", label: "深色" },
+            ].map(opt => (
+              <Button
+                key={opt.value}
+                variant={appBackgroundColor === opt.value ? "default" : "outline"}
+                size="sm"
+                className={appBackgroundColor === opt.value ? "ring-2 ring-primary ring-offset-1" : ""}
+                onClick={() => setSettings({ appBackgroundColor: opt.value as any })}
+              >{opt.label}</Button>
+            ))}
+          </div>
+        </div>
+
+        <Separator className="bg-muted" />
+
+        {/* ======================= */}
+        {/* 1.6. 终端主题 (联动配色方案) */}
+        {/* ======================= */}
+        <div className="space-y-5">
+          <div className="flex justify-between items-center">
+            <Label className="text-base font-semibold">终端主题</Label>
+            <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+              已根据{isDarkApp ? '深色' : '浅色'}模式自动过滤
+            </span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {filteredThemes.map((scheme) => (
+              <button
+                key={scheme.name}
+                onClick={() => setSettings({ terminalColorScheme: scheme.name })}
+                className={`p-3 rounded-lg border-2 transition-all duration-200 text-left ${terminalColorScheme === scheme.name ? "border-primary shadow-md bg-active" : "border-muted hover:border-primary/50"
+                  }`}
+              >
+                <div className="text-sm font-medium mb-2 truncate">{scheme.label}</div>
+                <div className="rounded p-1.5 flex flex-wrap items-center gap-1" style={{ backgroundColor: scheme.background === 'auto' ? 'var(--background)' : scheme.background }}>
+                  {[scheme.red, scheme.green, scheme.yellow, scheme.blue, scheme.foreground].map((c, i) => (
+                    <div key={i} className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: c === 'auto' ? (i === 0 ? '#ef4444' : i === 1 ? '#22c55e' : i === 2 ? '#eab308' : '#3b82f6') : c }} />
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* 自定义颜色配置区域 */}
+          {terminalColorScheme === "custom" && (
+            <div className="p-4 bg-muted/20 border rounded-lg space-y-4">
+              <Label className="text-sm font-semibold">自定义配色详情</Label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { key: "background", label: "背景色" },
+                  { key: "foreground", label: "前景色" },
+                  { key: "cursor", label: "光标颜色" },
+                  { key: "selectionBackground", label: "选区背景" },
+                  { key: "black", label: "Black" },
+                  { key: "red", label: "Red" },
+                  { key: "green", label: "Green" },
+                  { key: "yellow", label: "Yellow" },
+                  { key: "blue", label: "Blue" },
+                  { key: "magenta", label: "Magenta" },
+                  { key: "cyan", label: "Cyan" },
+                  { key: "white", label: "White" },
+                ].map((item) => (
+                  <div key={item.key} className="flex flex-col gap-1.5">
+                    <Label className="text-xs text-muted-foreground">{item.label}</Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={(customThemeColors as any)[item.key] || "#000000"}
+                        onChange={(e) => {
+                          const newColors = { ...customThemeColors, [item.key]: e.target.value };
+                          setSettings({ customThemeColors: newColors as any });
+                        }}
+                        className="w-6 h-6 p-0 border-0 rounded cursor-pointer"
+                      />
+                      <span className="text-xs font-mono">{(customThemeColors as any)[item.key]}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-8 pt-4">
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label className="text-sm text-muted-foreground">终端背景不透明度</Label>
+                <span className="text-xs font-mono text-muted-foreground">{terminalOpacity}%</span>
+              </div>
+              <input type="range" min="0" max="100" step="5" value={terminalOpacity} onChange={(e) => setSettings({ terminalOpacity: parseInt(e.target.value) })} className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary" />
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label className="text-sm text-muted-foreground">UI 侧栏不透明度</Label>
+                <span className="text-xs font-mono text-muted-foreground">{uiOpacity}%</span>
+              </div>
+              <input type="range" min="30" max="100" step="5" value={uiOpacity} onChange={(e) => setSettings({ uiOpacity: parseInt(e.target.value) })} className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary" />
+            </div>
+          </div>
         </div>
 
         <Separator className="bg-muted" />
@@ -194,15 +291,15 @@ function ThemeSettings() {
           <div className="flex items-center justify-between">
             <Label className="text-base font-semibold">背景图片</Label>
             <div className="flex items-center gap-2">
-              <Checkbox 
-                id="enable-bg-img" 
-                checked={backgroundImageEnabled} 
-                onCheckedChange={(c) => setSettings({ backgroundImageEnabled: !!c })} 
+              <Checkbox
+                id="enable-bg-img"
+                checked={backgroundImageEnabled}
+                onCheckedChange={(c) => setSettings({ backgroundImageEnabled: !!c })}
               />
               <Label htmlFor="enable-bg-img" className="text-sm font-medium cursor-pointer">开启图片背景</Label>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" onClick={handlePickBackgroundImage} disabled={!backgroundImageEnabled}>
               <ImagePlus className="h-4 w-4 mr-2" />选择图片
@@ -250,6 +347,7 @@ function ThemeSettings() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  {/* @ts-ignore */}
                   {FONT_OPTIONS.map((f) => (
                     <SelectItem key={f.value} value={f.value}>
                       <span style={{ fontFamily: f.value }}>{f.label}</span>
@@ -272,91 +370,6 @@ function ThemeSettings() {
         <Separator className="bg-muted" />
 
         {/* ======================= */}
-        {/* 4. 配色方案 & 透明度 */}
-        {/* ======================= */}
-        <div className="space-y-5">
-          <div className="flex justify-between items-center">
-             <Label className="text-base font-semibold">配色方案</Label>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {TERMINAL_THEMES.map((scheme) => (
-              <button
-                key={scheme.name}
-                onClick={() => setSettings({ terminalColorScheme: scheme.name })}
-                className={`p-3 rounded-lg border-2 transition-all duration-200 text-left ${
-                  terminalColorScheme === scheme.name ? "border-primary shadow-md bg-active" : "border-muted hover:border-primary/50"
-                }`}
-              >
-                <div className="text-sm font-medium mb-2 truncate">{scheme.label}</div>
-                <div className="rounded p-1.5 flex flex-wrap items-center gap-1" style={{ backgroundColor: scheme.background === 'auto' ? 'var(--background)' : scheme.background }}>
-                  {[scheme.red, scheme.green, scheme.yellow, scheme.blue, scheme.foreground].map((c, i) => (
-                    <div key={i} className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: c === 'auto' ? (i===0?'#ef4444':i===1?'#22c55e':i===2?'#eab308':'#3b82f6') : c }} />
-                  ))}
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* 自定义颜色配置区域 */}
-          {terminalColorScheme === "custom" && (
-            <div className="p-4 bg-muted/20 border rounded-lg space-y-4">
-              <Label className="text-sm font-semibold">自定义配色详情</Label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { key: "background", label: "背景色" },
-                  { key: "foreground", label: "前景色" },
-                  { key: "cursor", label: "光标颜色" },
-                  { key: "selectionBackground", label: "选区背景" },
-                  { key: "black", label: "Black" },
-                  { key: "red", label: "Red" },
-                  { key: "green", label: "Green" },
-                  { key: "yellow", label: "Yellow" },
-                  { key: "blue", label: "Blue" },
-                  { key: "magenta", label: "Magenta" },
-                  { key: "cyan", label: "Cyan" },
-                  { key: "white", label: "White" },
-                ].map((item) => (
-                  <div key={item.key} className="flex flex-col gap-1.5">
-                    <Label className="text-xs text-muted-foreground">{item.label}</Label>
-                    <div className="flex items-center gap-2">
-                       <input
-                         type="color"
-                         value={(customThemeColors as any)[item.key] || "#000000"}
-                         onChange={(e) => {
-                           const newColors = { ...customThemeColors, [item.key]: e.target.value };
-                           setSettings({ customThemeColors: newColors as any });
-                         }}
-                         className="w-6 h-6 p-0 border-0 rounded cursor-pointer"
-                       />
-                       <span className="text-xs font-mono">{(customThemeColors as any)[item.key]}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-8 pt-4">
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label className="text-sm text-muted-foreground">终端背景不透明度</Label>
-                <span className="text-xs font-mono text-muted-foreground">{terminalOpacity}%</span>
-              </div>
-              <input type="range" min="0" max="100" step="5" value={terminalOpacity} onChange={(e) => setSettings({ terminalOpacity: parseInt(e.target.value) })} className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary" />
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label className="text-sm text-muted-foreground">UI 侧栏不透明度</Label>
-                <span className="text-xs font-mono text-muted-foreground">{uiOpacity}%</span>
-              </div>
-              <input type="range" min="30" max="100" step="5" value={uiOpacity} onChange={(e) => setSettings({ uiOpacity: parseInt(e.target.value) })} className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary" />
-            </div>
-          </div>
-        </div>
-
-        <Separator className="bg-muted" />
-
-        {/* ======================= */}
         {/* 5. 自定义 CSS */}
         {/* ======================= */}
         <div className="space-y-3">
@@ -369,7 +382,7 @@ function ThemeSettings() {
             className="font-mono text-sm"
           />
         </div>
-        
+
       </div>
     </div>
   );
@@ -377,12 +390,12 @@ function ThemeSettings() {
 
 // --- 子组件 2：布局设置 ---
 function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault }: any) {
-  const displayModules = AVAILABLE_MODULES.filter(mod => 
-    !LOCKED_MODULES.includes(mod.id) && 
-    mod.id !== "SettingModule" && 
+  const displayModules = AVAILABLE_MODULES.filter(mod =>
+    !LOCKED_MODULES.includes(mod.id) &&
+    mod.id !== "SettingModule" &&
     mod.id !== "settings"
   );
-  
+
   return (
     <div className="space-y-6 py-4">
       <div className="grid grid-cols-2 gap-8">
@@ -398,8 +411,8 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
               {displayModules.map((mod) => {
                 const isChecked = currentConfig[side].modules.includes(mod.id);
                 return (
-                  <div 
-                    key={mod.id} 
+                  <div
+                    key={mod.id}
                     className={cn(
                       "flex items-center space-x-3 p-3 rounded-xl transition-all cursor-pointer border border-transparent",
                       isChecked ? 'bg-background shadow-sm border-border' : 'hover:bg-muted/50'
@@ -457,12 +470,95 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
   );
 }
 
+// --- 子组件 4：终端设置 ---
+function TerminalSettings() {
+  const { defaultShell, setSettings } = useSettingsStore();
+  const [shells, setShells] = useState<any[]>([]);
+
+  useMountedEffect(() => {
+    invoke<any[]>("get_available_shells")
+      .then(setShells)
+      .catch(console.error);
+  }, []);
+
+  return (
+    <div className="space-y-8 py-4 px-1">
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Terminal className="h-5 w-5 text-primary" />
+          <Label className="text-lg font-bold">终端行为</Label>
+        </div>
+
+        <div className="space-y-4 p-6 border rounded-2xl bg-muted/5">
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">默认新建终端类型 / Default Shell</Label>
+            <p className="text-xs text-muted-foreground mb-3">点击标签栏 "+" 号时默认创建的终端类型</p>
+            <div className="grid grid-cols-1 gap-2">
+              {shells.map((s) => (
+                <button
+                  key={s.path}
+                  onClick={() => setSettings({ defaultShell: s.path })}
+                  className={cn(
+                    "flex items-center justify-between p-3 rounded-xl border transition-all text-left",
+                    defaultShell === s.path
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:bg-muted/50"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "p-2 rounded-lg bg-background border",
+                      defaultShell === s.path ? "border-primary/30" : ""
+                    )}>
+                      <Terminal className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold">{s.name}</div>
+                      <div className="text-[10px] text-muted-foreground font-mono">{s.path}</div>
+                    </div>
+                  </div>
+                  {defaultShell === s.path && (
+                    <div className="h-2 w-2 rounded-full bg-primary" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <Separator />
+
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <LayoutPanelLeft className="h-5 w-5 text-primary" />
+          <Label className="text-lg font-bold">标签页预览</Label>
+        </div>
+        <div className="p-6 border rounded-2xl bg-muted/5 flex items-center justify-center">
+          <div className="flex items-center gap-1 bg-background p-2 rounded-xl border shadow-sm w-full max-w-md">
+            <div className="h-8 px-4 bg-secondary text-secondary-foreground rounded-lg flex items-center text-xs font-bold">
+              {shells.find(s => s.path === defaultShell)?.name || '终端'}
+            </div>
+            <div className="h-8 px-4 text-muted-foreground flex items-center text-xs">
+              另一标签页
+            </div>
+            <div className="h-8 w-8 flex items-center justify-center border border-dashed rounded-lg ml-auto">
+              <Plus className="h-3 w-3 text-muted-foreground" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // --- 子组件 3：数据导入导出 ---
 function DataImportExport() {
   const { importProfiles, exportProfiles } = useSshProfilesStore();
   const { commands } = useQuickCommandsStore();
   const { sessions } = useTabsStore();
-  
+
   const [importData, setImportData] = useState("");
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
@@ -519,7 +615,7 @@ function DataImportExport() {
     try {
       if (!importData.trim()) throw new Error("请先粘贴导入数据");
       const data = JSON.parse(importData);
-      
+
       if (!data.version) {
         throw new Error("无效的导入文件格式");
       }
@@ -554,8 +650,8 @@ function DataImportExport() {
   // 清空所有数据
   const handleClearAll = () => {
     if (confirm("确定要清空所有会话配置和快捷命令吗？此操作不可恢复！")) {
-      useSshProfilesStore.setState({ 
-        nodes: [{ id: "root-folder", type: "folder", name: "我的会话", parentId: null, isExpanded: true, isRoot: true, order: 0 }] 
+      useSshProfilesStore.setState({
+        nodes: [{ id: "root-folder", type: "folder", name: "我的会话", parentId: null, isExpanded: true, isRoot: true, order: 0 }]
       });
       useQuickCommandsStore.setState({ commands: [] });
       setImportMessage("所有配置数据已清空！");
@@ -572,9 +668,9 @@ function DataImportExport() {
           <Label className="text-lg font-bold">备份数据</Label>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Button 
-            onClick={handleExportAll} 
-            variant="outline" 
+          <Button
+            onClick={handleExportAll}
+            variant="outline"
             className="h-auto py-6 flex flex-col items-center gap-3 rounded-2xl border-dashed border-2 hover:border-primary/50 hover:bg-primary/5 transition-all group"
           >
             <div className="p-3 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
@@ -621,13 +717,12 @@ function DataImportExport() {
             立即导入并覆盖
           </Button>
         </div>
-        
+
         {importMessage && (
-          <div className={`p-3 rounded-md text-sm break-all ${
-            messageType === 'success' 
-              ? 'bg-green-100 text-green-800 border border-green-200' 
-              : 'bg-red-100 text-red-800 border border-red-200'
-          }`}>
+          <div className={`p-3 rounded-md text-sm break-all ${messageType === 'success'
+            ? 'bg-green-100 text-green-800 border border-green-200'
+            : 'bg-red-100 text-red-800 border border-red-200'
+            }`}>
             {importMessage}
           </div>
         )}
@@ -655,12 +750,12 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
       if (next[otherSide].activeModule === moduleId) {
         next[otherSide].activeModule = next[otherSide].modules[0] || "";
       }
-      
+
       // 如果目标侧原本为空，添加模块时自动展开
       if (next[side].modules.length === 0) {
         next[side].collapsed = false;
       }
-      
+
       next[side].modules.push(moduleId);
       if (!next[side].activeModule) next[side].activeModule = moduleId;
     }
@@ -676,22 +771,29 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
 
         <Tabs defaultValue="theme" className="flex-1 flex overflow-hidden">
           <TabsList className="w-48 flex flex-col h-full bg-muted/10 rounded-none border-r p-3 gap-2 justify-start">
-            <TabsTrigger 
-              value="theme" 
+            <TabsTrigger
+              value="theme"
               className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
             >
               <Palette className="h-4 w-4" />
               <span className="font-medium">主题设置</span>
             </TabsTrigger>
-            <TabsTrigger 
-              value="slots" 
+            <TabsTrigger
+              value="slots"
               className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
             >
               <LayoutPanelLeft className="h-4 w-4" />
               <span className="font-medium">布局管理</span>
             </TabsTrigger>
-            <TabsTrigger 
-              value="data" 
+            <TabsTrigger
+              value="terminal"
+              className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
+            >
+              <Terminal className="h-4 w-4" />
+              <span className="font-medium">终端设置</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="data"
               className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
             >
               <Database className="h-4 w-4" />
@@ -714,6 +816,9 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
                 }}
                 resetToDefault={resetToDefault}
               />
+            </TabsContent>
+            <TabsContent value="terminal" className="m-0 focus-visible:outline-none">
+              <TerminalSettings />
             </TabsContent>
             <TabsContent value="data" className="m-0 focus-visible:outline-none">
               <DataImportExport />

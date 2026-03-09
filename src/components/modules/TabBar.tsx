@@ -1,6 +1,15 @@
 import { useTabsStore } from "@/store/tabs";
 import { Button } from "@/components/ui/button";
 import { X, Plus } from "lucide-react";
+import { useSettingsStore } from "@/store/settings";
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
+
+interface ShellInfo {
+  name: string;
+  path: string;
+  icon_type: string;
+}
 
 export function TabBar() {
   const { 
@@ -11,11 +20,27 @@ export function TabBar() {
     addSession: addTab            
   } = useTabsStore();
 
+  const { defaultShell } = useSettingsStore();
+  const [shells, setShells] = useState<ShellInfo[]>([]);
+
+  useEffect(() => {
+    invoke<ShellInfo[]>("get_available_shells")
+      .then(setShells)
+      .catch(console.error);
+  }, []);
+
   const handleAddTab = () => {
+    // 根据 defaultShell 找到友好的名称作为标题
+    const shellInfo = shells.find(s => s.path === defaultShell || s.name.toLowerCase() === defaultShell.toLowerCase());
+    const title = shellInfo ? shellInfo.name : (defaultShell.includes('powershell') ? 'PowerShell' : (defaultShell.includes('cmd') ? 'CMD' : 'Terminal'));
+    
     addTab({
-      title: `Local-${Date.now()}`,
+      title,
       type: "local",
       cwd: typeof process !== 'undefined' ? process.cwd() : '/',
+      config: {
+        shell: defaultShell
+      }
     });
   };
 
