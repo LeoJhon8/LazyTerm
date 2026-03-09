@@ -275,11 +275,7 @@ function QuickCommandForm({
     }
   };
 
-  const handleEdit = (cmd: QuickCommand) => {
-    setEditingId(cmd.id);
-    setLabel(cmd.label);
-    setCommand(cmd.command);
-  };
+
 
   const handleCancel = () => {
     setEditingId(null);

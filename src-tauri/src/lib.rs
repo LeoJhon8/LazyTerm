@@ -46,13 +46,17 @@ struct Client;
 impl client::Handler for Client {
     type Error = russh::Error;
 
-    /// 适配 russh 0.45 的服务器公钥检查逻辑
     async fn check_server_key(
         &mut self,
         _server_public_key: &key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        // 在生产环境建议对比已知指纹，此处默认允许
+        println!("收到服务器公钥响应");
         Ok(true)
+    }
+
+    async fn disconnected(&mut self, reason: client::DisconnectReason<Self::Error>) -> Result<(), Self::Error> {
+        println!("--- SSH 连接已断开: {:?} ---", reason);
+        Ok(())
     }
 }
 
@@ -146,39 +150,103 @@ async fn create_ssh_session<R: Runtime>(
     config: SshConnectConfig,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
-    let ssh_config = Arc::new(client::Config::default());
+    
+    // --- 算法兼容性增强设计 ---
+    // Ubuntu 24.04 (OpenSSH 9.x) 建议使用默认算法并由系统自动协商
+    let mut ssh_config = client::Config::default();
+    
+    // 使用默认首选列表，包含 ED25519, RSA-SHA2 等
+    ssh_config.preferred = russh::Preferred::DEFAULT;
+
+    let ssh_config = Arc::new(ssh_config);
+    println!("--- SSH 连接尝试: {}@{}:{} ---", config.username, config.host, config.port);
     let addr = format!("{}:{}", config.host, config.port);
 
     // 1. 建立连接
-    let mut handle = client::connect(ssh_config, addr, Client)
+    let mut handle = client::connect(ssh_config, addr.clone(), Client)
         .await
-        .map_err(|e| format!("网络连接失败: {:?}", e))?;
+        .map_err(|e| {
+            println!("网络连接失败 ({}): {:?}", addr, e);
+            format!("网络连接失败: {:?}", e)
+        })?;
+    println!("网络底层连接已建立: {}", addr);
 
     // 2. 身份认证流程
     let mut authenticated = false;
 
     // 优先尝试私钥认证
     if let Some(key_path) = config.private_key_path {
+        println!("尝试私钥认证: {}", key_path);
         let key_pair = load_ssh_key(&key_path, config.private_key_passphrase)?;
-        authenticated = handle
-            .authenticate_publickey(config.username.clone(), Arc::new(key_pair))
-            .await
-            .map_err(|e| format!("私钥认证异常: {:?}", e))?;
+        match handle.authenticate_publickey(config.username.clone(), Arc::new(key_pair)).await {
+            Ok(true) => {
+                println!("私钥认证成功");
+                authenticated = true;
+            }
+            Ok(false) => println!("服务器拒绝了私钥认证"),
+            Err(e) => println!("私钥认证过程出错: {:?}", e),
+        }
     }
 
-    // 如果私钥失败，尝试密码认证
+    // 如果认证未成功，尝试密码 (针对现代系统，直接走 Keyboard-Interactive 往往更稳定)
     if !authenticated {
-        if let Some(password) = config.password {
-            authenticated = handle
-                .authenticate_password(config.username, password)
-                .await
-                .map_err(|e| format!("密码认证异常: {:?}", e))?;
+        if let Some(password) = config.password.clone() {
+            println!("开始认证交互 (直接进入 Keyboard-Interactive 模式)...");
+            
+            // 给服务器一点喘息时间，避免因前序握手过快导致的认证冲突
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+            // 1. 启动交互流程 (增加超时到 20s)
+            let kbd_start_res = tokio::time::timeout(
+                std::time::Duration::from_secs(20),
+                handle.authenticate_keyboard_interactive_start(config.username.clone(), None)
+            ).await;
+
+            let mut kbd_res = match kbd_start_res {
+                Ok(res) => res,
+                Err(_) => {
+                    println!("Keyboard-Interactive 认证启动超时 (20s)，服务器可能正在应用安全限制或不支持该方式");
+                    Ok(client::KeyboardInteractiveAuthResponse::Failure)
+                }
+            };
+            
+            let mut kbd_authenticated = false;
+            // 2. 处理交互循环 (最多5轮)
+            for i in 0..5 {
+                match kbd_res {
+                    Ok(client::KeyboardInteractiveAuthResponse::Success) => {
+                        println!("Keyboard-Interactive 认证成功！(轮次: {})", i + 1);
+                        kbd_authenticated = true;
+                        break;
+                    }
+                    Ok(client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, name, instructions }) => {
+                        println!("收到交互请求 (轮次 {}): Name='{}', Prompts_Len={}", i + 1, name, prompts.len());
+                        let mut responses = Vec::new();
+                        for (idx, p) in prompts.iter().enumerate() {
+                            println!("  Prompt {}: '{}'", idx + 1, p.prompt);
+                            responses.push(password.clone());
+                        }
+                        kbd_res = handle.authenticate_keyboard_interactive_respond(responses).await;
+                    }
+                    Ok(client::KeyboardInteractiveAuthResponse::Failure) => {
+                        println!("Keyboard-Interactive 认证被服务器拒绝 (Failure)");
+                        break;
+                    }
+                    Err(e) => {
+                        println!("Keyboard-Interactive 认证链断开: {:?}", e);
+                        break;
+                    }
+                }
+            }
+            authenticated = kbd_authenticated;
         }
     }
 
     if !authenticated {
+        println!("所有认证方式均已尝试，认证失败。");
         return Err("SSH 认证失败：密钥或密码错误".to_string());
     }
+    println!("认证通过，正在初始化会话通道...");
 
     // 3. 打开 Channel 并请求 PTY
     let mut channel = handle.channel_open_session().await.map_err(|e| e.to_string())?;

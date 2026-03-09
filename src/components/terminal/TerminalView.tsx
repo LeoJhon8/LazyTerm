@@ -35,7 +35,6 @@ export function TerminalView() {
   const terminalColorScheme = useSettingsStore((state) => state.terminalColorScheme);
   const customThemeColors = useSettingsStore((state) => state.customThemeColors);
   const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
-  const scrollback = useSettingsStore((state) => state.scrollback);
   const uiOpacity = useSettingsStore((state) => state.uiOpacity);
   const backgroundImage = useSettingsStore((state) => state.backgroundImage);
   const setSettings = useSettingsStore((state) => state.setSettings);
