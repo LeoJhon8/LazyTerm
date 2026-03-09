@@ -278,18 +278,45 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
     brightMagenta: "auto",
     brightCyan: "auto",
     brightWhite: "auto",
+  },
+  {
+    name: "custom",
+    label: "自定义",
+    background: "#000000",
+    foreground: "#ffffff",
+    cursor: "#ffffff",
+    cursorAccent: "#000000",
+    selectionBackground: "rgba(255,255,255,0.3)",
+    black: "#000000",
+    red: "#ff0000",
+    green: "#00ff00",
+    yellow: "#ffff00",
+    blue: "#0000ff",
+    magenta: "#ff00ff",
+    cyan: "#00ffff",
+    white: "#ffffff",
+    brightBlack: "#808080",
+    brightRed: "#ff0000",
+    brightGreen: "#00ff00",
+    brightYellow: "#ffff00",
+    brightBlue: "#0000ff",
+    brightMagenta: "#ff00ff",
+    brightCyan: "#00ffff",
+    brightWhite: "#ffffff",
   }
 ];
 
 /**
  * 根据配色方案名称获取对应的 xterm ITheme 对象
  */
-export function getTerminalTheme(schemeName: string, activeGlobalTheme?: "light" | "dark" | "system"): TerminalColorScheme {
+export function getTerminalTheme(schemeName: string, customThemeConfig?: TerminalColorScheme): TerminalColorScheme {
+  if (schemeName === "custom" && customThemeConfig) {
+    return customThemeConfig;
+  }
+
   if (schemeName === "system-auto") {
-    // 根据当前全局主题解析
-    const isDark = activeGlobalTheme === "light" ? false : 
-                   activeGlobalTheme === "system" ? window.matchMedia("(prefers-color-scheme: dark)").matches : true;
-    return getTerminalTheme(isDark ? "default-dark" : "default-light");
+    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return getTerminalTheme(isDark ? "default-dark" : "default-light", customThemeConfig);
   }
 
   return (
@@ -305,7 +332,7 @@ export function toXtermTheme(scheme: TerminalColorScheme, opacityPercent: number
   const bg = scheme.background;
   // 如果需要半透明背景，将 hex 转为 rgba
   const backgroundWithOpacity =
-    opacityPercent < 100 ? hexToRgba(bg, opacityPercent / 100) : bg;
+    opacityPercent < 100 ? (bg === "transparent" ? "transparent" : hexToRgba(bg, opacityPercent / 100)) : bg;
 
   return {
     background: backgroundWithOpacity,
@@ -337,8 +364,13 @@ export function toXtermTheme(scheme: TerminalColorScheme, opacityPercent: number
  * 将 hex 颜色转为 rgba
  */
 function hexToRgba(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
+  hex = hex.replace("#", "");
+  if (hex.length === 3) {
+    hex = hex.split("").map((c) => c + c).join("");
+  }
+  if (hex.length !== 6) return `rgba(0,0,0,${alpha})`;
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
   return `rgba(${r},${g},${b},${alpha})`;
 }

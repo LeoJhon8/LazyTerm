@@ -30,7 +30,15 @@ interface TerminalInstance {
 export function TerminalView() {
   const { activeSessionId, sessions } = useTabsStore();
   const { addCommand: addHistoryCommand } = useHistoryStore();
-  const { fontSize, fontFamily, theme, terminalColorScheme, terminalOpacity, uiOpacity, backgroundImage, setSettings } = useSettingsStore();
+  const fontSize = useSettingsStore((state) => state.fontSize);
+  const fontFamily = useSettingsStore((state) => state.fontFamily);
+  const terminalColorScheme = useSettingsStore((state) => state.terminalColorScheme);
+  const customThemeColors = useSettingsStore((state) => state.customThemeColors);
+  const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
+  const scrollback = useSettingsStore((state) => state.scrollback);
+  const uiOpacity = useSettingsStore((state) => state.uiOpacity);
+  const backgroundImage = useSettingsStore((state) => state.backgroundImage);
+  const setSettings = useSettingsStore((state) => state.setSettings);
 
   const containerMap = useRef(new Map<string, HTMLDivElement>());
   const terminalMap = useRef(new Map<string, TerminalInstance>());
@@ -167,7 +175,7 @@ export function TerminalView() {
       // =============================
       const termState = { isTransitioning: false, timeoutId: undefined, resizeTimeoutId: undefined };
 
-      const colorScheme = getTerminalTheme(terminalColorScheme, theme);
+      const colorScheme = getTerminalTheme(terminalColorScheme, customThemeColors);
       const term = new Terminal({
         fontFamily,
         fontSize,
@@ -175,6 +183,7 @@ export function TerminalView() {
         cursorStyle: "bar",
         scrollback: 10000,
         allowProposedApi: true,
+        allowTransparency: true,
         theme: toXtermTheme(colorScheme, terminalOpacity),
       });
 
@@ -354,13 +363,13 @@ export function TerminalView() {
         if (typeof unsub === "function") unsub();
       });
     };
-  }, [activeSessionId, activeSession?.connector, activateTerminal, addHistoryCommand, fontFamily, terminalColorScheme, theme]);
+  }, [activeSessionId, activeSession?.connector, activateTerminal, addHistoryCommand, fontFamily, terminalColorScheme, customThemeColors]);
 
   // =============================
   // 监听设置变化 (字体缩放 & 主题)
-  // =============================
+  // =============================  // 处理配置更改时的热更新
   useEffect(() => {
-    const colorScheme = getTerminalTheme(terminalColorScheme, theme);
+    const colorScheme = getTerminalTheme(terminalColorScheme, customThemeColors);
     terminalMap.current.forEach((instance, id) => {
       const { terminal, fitAddon, connector, termState } = instance;
 
@@ -388,7 +397,7 @@ export function TerminalView() {
         });
       }
     });
-  }, [fontSize, fontFamily, terminalColorScheme, terminalOpacity, theme, activeSessionId]);
+  }, [fontSize, fontFamily, terminalColorScheme, terminalOpacity, activeSessionId]);
 
   // =============================
   // 清理已被关闭的会话

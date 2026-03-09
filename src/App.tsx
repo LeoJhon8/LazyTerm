@@ -5,7 +5,6 @@ import { SlotManager } from "@/components/layout/SlotManager";
 
 function App() {
   const { 
-    theme,
     leftPanelWidth,
     rightPanelWidth,
     topPanelHeight,
@@ -14,29 +13,33 @@ function App() {
     rightPanelCollapsed,
     topPanelCollapsed,
     bottomPanelCollapsed,
+    appBackgroundColor,
+    backgroundImageEnabled,
     backgroundImage,
     backgroundBlur,
     backgroundOpacity,
     uiOpacity,
-    accentColor,
     customCSS,
   } = useSettingsStore();
 
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
 
-  // 设置主题
+  // 动态处理全局背景色和暗色模式跟班
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light";
-      root.classList.toggle("dark", systemTheme === "dark");
+    // 移除之前的强制覆盖
+    root.style.removeProperty("--color-background");
+    root.style.removeProperty("--background");
+
+    const isSystemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const isDark = appBackgroundColor === "dark" || (appBackgroundColor === "system" && isSystemDark);
+
+    if (isDark) {
+      root.classList.add("dark");
     } else {
-      root.classList.toggle("dark", theme === "dark");
+      root.classList.remove("dark");
     }
-  }, [theme]);
+  }, [appBackgroundColor]);
 
   // 同步布局设置到 CSS 变量
   useEffect(() => {
@@ -54,14 +57,7 @@ function App() {
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--ui-opacity", `${uiOpacity / 100}`);
-
-    // 强调色 — 设置为 CSS 变量供全局使用
-    if (accentColor) {
-      root.style.setProperty("--accent-custom", accentColor);
-    } else {
-      root.style.removeProperty("--accent-custom");
-    }
-  }, [uiOpacity, accentColor]);
+  }, [uiOpacity]);
 
   // 动态注入自定义 CSS
   useEffect(() => {
@@ -96,7 +92,7 @@ function App() {
       }}
     >
       {/* 背景图片层 */}
-      {backgroundImage && (
+      {backgroundImageEnabled && backgroundImage && (
         <div
           className="fixed inset-0 pointer-events-none"
           style={{

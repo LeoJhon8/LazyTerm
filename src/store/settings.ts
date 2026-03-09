@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { TerminalColorScheme } from "@/config/themes";
+import { TERMINAL_THEMES } from "@/config/themes";
 
 interface SettingsData {
-  theme: "light" | "dark" | "system";
   fontSize: number;
   fontFamily: string;
   leftPanelWidth: number;
@@ -18,9 +19,11 @@ interface SettingsData {
   tabStopWidth: number;
 
   // 外观自定义
-  accentColor: string;               // 主题强调色 (hex)
+  appBackgroundColor: "system" | "light" | "dark"; // 全局背景色 (终端外)
   terminalColorScheme: string;        // 终端配色方案名称
+  customThemeColors: TerminalColorScheme; // 自定义终端配色数据
   terminalOpacity: number;            // 终端背景透明度 0~100
+  backgroundImageEnabled: boolean;    // 是否开启图片背景
   backgroundImage: string;            // 背景图片路径/URL
   backgroundBlur: number;             // 背景模糊度 0~20 (px)
   backgroundOpacity: number;          // 背景图片不透明度 0~100
@@ -36,7 +39,6 @@ interface SettingsActions {
 export type SettingsState = SettingsData & SettingsActions;
 
 const defaultSettings: SettingsData = {
-  theme: "dark",
   fontSize: 14,
   fontFamily: "Menlo, Monaco, 'Courier New', monospace",
   leftPanelWidth: 250,
@@ -52,9 +54,15 @@ const defaultSettings: SettingsData = {
   tabStopWidth: 4,
 
   // 外观自定义默认值
-  accentColor: "",                    // 空字符串表示跟随系统主题
+  appBackgroundColor: "system",
   terminalColorScheme: "system-auto",
+  customThemeColors: {
+    ...TERMINAL_THEMES[0],
+    name: "custom",
+    label: "自定义",
+  },
   terminalOpacity: 100,
+  backgroundImageEnabled: false,
   backgroundImage: "",
   backgroundBlur: 0,
   backgroundOpacity: 100,

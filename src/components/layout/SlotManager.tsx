@@ -15,11 +15,12 @@ export function SlotManager() {
     topPanelCollapsed,
     bottomPanelCollapsed,
     uiOpacity,
+    backgroundImageEnabled,
     backgroundImage,
   } = useSettingsStore();
 
   // 当有背景图片时，使面板半透明
-  const panelOpacityStyle = backgroundImage
+  const panelOpacityStyle = backgroundImageEnabled && backgroundImage
     ? { backgroundColor: `color-mix(in srgb, var(--color-background) ${uiOpacity}%, transparent)` }
     : {};
   
@@ -29,7 +30,7 @@ export function SlotManager() {
       {/* 左侧插槽 */}
       <aside
         id="slot-left"
-        className={`border-r border-border transition-all duration-300 overflow-hidden ${backgroundImage ? '' : 'bg-background'}`}
+        className={`border-r border-border transition-all duration-300 overflow-hidden ${backgroundImageEnabled && backgroundImage ? '' : 'bg-background'}`}
         style={{
           gridArea: "left",
           gridRow: "1 / 4",
