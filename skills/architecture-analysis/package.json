@@ -1,0 +1,26 @@
+{
+  "name": "architecture-analysis",
+  "version": "1.0.0",
+  "description": "Comprehensive project architecture analyzer that identifies technology stacks, build tools, and architectural patterns.",
+  "main": "scripts/analyze-project.js",
+  "bin": {
+    "analyze-project": "scripts/analyze-project.js"
+  },
+  "scripts": {
+    "test": "node scripts/analyze-project.js ./test-project"
+  },
+  "keywords": [
+    "architecture",
+    "analysis",
+    "project",
+    "technology-stack",
+    "build-tools",
+    "typescript",
+    "framework"
+  ],
+  "author": "Claude",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

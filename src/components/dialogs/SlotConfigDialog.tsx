@@ -26,11 +26,13 @@ import { useSettingsStore } from "@/store/settings";
 import { useSshProfilesStore } from "@/store/ssh-profiles";
 import { useQuickCommandsStore } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
-import { FileJson, Upload, Trash2 } from "lucide-react";
+import { TERMINAL_THEMES } from "@/config/themes";
+import { FileJson, Upload, Trash2, ImagePlus, X } from "lucide-react";
 
-// 引入 Tauri 原生 API 进行文件保存
-import { save } from '@tauri-apps/plugin-dialog';
+// 引入 Tauri 原生 API
+import { save, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 // --- 类型定义 ---
 interface SlotConfigDialogProps {
@@ -40,27 +42,62 @@ interface SlotConfigDialogProps {
 
 type ThemeType = "light" | "dark" | "system";
 
-// --- 子组件 1：主题设置 ---
-function ThemeSettings({ theme, fontSize }: any) {
-  const { setSettings } = useSettingsStore();
+// 可选字体列表
+const FONT_OPTIONS = [
+  { value: "Cascadia Code, Menlo, monospace", label: "Cascadia Code" },
+  { value: "JetBrains Mono, Menlo, monospace", label: "JetBrains Mono" },
+  { value: "Fira Code, Menlo, monospace", label: "Fira Code" },
+  { value: "Source Code Pro, Menlo, monospace", label: "Source Code Pro" },
+  { value: "Consolas, Menlo, monospace", label: "Consolas" },
+  { value: "Menlo, Monaco, 'Courier New', monospace", label: "Menlo" },
+  { value: "Monaco, Menlo, monospace", label: "Monaco" },
+  { value: "'Courier New', monospace", label: "Courier New" },
+  { value: "monospace", label: "系统等宽字体" },
+];
+
+// --- 子组件 1：主题与外观设置 ---
+function ThemeSettings() {
+  const {
+    theme, fontSize, fontFamily,
+    terminalColorScheme, terminalOpacity,
+    backgroundImage, backgroundBlur, backgroundOpacity,
+    uiOpacity, accentColor, customCSS,
+    setSettings
+  } = useSettingsStore();
 
   const setTheme = (newTheme: ThemeType) => {
     setSettings({ theme: newTheme });
   };
 
-  const setFontSize = (newFontSize: number) => {
-    setSettings({ fontSize: newFontSize });
+  const handlePickBackgroundImage = async () => {
+    try {
+      const selected = await openDialog({
+        title: "选择背景图片",
+        multiple: false,
+        filters: [
+          { name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"] },
+        ],
+      });
+      if (selected) {
+        // convertFileSrc 将本地路径转为 Tauri asset 协议 URL
+        const assetUrl = convertFileSrc(selected as string);
+        setSettings({ backgroundImage: assetUrl });
+      }
+    } catch (e) {
+      console.error("选择背景图片失败:", e);
+    }
   };
 
   return (
     <div className="space-y-6 py-4">
+      {/* ======== 外观主题 ======== */}
       <div className="grid gap-4">
         <Label className="text-base font-semibold">外观主题</Label>
         <div className="grid grid-cols-3 gap-3">
           {[
             { value: "light", label: "浅色模式", icon: "☀️" },
             { value: "dark", label: "深色模式", icon: "🌙" },
-            { value: "system", label: "系统跟随", icon: "💻" }
+            { value: "system", label: "系统跟随", icon: "💻" },
           ].map((option) => (
             <button
               key={option.value}
@@ -79,25 +116,238 @@ function ThemeSettings({ theme, fontSize }: any) {
           ))}
         </div>
       </div>
-      
+
       <Separator className="bg-muted" />
-      
-      <div className="grid gap-6">
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <Label className="text-base font-semibold">全局字体大小</Label>
-            <span className="text-sm bg-primary/10 text-primary px-3 py-1 rounded-full font-mono">
-              {fontSize}px
-            </span>
+
+      {/* ======== 强调色 ======== */}
+      <div className="space-y-3">
+        <div className="flex justify-between items-center">
+          <Label className="text-base font-semibold">强调色</Label>
+          {accentColor && (
+            <Button variant="ghost" size="sm" onClick={() => setSettings({ accentColor: "" })}>
+              重置
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex gap-2 flex-wrap">
+            {["#528bff", "#f97316", "#22c55e", "#a855f7", "#ec4899", "#06b6d4", "#eab308", "#ef4444"].map((color) => (
+              <button
+                key={color}
+                onClick={() => setSettings({ accentColor: color })}
+                className={`w-8 h-8 rounded-full border-2 transition-all ${
+                  accentColor === color ? "border-foreground scale-110 shadow-lg" : "border-transparent hover:scale-105"
+                }`}
+                style={{ backgroundColor: color }}
+              />
+            ))}
           </div>
-          <div className="relative px-2">
+          <input
+            type="color"
+            value={accentColor || "#528bff"}
+            onChange={(e) => setSettings({ accentColor: e.target.value })}
+            className="w-8 h-8 rounded cursor-pointer border border-muted"
+            title="自定义颜色"
+          />
+        </div>
+      </div>
+
+      <Separator className="bg-muted" />
+
+      {/* ======== 字体设置 ======== */}
+      <div className="space-y-4">
+        <Label className="text-base font-semibold">字体设置</Label>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">字体族</Label>
+            <Select
+              value={fontFamily}
+              onValueChange={(v) => setSettings({ fontFamily: v })}
+            >
+              <SelectTrigger className="h-9 bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FONT_OPTIONS.map((f) => (
+                  <SelectItem key={f.value} value={f.value}>
+                    <span style={{ fontFamily: f.value }}>{f.label}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label className="text-sm text-muted-foreground">字体大小</Label>
+              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-mono">
+                {fontSize}px
+              </span>
+            </div>
             <input
-              type="range" min="12" max="20" step="1" value={fontSize}
-              onChange={(e) => setFontSize(parseInt(e.target.value))}
+              type="range" min="10" max="24" step="1" value={fontSize}
+              onChange={(e) => setSettings({ fontSize: parseInt(e.target.value) })}
               className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
             />
           </div>
         </div>
+
+        {/* 字体预览 */}
+        <div
+          className="p-3 rounded-lg border bg-muted/30 text-sm"
+          style={{ fontFamily, fontSize: `${fontSize}px` }}
+        >
+          <span className="text-muted-foreground">预览：</span>
+          <span>Hello World! 你好世界 0Oo1Il =-+/*</span>
+        </div>
+      </div>
+
+      <Separator className="bg-muted" />
+
+      {/* ======== 终端配色方案 ======== */}
+      <div className="space-y-3">
+        <Label className="text-base font-semibold">终端配色方案</Label>
+        <div className="grid grid-cols-3 gap-2">
+          {TERMINAL_THEMES.map((scheme) => (
+            <button
+              key={scheme.name}
+              onClick={() => setSettings({ terminalColorScheme: scheme.name })}
+              className={`p-3 rounded-lg border-2 transition-all duration-200 text-left ${
+                terminalColorScheme === scheme.name
+                  ? "border-primary shadow-md"
+                  : "border-muted hover:border-primary/50"
+              }`}
+            >
+              <div className="text-xs font-medium mb-2 truncate">{scheme.label}</div>
+              {/* 色块预览 */}
+              <div
+                className="rounded p-1.5 flex items-center gap-0.5"
+                style={{ backgroundColor: scheme.background }}
+              >
+                <span style={{ color: scheme.foreground, fontSize: "10px", fontFamily: "monospace" }}>
+                  $&nbsp;
+                </span>
+                {[scheme.red, scheme.green, scheme.yellow, scheme.blue, scheme.magenta, scheme.cyan].map(
+                  (c, i) => (
+                    <div
+                      key={i}
+                      className="w-2.5 h-2.5 rounded-sm"
+                      style={{ backgroundColor: c }}
+                    />
+                  )
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Separator className="bg-muted" />
+
+      {/* ======== 背景图片 ======== */}
+      <div className="space-y-4">
+        <Label className="text-base font-semibold">背景图片</Label>
+
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={handlePickBackgroundImage}>
+            <ImagePlus className="h-4 w-4 mr-2" />
+            选择图片
+          </Button>
+          {backgroundImage && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSettings({ backgroundImage: "" })}
+            >
+              <X className="h-4 w-4 mr-1" />
+              清除
+            </Button>
+          )}
+        </div>
+
+        {backgroundImage && (
+          <div className="rounded-lg border overflow-hidden h-24 bg-muted/10">
+            <img
+              src={backgroundImage}
+              alt="背景预览"
+              className="w-full h-full object-cover"
+            />
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label className="text-sm text-muted-foreground">模糊度</Label>
+              <span className="text-xs font-mono text-muted-foreground">{backgroundBlur}px</span>
+            </div>
+            <input
+              type="range" min="0" max="20" step="1" value={backgroundBlur}
+              onChange={(e) => setSettings({ backgroundBlur: parseInt(e.target.value) })}
+              className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label className="text-sm text-muted-foreground">不透明度</Label>
+              <span className="text-xs font-mono text-muted-foreground">{backgroundOpacity}%</span>
+            </div>
+            <input
+              type="range" min="0" max="100" step="5" value={backgroundOpacity}
+              onChange={(e) => setSettings({ backgroundOpacity: parseInt(e.target.value) })}
+              className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+            />
+          </div>
+        </div>
+      </div>
+
+      <Separator className="bg-muted" />
+
+      {/* ======== 透明度 ======== */}
+      <div className="space-y-4">
+        <Label className="text-base font-semibold">透明度</Label>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label className="text-sm text-muted-foreground">终端背景</Label>
+              <span className="text-xs font-mono text-muted-foreground">{terminalOpacity}%</span>
+            </div>
+            <input
+              type="range" min="0" max="100" step="5" value={terminalOpacity}
+              onChange={(e) => setSettings({ terminalOpacity: parseInt(e.target.value) })}
+              className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label className="text-sm text-muted-foreground">UI 面板</Label>
+              <span className="text-xs font-mono text-muted-foreground">{uiOpacity}%</span>
+            </div>
+            <input
+              type="range" min="30" max="100" step="5" value={uiOpacity}
+              onChange={(e) => setSettings({ uiOpacity: parseInt(e.target.value) })}
+              className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+            />
+          </div>
+        </div>
+      </div>
+
+      <Separator className="bg-muted" />
+
+      {/* ======== 自定义 CSS ======== */}
+      <div className="space-y-3">
+        <div className="flex justify-between items-center">
+          <Label className="text-base font-semibold">自定义 CSS</Label>
+          <span className="text-xs text-muted-foreground">高级</span>
+        </div>
+        <Textarea
+          value={customCSS}
+          onChange={(e) => setSettings({ customCSS: e.target.value })}
+          placeholder={`/* 在此输入自定义 CSS */\n.xterm-viewport {\n  border-radius: 8px;\n}`}
+          rows={5}
+          className="font-mono text-sm"
+        />
       </div>
     </div>
   );
@@ -341,7 +591,7 @@ function DataImportExport() {
 // --- 主组件 ---
 export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) {
   const { currentConfig, updateSlotConfig, resetToDefault } = useSlotConfigStore();
-  const { theme, fontSize } = useSettingsStore();
+
 
   const [tempConfig, setTempConfig] = useState(currentConfig);
 
@@ -388,7 +638,7 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
 
           <ScrollArea className="flex-1 p-8">
             <TabsContent value="theme" className="m-0 focus-visible:outline-none">
-              <ThemeSettings theme={theme} fontSize={fontSize} />
+              <ThemeSettings />
             </TabsContent>
             <TabsContent value="slots" className="m-0 focus-visible:outline-none">
               <SlotSettings

@@ -14,7 +14,14 @@ export function SlotManager() {
     rightPanelCollapsed,
     topPanelCollapsed,
     bottomPanelCollapsed,
+    uiOpacity,
+    backgroundImage,
   } = useSettingsStore();
+
+  // 当有背景图片时，使面板半透明
+  const panelOpacityStyle = backgroundImage
+    ? { backgroundColor: `color-mix(in srgb, var(--color-background) ${uiOpacity}%, transparent)` }
+    : {};
   
 
   return (
@@ -22,11 +29,12 @@ export function SlotManager() {
       {/* 左侧插槽 */}
       <aside
         id="slot-left"
-        className="bg-background border-r border-border transition-all duration-300 overflow-hidden"
+        className={`border-r border-border transition-all duration-300 overflow-hidden ${backgroundImage ? '' : 'bg-background'}`}
         style={{
           gridArea: "left",
           gridRow: "1 / 4",
           width: leftPanelCollapsed ? "0px" : `${leftPanelWidth}px`,
+          ...panelOpacityStyle,
         }}
       >
         <LeftSlot />
@@ -35,10 +43,11 @@ export function SlotManager() {
       {/* 顶部插槽 */}
       <header
         id="slot-mid-top"
-        className="bg-background border-b border-border transition-all duration-300 overflow-hidden"
+        className="border-b border-border transition-all duration-300 overflow-hidden"
         style={{
           gridArea: "mid-top",
           height: topPanelCollapsed ? "0px" : `${topPanelHeight}px`,
+          ...panelOpacityStyle,
         }}
       >
         <TopSlot />
@@ -47,10 +56,11 @@ export function SlotManager() {
       {/* 底部插槽 */}
       <footer
         id="slot-mid-bottom"
-        className="bg-background border-t border-border transition-all duration-300 overflow-hidden"
+        className="border-t border-border transition-all duration-300 overflow-hidden"
         style={{
           gridArea: "mid-bottom",
           height: bottomPanelCollapsed ? "0px" : `${bottomPanelHeight}px`,
+          ...panelOpacityStyle,
         }}
       >
         <BottomSlot />
@@ -59,11 +69,12 @@ export function SlotManager() {
       {/* 右侧插槽 */}
       <aside
         id="slot-right"
-        className="bg-background border-l border-border transition-all duration-300 overflow-hidden"
+        className="border-l border-border transition-all duration-300 overflow-hidden"
         style={{
           gridArea: "right",
           gridRow: "1 / 4",
           width: rightPanelCollapsed ? "0px" : `${rightPanelWidth}px`,
+          ...panelOpacityStyle,
         }}
       >
         <RightSlot />

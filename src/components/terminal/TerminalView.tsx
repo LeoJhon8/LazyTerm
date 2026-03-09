@@ -7,6 +7,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
+import { getTerminalTheme, toXtermTheme } from "@/config/themes";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalInstance {
@@ -22,13 +23,14 @@ interface TerminalInstance {
   termState: {
     isTransitioning: boolean;
     timeoutId?: number;
+    resizeTimeoutId?: number;
   };
 }
 
 export function TerminalView() {
   const { activeSessionId, sessions } = useTabsStore();
   const { addCommand: addHistoryCommand } = useHistoryStore();
-  const { fontSize, fontFamily, theme, setSettings } = useSettingsStore();
+  const { fontSize, fontFamily, theme, terminalColorScheme, terminalOpacity, uiOpacity, backgroundImage, setSettings } = useSettingsStore();
 
   const containerMap = useRef(new Map<string, HTMLDivElement>());
   const terminalMap = useRef(new Map<string, TerminalInstance>());
@@ -163,8 +165,9 @@ export function TerminalView() {
       // =============================
       // 创建全新 Terminal 实例
       // =============================
-      const termState = { isTransitioning: false, timeoutId: undefined };
+      const termState = { isTransitioning: false, timeoutId: undefined, resizeTimeoutId: undefined };
 
+      const colorScheme = getTerminalTheme(terminalColorScheme, theme);
       const term = new Terminal({
         fontFamily,
         fontSize,
@@ -172,13 +175,7 @@ export function TerminalView() {
         cursorStyle: "bar",
         scrollback: 10000,
         allowProposedApi: true,
-        theme: {
-          background: theme === "light" ? "#ffffff" : "#1e1e1e",
-          foreground: theme === "light" ? "#333333" : "#cccccc",
-          cursor: theme === "light" ? "#007acc" : "#528bff",
-          cursorAccent: theme === "light" ? "#ffffff" : "#1e1e1e",
-          selectionBackground: "rgba(82,139,255,0.4)",
-        },
+        theme: toXtermTheme(colorScheme, terminalOpacity),
       });
 
       term.parser.registerEscHandler({ final: "c" }, () => {
@@ -332,6 +329,7 @@ export function TerminalView() {
           selectionDisposable.dispose();
           resizeObserver.disconnect();
           if (termState.timeoutId) clearTimeout(termState.timeoutId);
+          if (termState.resizeTimeoutId) clearTimeout(termState.resizeTimeoutId);
           term.dispose();
         },
       };
@@ -356,24 +354,19 @@ export function TerminalView() {
         if (typeof unsub === "function") unsub();
       });
     };
-  }, [activeSessionId, activeSession?.connector, activateTerminal, addHistoryCommand, fontFamily, theme]);
+  }, [activeSessionId, activeSession?.connector, activateTerminal, addHistoryCommand, fontFamily, terminalColorScheme, theme]);
 
   // =============================
   // 监听设置变化 (字体缩放 & 主题)
   // =============================
   useEffect(() => {
+    const colorScheme = getTerminalTheme(terminalColorScheme, theme);
     terminalMap.current.forEach((instance, id) => {
-      const { terminal, fitAddon, connector } = instance;
+      const { terminal, fitAddon, connector, termState } = instance;
 
       terminal.options.fontSize = fontSize;
       terminal.options.fontFamily = fontFamily;
-      terminal.options.theme = {
-        background: theme === "light" ? "#ffffff" : "#1e1e1e",
-        foreground: theme === "light" ? "#333333" : "#cccccc",
-        cursor: theme === "light" ? "#007acc" : "#528bff",
-        cursorAccent: theme === "light" ? "#ffffff" : "#1e1e1e",
-        selectionBackground: "rgba(82,139,255,0.4)",
-      };
+      terminal.options.theme = toXtermTheme(colorScheme, terminalOpacity);
 
       if (id === activeSessionId) {
         requestAnimationFrame(() => {
@@ -381,7 +374,13 @@ export function TerminalView() {
             fitAddon.fit();
             const dims = fitAddon.proposeDimensions();
             if (dims && connector) {
-              connector.resize?.(dims.cols, dims.rows);
+              // 防抖处理：避免用户通过滚轮快速缩放字体时疯狂发送 resize 导致终端输出重复字符
+              if (termState.resizeTimeoutId) {
+                clearTimeout(termState.resizeTimeoutId);
+              }
+              termState.resizeTimeoutId = window.setTimeout(() => {
+                connector.resize?.(dims.cols, dims.rows);
+              }, 300);
             }
           } catch (e) {
             console.warn("Terminal fit failed after settings change:", e);
@@ -389,7 +388,7 @@ export function TerminalView() {
         });
       }
     });
-  }, [fontSize, fontFamily, theme, activeSessionId]);
+  }, [fontSize, fontFamily, terminalColorScheme, terminalOpacity, theme, activeSessionId]);
 
   // =============================
   // 清理已被关闭的会话
@@ -474,6 +473,9 @@ export function TerminalView() {
       className="relative h-full w-full overflow-hidden"
       onClick={() => activateTerminal(activeSessionId)}
       onContextMenu={handleContextMenu}
+      style={{
+        opacity: backgroundImage ? uiOpacity / 100 : undefined,
+      }}
     >
       {sessions.map((s) => (
         <div
