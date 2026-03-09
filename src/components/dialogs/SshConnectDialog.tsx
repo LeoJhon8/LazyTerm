@@ -13,9 +13,10 @@ interface SshConnectDialogProps {
   onOpenChange: (open: boolean) => void;
   onSave: (config: SSHConfig) => void;
   initialConfig?: SSHConfig;
+  isDirect?: boolean;
 }
 
-export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig }: SshConnectDialogProps) {
+export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, isDirect }: SshConnectDialogProps) {
   const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("");
@@ -97,7 +98,9 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig }: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-125">
         <DialogHeader>
-          <DialogTitle>{initialConfig ? "编辑 SSH 配置" : "新建 SSH 配置"}</DialogTitle>
+          <DialogTitle>
+            {isDirect ? "发起临时 SSH 连接" : (initialConfig ? "编辑 SSH 配置" : "新建 SSH 配置")}
+          </DialogTitle>
         </DialogHeader>
         
         <form onSubmit={(e) => { e.preventDefault(); handleSave(); }}>

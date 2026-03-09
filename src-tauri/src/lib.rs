@@ -71,7 +71,12 @@ pub struct SshConnectConfig {
     pub private_key_passphrase: Option<String>, // 如果私钥有密码
 }
 
-// --- 私钥解析工具函数 ---
+#[derive(serde::Serialize, Debug)]
+pub struct ShellInfo {
+    pub name: String,
+    pub path: String,
+    pub icon_type: String, // 'cmd', 'powershell', 'bash', 'ssh'
+}
 
 /// 核心功能：使用 russh-keys 解析多种格式的私钥
 fn load_ssh_key(path: &str, passphrase: Option<String>) -> Result<key::KeyPair, String> {
@@ -92,6 +97,7 @@ async fn create_terminal<R: Runtime>(
     state: State<'_, AppState>,
     cwd: Option<String>,
     shell: Option<String>,
+    admin: Option<bool>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let pty_system = native_pty_system();
@@ -105,13 +111,43 @@ async fn create_terminal<R: Runtime>(
         })
         .map_err(|e| e.to_string())?;
 
-    let default_shell = if cfg!(target_os = "windows") {
-        "powershell.exe".to_string()
+    let mut shell_cmd = shell.unwrap_or_else(|| {
+        if cfg!(target_os = "windows") {
+            "powershell.exe".to_string()
+        } else {
+            std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string())
+        }
+    });
+
+    // 针对 Windows 特殊处理 'bash' / 'git-bash' 的路径探测
+    if cfg!(target_os = "windows") && (shell_cmd == "bash.exe" || shell_cmd == "git-bash" || shell_cmd == "bash") {
+        let user_profile = std::env::var("USERPROFILE").unwrap_or_default();
+        let common_paths = [
+            "C:\\Program Files\\Git\\bin\\bash.exe".to_string(),
+            "C:\\Program Files\\Git\\usr\\bin\\bash.exe".to_string(),
+            format!("{}\\AppData\\Local\\Programs\\Git\\bin\\bash.exe", user_profile),
+            format!("{}\\AppData\\Local\\Programs\\Git\\usr\\bin\\bash.exe", user_profile),
+        ];
+        for path in common_paths {
+            if std::path::Path::new(&path).exists() {
+                shell_cmd = path;
+                break;
+            }
+        }
+    }
+
+    let mut cmd = if cfg!(target_os = "windows") && admin.unwrap_or(false) {
+        // Windows 11 sudo 默认可能会开新窗口
+        // 使用 --inline (或 -e) 尝试在当前控制台会话中运行
+        // 注意：这要求用户在 Windows 设置中将 sudo 配置为“内联”或“允许输入”模式
+        let mut c = CommandBuilder::new("sudo");
+        c.arg("--inline"); 
+        c.arg(shell_cmd);
+        c
     } else {
-        std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string())
+        CommandBuilder::new(shell_cmd)
     };
 
-    let mut cmd = CommandBuilder::new(shell.unwrap_or(default_shell));
     if let Some(path) = cwd {
         cmd.cwd(path);
     }
@@ -140,6 +176,50 @@ async fn create_terminal<R: Runtime>(
     );
 
     Ok(session_id)
+}
+
+/// 获取当前系统可用的 Shell 列表
+#[tauri::command]
+async fn get_available_shells() -> Result<Vec<ShellInfo>, String> {
+    let mut shells = Vec::new();
+
+    if cfg!(target_os = "windows") {
+        shells.push(ShellInfo { name: "CMD".into(), path: "cmd.exe".into(), icon_type: "cmd".into() });
+        shells.push(ShellInfo { name: "PowerShell".into(), path: "powershell.exe".into(), icon_type: "powershell".into() });
+        
+        // 探测 PowerShell Core
+        if std::path::Path::new("C:\\Program Files\\PowerShell\\7\\pwsh.exe").exists() {
+            shells.push(ShellInfo { name: "PowerShell 7".into(), path: "pwsh.exe".into(), icon_type: "powershell".into() });
+        }
+
+        // 探测 Git Bash
+        let user_profile = std::env::var("USERPROFILE").unwrap_or_default();
+        let git_bash_paths = [
+            "C:\\Program Files\\Git\\bin\\bash.exe".to_string(),
+            format!("{}\\AppData\\Local\\Programs\\Git\\bin\\bash.exe", user_profile),
+        ];
+        
+        for path in git_bash_paths {
+            if std::path::Path::new(&path).exists() {
+                shells.push(ShellInfo { name: "Git Bash".into(), path: path.into(), icon_type: "bash".into() });
+                break;
+            }
+        }
+    } else {
+        // macOS / Linux
+        let common = ["bash", "zsh", "fish", "sh"];
+        for s in common {
+            let path = format!("/bin/{}", s);
+            let usr_path = format!("/usr/bin/{}", s);
+            if std::path::Path::new(&path).exists() {
+                shells.push(ShellInfo { name: s.to_uppercase(), path, icon_type: "bash".into() });
+            } else if std::path::Path::new(&usr_path).exists() {
+                shells.push(ShellInfo { name: s.to_uppercase(), path: usr_path, icon_type: "bash".into() });
+            }
+        }
+    }
+
+    Ok(shells)
 }
 
 /// 创建 SSH 终端 (异步全格式支持)
@@ -371,6 +451,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             create_terminal,
+            get_available_shells,
             create_ssh_session,
             write_to_terminal,
             write_to_ssh_session,

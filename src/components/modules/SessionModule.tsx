@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { 
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, 
   useDraggable, useDroppable
@@ -14,9 +14,22 @@ import { cn } from "@/lib/utils";
 import { useSshProfilesStore, type SessionNode } from "@/store/ssh-profiles";
 import { useTabsStore } from "@/store/tabs";
 import { SshConnectDialog } from "@/components/dialogs/SshConnectDialog";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator } from "@/components/ui/context-menu";
+import { 
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator 
+} from "@/components/ui/context-menu";
+import { 
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel 
+} from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck, PlusCircle } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+
+interface AvailableShell {
+  name: string;
+  path: string;
+  icon_type: string;
+}
 
 function getSortedFlattenedNodes(nodes: SessionNode[], parentId: string | null = null, depth = 0): (SessionNode & { depth: number })[] {
   return nodes
@@ -151,13 +164,21 @@ export function SessionModule() {
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sshOpen, setSshOpen] = useState(false);
+  const [directSshOpen, setDirectSshOpen] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [targetNode, setTargetNode] = useState<SessionNode | null>(null);
   const [editNode, setEditNode] = useState<SessionNode | null>(null);
   const [tempName, setTempName] = useState("");
+  const [availableShells, setAvailableShells] = useState<AvailableShell[]>([]);
 
-  useEffect(() => { ensureRoot(); }, []);
+  useEffect(() => { 
+    ensureRoot(); 
+    // 获取系统可用 Shell
+    invoke<AvailableShell[]>("get_available_shells")
+      .then(setAvailableShells)
+      .catch(err => console.error("获取可用 Shell 失败:", err));
+  }, []);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
@@ -174,10 +195,69 @@ export function SessionModule() {
     } else if (type === 'delete') { setTargetNode(node); setDeleteOpen(true); }
   };
 
+  const handleDirectConnect = (name: string, path: string, admin = false) => {
+    const title = `${name}${admin ? ' (Admin)' : ''}`;
+    
+    addSession({
+      title,
+      type: "local",
+      config: { 
+        shell: path,
+        admin,
+      }
+    });
+  };
+
+  const getShellIcon = (type: string) => {
+    switch (type) {
+      case 'powershell': return <MonitorCheck className="mr-2 h-4 w-4 text-blue-500" />;
+      case 'cmd': return <TerminalIcon className="mr-2 h-4 w-4 text-muted-foreground" />;
+      case 'bash': return <TerminalIcon className="mr-2 h-4 w-4 text-orange-500" />;
+      default: return <TerminalIcon className="mr-2 h-4 w-4" />;
+    }
+  };
+
   return (
     <div className="h-full flex flex-col bg-background/50 border-r">
-      <div className="p-3 border-b bg-muted/20">
-        <h3 className="text-xs font-bold uppercase text-muted-foreground tracking-widest select-none">会话管理</h3>
+      <div className="p-3 border-b bg-muted/20 flex items-center justify-between group">
+        <h3 className="text-xs font-bold uppercase text-muted-foreground tracking-widest select-none">会话</h3>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className={cn(
+                "h-7 w-7 transition-all duration-200",
+                "bg-accent/50 hover:bg-accent text-accent-foreground shadow-sm",
+                "opacity-80 group-hover:opacity-100"
+              )}
+            >
+              <PlusCircle className="h-4.5 w-4.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56 overflow-hidden">
+            <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase py-2 bg-muted/30">快速连接 (不保存)</DropdownMenuLabel>
+            
+            {availableShells.map((shell) => (
+              <React.Fragment key={shell.path}>
+                <DropdownMenuItem onClick={() => handleDirectConnect(shell.name, shell.path)}>
+                  {getShellIcon(shell.icon_type)}
+                  {shell.name}
+                </DropdownMenuItem>
+                {/* Windows 下所有本地 Shell (CMD, PS, Bash) 都显示管理员选项 */}
+                <DropdownMenuItem onClick={() => handleDirectConnect(shell.name, shell.path, true)}>
+                  <ShieldAlert className="mr-2 h-4 w-4 text-amber-500" />
+                  {shell.name} 管理员
+                </DropdownMenuItem>
+              </React.Fragment>
+            ))}
+
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setDirectSshOpen(true)}>
+              <Server className="mr-2 h-4 w-4 text-emerald-500" /> SSH 连接
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       
       <div className="flex-1 overflow-y-auto py-2 px-1">
@@ -232,6 +312,15 @@ export function SessionModule() {
         if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
         else if (targetNode) addProfile(cfg, targetNode.id);
         setSshOpen(false);
+      }} />
+      <SshConnectDialog open={directSshOpen} onOpenChange={setDirectSshOpen} isDirect={true} onSave={(cfg) => {
+        addSession({ 
+          title: cfg.nickname || cfg.host, 
+          type: "ssh", 
+          host: cfg.host, 
+          config: { host: cfg.host, port: cfg.port, sshConfig: cfg } 
+        });
+        setDirectSshOpen(false);
       }} />
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

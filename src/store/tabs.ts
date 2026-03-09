@@ -13,6 +13,7 @@ export interface SessionConfig {
   host?: string;
   port?: number;
   sshConfig?: SSHConfig;
+  admin?: boolean;
 }
 
 /**
@@ -71,7 +72,8 @@ export const useTabsStore = create<TabsState>()(
             // 注意：在 Tauri 中，cwd 传 undefined 则 Rust 会默认使用系统用户目录
             connector = new LocalConnector({ 
               cwd: sessionData.cwd,
-              shell: sessionData.config?.shell
+              shell: sessionData.config?.shell,
+              admin: sessionData.config?.admin
             });
             break;
           case "ssh":

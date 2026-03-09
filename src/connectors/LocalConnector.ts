@@ -4,11 +4,11 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export class LocalConnector implements ITerminalConnector {
   public readonly protocol = 'local' as const;
-  private config: { cwd?: string; shell?: string };
+  private config: { cwd?: string; shell?: string; admin?: boolean };
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
 
-  constructor(config: { cwd?: string; shell?: string }) {
+  constructor(config: { cwd?: string; shell?: string; admin?: boolean }) {
     this.config = config;
   }
 
@@ -21,7 +21,8 @@ export class LocalConnector implements ITerminalConnector {
       // 1. 调用 Rust 创建 PTY 进程，并返回一个唯一的会话 ID
       this.sessionId = await invoke<string>("create_terminal", {
         cwd: this.config.cwd,
-        shell: this.config.shell
+        shell: this.config.shell,
+        admin: this.config.admin
       });
     } catch (error) {
       console.error("Failed to spawn terminal via Rust:", error);
