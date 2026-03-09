@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +27,7 @@ import { useSshProfilesStore } from "@/store/ssh-profiles";
 import { useQuickCommandsStore } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
 import { TERMINAL_THEMES, getTerminalTheme } from "@/config/themes";
-import { FileJson, Upload, Trash2, ImagePlus, X } from "lucide-react";
+import { FileJson, Upload, Trash2, ImagePlus, X, Palette, LayoutPanelLeft, Database } from "lucide-react";
 
 // 引入 Tauri 原生 API
 import { save, open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -104,10 +105,13 @@ function ThemeSettings() {
       {/* ======================= */}
       {/* 1. 效果预览 (固定在上方) */}
       {/* ======================= */}
-      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-md pb-4 pt-2 border-b mb-6 shadow-sm">
-        <Label className="text-base font-semibold mb-3 block">效果预览</Label>
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-md pb-6 pt-2 border-b mb-8">
+        <div className="flex items-center gap-2 mb-4">
+          <Palette className="h-5 w-5 text-primary" />
+          <Label className="text-lg font-bold">视觉预览</Label>
+        </div>
         <div 
-          className="rounded-lg border overflow-hidden relative"
+          className="rounded-xl border shadow-sm overflow-hidden relative group transition-all duration-300 hover:shadow-md hover:border-primary/20"
           style={{ 
             height: '180px',
             backgroundColor: appBackgroundColor === 'system' ? 'var(--background)' : (appBackgroundColor === 'light' ? '#ffffff' : (appBackgroundColor === 'dark' ? '#0a0a0a' : appBackgroundColor)),
@@ -390,15 +394,16 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
               </Label>
             </div>
 
-            <div className="grid gap-1.5 p-2 border rounded-xl bg-muted/10">
+            <div className="grid gap-2 p-2 border rounded-2xl bg-muted/5 shadow-inner">
               {displayModules.map((mod) => {
                 const isChecked = currentConfig[side].modules.includes(mod.id);
                 return (
                   <div 
                     key={mod.id} 
-                    className={`flex items-center space-x-3 p-2 rounded-md transition-all cursor-pointer ${
-                      isChecked ? 'bg-primary/10' : 'hover:bg-muted/50'
-                    }`}
+                    className={cn(
+                      "flex items-center space-x-3 p-3 rounded-xl transition-all cursor-pointer border border-transparent",
+                      isChecked ? 'bg-background shadow-sm border-border' : 'hover:bg-muted/50'
+                    )}
                     onClick={() => onToggle(side, mod.id)}
                   >
                     <Checkbox
@@ -439,12 +444,12 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
       <Separator className="bg-muted" />
 
       {/* 恢复默认按钮作为列表一栏 */}
-      <div className="flex items-center justify-between p-4 border rounded-xl bg-muted/5">
+      <div className="flex items-center justify-between p-6 border rounded-2xl bg-muted/5 space-x-4">
         <div>
-          <Label className="text-base font-semibold">恢复默认布局</Label>
-          <p className="text-sm text-muted-foreground mt-1">将左右侧栏的所有面板及状态恢复至应用最初的默认状态。</p>
+          <Label className="text-base font-bold">恢复默认布局</Label>
+          <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">如果您对当前的布局不满意，可以一键将左右侧栏的所有面板及状态恢复至初始默认设置。</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => resetToDefault()}>
+        <Button variant="outline" size="default" className="shrink-0 font-medium px-6" onClick={() => resetToDefault()}>
           恢复默认
         </Button>
       </div>
@@ -562,27 +567,39 @@ function DataImportExport() {
     <div className="space-y-6 py-4">
       {/* 导出区域 */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label className="text-base font-semibold">备份数据</Label>
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5 text-primary" />
+          <Label className="text-lg font-bold">备份数据</Label>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <Button onClick={handleExportAll} variant="outline" className="h-auto py-4 flex flex-col items-center gap-2">
-            <FileJson className="h-6 w-6" />
-            <span>完整备份配置</span>
-            <span className="text-xs text-muted-foreground">包含所有配置和数据</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Button 
+            onClick={handleExportAll} 
+            variant="outline" 
+            className="h-auto py-6 flex flex-col items-center gap-3 rounded-2xl border-dashed border-2 hover:border-primary/50 hover:bg-primary/5 transition-all group"
+          >
+            <div className="p-3 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
+              <FileJson className="h-6 w-6 text-primary" />
+            </div>
+            <div className="text-center">
+              <div className="font-bold">完整备份配置</div>
+              <div className="text-xs text-muted-foreground mt-1">导出所有会话、快捷命令及设置</div>
+            </div>
           </Button>
         </div>
       </div>
 
-      <Separator className="bg-muted" />
+      <Separator className="my-8" />
 
       {/* 导入区域 */}
-      <div className="space-y-4">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <Label className="text-base font-semibold">导入恢复</Label>
-          <Button onClick={handleClearAll} variant="destructive" size="sm">
-            <Trash2 className="h-4 w-4 mr-2" />
-            清空所有
+          <div className="flex items-center gap-2">
+            <Upload className="h-5 w-5 text-primary" />
+            <Label className="text-lg font-bold">导入恢复</Label>
+          </div>
+          <Button onClick={handleClearAll} variant="destructive" size="sm" className="rounded-full px-4 h-8 text-xs font-semibold">
+            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+            清空所有数据
           </Button>
         </div>
         <div className="space-y-2">
@@ -652,10 +669,28 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
         </DialogHeader>
 
         <Tabs defaultValue="theme" className="flex-1 flex overflow-hidden">
-          <TabsList className="w-40 flex flex-col h-full bg-muted/20 rounded-none border-r p-2 justify-start">
-            <TabsTrigger value="theme" className="w-full justify-start gap-2">🎨 主题</TabsTrigger>
-            <TabsTrigger value="slots" className="w-full justify-start gap-2">🧱 布局</TabsTrigger>
-            <TabsTrigger value="data" className="w-full justify-start gap-2">💾 数据</TabsTrigger>
+          <TabsList className="w-48 flex flex-col h-full bg-muted/10 rounded-none border-r p-3 gap-2 justify-start">
+            <TabsTrigger 
+              value="theme" 
+              className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
+            >
+              <Palette className="h-4 w-4" />
+              <span className="font-medium">主题设置</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="slots" 
+              className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
+            >
+              <LayoutPanelLeft className="h-4 w-4" />
+              <span className="font-medium">布局管理</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="data" 
+              className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
+            >
+              <Database className="h-4 w-4" />
+              <span className="font-medium">数据备份</span>
+            </TabsTrigger>
           </TabsList>
 
           <ScrollArea className="flex-1 p-8">

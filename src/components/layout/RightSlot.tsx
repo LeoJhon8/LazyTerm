@@ -2,20 +2,17 @@ import { useSlotConfigStore } from "@/store/slot-config";
 import { Button } from "@/components/ui/button";
 import { SessionModule } from "@/components/modules/SessionModule";
 import { HistoryModule } from "@/components/modules/HistoryModule";
-import { PluginsModule } from "@/components/modules/PluginsModule";
-import { History, Plug, Folder } from "lucide-react";
+import { History, Folder } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const MODULE_COMPONENTS: Record<string, React.ComponentType> = {
   SessionModule: SessionModule,
   HistoryModule: HistoryModule,
-  PluginsModule: PluginsModule,
 };
 
 const MODULE_ICONS: Record<string, React.ReactNode> = {
   SessionModule: <Folder className="h-4 w-4" />,
   HistoryModule: <History className="h-4 w-4" />,
-  PluginsModule: <Plug className="h-4 w-4" />,
 };
 
 export function RightSlot() {

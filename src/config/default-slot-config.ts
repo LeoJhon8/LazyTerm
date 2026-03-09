@@ -42,7 +42,6 @@ export const AVAILABLE_MODULES = [
   { id: 'SessionModule', name: '会话管理', icon: 'Folder' },
   { id: 'SettingsModule', name: '设置', icon: 'Settings' },
   { id: 'HistoryModule', name: '历史命令', icon: 'History' },
-  { id: 'PluginsModule', name: '插件管理', icon: 'Plug' },
   { id: 'TabModule', name: '标签页', icon: 'Tabs' },
   { id: 'QuickCmdModule', name: '快捷命令', icon: 'Bolt' }
 ];
