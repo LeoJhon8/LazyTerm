@@ -43,8 +43,8 @@ export type SettingsState = SettingsData & SettingsActions;
 const defaultSettings: SettingsData = {
   fontSize: 14,
   fontFamily: "Menlo, Monaco, 'Courier New', monospace",
-  leftPanelWidth: 250,
-  rightPanelWidth: 250,
+  leftPanelWidth: 200,
+  rightPanelWidth: 200,
   topPanelHeight: 40,
   bottomPanelHeight: 40,
   leftPanelCollapsed: false,

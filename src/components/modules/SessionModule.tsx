@@ -219,7 +219,7 @@ export function SessionModule() {
 
   return (
     <div className="h-full flex flex-col bg-background/50 border-r">
-      <div className="p-3 border-b bg-muted/20 flex items-center justify-between group">
+      <div className="h-[var(--th)] px-3 border-b bg-muted/20 flex items-center justify-between group">
         <h3 className="text-xs font-bold uppercase text-muted-foreground tracking-widest select-none">会话</h3>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -235,7 +235,7 @@ export function SessionModule() {
               <PlusCircle className="h-4.5 w-4.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 overflow-hidden">
+          <DropdownMenuContent side="right" align="start" className="w-56 overflow-hidden">
             <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase py-2 bg-muted/30">快速连接 (不保存)</DropdownMenuLabel>
             
             {availableShells.map((shell) => (

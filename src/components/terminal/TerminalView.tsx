@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useTabsStore } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
+import { useSlotConfigStore } from "@/store/slot-config";
 import { useHistoryStore } from "@/store/history";
 import type { ITerminalConnector } from "@/types/terminal";
 import { Terminal } from "@xterm/xterm";
@@ -440,6 +441,21 @@ export function TerminalView() {
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
   }, [activeSessionId, activateTerminal]);
+
+  // =============================
+  // 监听侧边栏折叠状态变化
+  // =============================
+  const leftSlotCollapsed = useSlotConfigStore((state) => state.currentConfig.left.collapsed);
+  const rightSlotCollapsed = useSlotConfigStore((state) => state.currentConfig.right.collapsed);
+  
+  useEffect(() => {
+    // 当侧边栏折叠状态变化时，等待布局转换完成后重新调整终端
+    const timer = setTimeout(() => {
+      activateTerminal(activeSessionId, true);
+    }, 300); // 这里的延迟应该略大于 CSS transition 的持续时间 (300ms)
+    
+    return () => clearTimeout(timer);
+  }, [activeSessionId, leftSlotCollapsed, rightSlotCollapsed, activateTerminal]);
 
   // =============================
   // 鼠标右键 (无选中文本时粘贴，有选中文本时取消选中)

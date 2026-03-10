@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
+import { useTabsStore } from "@/store/tabs";
 import { TerminalView } from "@/components/terminal/TerminalView";
 import { SlotManager } from "@/components/layout/SlotManager";
 
@@ -24,10 +25,20 @@ function App() {
   } = useSettingsStore();
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
+  const { closeAllSessions } = useTabsStore();
   const leftSlotCollapsed = slotConfig.left.collapsed;
   const rightSlotCollapsed = slotConfig.right.collapsed;
 
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
+
+  // 应用关闭时清空所有会话
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      closeAllSessions();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [closeAllSessions]);
 
   // 动态处理全局背景色和暗色模式跟班
   useEffect(() => {

@@ -34,26 +34,26 @@ export function HistoryModule() {
   return (
     <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-background border-l">
       {/* 头部区域 */}
-      <div className="p-3 border-b space-y-2 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 overflow-hidden">
-            <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            <span className="font-medium text-sm truncate text-foreground/90">历史命令</span>
-          </div>
-          {commands.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive transition-colors"
-              onClick={() => clearCommands()}
-              title="清空所有历史"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          )}
+      <div className="h-[var(--th)] px-3 border-b flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-2 overflow-hidden">
+          <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <span className="font-medium text-sm truncate text-foreground/90">历史命令</span>
         </div>
-        
-        {/* 搜索框 */}
+        {commands.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive transition-colors"
+            onClick={() => clearCommands()}
+            title="清空所有历史"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+
+      {/* 搜索框区域 */}
+      <div className="p-2 border-b bg-muted/5 flex-shrink-0">
         <div className="relative group">
           <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
           <Input
