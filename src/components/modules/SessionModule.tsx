@@ -128,7 +128,8 @@ function DraggableDroppableRow({ node, depth, onAction, activeId }: { node: Sess
           ref={setDroppableRef} 
           onMouseMove={handleMouseMove}
           onMouseLeave={() => setLocalDropPos(null)}
-          onClick={() => node.type === 'folder' ? toggleFolder(node.id) : onAction('connect', node)}
+          onClick={() => node.type === 'folder' && toggleFolder(node.id)}
+          onDoubleClick={() => node.type !== 'folder' && onAction('connect', node)}
         >
           <div ref={setDraggableRef} {...attributes} {...listeners} className={cn(isDragging && "opacity-20")}>
             <NodeRowContent 

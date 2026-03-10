@@ -82,7 +82,7 @@ export function TerminalView() {
   );
 
   // =============================
-  // 初始化终端核心逻辑
+  // 初始化终端核心 logic
   // =============================
   useEffect(() => {
     if (!activeSessionId || !activeSession?.connector) return;
@@ -281,6 +281,11 @@ export function TerminalView() {
         if (arrowMatch) {
           return text.substring(arrowMatch[0].length).trim();
         }
+        
+        // 如果 text 以常见的提示符结尾且没有实际命令内容，则返回空
+        if (text && (text.endsWith(">") || text.endsWith("$") || text.endsWith("%") || text.endsWith("#"))) {
+          return "";
+        }
 
         return text;
       };
@@ -294,7 +299,7 @@ export function TerminalView() {
             const rawText = line.translateToString(true);
             const command = extractCommand(rawText);
 
-            if (command && command !== lastCommandRef.current) {
+            if (command && command.length > 0 && command !== lastCommandRef.current) {
               addHistoryCommand(command);
               lastCommandRef.current = command;
             }
@@ -480,6 +485,9 @@ export function TerminalView() {
     }
   };
 
+  const currentTheme = getTerminalTheme(terminalColorScheme, customThemeColors);
+  const xtermTheme = toXtermTheme(currentTheme, terminalOpacity);
+
   if (sessions.length === 0 || !activeSession) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-background">
@@ -498,6 +506,7 @@ export function TerminalView() {
       onClick={() => activateTerminal(activeSessionId)}
       onContextMenu={handleContextMenu}
       style={{
+        backgroundColor: xtermTheme.background,
         opacity: backgroundImage ? uiOpacity / 100 : undefined,
       }}
     >
@@ -509,7 +518,7 @@ export function TerminalView() {
           }}
           className={
             s.id === activeSessionId
-              ? "h-full w-full absolute inset-0 px-2"
+              ? "h-full w-full absolute inset-0"
               : "hidden"
           }
         />
