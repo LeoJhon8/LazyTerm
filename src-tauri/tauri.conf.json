@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "lazy-terminal",
-  "version": "0.2.0",
+  "productName": "LazyTerm",
+  "version": "0.3.0",
   "identifier": "com.lazy.terminal",
   "build": {
     "frontendDist": "../dist",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "lazy-terminal",
+        "title": "LazyTerm",
         "width": 800,
         "height": 600,
         "resizable": true,
@@ -31,11 +31,11 @@
     "active": true,
     "targets": "all",
     "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/LazyTerm-32.png",
+      "icons/LazyTerm-128.png",
+      "icons/LazyTerm-256.png",
+      "icons/LazyTerm.icns",
+      "icons/LazyTerm.ico"
     ]
   }
 }

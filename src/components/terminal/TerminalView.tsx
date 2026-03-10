@@ -493,7 +493,7 @@ export function TerminalView() {
       <div className="h-full w-full flex items-center justify-center bg-background">
         <div className="text-center">
           <div className="text-6xl mb-4">💻</div>
-          <h2 className="text-xl font-semibold mb-2">欢迎使用 Lazy Terminal</h2>
+          <h2 className="text-xl font-semibold mb-2">欢迎使用 LazyTerm</h2>
           <p className="text-muted-foreground">从左侧会话管理创建您的第一个终端会话</p>
         </div>
       </div>
