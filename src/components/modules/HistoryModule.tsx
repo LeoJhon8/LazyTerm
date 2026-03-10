@@ -110,8 +110,8 @@ export function HistoryModule() {
         </ScrollArea>
       </div>
 
-      {/* 底部状态栏 */}
-      <div className="p-2 px-3 border-t text-[10px] text-muted-foreground bg-muted/10 flex-shrink-0 flex justify-between items-center">
+      {/* 底部状态栏 - 调整为与快捷命令栏一致的高度 */}
+      <div className="h-[var(--bh)] px-3 border-t text-[10px] text-muted-foreground bg-muted/10 flex-shrink-0 flex justify-between items-center">
         <span className="truncate">共 {filteredCommands.length} 条</span>
         <span className="opacity-50">点击命令发送</span>
       </div>
