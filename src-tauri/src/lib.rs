@@ -268,57 +268,78 @@ async fn create_ssh_session<R: Runtime>(
         }
     }
 
-    // 如果认证未成功，尝试密码 (针对现代系统，直接走 Keyboard-Interactive 往往更稳定)
+    // 如果认证未成功，尝试密码
     if !authenticated {
         if let Some(password) = config.password.clone() {
-            println!("开始认证交互 (直接进入 Keyboard-Interactive 模式)...");
+            // 2.a 尝试 Keyboard-Interactive (优先走交互，避免“污染”会话)
+            println!("开始认证交互 (尝试 Keyboard-Interactive 模式)...");
             
-            // 给服务器一点喘息时间，避免因前序握手过快导致的认证冲突
+            // 给服务器一点喘息时间
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-            // 1. 启动交互流程 (增加超时到 20s)
+            // 启动交互流程
             let kbd_start_res = tokio::time::timeout(
-                std::time::Duration::from_secs(20),
+                std::time::Duration::from_secs(10),
                 handle.authenticate_keyboard_interactive_start(config.username.clone(), None)
             ).await;
 
-            let mut kbd_res = match kbd_start_res {
-                Ok(res) => res,
-                Err(_) => {
-                    println!("Keyboard-Interactive 认证启动超时 (20s)，服务器可能正在应用安全限制或不支持该方式");
-                    Ok(client::KeyboardInteractiveAuthResponse::Failure)
-                }
+            let kbd_start_enum = match kbd_start_res {
+                Ok(Ok(res)) => Some(res),
+                _ => None, // 超时或底层错误
             };
-            
+
             let mut kbd_authenticated = false;
-            // 2. 处理交互循环 (最多5轮)
-            for i in 0..5 {
-                match kbd_res {
-                    Ok(client::KeyboardInteractiveAuthResponse::Success) => {
-                        println!("Keyboard-Interactive 认证成功！(轮次: {})", i + 1);
-                        kbd_authenticated = true;
-                        break;
-                    }
-                    Ok(client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, name, instructions }) => {
-                        println!("收到交互请求 (轮次 {}): Name='{}', Prompts_Len={}", i + 1, name, prompts.len());
-                        let mut responses = Vec::new();
-                        for (idx, p) in prompts.iter().enumerate() {
-                            println!("  Prompt {}: '{}'", idx + 1, p.prompt);
-                            responses.push(password.clone());
+            let mut should_fallback_to_password = false;
+
+            if let Some(res) = kbd_start_enum {
+                let mut current_kbd_res = Ok(res);
+                // 处理交互循环
+                for i in 0..5 {
+                    match current_kbd_res {
+                        Ok(client::KeyboardInteractiveAuthResponse::Success) => {
+                            println!("Keyboard-Interactive 认证成功！");
+                            kbd_authenticated = true;
+                            break;
                         }
-                        kbd_res = handle.authenticate_keyboard_interactive_respond(responses).await;
+                        Ok(client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, name, .. }) => {
+                            println!("收到交互请求 (轮次 {}): Name='{}', Prompts={}", i + 1, name, prompts.len());
+                            let mut responses = Vec::new();
+                            for p in prompts.iter() {
+                                responses.push(password.clone());
+                            }
+                            current_kbd_res = handle.authenticate_keyboard_interactive_respond(responses).await;
+                        }
+                        Ok(client::KeyboardInteractiveAuthResponse::Failure) => {
+                            println!("Keyboard-Interactive 被服务器显式拒绝，切换为标准密码认证...");
+                            should_fallback_to_password = true;
+                            break;
+                        }
+                        Err(e) => {
+                            println!("Keyboard-Interactive 流程错误: {:?}", e);
+                            should_fallback_to_password = true;
+                            break;
+                        }
                     }
-                    Ok(client::KeyboardInteractiveAuthResponse::Failure) => {
-                        println!("Keyboard-Interactive 认证被服务器拒绝 (Failure)");
-                        break;
+                }
+            } else {
+                println!("Keyboard-Interactive 启动失败或超时，尝试标准密码认证...");
+                should_fallback_to_password = true;
+            }
+
+            if kbd_authenticated {
+                authenticated = true;
+            } else if should_fallback_to_password {
+                // 2.b 如果 KBI 被拒绝或不支持，尝试标准密码认证 (RFC 4252)
+                println!("开始尝试直接密码认证 (Password Authentication)...");
+                match handle.authenticate_password(config.username.clone(), password).await {
+                    Ok(true) => {
+                        println!("标准密码认证成功");
+                        authenticated = true;
                     }
-                    Err(e) => {
-                        println!("Keyboard-Interactive 认证链断开: {:?}", e);
-                        break;
-                    }
+                    Ok(false) => println!("标准密码认证也被服务器拒绝"),
+                    Err(e) => println!("标准密码认证出错: {:?}", e),
                 }
             }
-            authenticated = kbd_authenticated;
         }
     }
 
