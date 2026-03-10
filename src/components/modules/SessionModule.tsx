@@ -235,7 +235,7 @@ export function SessionModule() {
               <PlusCircle className="h-4.5 w-4.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent side="right" align="start" className="w-56 overflow-hidden">
+          <DropdownMenuContent side="right" align="start" sideOffset={4} alignOffset={30} className="w-44 overflow-hidden">
             <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase py-2 bg-muted/30">快速连接 (不保存)</DropdownMenuLabel>
             
             {availableShells.map((shell) => (
