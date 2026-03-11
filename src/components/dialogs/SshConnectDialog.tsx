@@ -78,10 +78,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
         multiple: false,
         directory: false,
         title: "选择私钥文件",
-        filters: [
-          { name: "Private Key", extensions: ["pem", "key", "rsa", "pub"] },
-          { name: "All Files", extensions: ["*"] },
-        ],
+        filters: [{ name: "All Files", extensions: ["*"] }],
       });
 
       if (selected && typeof selected === "string") {
