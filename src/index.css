@@ -128,6 +128,13 @@
   @apply h-full w-full;
 }
 
+/* Ensure terminal transparency can reveal background images */
+.xterm,
+.xterm .xterm-viewport,
+.xterm .xterm-screen {
+  background-color: transparent !important;
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

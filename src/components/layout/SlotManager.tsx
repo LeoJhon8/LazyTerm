@@ -28,7 +28,7 @@ export function SlotManager() {
       {/* 左侧插槽 - 宽度由 CSS Grid 列宽 (--lw) 控制 */}
       <aside
         id="slot-left"
-        className={`border-r border-border transition-all duration-300 overflow-hidden ${backgroundImageEnabled && backgroundImage ? '' : 'bg-background'}`}
+        className="border-r border-border transition-all duration-300 overflow-hidden"
         style={{
           gridArea: "left",
           gridRow: "1 / 4",

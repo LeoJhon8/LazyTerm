@@ -19,6 +19,7 @@ interface TerminalInstance {
   inputDisposable?: { dispose(): void };
   dataUnsubscribe?: () => void;
   dispose: () => void;
+  webglAddon?: WebglAddon | null;
 
   // 用于在切换连接的一瞬间拦截终端破坏性重置指令的状态
   termState: {
@@ -36,7 +37,7 @@ export function TerminalView() {
   const terminalColorScheme = useSettingsStore((state) => state.terminalColorScheme);
   const customThemeColors = useSettingsStore((state) => state.customThemeColors);
   const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
-  const uiOpacity = useSettingsStore((state) => state.uiOpacity);
+  const backgroundImageEnabled = useSettingsStore((state) => state.backgroundImageEnabled);
   const backgroundImage = useSettingsStore((state) => state.backgroundImage);
   const setSettings = useSettingsStore((state) => state.setSettings);
 
@@ -45,6 +46,7 @@ export function TerminalView() {
   const lastCommandRef = useRef<string>("");
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const hasBackgroundImage = backgroundImageEnabled && backgroundImage;
 
   // =============================
   // 激活终端 & 调整自适应大小
@@ -200,10 +202,16 @@ export function TerminalView() {
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
 
-      try {
-        term.loadAddon(new WebglAddon());
-      } catch (e) {
-        console.warn("WebGL failed", e);
+      let webglAddon: WebglAddon | null = null;
+      const shouldUseWebgl = !hasBackgroundImage && terminalOpacity >= 100;
+      if (shouldUseWebgl) {
+        try {
+          webglAddon = new WebglAddon();
+          term.loadAddon(webglAddon);
+        } catch (e) {
+          console.warn("WebGL failed", e);
+          webglAddon = null;
+        }
       }
 
       term.open(containerEl);
@@ -333,6 +341,7 @@ export function TerminalView() {
         inputDisposable,
         dataUnsubscribe,
         termState,
+        webglAddon,
 
         dispose: () => {
           dataUnsubscribe();
@@ -344,6 +353,7 @@ export function TerminalView() {
           resizeObserver.disconnect();
           if (termState.timeoutId) clearTimeout(termState.timeoutId);
           if (termState.resizeTimeoutId) clearTimeout(termState.resizeTimeoutId);
+          if (webglAddon) webglAddon.dispose();
           term.dispose();
         },
       };
@@ -381,6 +391,21 @@ export function TerminalView() {
       terminal.options.fontSize = fontSize;
       terminal.options.fontFamily = fontFamily;
       terminal.options.theme = toXtermTheme(colorScheme, terminalOpacity);
+      const shouldUseWebgl = !hasBackgroundImage && terminalOpacity >= 100;
+      if (shouldUseWebgl && !instance.webglAddon) {
+        try {
+          const addon = new WebglAddon();
+          terminal.loadAddon(addon);
+          instance.webglAddon = addon;
+        } catch (e) {
+          console.warn("WebGL failed", e);
+          instance.webglAddon = null;
+        }
+      }
+      if (!shouldUseWebgl && instance.webglAddon) {
+        instance.webglAddon.dispose();
+        instance.webglAddon = null;
+      }
 
       if (id === activeSessionId) {
         requestAnimationFrame(() => {
@@ -403,7 +428,7 @@ export function TerminalView() {
         });
       }
     });
-  }, [fontSize, fontFamily, terminalColorScheme, terminalOpacity, activeSessionId]);
+  }, [fontSize, fontFamily, terminalColorScheme, terminalOpacity, activeSessionId, hasBackgroundImage]);
 
   // =============================
   // 清理已被关闭的会话
@@ -513,8 +538,7 @@ export function TerminalView() {
       onClick={() => activateTerminal(activeSessionId)}
       onContextMenu={handleContextMenu}
       style={{
-        backgroundColor: xtermTheme.background,
-        opacity: backgroundImage ? uiOpacity / 100 : undefined,
+        backgroundColor: hasBackgroundImage ? "transparent" : xtermTheme.background,
       }}
     >
       {sessions.map((s) => (

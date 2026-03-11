@@ -422,7 +422,11 @@ export function toXtermTheme(scheme: TerminalColorScheme, opacityPercent: number
   const bg = scheme.background;
   // 如果需要半透明背景，将 hex 转为 rgba
   const backgroundWithOpacity =
-    opacityPercent < 100 ? (bg === "transparent" ? "transparent" : hexToRgba(bg, opacityPercent / 100)) : bg;
+    opacityPercent <= 0
+      ? "rgba(0,0,0,0)"
+      : opacityPercent < 100
+        ? (bg === "transparent" ? "transparent" : hexToRgba(bg, opacityPercent / 100))
+        : bg;
 
   return {
     background: backgroundWithOpacity,

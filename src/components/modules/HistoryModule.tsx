@@ -32,7 +32,7 @@ export function HistoryModule() {
   };
 
   return (
-    <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-background border-l">
+    <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-background/50">
       {/* 头部区域 */}
       <div className="h-[var(--th)] px-3 border-b flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2 overflow-hidden">
