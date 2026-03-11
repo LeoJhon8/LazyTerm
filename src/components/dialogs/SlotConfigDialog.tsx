@@ -734,6 +734,12 @@ function DataImportExport() {
 // --- 主组件 ---
 export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) {
   const { currentConfig, resetToDefault } = useSlotConfigStore();
+  const handleOpenChange = (nextOpen: boolean) => {
+    onOpenChange(nextOpen);
+    if (!nextOpen) {
+      window.dispatchEvent(new Event("lazy-terminal-focus"));
+    }
+  };
 
   const toggleModule = useCallback((side: "left" | "right", moduleId: string) => {
     const next = JSON.parse(JSON.stringify(useSlotConfigStore.getState().currentConfig));
@@ -763,7 +769,7 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
   }, []);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-4xl h-[80vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>系统设置</DialogTitle>

@@ -368,7 +368,7 @@ export function TerminalView() {
         if (typeof unsub === "function") unsub();
       });
     };
-  }, [activeSessionId, activeSession?.connector, activateTerminal, addHistoryCommand, fontFamily, terminalColorScheme, customThemeColors]);
+  }, [activeSessionId, activeSession?.connector, activateTerminal, addHistoryCommand]);
 
   // =============================
   // 监听设置变化 (字体缩放 & 主题)
@@ -396,6 +396,7 @@ export function TerminalView() {
                 connector.resize?.(dims.cols, dims.rows);
               }, 300);
             }
+            terminal.focus();
           } catch (e) {
             console.warn("Terminal fit failed after settings change:", e);
           }
@@ -423,6 +424,12 @@ export function TerminalView() {
   // =============================
   useEffect(() => {
     activateTerminal(activeSessionId);
+  }, [activeSessionId, activateTerminal]);
+
+  useEffect(() => {
+    const handler = () => activateTerminal(activeSessionId);
+    window.addEventListener("lazy-terminal-focus", handler);
+    return () => window.removeEventListener("lazy-terminal-focus", handler);
   }, [activeSessionId, activateTerminal]);
 
   // =============================
