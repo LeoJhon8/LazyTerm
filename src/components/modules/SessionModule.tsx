@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { 
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, 
   useDraggable, useDroppable
 } from "@dnd-kit/core";
 import { 
   Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, 
-  Pencil, Trash2, Terminal, Upload
+  Pencil, Trash2, Terminal, Upload, File, X
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -24,12 +24,30 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck, PlusCircle } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { stat, size as getFileSize } from "@tauri-apps/plugin-fs";
 
 interface AvailableShell {
   name: string;
   path: string;
   icon_type: string;
+}
+
+interface SftpLocalFile {
+  path: string;
+  name: string;
+  size: number;
+}
+
+interface SftpUploadProgressPayload {
+  file_index: number;
+  file_name: string;
+  local_path: string;
+  file_size: number;
+  file_sent: number;
+  overall_total: number;
+  overall_sent: number;
 }
 
 function getSortedFlattenedNodes(nodes: SessionNode[], parentId: string | null = null, depth = 0): (SessionNode & { depth: number })[] {
@@ -156,7 +174,7 @@ function DraggableDroppableRow({ node, depth, onAction, activeId }: { node: Sess
           </>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" />编辑</ContextMenuItem>
+        <ContextMenuItem onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" /> 编辑</ContextMenuItem>
         {!node.isRoot && <ContextMenuItem onClick={() => onAction('delete', node)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> 删除</ContextMenuItem>}
       </ContextMenuContent>
     </ContextMenu>
@@ -177,58 +195,152 @@ export function SessionModule() {
   const [tempName, setTempName] = useState("");
   const [availableShells, setAvailableShells] = useState<AvailableShell[]>([]);
   const [sftpOpen, setSftpOpen] = useState(false);
-  const [sftpLocalPath, setSftpLocalPath] = useState("");
   const [sftpRemotePath, setSftpRemotePath] = useState("");
   const [sftpUploading, setSftpUploading] = useState(false);
   const [sftpMessage, setSftpMessage] = useState<string | null>(null);
   const [sftpMessageType, setSftpMessageType] = useState<"success" | "error">("success");
   const [sftpTargetNode, setSftpTargetNode] = useState<SessionNode | null>(null);
+  const [sftpFiles, setSftpFiles] = useState<SftpLocalFile[]>([]);
+  const [sftpOverallSent, setSftpOverallSent] = useState(0);
+  const [sftpOverallTotal, setSftpOverallTotal] = useState(0);
+  const [sftpFileProgress, setSftpFileProgress] = useState<Record<string, { sent: number; total: number }>>({});
+  const progressUnlistenRef = useRef<UnlistenFn | null>(null);
 
   useEffect(() => { 
     ensureRoot(); 
-    // 获取系统可用 Shell
+    // 鑾峰彇绯荤粺鍙敤 Shell
     invoke<AvailableShell[]>("get_available_shells")
       .then(setAvailableShells)
       .catch(err => console.error("获取可用 Shell 失败:", err));
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (progressUnlistenRef.current) {
+        progressUnlistenRef.current();
+        progressUnlistenRef.current = null;
+      }
+    };
+  }, []);
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
+  const sftpSelectedTotal = useMemo(() => sftpFiles.reduce((acc, item) => acc + (item.size || 0), 0), [sftpFiles]);
 
   const getFileName = (path: string) => {
     const parts = path.split(/[/\\]/);
     return parts[parts.length - 1] || path;
   };
 
-  const handleSftpPickFile = async (node: SessionNode) => {
+  const formatBytes = (value: number) => {
+    if (!Number.isFinite(value) || value <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+    const size = value / Math.pow(1024, index);
+    return `${size.toFixed(size >= 100 || index === 0 ? 0 : size >= 10 ? 1 : 2)} ${units[index]}`;
+  };
+
+  const resolveRemotePath = (basePath: string, fileName: string, isBatch: boolean) => {
+    const trimmed = basePath.trim();
+    if (!trimmed) return "";
+    if (!isBatch && !trimmed.endsWith("/")) return trimmed;
+    const normalized = trimmed === "~" ? "~/" : trimmed;
+    const separator = normalized.endsWith("/") ? "" : "/";
+    return `${normalized}${separator}${fileName}`;
+  };
+
+  const loadLocalFiles = async (paths: string[]) => {
+    const items = await Promise.all(paths.map(async (path) => {
+      const name = getFileName(path);
+      let size = 0;
+      try {
+        const info = await stat(path);
+        const rawSize = (info as { size?: number | bigint | string; len?: number | bigint | string }).size
+          ?? (info as { len?: number | bigint | string }).len
+          ?? 0;
+        const sizeNumber = typeof rawSize === "bigint" ? Number(rawSize) : Number(rawSize);
+        size = Number.isFinite(sizeNumber) ? sizeNumber : 0;
+        if (size === 0) {
+          const actualSize = await getFileSize(path);
+          const actualNumber = typeof actualSize === "bigint" ? Number(actualSize) : Number(actualSize);
+          size = Number.isFinite(actualNumber) ? actualNumber : 0;
+        }
+      } catch (err) {
+        console.error("获取文件信息失败:", err);
+      }
+      return { path, name, size };
+    }));
+    return items;
+  };
+
+  const handleSftpPickFiles = async (node: SessionNode, append = false) => {
     if (!node.config) return;
     try {
       const selected = await openFileDialog({
-        multiple: false,
+        multiple: true,
         directory: false,
         title: "选择要上传的文件",
       });
       if (!selected) return;
-      const localPath = Array.isArray(selected) ? selected[0] : selected;
-      if (!localPath) return;
-      const filename = getFileName(localPath);
-      setSftpLocalPath(localPath);
-      setSftpRemotePath(`~/${filename}`);
+      const paths = Array.isArray(selected) ? selected : [selected];
+      if (paths.length === 0) return;
+      const newFiles = await loadLocalFiles(paths);
+      setSftpFiles(prev => {
+        if (!append) return newFiles;
+        const map = new Map(prev.map(item => [item.path, item]));
+        newFiles.forEach(item => map.set(item.path, item));
+        return Array.from(map.values());
+      });
       setSftpTargetNode(node);
       setSftpMessage(null);
       setSftpOpen(true);
+      setSftpFileProgress({});
+      setSftpOverallSent(0);
+      setSftpOverallTotal(0);
+      if (!append) {
+        if (newFiles.length === 1) setSftpRemotePath(`~/${newFiles[0].name}`);
+        else setSftpRemotePath("~/");
+      }
     } catch (err) {
       console.error("选择文件失败:", err);
     }
   };
 
   const handleSftpUpload = async () => {
-    if (!sftpTargetNode?.config || !sftpLocalPath || !sftpRemotePath) return;
+    if (!sftpTargetNode?.config || sftpFiles.length === 0 || !sftpRemotePath) return;
+    if (progressUnlistenRef.current) {
+      progressUnlistenRef.current();
+      progressUnlistenRef.current = null;
+    }
+    const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const progressEvent = `sftp-upload-progress-${uploadId}`;
     setSftpUploading(true);
     setSftpMessage(null);
+
+    const totalBytes = sftpFiles.reduce((acc, item) => acc + (item.size || 0), 0);
+    setSftpOverallTotal(totalBytes);
+    setSftpOverallSent(0);
+    setSftpFileProgress(Object.fromEntries(sftpFiles.map(item => [item.path, { sent: 0, total: item.size }])));
+
     try {
+      progressUnlistenRef.current = await listen<SftpUploadProgressPayload>(progressEvent, (event) => {
+        const payload = event.payload;
+        setSftpOverallTotal(payload.overall_total);
+        setSftpOverallSent(payload.overall_sent);
+        setSftpFileProgress(prev => ({
+          ...prev,
+          [payload.local_path]: { sent: payload.file_sent, total: payload.file_size },
+        }));
+      });
+
+      const isBatch = sftpFiles.length > 1;
+      const files = sftpFiles.map(item => ({
+        local_path: item.path,
+        remote_path: resolveRemotePath(sftpRemotePath, item.name, isBatch),
+      }));
+
       const cfg = sftpTargetNode.config;
-      await invoke("sftp_upload_file", {
+      await invoke("sftp_upload_files", {
         config: {
           host: cfg.host,
           port: cfg.port,
@@ -236,9 +348,10 @@ export function SessionModule() {
           password: cfg.authType === "password" ? cfg.password : undefined,
           private_key_path: cfg.authType === "privateKey" ? cfg.privateKeyPath : undefined,
         },
-        localPath: sftpLocalPath,
-        remotePath: sftpRemotePath,
+        files,
+        progressEvent,
       });
+
       setSftpMessageType("success");
       setSftpMessage("上传成功");
     } catch (err: any) {
@@ -246,6 +359,10 @@ export function SessionModule() {
       setSftpMessageType("error");
       setSftpMessage(err?.message || String(err));
     } finally {
+      if (progressUnlistenRef.current) {
+        progressUnlistenRef.current();
+        progressUnlistenRef.current = null;
+      }
       setSftpUploading(false);
     }
   };
@@ -260,7 +377,7 @@ export function SessionModule() {
       if (node.type === 'folder') { setTempName(node.name); setFolderOpen(true); } 
       else setSshOpen(true);
     } else if (type === 'delete') { setTargetNode(node); setDeleteOpen(true); }
-    else if (type === 'sftp-upload') { handleSftpPickFile(node); }
+    else if (type === 'sftp-upload') { handleSftpPickFiles(node); }
   };
 
   const handleDirectConnect = (name: string, path: string, admin = false) => {
@@ -304,7 +421,7 @@ export function SessionModule() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="start" sideOffset={4} alignOffset={30} className="w-44 overflow-hidden">
-            <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase py-2 bg-muted/30">快速连接 (不保存)</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase py-2 bg-muted/30">快速连接</DropdownMenuLabel>
             
             {availableShells.map((shell) => (
               <React.Fragment key={shell.path}>
@@ -394,9 +511,65 @@ export function SessionModule() {
         <DialogContent>
           <DialogHeader><DialogTitle>SFTP 上传文件</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">本地文件</div>
-              <Input value={sftpLocalPath} readOnly />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs text-muted-foreground">本地文件</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    已选择 {sftpFiles.length} 个文件 / {formatBytes(sftpSelectedTotal)}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => sftpTargetNode && handleSftpPickFiles(sftpTargetNode, true)}
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" /> 添加文件
+                  </Button>
+                </div>
+              </div>
+              <div className="rounded-md border bg-muted/20">
+                {sftpFiles.length === 0 ? (
+                  <div className="px-3 py-6 text-xs text-muted-foreground text-center">
+                    暂无文件，请添加要上传的文件
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {sftpFiles.map((item) => {
+                      const progress = sftpFileProgress[item.path];
+                      const percent = progress && progress.total > 0 ? Math.min(100, Math.round((progress.sent / progress.total) * 100)) : 0;
+                      return (
+                        <div key={item.path} className="group px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <File className="h-4 w-4 text-muted-foreground" />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm truncate">{item.name}</div>
+                              <div className="text-xs text-muted-foreground">{formatBytes(item.size)}</div>
+                            </div>
+                            <button
+                              type="button"
+                              className="opacity-0 group-hover:opacity-100 transition text-muted-foreground hover:text-destructive"
+                              onClick={() => setSftpFiles(prev => prev.filter(file => file.path !== item.path))}
+                              aria-label="移除文件"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                          {sftpUploading && progress && (
+                            <div className="mt-2">
+                              <div className="h-1.5 w-full rounded-full bg-muted">
+                                <div className="h-1.5 rounded-full bg-primary" style={{ width: `${percent}%` }} />
+                              </div>
+                              <div className="mt-1 text-[10px] text-muted-foreground">{percent}%</div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="space-y-1">
               <div className="text-xs text-muted-foreground">远程路径</div>
@@ -405,7 +578,26 @@ export function SessionModule() {
                 onChange={(e) => setSftpRemotePath(e.target.value)} 
                 placeholder="例如: /home/user/file.txt 或 ~/file.txt"
               />
+              {sftpFiles.length > 1 && (
+                <div className="text-[10px] text-muted-foreground">
+                  批量上传时，远程路径将作为目录使用
+                </div>
+              )}
             </div>
+            {sftpUploading && sftpOverallTotal > 0 && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>总进度</span>
+                  <span>{formatBytes(sftpOverallSent)} / {formatBytes(sftpOverallTotal)}</span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-muted">
+                  <div
+                    className="h-2 rounded-full bg-primary"
+                    style={{ width: `${Math.min(100, Math.round((sftpOverallSent / sftpOverallTotal) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
             {sftpMessage && (
               <div className={cn(
                 "text-xs px-2 py-1 rounded border",
@@ -417,7 +609,7 @@ export function SessionModule() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setSftpOpen(false)}>取消</Button>
-            <Button onClick={handleSftpUpload} disabled={sftpUploading || !sftpLocalPath || !sftpRemotePath}>
+            <Button onClick={handleSftpUpload} disabled={sftpUploading || sftpFiles.length === 0 || !sftpRemotePath}>
               {sftpUploading ? "上传中..." : "开始上传"}
             </Button>
           </DialogFooter>
