@@ -7,7 +7,9 @@ use std::{
     io::Write,
     sync::{Arc, Mutex as StdMutex},
 };
+use russh_sftp::client::SftpSession;
 use tauri::{AppHandle, Emitter, Runtime, State};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex as TokioMutex};
 use uuid::Uuid;
 
@@ -18,6 +20,26 @@ enum SshControlMsg {
     SendData(Vec<u8>),
     Resize(u32, u32),
     Close,
+}
+
+fn map_sftp_error(context: &str, err: &impl std::fmt::Display, path: Option<&str>) -> String {
+    let msg = err.to_string();
+    let hint = if msg.contains("PermissionDenied") {
+        "权限不足，请检查账号权限或目标目录权限。"
+    } else if msg.contains("NoSuchFile") {
+        "路径不存在，请确认远端目录已存在或可创建。"
+    } else if msg.contains("ConnectionLost") || msg.contains("Connection") {
+        "连接中断，请检查网络或服务端连接状态。"
+    } else if msg.contains("Failure") {
+        "远端返回失败，请检查服务端 SFTP 配置。"
+    } else {
+        "请检查服务器与路径配置。"
+    };
+    if let Some(p) = path {
+        format!("{context}：{hint} (path={p})")
+    } else {
+        format!("{context}：{hint}")
+    }
 }
 
 /// 本地终端会话管理
@@ -401,6 +423,191 @@ async fn create_ssh_session<R: Runtime>(
     Ok(session_id)
 }
 
+/// SFTP 上传文件
+#[tauri::command]
+async fn sftp_upload_file(
+    config: SshConnectConfig,
+    local_path: String,
+    remote_path: String,
+) -> Result<(), String> {
+    let host = config.host.clone();
+    let port = config.port;
+    let username = config.username.clone();
+    let password = config.password.clone();
+    let key_path = config.private_key_path.clone();
+    let passphrase = config.private_key_passphrase.clone();
+
+    let mut ssh_config = client::Config::default();
+    ssh_config.preferred = russh::Preferred::DEFAULT;
+    let ssh_config = Arc::new(ssh_config);
+
+    let addr = format!("{}:{}", host, port);
+    let mut handle = client::connect(ssh_config, addr.clone(), Client)
+        .await
+        .map_err(|e| format!("连接失败：{}", e))?;
+
+    let mut authenticated = false;
+
+    if let Some(key_path) = key_path {
+        let key_pair = load_ssh_key(&key_path, passphrase)?;
+        match handle
+            .authenticate_publickey(username.clone(), Arc::new(key_pair))
+            .await
+        {
+            Ok(true) => authenticated = true,
+            Ok(false) => {}
+            Err(e) => return Err(format!("私钥认证失败：{}", e)),
+        }
+    }
+
+    if !authenticated {
+        if let Some(password) = password.clone() {
+            let kbd_start_res = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                handle.authenticate_keyboard_interactive_start(username.clone(), None),
+            ).await;
+
+            let kbd_start_enum = match kbd_start_res {
+                Ok(Ok(res)) => Some(res),
+                _ => None,
+            };
+
+            let mut kbd_authenticated = false;
+            let mut should_fallback_to_password = false;
+
+            if let Some(res) = kbd_start_enum {
+                let mut current_kbd_res = Ok(res);
+                for _ in 0..5 {
+                    match current_kbd_res {
+                        Ok(client::KeyboardInteractiveAuthResponse::Success) => {
+                            kbd_authenticated = true;
+                            break;
+                        }
+                        Ok(client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. }) => {
+                            let mut responses = Vec::new();
+                            for _ in prompts.iter() {
+                                responses.push(password.clone());
+                            }
+                            current_kbd_res = handle.authenticate_keyboard_interactive_respond(responses).await;
+                        }
+                        Ok(client::KeyboardInteractiveAuthResponse::Failure) => {
+                            should_fallback_to_password = true;
+                            break;
+                        }
+                        Err(_) => {
+                            should_fallback_to_password = true;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                should_fallback_to_password = true;
+            }
+
+            if kbd_authenticated {
+                authenticated = true;
+            } else if should_fallback_to_password {
+                match handle
+                    .authenticate_password(username.clone(), password)
+                    .await
+                {
+                    Ok(true) => authenticated = true,
+                    Ok(false) => {}
+                Err(e) => return Err(format!("密码认证失败：{}", e)),
+                }
+            }
+        }
+    }
+
+    if !authenticated {
+        return Err("SSH 认证失败，请检查账号、私钥或密码。".to_string());
+    }
+
+    let mut channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|e| format!("打开会话失败：{}", e))?;
+    channel
+        .request_subsystem(true, "sftp")
+        .await
+        .map_err(|e| format!("请求 SFTP 子系统失败：{}", e))?;
+
+    let stream = channel.into_stream();
+    let sftp = SftpSession::new(stream)
+        .await
+        .map_err(|e| format!("SFTP 初始化失败：{}", e))?;
+
+    let meta = tokio::fs::metadata(&local_path)
+        .await
+        .map_err(|e| format!("读取本地文件失败：{} (path={})", e, local_path))?;
+    if !meta.is_file() {
+        return Err(format!("读取本地文件失败：不是文件 (path={})", local_path));
+    }
+    let data = tokio::fs::read(&local_path)
+        .await
+        .map_err(|e| format!("读取本地文件失败：{} (path={})", e, local_path))?;
+    let remote_path_resolved = if remote_path.starts_with("~/") {
+        match sftp.canonicalize(".").await {
+            Ok(cwd) => format!("{}/{}", cwd.trim_end_matches('/'), &remote_path[2..]),
+            Err(_) => remote_path.clone(),
+        }
+    } else {
+        remote_path.clone()
+    };
+
+    if let Some(parent) = remote_path_resolved.rsplit_once('/') {
+        let dir = parent.0;
+        if !dir.is_empty() {
+            let mut cur = String::new();
+            let mut first = true;
+            for part in dir.split('/') {
+                if part.is_empty() {
+                    if first {
+                        cur.push('/');
+                    }
+                    first = false;
+                    continue;
+                }
+                if !cur.ends_with('/') && !cur.is_empty() {
+                    cur.push('/');
+                }
+                cur.push_str(part);
+                let exists = sftp.try_exists(cur.clone())
+                    .await
+                    .unwrap_or(false);
+                if !exists {
+                    if let Err(e) = sftp.create_dir(cur.clone()).await {
+                        let exists_after = sftp.try_exists(cur.clone())
+                            .await
+                            .unwrap_or(false);
+                        if !exists_after {
+                            return Err(map_sftp_error("创建远程目录失败", &e, Some(&cur)));
+                        }
+                    }
+                }
+                first = false;
+            }
+        }
+    }
+
+    match sftp.create(&remote_path_resolved).await {
+            Ok(mut file) => {
+                match file.write_all(&data).await {
+                    Ok(_) => {
+                        let _ = sftp.close().await;
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(map_sftp_error("写入远程文件失败", &e, Some(&remote_path_resolved)));
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(map_sftp_error("创建远程文件失败", &e, Some(&remote_path_resolved)));
+            }
+    }
+}
+
 // --- 通用交互指令 ---
 
 #[tauri::command]
@@ -474,6 +681,7 @@ pub fn run() {
             create_terminal,
             get_available_shells,
             create_ssh_session,
+            sftp_upload_file,
             write_to_terminal,
             write_to_ssh_session,
             resize_terminal,

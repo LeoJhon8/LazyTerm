@@ -5,7 +5,7 @@ import {
 } from "@dnd-kit/core";
 import { 
   Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, 
-  Pencil, Trash2, Terminal
+  Pencil, Trash2, Terminal, Upload
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck, PlusCircle } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 
 interface AvailableShell {
   name: string;
@@ -149,7 +150,10 @@ function DraggableDroppableRow({ node, depth, onAction, activeId }: { node: Sess
             <ContextMenuItem onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> 新建子文件夹</ContextMenuItem>
           </>
         ) : (
-          <ContextMenuItem onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> 连接会话</ContextMenuItem>
+          <>
+            <ContextMenuItem onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> 连接会话</ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction('sftp-upload', node)}><Upload className="mr-2 h-4 w-4" /> SFTP 上传文件</ContextMenuItem>
+          </>
         )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" />编辑</ContextMenuItem>
@@ -172,6 +176,13 @@ export function SessionModule() {
   const [editNode, setEditNode] = useState<SessionNode | null>(null);
   const [tempName, setTempName] = useState("");
   const [availableShells, setAvailableShells] = useState<AvailableShell[]>([]);
+  const [sftpOpen, setSftpOpen] = useState(false);
+  const [sftpLocalPath, setSftpLocalPath] = useState("");
+  const [sftpRemotePath, setSftpRemotePath] = useState("");
+  const [sftpUploading, setSftpUploading] = useState(false);
+  const [sftpMessage, setSftpMessage] = useState<string | null>(null);
+  const [sftpMessageType, setSftpMessageType] = useState<"success" | "error">("success");
+  const [sftpTargetNode, setSftpTargetNode] = useState<SessionNode | null>(null);
 
   useEffect(() => { 
     ensureRoot(); 
@@ -184,6 +195,61 @@ export function SessionModule() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
 
+  const getFileName = (path: string) => {
+    const parts = path.split(/[/\\]/);
+    return parts[parts.length - 1] || path;
+  };
+
+  const handleSftpPickFile = async (node: SessionNode) => {
+    if (!node.config) return;
+    try {
+      const selected = await openFileDialog({
+        multiple: false,
+        directory: false,
+        title: "选择要上传的文件",
+      });
+      if (!selected) return;
+      const localPath = Array.isArray(selected) ? selected[0] : selected;
+      if (!localPath) return;
+      const filename = getFileName(localPath);
+      setSftpLocalPath(localPath);
+      setSftpRemotePath(`~/${filename}`);
+      setSftpTargetNode(node);
+      setSftpMessage(null);
+      setSftpOpen(true);
+    } catch (err) {
+      console.error("选择文件失败:", err);
+    }
+  };
+
+  const handleSftpUpload = async () => {
+    if (!sftpTargetNode?.config || !sftpLocalPath || !sftpRemotePath) return;
+    setSftpUploading(true);
+    setSftpMessage(null);
+    try {
+      const cfg = sftpTargetNode.config;
+      await invoke("sftp_upload_file", {
+        config: {
+          host: cfg.host,
+          port: cfg.port,
+          username: cfg.username,
+          password: cfg.authType === "password" ? cfg.password : undefined,
+          private_key_path: cfg.authType === "privateKey" ? cfg.privateKeyPath : undefined,
+        },
+        localPath: sftpLocalPath,
+        remotePath: sftpRemotePath,
+      });
+      setSftpMessageType("success");
+      setSftpMessage("上传成功");
+    } catch (err: any) {
+      console.error("SFTP 上传失败:", err);
+      setSftpMessageType("error");
+      setSftpMessage(err?.message || String(err));
+    } finally {
+      setSftpUploading(false);
+    }
+  };
+
   const handleAction = (type: string, node: SessionNode) => {
     if (type === 'connect' && node.config) {
       addSession({ title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } });
@@ -194,6 +260,7 @@ export function SessionModule() {
       if (node.type === 'folder') { setTempName(node.name); setFolderOpen(true); } 
       else setSshOpen(true);
     } else if (type === 'delete') { setTargetNode(node); setDeleteOpen(true); }
+    else if (type === 'sftp-upload') { handleSftpPickFile(node); }
   };
 
   const handleDirectConnect = (name: string, path: string, admin = false) => {
@@ -323,6 +390,39 @@ export function SessionModule() {
         });
         setDirectSshOpen(false);
       }} />
+      <Dialog open={sftpOpen} onOpenChange={setSftpOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>SFTP 上传文件</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">本地文件</div>
+              <Input value={sftpLocalPath} readOnly />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">远程路径</div>
+              <Input 
+                value={sftpRemotePath} 
+                onChange={(e) => setSftpRemotePath(e.target.value)} 
+                placeholder="例如: /home/user/file.txt 或 ~/file.txt"
+              />
+            </div>
+            {sftpMessage && (
+              <div className={cn(
+                "text-xs px-2 py-1 rounded border",
+                sftpMessageType === "success" ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-800 border-red-200"
+              )}>
+                {sftpMessage}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSftpOpen(false)}>取消</Button>
+            <Button onClick={handleSftpUpload} disabled={sftpUploading || !sftpLocalPath || !sftpRemotePath}>
+              {sftpUploading ? "上传中..." : "开始上传"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>确认删除 "{targetNode?.name}"？</AlertDialogTitle></AlertDialogHeader>

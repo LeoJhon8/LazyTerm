@@ -28,6 +28,7 @@ portable-pty = "0.8"
 russh = "0.45"        # 异步 SSH 协议实现
 russh-keys = { version = "0.45", features = ["openssl"] }
 openssl = { version = "0.10", features = ["vendored"] }
+russh-sftp = "2.1.1"
 async-trait = "0.1"   # russh 必须的 trait 宏
 
 # 异步运行时与工具
@@ -37,5 +38,3 @@ futures = "0.3"       # 提供 Stream 处理工具
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-fs = "2.4.5"
-
-# 移除 ssh2 = "0.9" 因为它会导致 UI 线程阻塞
