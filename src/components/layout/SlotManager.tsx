@@ -58,7 +58,7 @@ export function SlotManager() {
       {/* 底部插槽 */}
       <footer
         id="slot-mid-bottom"
-        className="border-t border-border transition-all duration-300 overflow-hidden"
+        className="relative z-10 border-t border-border transition-all duration-300 overflow-hidden"
         style={{
           gridArea: "mid-bottom",
           height: bottomPanelCollapsed ? "0px" : `${bottomPanelHeight}px`,

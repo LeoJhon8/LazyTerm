@@ -534,7 +534,7 @@ export function TerminalView() {
 
   return (
     <main
-      className="relative h-full w-full overflow-hidden"
+      className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden"
       onClick={() => activateTerminal(activeSessionId)}
       onContextMenu={handleContextMenu}
       style={{
@@ -549,7 +549,7 @@ export function TerminalView() {
           }}
           className={
             s.id === activeSessionId
-              ? "h-full w-full absolute inset-0"
+              ? "terminal-host absolute inset-0 h-full w-full overflow-hidden"
               : "hidden"
           }
         />

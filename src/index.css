@@ -121,11 +121,35 @@
 
 /* 终端相关样式 */
 .terminal-container {
-  @apply h-full w-full overflow-hidden;
+  @apply h-full min-h-0 w-full min-w-0 overflow-hidden;
 }
 
-.terminal-xterm {
-  @apply h-full w-full;
+.terminal-host {
+  @apply h-full min-h-0 w-full min-w-0 overflow-hidden;
+}
+
+.terminal-host > .xterm {
+  height: 100%;
+  width: 100%;
+}
+
+.terminal-host > .xterm .xterm-scrollable-element,
+.terminal-host > .xterm .xterm-screen {
+  height: 100%;
+}
+
+.terminal-host > .xterm .xterm-viewport {
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.terminal-host > .xterm .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 /* Ensure terminal transparency can reveal background images */

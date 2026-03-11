@@ -20,7 +20,7 @@ export function BottomSlot() {
   }
 
   return (
-    <div className="h-full p-2">
+    <div className="relative z-10 h-full p-2">
       <Component />
     </div>
   );
