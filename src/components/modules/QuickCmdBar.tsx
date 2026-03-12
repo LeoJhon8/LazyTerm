@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, type WheelEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Play, Plus, Trash2, Pencil } from "lucide-react";
 import { useQuickCommandsStore, type QuickCommand } from "@/store/quick-commands";
@@ -105,6 +105,7 @@ export function QuickCmdBar() {
   const { activeSessionId, sessions, getAllConnectors } = useTabsStore();
   const [configOpen, setConfigOpen] = useState(false);
   const [editingCmd, setEditingCmd] = useState<QuickCommand | null>(null);
+  const commandsContainerRef = useRef<HTMLDivElement>(null);
 
   const restoreTerminalFocus = () => {
     requestAnimationFrame(() => {
@@ -186,6 +187,24 @@ export function QuickCmdBar() {
     removeCommand(cmd.id);
   };
 
+  const handleCommandsWheel = (event: WheelEvent<HTMLDivElement>) => {
+    const container = commandsContainerRef.current;
+    if (!container || container.scrollWidth <= container.clientWidth) {
+      return;
+    }
+
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      ? event.deltaX
+      : event.deltaY;
+
+    if (delta === 0) {
+      return;
+    }
+
+    container.scrollLeft += delta;
+    event.preventDefault();
+  };
+
   return (
     <div className="flex items-center gap-2 h-full px-2">
       <Play className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -199,7 +218,11 @@ export function QuickCmdBar() {
           items={sortedCommands.map(cmd => cmd.id)}
           strategy={horizontalListSortingStrategy}
         >
-          <div className="flex gap-1 overflow-x-auto flex-1">
+          <div
+            ref={commandsContainerRef}
+            className="flex gap-1 overflow-x-auto flex-1"
+            onWheel={handleCommandsWheel}
+          >
             {sortedCommands.map((cmd) => (
               <SortableQuickCommand
                 key={cmd.id}
