@@ -106,6 +106,12 @@ export function QuickCmdBar() {
   const [configOpen, setConfigOpen] = useState(false);
   const [editingCmd, setEditingCmd] = useState<QuickCommand | null>(null);
 
+  const restoreTerminalFocus = () => {
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("lazy-terminal-focus"));
+    });
+  };
+
   // 排序命令
   const sortedCommands = useMemo(() => 
     [...commands].sort((a, b) => a.order - b.order),
@@ -126,12 +132,11 @@ export function QuickCmdBar() {
 
 // 发送命令到当前激活的终端
   const handleCommandClick = (cmd: QuickCommand) => {
-    const activeSession = sessions.find((s: any) => s.id === activeSessionId);
-    if (activeSession?.connector) {
-      // 将 textarea 产生的换行符 \n 统一替换为终端执行符 \r
-      // 这样恰好完美实现：有几个换行，就触发几次执行。最后一行没有换行，就只粘贴不执行。
-      const commandsToExecute = cmd.command.replace(/\r?\n/g, '\r');
+    const activeSession = sessions.find((session) => session.id === activeSessionId);
+    if (activeSession?.connector?.isConnected) {
+      const commandsToExecute = cmd.command.replace(/\r?\n/g, "\r");
       activeSession.connector.write(commandsToExecute);
+      restoreTerminalFocus();
     }
   };
 
@@ -140,11 +145,13 @@ export function QuickCmdBar() {
     const connectors = getAllConnectors();
     if (connectors.length === 0) return;
 
-    // 同样的处理逻辑
-    const commandsToExecute = cmd.command.replace(/\r?\n/g, '\r');
-    connectors.forEach((connector: any) => {
-      connector.write(commandsToExecute);
+    const commandsToExecute = cmd.command.replace(/\r?\n/g, "\r");
+    connectors.forEach((connector) => {
+      if (connector.isConnected) {
+        connector.write(commandsToExecute);
+      }
     });
+    restoreTerminalFocus();
   };
 
   // 处理拖动结束
@@ -268,7 +275,6 @@ function QuickCommandForm({
         label: label.trim(), 
         command: command, 
         order: 0,
-        autoExecute: false // 保留该字段以兼容类型定义
       });
       setLabel("");
       setCommand("");
@@ -303,7 +309,7 @@ function QuickCommandForm({
             id="command"
             value={command}
             onChange={(e) => setCommand(e.target.value)}
-            placeholder={`输入命令，支持换行&#10;例如：&#10;cd project&#10;npm install&#10;&#10;提示：输入完命令后按回车换行，会自动执行上面的命令`}
+            placeholder={`输入命令，支持换行&#10;例如：&#10;cd project&#10;npm install&#10;&#10;提示：有几个换行，就会触发几次执行；最后一行没有换行时，只会输入不会执行`}
             rows={6}
           />
         </div>

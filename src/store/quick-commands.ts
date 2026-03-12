@@ -8,7 +8,6 @@ export interface QuickCommand {
   id: string;
   label: string;
   command: string;
-  autoExecute: boolean; // 是否自动发送回车执行
   order: number;
 }
 
@@ -21,10 +20,10 @@ interface QuickCommandsState {
 }
 
 const defaultCommands: QuickCommand[] = [
-  { id: "1", label: "清屏", command: "clear", autoExecute: true, order: 0 },
-  { id: "2", label: "列出文件", command: "ls -la", autoExecute: true, order: 1 },
-  { id: "3", label: "当前路径", command: "pwd", autoExecute: true, order: 2 },
-  { id: "4", label: "进程列表", command: "ps aux", autoExecute: true, order: 3 },
+  { id: "1", label: "清屏", command: "clear", order: 0 },
+  { id: "2", label: "列出文件", command: "ls -la", order: 1 },
+  { id: "3", label: "当前路径", command: "pwd", order: 2 },
+  { id: "4", label: "进程列表", command: "ps aux", order: 3 },
 ];
 
 export const useQuickCommandsStore = create<QuickCommandsState>()(

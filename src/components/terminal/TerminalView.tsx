@@ -52,7 +52,11 @@ export function TerminalView() {
   // 激活终端 & 调整自适应大小
   // =============================
   const activateTerminal = useCallback(
-    (sessionId?: string | null, requireFocus: boolean = true) => {
+    function activateTerminalInternal(
+      sessionId?: string | null,
+      requireFocus: boolean = true,
+      retryCount: number = 0
+    ) {
       if (!sessionId) return;
       const instance = terminalMap.current.get(sessionId);
       const container = containerMap.current.get(sessionId);
@@ -60,7 +64,9 @@ export function TerminalView() {
       if (instance && container) {
         requestAnimationFrame(() => {
           try {
-            if (container.clientWidth > 0 && container.clientHeight > 0) {
+            const hasLayoutSize = container.clientWidth > 0 && container.clientHeight > 0;
+
+            if (hasLayoutSize) {
               instance.fitAddon.fit();
               const dims = instance.fitAddon.proposeDimensions();
 
@@ -73,7 +79,20 @@ export function TerminalView() {
                 }
               }
             }
-            if (requireFocus) instance.terminal.focus();
+
+            if (requireFocus) {
+              instance.terminal.focus();
+              const helperTextarea = container.querySelector<HTMLTextAreaElement>(
+                ".xterm-helper-textarea"
+              );
+              helperTextarea?.focus();
+            }
+
+            if (!hasLayoutSize && retryCount < 6) {
+              window.setTimeout(() => {
+                activateTerminalInternal(sessionId, requireFocus, retryCount + 1);
+              }, 50);
+            }
           } catch (error) {
             console.warn("Terminal activate failed:", error);
           }
@@ -92,6 +111,8 @@ export function TerminalView() {
     const { connector } = activeSession;
     const containerEl = containerMap.current.get(activeSessionId);
     if (!containerEl) return;
+
+    const existingInstance = terminalMap.current.get(activeSessionId);
 
     let isMounted = true;
 
@@ -120,7 +141,23 @@ export function TerminalView() {
 
       if (!isMounted || !connector.isConnected) return;
 
-      const existingInstance = terminalMap.current.get(activeSessionId);
+      if (existingInstance?.connector === connector) {
+        currentTermInstance = existingInstance;
+        existingInstance.dataUnsubscribe = () => {
+          isCurrentConnector = false;
+          unsubPromise.then((unsub: any) => {
+            if (typeof unsub === "function") unsub();
+          });
+        };
+
+        if (tempBuffer) {
+          existingInstance.terminal.write(tempBuffer);
+          tempBuffer = "";
+        }
+
+        activateTerminal(activeSessionId);
+        return;
+      }
 
       // =============================
       // Connector 切换 (降级/重连) 处理

@@ -44,6 +44,13 @@ export function TabBar() {
     });
   };
 
+  const handleTabSwitch = (id: string) => {
+    setActiveTab(id);
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("lazy-terminal-focus"));
+    });
+  };
+
   const handleCloseTab = (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); // 这里你已经做得很好了，防止触发外层的 setActiveTab
     removeTab(id);
@@ -63,7 +70,7 @@ export function TabBar() {
                 ? "bg-secondary text-secondary-foreground" 
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => handleTabSwitch(tab.id)}
           >
             <span className="text-xs truncate max-w-120 pointer-events-none">
               {tab.title}

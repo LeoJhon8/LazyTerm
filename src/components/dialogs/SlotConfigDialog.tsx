@@ -110,6 +110,10 @@ function ThemeSettings() {
     t.name === 'custom' || t.name === 'system-auto' || t.isDark === isDarkApp
   );
 
+  const resolvePreviewColor = (color: string, fallback: string) => {
+    return color === 'auto' ? fallback : color;
+  };
+
   return (
     <div className="flex flex-col h-full relative">
       {/* ======================= */}
@@ -214,11 +218,38 @@ function ThemeSettings() {
                 onClick={() => setSettings({ terminalColorScheme: scheme.name })}
                 className={`p-3 rounded-lg border-2 transition-all duration-200 text-left ${terminalColorScheme === scheme.name ? "border-primary shadow-md bg-active" : "border-muted hover:border-primary/50"
                   }`}
+                style={{
+                  backgroundColor: resolvePreviewColor(scheme.background, 'var(--background)'),
+                  color: resolvePreviewColor(scheme.foreground, 'var(--foreground)'),
+                }}
               >
-                <div className="text-sm font-medium mb-2 truncate">{scheme.label}</div>
-                <div className="rounded p-1.5 flex flex-wrap items-center gap-1" style={{ backgroundColor: scheme.background === 'auto' ? 'var(--background)' : scheme.background }}>
+                <div className="text-sm font-medium mb-1 truncate">{scheme.label}</div>
+                <div className="text-[11px] opacity-80 mb-2 truncate">Aa 文本预览</div>
+                <div
+                  className="rounded p-1.5 flex flex-wrap items-center gap-1 border"
+                  style={{
+                    backgroundColor: resolvePreviewColor(scheme.background, 'var(--background)'),
+                    borderColor: resolvePreviewColor(scheme.brightBlack, 'var(--border)'),
+                  }}
+                >
                   {[scheme.red, scheme.green, scheme.yellow, scheme.blue, scheme.foreground].map((c, i) => (
-                    <div key={i} className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: c === 'auto' ? (i === 0 ? '#ef4444' : i === 1 ? '#22c55e' : i === 2 ? '#eab308' : '#3b82f6') : c }} />
+                    <div
+                      key={i}
+                      className="w-2.5 h-2.5 rounded-sm"
+                      style={{
+                        backgroundColor: c === 'auto'
+                          ? (i === 0
+                            ? '#ef4444'
+                            : i === 1
+                              ? '#22c55e'
+                              : i === 2
+                                ? '#eab308'
+                                : i === 3
+                                  ? '#3b82f6'
+                                  : 'var(--foreground)')
+                          : c,
+                      }}
+                    />
                   ))}
                 </div>
               </button>
