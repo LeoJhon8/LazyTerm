@@ -58,6 +58,20 @@ struct SshTerminalSession {
 struct AppState {
     local_sessions: Arc<StdMutex<HashMap<String, LocalTerminalSession>>>,
     ssh_sessions: Arc<TokioMutex<HashMap<String, SshTerminalSession>>>,
+    sftp_upload_cancellations: Arc<StdMutex<HashMap<String, bool>>>,
+}
+
+struct SftpUploadCancelGuard {
+    upload_id: String,
+    cancellations: Arc<StdMutex<HashMap<String, bool>>>,
+}
+
+impl Drop for SftpUploadCancelGuard {
+    fn drop(&mut self) {
+        if let Ok(mut cancellations) = self.cancellations.lock() {
+            cancellations.remove(&self.upload_id);
+        }
+    }
 }
 
 // --- Russh 客户端回调处理 ---
@@ -632,13 +646,24 @@ async fn sftp_upload_file(
 #[tauri::command]
 async fn sftp_upload_files(
     app: AppHandle,
+    state: State<'_, AppState>,
     config: SshConnectConfig,
     files: Vec<SftpUploadItem>,
     progress_event: String,
+    upload_id: String,
 ) -> Result<(), String> {
     if files.is_empty() {
         return Ok(());
     }
+
+    {
+        let mut cancellations = state.sftp_upload_cancellations.lock().unwrap();
+        cancellations.insert(upload_id.clone(), false);
+    }
+    let _cancel_guard = SftpUploadCancelGuard {
+        upload_id: upload_id.clone(),
+        cancellations: Arc::clone(&state.sftp_upload_cancellations),
+    };
 
     let host = config.host.clone();
     let port = config.port;
@@ -768,6 +793,17 @@ async fn sftp_upload_files(
 
     let mut overall_sent = 0u64;
     for (index, item, file_size, file_name) in file_infos.into_iter() {
+        let cancelled = state
+            .sftp_upload_cancellations
+            .lock()
+            .unwrap()
+            .get(&upload_id)
+            .copied()
+            .unwrap_or(false);
+        if cancelled {
+            return Err("上传已停止".to_string());
+        }
+
         let remote_path_resolved = if item.remote_path.starts_with("~/") {
             match sftp.canonicalize(".").await {
                 Ok(cwd) => format!("{}/{}", cwd.trim_end_matches('/'), &item.remote_path[2..]),
@@ -828,6 +864,17 @@ async fn sftp_upload_files(
         let mut sent = 0u64;
         let mut buffer = vec![0u8; 64 * 1024];
         loop {
+            let cancelled = state
+                .sftp_upload_cancellations
+                .lock()
+                .unwrap()
+                .get(&upload_id)
+                .copied()
+                .unwrap_or(false);
+            if cancelled {
+                return Err("上传已停止".to_string());
+            }
+
             let n = local_file.read(&mut buffer)
                 .await
                 .map_err(|e| format!("读取本地文件失败: {} (path={})", e, item.local_path))?;
@@ -865,6 +912,17 @@ async fn sftp_upload_files(
 
     let _ = sftp.close().await;
     Ok(())
+}
+
+#[tauri::command]
+fn cancel_sftp_upload(state: State<'_, AppState>, upload_id: String) -> Result<(), String> {
+    let mut cancellations = state.sftp_upload_cancellations.lock().unwrap();
+    if let Some(cancelled) = cancellations.get_mut(&upload_id) {
+        *cancelled = true;
+        Ok(())
+    } else {
+        Err("上传任务不存在或已结束".to_string())
+    }
 }
 
 // --- 通用交互指令 ---
@@ -935,6 +993,7 @@ pub fn run() {
         .manage(AppState {
             local_sessions: Arc::new(StdMutex::new(HashMap::new())),
             ssh_sessions: Arc::new(TokioMutex::new(HashMap::new())),
+            sftp_upload_cancellations: Arc::new(StdMutex::new(HashMap::new())),
         })
         .invoke_handler(tauri::generate_handler![
             create_terminal,
@@ -942,6 +1001,7 @@ pub fn run() {
             create_ssh_session,
             sftp_upload_file,
             sftp_upload_files,
+            cancel_sftp_upload,
             write_to_terminal,
             write_to_ssh_session,
             resize_terminal,

@@ -89,9 +89,9 @@ function getDropPosition(
 }
 
 function NodeRowContent({ 
-  node, depth, isDragging, isOver, dropPos, isOverlay 
+  node, depth, isDragging, isOver, dropPos, isOverlay, isUploading 
 }: { 
-  node: SessionNode, depth: number, isDragging?: boolean, isOver?: boolean, dropPos?: DropPosition | null, isOverlay?: boolean 
+  node: SessionNode, depth: number, isDragging?: boolean, isOver?: boolean, dropPos?: DropPosition | null, isOverlay?: boolean, isUploading?: boolean 
 }) {
   const isFolder = node.type === "folder";
   return (
@@ -101,6 +101,7 @@ function NodeRowContent({
         "flex items-center gap-2 py-1.5 px-2 rounded-sm text-sm transition-all relative border-y border-transparent",
         !isOverlay && "group hover:bg-accent/40",
         isOverlay && "bg-background border shadow-xl opacity-90 w-[240px] z-50 pointer-events-none",
+        isUploading && !isOverlay && "border-slate-300/80 bg-amber-100/80 text-amber-950 ring-1 ring-amber-300/80 dark:border-cyan-400/40 dark:bg-cyan-500/16 dark:text-cyan-50 dark:ring-cyan-400/45",
         
         // 放置指示器
         isOver && !isDragging && dropPos === 'before' && [
@@ -119,11 +120,15 @@ function NodeRowContent({
             <Folder className={cn("h-4 w-4", node.isRoot ? "text-amber-500 fill-amber-500/10" : "text-blue-500 fill-blue-500/10")} />
           </div>
         ) : (
-          <Server className="h-4 w-4 text-emerald-600/80" />
+          <Server className={cn("h-4 w-4 text-emerald-600/80", isUploading && "text-amber-700 dark:text-cyan-300 animate-pulse")} />
         )}
         <span
           title={node.name}
-          className={cn("truncate flex-1 select-none", node.isRoot ? "font-bold text-foreground" : "font-medium text-muted-foreground group-hover:text-foreground")}
+          className={cn(
+            "truncate flex-1 select-none",
+            node.isRoot ? "font-bold text-foreground" : "font-medium text-muted-foreground group-hover:text-foreground",
+            isUploading && "text-amber-950 dark:text-cyan-50"
+          )}
         >
           {node.name}
         </span>
@@ -138,12 +143,14 @@ function DraggableDroppableRow({
   onAction,
   overId,
   dropPos,
+  uploadingNodeId,
 }: {
   node: SessionNode;
   depth: number;
   onAction: (type: string, node: SessionNode) => void;
   overId: string | null;
   dropPos: DropPosition | null;
+  uploadingNodeId: string | null;
 }) {
   const { toggleFolder } = useSshProfilesStore();
 
@@ -171,6 +178,7 @@ function DraggableDroppableRow({
               isDragging={isDragging} 
               isOver={isOver && overId === node.id} 
               dropPos={overId === node.id ? dropPos : null} 
+              isUploading={node.type === "ssh" && uploadingNodeId === node.id}
             />
           </div>
         </div>
@@ -216,13 +224,15 @@ export function SessionModule() {
   const [sftpRemotePath, setSftpRemotePath] = useState("");
   const [sftpUploading, setSftpUploading] = useState(false);
   const [sftpMessage, setSftpMessage] = useState<string | null>(null);
-  const [sftpMessageType, setSftpMessageType] = useState<"success" | "error">("success");
+  const [sftpMessageType, setSftpMessageType] = useState<"success" | "error" | "info">("success");
   const [sftpTargetNode, setSftpTargetNode] = useState<SessionNode | null>(null);
   const [sftpFiles, setSftpFiles] = useState<SftpLocalFile[]>([]);
   const [sftpOverallSent, setSftpOverallSent] = useState(0);
   const [sftpOverallTotal, setSftpOverallTotal] = useState(0);
   const [sftpFileProgress, setSftpFileProgress] = useState<Record<string, { sent: number; total: number }>>({});
+  const [sftpStopping, setSftpStopping] = useState(false);
   const progressUnlistenRef = useRef<UnlistenFn | null>(null);
+  const currentSftpUploadIdRef = useRef<string | null>(null);
 
   useEffect(() => { 
     ensureRoot(); 
@@ -238,12 +248,14 @@ export function SessionModule() {
         progressUnlistenRef.current();
         progressUnlistenRef.current = null;
       }
+      currentSftpUploadIdRef.current = null;
     };
   }, []);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
   const sftpSelectedTotal = useMemo(() => sftpFiles.reduce((acc, item) => acc + (item.size || 0), 0), [sftpFiles]);
+  const activeSftpNodeId = sftpUploading ? sftpTargetNode?.id ?? null : null;
 
   const activeDragNode = useMemo(
     () => (dragState.activeId ? nodes.find((node) => node.id === dragState.activeId) ?? null : null),
@@ -311,6 +323,17 @@ export function SessionModule() {
 
   const handleSftpPickFiles = async (node: SessionNode, append = false) => {
     if (!node.config) return;
+    if (sftpUploading) {
+      if (activeSftpNodeId === node.id) {
+        setSftpMessage(null);
+        setSftpOpen(true);
+        return;
+      }
+      setSftpMessageType("error");
+      setSftpMessage(`连接“${sftpTargetNode?.name ?? "当前连接"}”正在上传，请等待完成后再发起新的上传`);
+      setSftpOpen(true);
+      return;
+    }
     try {
       const selected = await openFileDialog({
         multiple: true,
@@ -342,6 +365,48 @@ export function SessionModule() {
     }
   };
 
+  const handleSftpOpen = (node: SessionNode) => {
+    if (!node.config) return;
+    if (sftpUploading) {
+      if (activeSftpNodeId === node.id) {
+        setSftpMessage(null);
+        setSftpOpen(true);
+        return;
+      }
+      setSftpMessageType("error");
+      setSftpMessage(`连接“${sftpTargetNode?.name ?? "当前连接"}”正在上传，请等待完成后再发起新的上传`);
+      setSftpOpen(true);
+      return;
+    }
+
+    setSftpTargetNode(node);
+    setSftpFiles([]);
+    setSftpRemotePath("");
+    setSftpMessage(null);
+    setSftpFileProgress({});
+    setSftpOverallSent(0);
+    setSftpOverallTotal(0);
+    setSftpStopping(false);
+    setSftpOpen(true);
+  };
+
+  const handleStopSftpUpload = async () => {
+    const uploadId = currentSftpUploadIdRef.current;
+    if (!uploadId || !sftpUploading || sftpStopping) return;
+
+    try {
+      setSftpStopping(true);
+      setSftpMessageType("info");
+      setSftpMessage("正在停止上传...");
+      await invoke("cancel_sftp_upload", { uploadId });
+    } catch (err) {
+      console.error("停止 SFTP 上传失败:", err);
+      setSftpStopping(false);
+      setSftpMessageType("error");
+      setSftpMessage(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const handleSftpUpload = async () => {
     if (!sftpTargetNode?.config || sftpFiles.length === 0 || !sftpRemotePath) return;
     if (progressUnlistenRef.current) {
@@ -350,7 +415,9 @@ export function SessionModule() {
     }
     const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const progressEvent = `sftp-upload-progress-${uploadId}`;
+    currentSftpUploadIdRef.current = uploadId;
     setSftpUploading(true);
+    setSftpStopping(false);
     setSftpMessage(null);
 
     const totalBytes = sftpFiles.reduce((acc, item) => acc + (item.size || 0), 0);
@@ -386,20 +453,25 @@ export function SessionModule() {
         },
         files,
         progressEvent,
+        uploadId,
       });
 
       setSftpMessageType("success");
       setSftpMessage("上传成功");
     } catch (err: unknown) {
       console.error("SFTP 上传失败:", err);
-      setSftpMessageType("error");
-      setSftpMessage(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      const isStopped = message.includes("上传已停止");
+      setSftpMessageType(isStopped ? "info" : "error");
+      setSftpMessage(isStopped ? "上传已停止" : message);
     } finally {
       if (progressUnlistenRef.current) {
         progressUnlistenRef.current();
         progressUnlistenRef.current = null;
       }
       setSftpUploading(false);
+      setSftpStopping(false);
+      currentSftpUploadIdRef.current = null;
     }
   };
 
@@ -413,7 +485,7 @@ export function SessionModule() {
       if (node.type === 'folder') { setTempName(node.name); setFolderOpen(true); } 
       else setSshOpen(true);
     } else if (type === 'delete') { setTargetNode(node); setDeleteOpen(true); }
-    else if (type === 'sftp-upload') { handleSftpPickFiles(node); }
+    else if (type === 'sftp-upload') { handleSftpOpen(node); }
   };
 
   const handleDirectConnect = (name: string, path: string, admin = false) => {
@@ -524,6 +596,7 @@ export function SessionModule() {
                 onAction={handleAction}
                 overId={dragState.overId}
                 dropPos={dragState.dropPos}
+                uploadingNodeId={activeSftpNodeId}
               />
             ))}
           </div>
@@ -574,6 +647,12 @@ export function SessionModule() {
         <DialogContent>
           <DialogHeader><DialogTitle>SFTP 上传文件</DialogTitle></DialogHeader>
           <div className="space-y-3">
+            {sftpTargetNode && (
+              <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                当前连接: {sftpTargetNode.name}
+                {sftpUploading && " · 上传进行中，可先收起后从同连接恢复"}
+              </div>
+            )}
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs text-muted-foreground">本地文件</div>
@@ -586,7 +665,8 @@ export function SessionModule() {
                     variant="outline"
                     size="sm"
                     className="h-7 px-2"
-                    onClick={() => sftpTargetNode && handleSftpPickFiles(sftpTargetNode, true)}
+                    disabled={sftpUploading}
+                    onClick={() => sftpTargetNode && handleSftpPickFiles(sftpTargetNode, sftpFiles.length > 0)}
                   >
                     <Plus className="mr-1 h-3.5 w-3.5" /> 添加文件
                   </Button>
@@ -612,7 +692,8 @@ export function SessionModule() {
                             </div>
                             <button
                               type="button"
-                              className="opacity-0 group-hover:opacity-100 transition text-muted-foreground hover:text-destructive"
+                              disabled={sftpUploading}
+                              className="opacity-0 group-hover:opacity-100 transition text-muted-foreground hover:text-destructive disabled:pointer-events-none disabled:opacity-30"
                               onClick={() => setSftpFiles(prev => prev.filter(file => file.path !== item.path))}
                               aria-label="移除文件"
                             >
@@ -638,6 +719,7 @@ export function SessionModule() {
               <div className="text-xs text-muted-foreground">远程路径</div>
               <Input 
                 value={sftpRemotePath} 
+                disabled={sftpUploading}
                 onChange={(e) => setSftpRemotePath(e.target.value)} 
                 placeholder="例如: /home/user/file.txt 或 ~/file.txt"
               />
@@ -664,14 +746,18 @@ export function SessionModule() {
             {sftpMessage && (
               <div className={cn(
                 "text-xs px-2 py-1 rounded border",
-                sftpMessageType === "success" ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-800 border-red-200"
+                sftpMessageType === "success" && "bg-green-100 text-green-800 border-green-200",
+                sftpMessageType === "error" && "bg-red-100 text-red-800 border-red-200",
+                sftpMessageType === "info" && "bg-sky-100 text-sky-800 border-sky-200 dark:bg-cyan-500/12 dark:text-cyan-100 dark:border-cyan-400/30"
               )}>
                 {sftpMessage}
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setSftpOpen(false)}>取消</Button>
+            <Button variant="ghost" onClick={sftpUploading ? handleStopSftpUpload : () => setSftpOpen(false)} disabled={sftpStopping}>
+              {sftpUploading ? (sftpStopping ? "停止中..." : "停止上传") : "取消"}
+            </Button>
             <Button onClick={handleSftpUpload} disabled={sftpUploading || sftpFiles.length === 0 || !sftpRemotePath}>
               {sftpUploading ? "上传中..." : "开始上传"}
             </Button>
