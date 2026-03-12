@@ -1,6 +1,38 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ITerminalConnector, SSHConfig } from "@/types/terminal";
+import { useSettingsStore } from "@/store/settings";
+
+function estimateInitialPtySize() {
+  if (typeof window === "undefined") {
+    return { cols: 80, rows: 24 };
+  }
+
+  const { fontFamily, fontSize } = useSettingsStore.getState();
+  const terminalContainer = document.querySelector<HTMLElement>(".terminal-container");
+  const containerWidth = terminalContainer?.clientWidth ?? Math.max(window.innerWidth, 800);
+  const containerHeight = terminalContainer?.clientHeight ?? Math.max(window.innerHeight, 600);
+
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  let cellWidth = 9;
+  let cellHeight = 18;
+
+  if (context) {
+    context.font = `${fontSize}px ${fontFamily}`;
+    const measured = context.measureText("W").width;
+    if (Number.isFinite(measured) && measured > 0) {
+      cellWidth = measured;
+    }
+    cellHeight = fontSize * 1.2;
+  }
+
+  const cols = Math.max(40, Math.floor(containerWidth / Math.max(cellWidth, 1)));
+  const rows = Math.max(12, Math.floor(containerHeight / Math.max(cellHeight, 1)));
+
+  return { cols, rows };
+}
 
 export class SshConnector implements ITerminalConnector {
   readonly protocol = "ssh" as const;
@@ -26,6 +58,8 @@ export class SshConnector implements ITerminalConnector {
     }
 
     try {
+      const initialSize = estimateInitialPtySize();
+
       this.sessionId = await invoke<string>("create_ssh_session", {
         config: {
           host: this.config.host,
@@ -35,6 +69,8 @@ export class SshConnector implements ITerminalConnector {
           private_key_path: this.config.authType === "privateKey" ? this.config.privateKeyPath : undefined,
           keep_alive: this.config.keepAlive,
           ready_timeout: this.config.readyTimeout,
+          initial_cols: initialSize.cols,
+          initial_rows: initialSize.rows,
         },
       });
 
@@ -58,7 +94,9 @@ export class SshConnector implements ITerminalConnector {
       if (this.unlistenFn) {
         try {
           this.unlistenFn();
-        } catch {}
+        } catch (error) {
+          console.warn("[SSH] 取消事件监听失败:", error);
+        }
         this.unlistenFn = null;
       }
       this.sessionId = null;

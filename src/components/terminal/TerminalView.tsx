@@ -30,6 +30,26 @@ interface TerminalInstance {
   };
 }
 
+function syncTerminalDimensions(
+  terminal: Terminal,
+  fitAddon: FitAddon,
+  connector?: ITerminalConnector
+) {
+  const dims = fitAddon.proposeDimensions();
+  if (!dims) return;
+
+  const nextCols = dims.cols;
+  const nextRows = dims.rows;
+  const sizeChanged =
+    nextCols !== terminal.cols || nextRows !== terminal.rows;
+
+  fitAddon.fit();
+
+  if (sizeChanged && connector) {
+    connector.resize?.(nextCols, nextRows);
+  }
+}
+
 function shouldBlockIndexedColorChange(data: string): boolean {
   const normalized = data.trim();
   if (!normalized) return false;
@@ -86,17 +106,7 @@ export function TerminalView() {
             const hasLayoutSize = container.clientWidth > 0 && container.clientHeight > 0;
 
             if (hasLayoutSize) {
-              instance.fitAddon.fit();
-              const dims = instance.fitAddon.proposeDimensions();
-
-              if (dims && instance.connector) {
-                if (
-                  dims.cols !== instance.terminal.cols ||
-                  dims.rows !== instance.terminal.rows
-                ) {
-                  instance.connector.resize?.(dims.cols, dims.rows);
-                }
-              }
+              syncTerminalDimensions(instance.terminal, instance.fitAddon, instance.connector);
             }
 
             if (requireFocus) {
@@ -164,7 +174,7 @@ export function TerminalView() {
         currentTermInstance = existingInstance;
         existingInstance.dataUnsubscribe = () => {
           isCurrentConnector = false;
-          unsubPromise.then((unsub: any) => {
+          unsubPromise.then((unsub: unknown) => {
             if (typeof unsub === "function") unsub();
           });
         };
@@ -211,7 +221,7 @@ export function TerminalView() {
         currentTermInstance = existingInstance;
         existingInstance.dataUnsubscribe = () => {
           isCurrentConnector = false;
-          unsubPromise.then((unsub: any) => {
+          unsubPromise.then((unsub: unknown) => {
             if (typeof unsub === "function") unsub();
           });
         };
@@ -285,11 +295,7 @@ export function TerminalView() {
       term.open(containerEl);
 
       try {
-        fitAddon.fit();
-        const dims = fitAddon.proposeDimensions();
-        if (dims && connector.resize) {
-          connector.resize(dims.cols, dims.rows);
-        }
+        syncTerminalDimensions(term, fitAddon, connector);
       } catch (e) {
         console.warn("Initial fit failed:", e);
       }
@@ -316,7 +322,7 @@ export function TerminalView() {
 
       const dataUnsubscribe = () => {
         isCurrentConnector = false;
-        unsubPromise.then((unsub: any) => {
+        unsubPromise.then((unsub: unknown) => {
           if (typeof unsub === "function") unsub();
         });
       };
@@ -325,7 +331,7 @@ export function TerminalView() {
       // 提取历史命令记录 (智能过滤 Prompt 提示符)
       // =============================
       const extractCommand = (lineText: string) => {
-        let text = lineText.trim();
+        const text = lineText.trim();
         if (!text) return "";
 
         // 1. PowerShell (兼容 Windows/Linux) "PS C:\xxx> " 或 "PS /home/user> "
@@ -341,13 +347,13 @@ export function TerminalView() {
         }
 
         // 3. Unix 经典格式 "user@host:~/dir$ " 或 "user@mac ~ % "
-        const unixMatch = text.match(/^[^@\s]+@[^:\s\\]+[:\s][^#\$%]*?[#\$%]\s+/);
+        const unixMatch = text.match(/^[^@\s]+@[^:\s\\]+[:\s][^#$%]*?[#$%]\s+/);
         if (unixMatch) {
           return text.substring(unixMatch[0].length).trim();
         }
 
         // 4. 精简版/美化版终端格式 "~ % ", "$ ", "❯ ", "➜ ", "/var/log # "
-        const minimalMatch = text.match(/^([a-zA-Z0-9_\-\/\.~]+\s?)?[#\$%❯➜]\s+/);
+        const minimalMatch = text.match(/^([a-zA-Z0-9_\-/.~]+\s?)?[#$%❯➜]\s+/);
         if (minimalMatch) {
           return text.substring(minimalMatch[0].length).trim();
         }
@@ -444,7 +450,7 @@ export function TerminalView() {
     return () => {
       isMounted = false;
       isCurrentConnector = false;
-      unsubPromise.then((unsub: any) => {
+      unsubPromise.then((unsub: unknown) => {
         if (typeof unsub === "function") unsub();
       });
     };
@@ -480,9 +486,13 @@ export function TerminalView() {
       if (id === activeSessionId) {
         requestAnimationFrame(() => {
           try {
-            fitAddon.fit();
             const dims = fitAddon.proposeDimensions();
-            if (dims && connector) {
+            const sizeChanged =
+              !!dims && (dims.cols !== terminal.cols || dims.rows !== terminal.rows);
+
+            fitAddon.fit();
+
+            if (dims && connector && sizeChanged) {
               // 防抖处理：避免用户通过滚轮快速缩放字体时疯狂发送 resize 导致终端输出重复字符
               if (termState.resizeTimeoutId) {
                 clearTimeout(termState.resizeTimeoutId);
@@ -498,7 +508,7 @@ export function TerminalView() {
         });
       }
     });
-  }, [fontSize, fontFamily, terminalColorScheme, terminalOpacity, activeSessionId, hasBackgroundImage]);
+  }, [fontSize, fontFamily, terminalColorScheme, customThemeColors, terminalOpacity, activeSessionId, hasBackgroundImage]);
 
   // =============================
   // 清理已被关闭的会话

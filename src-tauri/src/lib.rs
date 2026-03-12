@@ -106,6 +106,8 @@ pub struct SshConnectConfig {
     pub password: Option<String>,
     pub private_key_path: Option<String>,
     pub private_key_passphrase: Option<String>, // 濡傛灉绉侀挜鏈夊瘑鐮?
+    pub initial_cols: Option<u32>,
+    pub initial_rows: Option<u32>,
 }
 #[derive(serde::Deserialize, Debug)]
 pub struct SftpUploadItem {
@@ -404,7 +406,9 @@ async fn create_ssh_session<R: Runtime>(
 
     // 3. 打开 Channel 并请求 PTY
     let mut channel = handle.channel_open_session().await.map_err(|e| e.to_string())?;
-    channel.request_pty(true, "xterm-256color", 80, 24, 0, 0, &[]).await.map_err(|e| e.to_string())?;
+    let initial_cols = config.initial_cols.unwrap_or(80).clamp(40, 400);
+    let initial_rows = config.initial_rows.unwrap_or(24).clamp(12, 200);
+    channel.request_pty(true, "xterm-256color", initial_cols, initial_rows, 0, 0, &[]).await.map_err(|e| e.to_string())?;
     let _ = channel.set_env(false, "TERM_PROGRAM", "LazyTerm").await;
     let _ = channel.set_env(false, "TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION")).await;
     let _ = channel.set_env(false, "COLORTERM", "truecolor").await;
