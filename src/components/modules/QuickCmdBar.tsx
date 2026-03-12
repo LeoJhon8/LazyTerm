@@ -66,20 +66,22 @@ function SortableQuickCommand({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center">
+    <div ref={setNodeRef} style={style} className="flex h-full items-stretch">
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <Button
             variant="outline"
             size="sm"
-            className="h-7 text-xs whitespace-nowrap gap-1"
+            className="command-card h-full rounded-none px-3 text-xs shadow-none"
             onClick={onClick}
             title={`命令：${cmd.command.split('\n')[0].substring(0, 30)}${cmd.command.length > 30 ? '...' : ''}`}
             disabled={isDragging}
             {...attributes}
             {...listeners}
           >
-            {cmd.label}
+            <span className="command-card-main">
+              <span className="command-card-label">{cmd.label}</span>
+            </span>
           </Button>
         </ContextMenuTrigger>
         <ContextMenuContent className="min-w-28 text-xs">
@@ -206,9 +208,11 @@ export function QuickCmdBar() {
   };
 
   return (
-    <div className="flex items-center gap-2 h-full px-2">
-      <Play className="h-4 w-4 text-muted-foreground shrink-0" />
-      
+    <div className="quickcmd-surface">
+      <div className="quickcmd-leading-icon" aria-label="快捷命令栏" title="快捷命令栏">
+        <Play className="h-3 w-3 fill-current" />
+      </div>
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -220,19 +224,25 @@ export function QuickCmdBar() {
         >
           <div
             ref={commandsContainerRef}
-            className="flex gap-1 overflow-x-auto flex-1"
+            className="toolbar-scroll command-scroll no-scrollbar h-full flex-1"
             onWheel={handleCommandsWheel}
           >
-            {sortedCommands.map((cmd) => (
-              <SortableQuickCommand
-                key={cmd.id}
-                cmd={cmd}
-                onClick={() => handleCommandClick(cmd)}
-                onContextMenu={() => sendToAllSessions(cmd)}
-                onEdit={() => handleEditCommand(cmd)}
-                onDelete={() => handleDeleteCommand(cmd)}
-              />
-            ))}
+            {sortedCommands.length === 0 ? (
+              <div className="flex h-full items-center border border-dashed border-border/70 px-4 text-xs text-muted-foreground">
+                暂无快捷命令，点击右侧加号创建常用操作。
+              </div>
+            ) : (
+              sortedCommands.map((cmd) => (
+                <SortableQuickCommand
+                  key={cmd.id}
+                  cmd={cmd}
+                  onClick={() => handleCommandClick(cmd)}
+                  onContextMenu={() => sendToAllSessions(cmd)}
+                  onEdit={() => handleEditCommand(cmd)}
+                  onDelete={() => handleDeleteCommand(cmd)}
+                />
+              ))
+            )}
           </div>
         </SortableContext>
       </DndContext>
@@ -240,12 +250,12 @@ export function QuickCmdBar() {
       {/* 添加命令按钮 */}
       <Dialog open={configOpen} onOpenChange={setConfigOpen}>
         <DialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+          <Button variant="ghost" size="sm" className="quickcmd-add-button h-full rounded-none p-0">
             <Plus className="h-3 w-3" />
           </Button>
         </DialogTrigger>
         
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-150">
           <DialogHeader>
             <DialogTitle>{editingCmd ? '编辑快捷命令' : '添加快捷命令'}</DialogTitle>
           </DialogHeader>

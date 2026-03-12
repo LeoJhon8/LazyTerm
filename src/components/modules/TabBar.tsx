@@ -92,25 +92,25 @@ function SortableTab({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            className={`h-8 px-3 relative group flex items-center min-w-20 max-w-52 cursor-pointer rounded-md border border-transparent transition-colors text-sm font-medium select-none ${
+            className={`tab-item group relative cursor-pointer select-none ${
               active
-                ? "bg-secondary text-secondary-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            } ${isDragging ? "shadow-sm ring-1 ring-border bg-background/90" : ""}`}
+                ? "tab-item-active"
+                : ""
+            } ${isDragging ? "bg-background/90 shadow-lg ring-1 ring-border/70" : ""}`}
             aria-current={active ? "page" : undefined}
             onClick={() => onSwitch(id)}
             onKeyUp={handleKeyUp}
             {...attributes}
             {...listeners}
           >
-            <span className="text-xs truncate max-w-32 pointer-events-none">
+            <span className="pointer-events-none max-w-32 flex-1 truncate text-[13px]">
               {title}
             </span>
 
             <Button
               variant="ghost"
               size="icon"
-              className={`h-4 w-4 ml-1 transition-opacity hover:bg-destructive hover:text-destructive-foreground ${
+              className={`tab-close ml-1 text-muted-foreground transition-all hover:bg-background/40 hover:text-foreground ${
                 active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
               }`}
               onPointerDown={handleClosePointerDown}
@@ -224,7 +224,7 @@ export function TabBar() {
   };
 
   return (
-    <div className="h-full flex items-center gap-2 px-2 min-w-0">
+    <div className="tabbar-surface">
       <div className="min-w-0 flex-1 overflow-hidden">
         <DndContext
           sensors={sensors}
@@ -235,7 +235,7 @@ export function TabBar() {
             items={tabs.map((tab) => tab.id)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pr-1">
+            <div className="tabbar-scroll no-scrollbar">
               {tabs.map((tab) => (
                 <SortableTab
                   key={tab.id}
@@ -256,15 +256,15 @@ export function TabBar() {
         </DndContext>
       </div>
 
-      <div className="relative z-10 shrink-0 pl-1">
+      <div className="tabbar-action relative z-10">
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 shrink-0 bg-background/60 supports-backdrop-filter:backdrop-blur-sm"
+          className="tabbar-add-button h-11! w-11! rounded-none! hover:bg-transparent! [&_svg]:size-5!"
           onClick={handleAddTab}
           aria-label="新增标签页"
         >
-          <Plus className="h-4 w-4" />
+          <Plus />
         </Button>
       </div>
     </div>

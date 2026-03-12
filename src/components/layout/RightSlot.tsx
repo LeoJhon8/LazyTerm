@@ -11,8 +11,8 @@ const MODULE_COMPONENTS: Record<string, React.ComponentType> = {
 };
 
 const MODULE_ICONS: Record<string, React.ReactNode> = {
-  SessionModule: <Folder className="h-4 w-4" />,
-  HistoryModule: <History className="h-4 w-4" />,
+  SessionModule: <Folder className="h-6 w-6" />,
+  HistoryModule: <History className="h-6 w-6" />,
 };
 
 export function RightSlot() {
@@ -21,8 +21,12 @@ export function RightSlot() {
 
   if (modules.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center text-muted-foreground">
-        <p>未配置模块</p>
+      <div className="module-empty">
+        <div className="module-empty-card">
+          <History className="h-5 w-5" />
+          <p className="text-sm font-medium text-foreground">右侧面板为空</p>
+          <p className="text-xs">可以将历史或会话模块放到右侧，分担主视图信息。</p>
+        </div>
       </div>
     );
   }
@@ -39,16 +43,16 @@ export function RightSlot() {
       )}
 
       {/* 模块导航栏 */}
-      <div className="w-12 bg-muted flex flex-col items-center py-2 border-l">
+      <div className="panel-rail activity-rail border-l">
         {modules.map((moduleId) => (
           <Button
             key={moduleId}
-            variant={activeModule === moduleId ? "secondary" : "ghost"}
+            variant="ghost"
             size="icon"
             className={cn(
-              "mb-2 transition-all relative", 
-              activeModule === moduleId && "bg-secondary/80",
-              activeModule === moduleId && collapsed && "after:absolute after:left-0 after:top-1/2 after:-translate-y-1/2 after:w-1 after:h-4 after:bg-primary after:rounded-r-full"
+              "activity-button w-full rounded-none! hover:bg-transparent! [&_svg]:size-6",
+              activeModule === moduleId && "activity-button-active",
+              activeModule === moduleId && collapsed && "activity-button-active-right"
             )}
             onClick={() => {
               if (collapsed) {

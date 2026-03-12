@@ -17,6 +17,7 @@ export function SlotManager() {
     backgroundImageEnabled,
     backgroundImage,
   } = useSettingsStore();
+  const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
 
   // 当有背景图片时，使面板半透明
   const panelOpacityStyle = backgroundImageEnabled && backgroundImage
@@ -28,7 +29,7 @@ export function SlotManager() {
       {/* 左侧插槽 - 宽度由 CSS Grid 列宽 (--lw) 控制 */}
       <aside
         id="slot-left"
-        className="border-r border-border transition-all duration-300 overflow-hidden"
+        className="panel-surface relative z-10 overflow-hidden border-r transition-all duration-300"
         style={{
           gridArea: "left",
           gridRow: "1 / 4",
@@ -45,7 +46,7 @@ export function SlotManager() {
       {/* 顶部插槽 */}
       <header
         id="slot-mid-top"
-        className="border-b border-border transition-all duration-300 overflow-hidden"
+        className="panel-surface-strong relative z-10 overflow-hidden border-b transition-all duration-300"
         style={{
           gridArea: "mid-top",
           height: topPanelCollapsed ? "0px" : `${topPanelHeight}px`,
@@ -58,10 +59,10 @@ export function SlotManager() {
       {/* 底部插槽 */}
       <footer
         id="slot-mid-bottom"
-        className="relative z-10 border-t border-border transition-all duration-300 overflow-hidden"
+        className="panel-surface-strong relative z-10 overflow-hidden border-t transition-all duration-300"
         style={{
           gridArea: "mid-bottom",
-          height: bottomPanelCollapsed ? "0px" : `${bottomPanelHeight}px`,
+          height: bottomPanelCollapsed ? "0px" : `${effectiveBottomPanelHeight}px`,
           ...panelOpacityStyle,
         }}
       >
@@ -71,7 +72,7 @@ export function SlotManager() {
       {/* 右侧插槽 - 宽度由 CSS Grid 列宽 (--rw) 控制 */}
       <aside
         id="slot-right"
-        className="border-l border-border transition-all duration-300 overflow-hidden"
+        className="panel-surface relative z-10 overflow-hidden border-l transition-all duration-300"
         style={{
           gridArea: "right",
           gridRow: "1 / 4",

@@ -4,122 +4,642 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* 1. 在这里定义 Tailwind v4 的主题映射 */
 @theme {
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
+  --font-sans: "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas", monospace;
 
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-
-  /* 这行定义了 border-border 里的第二个 border */
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 3px);
   --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-xl: calc(var(--radius) + 6px);
+  --radius-2xl: calc(var(--radius) + 12px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 }
 
-/* 2. 保持原有的变量定义 */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --radius: 0.95rem;
+    --background: oklch(0.982 0.006 95);
+    --foreground: oklch(0.236 0.02 245);
+    --card: oklch(0.995 0.003 95);
+    --card-foreground: oklch(0.236 0.02 245);
+    --popover: oklch(0.995 0.003 95 / 0.96);
+    --popover-foreground: oklch(0.236 0.02 245);
+    --primary: oklch(0.63 0.125 202);
+    --primary-foreground: oklch(0.992 0.004 95);
+    --secondary: oklch(0.958 0.01 95);
+    --secondary-foreground: oklch(0.276 0.016 242);
+    --muted: oklch(0.952 0.008 95);
+    --muted-foreground: oklch(0.53 0.018 250);
+    --accent: oklch(0.945 0.018 186);
+    --accent-foreground: oklch(0.3 0.025 220);
+    --destructive: oklch(0.62 0.225 25);
+    --destructive-foreground: oklch(0.985 0.004 95);
+    --border: oklch(0.885 0.012 240 / 0.7);
+    --input: oklch(0.94 0.01 240 / 0.72);
+    --ring: oklch(0.66 0.105 203 / 0.42);
+
+    --panel: color-mix(in srgb, white 84%, transparent);
+    --panel-strong: color-mix(in srgb, white 92%, transparent);
+    --panel-border: color-mix(in srgb, oklch(0.78 0.02 240) 28%, transparent);
+    --panel-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+    --panel-glow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    --app-gradient-a: rgba(35, 180, 156, 0.18);
+    --app-gradient-b: rgba(245, 158, 11, 0.14);
+    --app-gradient-c: rgba(59, 130, 246, 0.12);
+    --terminal-shell: color-mix(in srgb, white 72%, transparent);
+    --terminal-border: color-mix(in srgb, oklch(0.7 0.015 240) 22%, transparent);
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-  }
-}
+    --background: oklch(0.178 0.016 255);
+    --foreground: oklch(0.952 0.01 95);
+    --card: oklch(0.23 0.014 250 / 0.9);
+    --card-foreground: oklch(0.97 0.008 95);
+    --popover: oklch(0.235 0.014 250 / 0.95);
+    --popover-foreground: oklch(0.97 0.008 95);
+    --primary: oklch(0.74 0.112 198);
+    --primary-foreground: oklch(0.18 0.014 252);
+    --secondary: oklch(0.285 0.014 252 / 0.85);
+    --secondary-foreground: oklch(0.95 0.01 95);
+    --muted: oklch(0.29 0.012 252 / 0.82);
+    --muted-foreground: oklch(0.74 0.012 248);
+    --accent: oklch(0.315 0.024 200 / 0.95);
+    --accent-foreground: oklch(0.97 0.008 95);
+    --destructive: oklch(0.68 0.185 25);
+    --destructive-foreground: oklch(0.985 0.004 95);
+    --border: oklch(0.44 0.018 248 / 0.5);
+    --input: oklch(0.36 0.018 248 / 0.65);
+    --ring: oklch(0.74 0.11 198 / 0.35);
 
-/* 3. 现在使用 @apply 就不会报错了 */
-@layer base {
+    --panel: color-mix(in srgb, oklch(0.22 0.015 252) 88%, transparent);
+    --panel-strong: color-mix(in srgb, oklch(0.25 0.015 252) 94%, transparent);
+    --panel-border: color-mix(in srgb, oklch(0.7 0.03 200) 18%, transparent);
+    --panel-shadow: 0 24px 60px rgba(2, 6, 23, 0.34);
+    --panel-glow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --app-gradient-a: rgba(36, 178, 160, 0.16);
+    --app-gradient-b: rgba(251, 191, 36, 0.1);
+    --app-gradient-c: rgba(59, 130, 246, 0.14);
+    --terminal-shell: color-mix(in srgb, oklch(0.21 0.013 252) 88%, transparent);
+    --terminal-border: color-mix(in srgb, oklch(0.72 0.03 198) 16%, transparent);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+  }
+
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: var(--font-sans);
+    background-image:
+      radial-gradient(circle at top left, var(--app-gradient-a), transparent 34%),
+      radial-gradient(circle at 88% 16%, var(--app-gradient-b), transparent 24%),
+      radial-gradient(circle at 50% 100%, var(--app-gradient-c), transparent 28%),
+      linear-gradient(180deg, color-mix(in srgb, var(--background) 82%, white 18%) 0%, var(--background) 100%);
+    background-attachment: fixed;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 28%, transparent);
+    color: var(--foreground);
   }
 }
 
-/* 自定义滚动条样式 */
+@layer components {
+  .app-shell {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .app-shell::before {
+    content: "";
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    border-radius: 28px 28px 0 0;
+    border: 1px solid color-mix(in srgb, var(--panel-border) 72%, transparent);
+    border-bottom: 0;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 72%, transparent), transparent 22%);
+    pointer-events: none;
+    opacity: 0.75;
+    z-index: 0;
+  }
+
+  .app-backdrop-orb {
+    position: fixed;
+    border-radius: 9999px;
+    filter: blur(72px);
+    opacity: 0.9;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .panel-surface {
+    background: var(--panel);
+    border-color: var(--panel-border);
+    box-shadow: var(--panel-glow), var(--panel-shadow);
+    backdrop-filter: blur(20px) saturate(140%);
+  }
+
+  .panel-surface-strong {
+    background: var(--panel-strong);
+    border-color: var(--panel-border);
+    box-shadow: var(--panel-glow), var(--panel-shadow);
+    backdrop-filter: blur(24px) saturate(150%);
+  }
+
+  .panel-rail {
+    background: color-mix(in srgb, var(--panel) 68%, transparent);
+    border-color: color-mix(in srgb, var(--panel-border) 78%, transparent);
+    backdrop-filter: blur(18px) saturate(150%);
+  }
+
+  .activity-rail {
+    display: flex;
+    width: 56px;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 0;
+  }
+
+  .activity-button {
+    position: relative;
+    display: inline-flex;
+    height: 52px;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: color-mix(in srgb, var(--muted-foreground) 88%, transparent);
+    box-shadow: none;
+    transition: color 160ms ease, opacity 160ms ease;
+  }
+
+  .activity-button:hover {
+    background: transparent;
+    color: var(--foreground);
+  }
+
+  .activity-button-active {
+    color: var(--foreground);
+    background: transparent;
+  }
+
+  .module-shell {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .module-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 56px;
+    padding: 14px 16px;
+    border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 75%, transparent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 80%, transparent), color-mix(in srgb, var(--panel) 35%, transparent));
+  }
+
+  .module-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .module-title-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 78%, transparent);
+    color: var(--accent-foreground);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+
+  .module-title-text {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .module-kicker {
+    font-size: 0.67rem;
+    line-height: 1;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--muted-foreground) 88%, transparent);
+  }
+
+  .module-heading {
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--foreground);
+  }
+
+  .module-subtle {
+    font-size: 0.74rem;
+    color: var(--muted-foreground);
+  }
+
+  .module-empty {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 24px;
+    text-align: center;
+    color: var(--muted-foreground);
+  }
+
+  .module-empty-card {
+    display: flex;
+    width: min(320px, 100%);
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid color-mix(in srgb, var(--panel-border) 75%, transparent);
+    border-radius: 20px;
+    background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
+    padding: 20px;
+    box-shadow: var(--panel-glow);
+  }
+
+  .chip-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in srgb, var(--panel-border) 75%, transparent);
+    background: color-mix(in srgb, var(--panel) 80%, transparent);
+    padding: 4px 10px;
+  }
+
+  .toolbar-surface {
+    display: flex;
+    height: 100%;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+    border-radius: 22px;
+    border: 1px solid color-mix(in srgb, var(--panel-border) 78%, transparent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 82%, transparent), color-mix(in srgb, var(--panel) 60%, transparent));
+    padding: 0 10px;
+    box-shadow: var(--panel-glow), var(--panel-shadow);
+    backdrop-filter: blur(24px) saturate(150%);
+  }
+
+  .toolbar-meta {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding-right: 4px;
+  }
+
+  .toolbar-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--muted-foreground) 90%, transparent);
+  }
+
+  .toolbar-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in srgb, var(--panel-border) 76%, transparent);
+    background: color-mix(in srgb, var(--background) 72%, transparent);
+    font-size: 0.68rem;
+    color: var(--muted-foreground);
+  }
+
+  .toolbar-scroll {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 6px 2px;
+  }
+
+  .toolbar-action {
+    flex: 0 0 auto;
+  }
+
+  .toolbar-action-button {
+    height: 38px;
+    width: 38px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--background) 74%, transparent);
+  }
+
+  .tabbar-surface {
+    display: flex;
+    height: 100%;
+    min-width: 0;
+    align-items: flex-end;
+    gap: 0;
+    border-radius: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    overflow: hidden;
+  }
+
+  .tabbar-scroll {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: flex-end;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-left: 10px;
+    padding-top: 6px;
+  }
+
+  .tabbar-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    background: transparent;
+  }
+
+  .tabbar-add-button {
+    height: 36px;
+    width: 36px;
+    border-radius: 0;
+    color: color-mix(in srgb, var(--muted-foreground) 92%, transparent);
+  }
+
+  .tabbar-add-button:hover {
+    background: transparent;
+    color: var(--foreground);
+  }
+
+  .tab-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    min-width: 138px;
+    max-width: 224px;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    margin-right: -1px;
+    border-radius: 0;
+    padding: 0 14px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: color-mix(in srgb, var(--muted-foreground) 92%, transparent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 54%, transparent), color-mix(in srgb, var(--panel) 30%, transparent));
+    transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  }
+
+  .tab-item:hover {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--background) 48%, transparent), color-mix(in srgb, var(--panel) 36%, transparent));
+    color: var(--foreground);
+  }
+
+  .tab-item-active {
+    height: 38px;
+    border-color: color-mix(in srgb, var(--panel-border) 82%, transparent);
+    border-bottom-color: transparent;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--background) 94%, transparent), color-mix(in srgb, var(--background) 82%, transparent));
+    color: var(--foreground);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), inset 0 -2px 0 var(--primary), 0 -1px 0 color-mix(in srgb, var(--background) 80%, transparent);
+    z-index: 2;
+  }
+
+  .tab-close {
+    height: 22px;
+    width: 22px;
+    border-radius: 7px;
+  }
+
+  .quickcmd-surface {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    min-width: 0;
+    align-items: stretch;
+    gap: 4px;
+    border-radius: 0;
+    border: 0;
+    background: transparent;
+    padding: 0 4px;
+    backdrop-filter: none;
+  }
+
+  .quickcmd-leading-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-self: stretch;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 100%;
+    color: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
+    background: transparent;
+    cursor: default;
+  }
+
+  .command-scroll {
+    align-items: stretch;
+    gap: 0;
+    height: 100%;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .command-card {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0;
+    min-width: 80px;
+    max-width: 156px;
+    height: 100%;
+    min-height: 100%;
+    border: 1px solid transparent;
+    border-top: 2px solid transparent;
+    border-bottom: 0;
+    border-radius: 0;
+    margin-right: -1px;
+    background: color-mix(in srgb, var(--panel) 18%, transparent);
+    padding: 0 7px;
+    font-size: 0.7rem;
+    color: color-mix(in srgb, var(--foreground) 84%, transparent);
+    transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .command-card:hover {
+    border-color: color-mix(in srgb, var(--panel-border) 70%, transparent);
+    border-top-color: oklch(0.73 0.16 151);
+    background: color-mix(in srgb, var(--background) 24%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+
+  .command-card-main {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+  }
+
+  .command-card-label {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+
+  .quickcmd-add-button {
+    display: inline-flex;
+    align-self: stretch;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 22px;
+    border-radius: 0;
+    background: transparent;
+    color: color-mix(in srgb, var(--muted-foreground) 90%, transparent);
+  }
+
+  .quickcmd-add-button:hover {
+    background: color-mix(in srgb, var(--background) 28%, transparent);
+    color: var(--foreground);
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .terminal-empty-state {
+    position: relative;
+    display: flex;
+    height: 100%;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .terminal-empty-state::before {
+    content: "";
+    position: absolute;
+    inset: 20px;
+    border-radius: 28px;
+    background: linear-gradient(145deg, color-mix(in srgb, var(--terminal-shell) 92%, transparent), color-mix(in srgb, var(--panel) 45%, transparent));
+    border: 1px solid var(--terminal-border);
+    box-shadow: var(--panel-glow), var(--panel-shadow);
+    backdrop-filter: blur(20px);
+  }
+
+  .terminal-empty-card {
+    position: relative;
+    z-index: 1;
+    width: min(520px, calc(100% - 48px));
+    border-radius: 24px;
+    border: 1px solid color-mix(in srgb, var(--terminal-border) 80%, transparent);
+    background: color-mix(in srgb, var(--terminal-shell) 88%, transparent);
+    padding: 28px;
+    text-align: left;
+    box-shadow: var(--panel-glow), var(--panel-shadow);
+    backdrop-filter: blur(22px) saturate(140%);
+  }
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-muted;
+  background-color: color-mix(in srgb, var(--muted) 72%, transparent);
 }
 
 ::-webkit-scrollbar-thumb {
-  /* v4 支持 opacity 这种简写，但在自定义变量时要注意写法 */
-  background-color: color-mix(in srgb, var(--color-muted-foreground) 30%, transparent);
+  background-color: color-mix(in srgb, var(--muted-foreground) 34%, transparent);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--color-muted-foreground) 50%, transparent);
+  background-color: color-mix(in srgb, var(--muted-foreground) 52%, transparent);
 }
 
-/* 终端相关样式 */
 .terminal-container {
   @apply h-full min-h-0 w-full min-w-0 overflow-hidden;
 }
@@ -164,114 +684,4 @@
 .xterm .xterm-viewport,
 .xterm .xterm-screen {
   background-color: transparent !important;
-}
-
-@theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-}
-
-:root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
 }

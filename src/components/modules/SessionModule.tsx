@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck, PlusCircle } from "lucide-react";
+import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
@@ -100,15 +100,15 @@ function NodeRowContent({
       className={cn(
         "flex items-center gap-2 py-1.5 px-2 rounded-sm text-sm transition-all relative border-y border-transparent",
         !isOverlay && "group hover:bg-accent/40",
-        isOverlay && "bg-background border shadow-xl opacity-90 w-[240px] z-50 pointer-events-none",
+        isOverlay && "bg-background border shadow-xl opacity-90 w-60 z-50 pointer-events-none",
         isUploading && !isOverlay && "border-slate-300/80 bg-amber-100/80 text-amber-950 ring-1 ring-amber-300/80 dark:border-cyan-400/40 dark:bg-cyan-500/16 dark:text-cyan-50 dark:ring-cyan-400/45",
         
         // 放置指示器
         isOver && !isDragging && dropPos === 'before' && [
-          "before:content-[''] before:absolute before:top-[-1px] before:left-0 before:right-0 before:h-[2px] before:bg-sky-500 before:z-[100] bg-sky-500/8"
+          "before:content-[''] before:absolute before:-top-px before:left-0 before:right-0 before:h-0.5 before:bg-sky-500 before:z-100 bg-sky-500/8"
         ],
         isOver && !isDragging && dropPos === 'after' && [
-          "after:content-[''] after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-[2px] after:bg-amber-500 after:z-[100] bg-amber-500/8"
+          "after:content-[''] after:absolute after:-bottom-px after:left-0 after:right-0 after:h-0.5 after:bg-amber-500 after:z-100 bg-amber-500/8"
         ],
         isOver && !isDragging && dropPos === 'inside' && "bg-emerald-500/15 ring-1 ring-emerald-500/40 ring-inset"
       )}
@@ -511,21 +511,23 @@ export function SessionModule() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-background/50 border-r">
-      <div className="h-[var(--th)] px-3 border-b bg-muted/20 flex items-center justify-between group">
-        <h3 className="text-xs font-bold uppercase text-muted-foreground tracking-widest select-none">会话</h3>
+    <div className="module-shell">
+      <div className="module-header group shrink-0 border-b-0">
+        <div className="module-title min-w-0">
+          <span className="module-heading truncate text-[15px]">会话</span>
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button 
               variant="ghost" 
               size="icon" 
               className={cn(
-                "h-7 w-7 transition-all duration-200",
-                "bg-accent/50 hover:bg-accent text-accent-foreground shadow-sm",
+                "h-9 w-9 rounded-2xl border border-input bg-background/72 text-accent-foreground shadow-none transition-colors duration-200",
+                "hover:bg-background/88 hover:text-foreground",
                 "opacity-80 group-hover:opacity-100"
               )}
             >
-              <PlusCircle className="h-4.5 w-4.5" />
+              <Plus className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="start" sideOffset={4} alignOffset={30} className="w-44 overflow-hidden">
@@ -553,7 +555,7 @@ export function SessionModule() {
         </DropdownMenu>
       </div>
       
-      <div className="flex-1 overflow-y-auto py-2 px-1">
+      <div className="flex-1 overflow-y-auto px-2 pt-0 pb-3">
         <DndContext 
           sensors={sensors} 
           collisionDetection={closestCenter} 
@@ -587,7 +589,7 @@ export function SessionModule() {
           }}
           onDragCancel={() => updateDragState(null, null, null)}
         >
-          <div className="flex flex-col">
+          <div className="flex flex-col gap-1">
             {sortedNodes.map((fn) => (
               <DraggableDroppableRow
                 key={fn.id}

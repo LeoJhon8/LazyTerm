@@ -13,14 +13,16 @@ export function BottomSlot() {
 
   if (!Component) {
     return (
-      <div className="h-full flex items-center px-4 text-sm text-muted-foreground">
-        未配置模块
+      <div className="module-empty">
+        <div className="module-empty-card">
+          <p className="text-sm font-medium text-foreground">底部区域未配置模块</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="relative z-10 h-full p-2">
+    <div className="relative z-10 h-full px-0 py-0">
       <Component />
     </div>
   );

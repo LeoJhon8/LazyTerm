@@ -37,6 +37,7 @@ function App() {
   const { closeAllSessions, connectionError, clearConnectionError } = useTabsStore();
   const leftSlotCollapsed = slotConfig.left.collapsed;
   const rightSlotCollapsed = slotConfig.right.collapsed;
+  const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
 
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
 
@@ -74,20 +75,21 @@ function App() {
     const leftModulesCount = slotConfig.left.modules.filter(m => m !== 'SettingsModule').length;
     const rightModulesCount = slotConfig.right.modules.length;
 
-    // 左侧：全局隐藏=0, 无业务模块=48(仅图标栏), 模块收起=48, 正常=面板宽度
-    const lw = leftPanelCollapsed ? 0 : (leftModulesCount === 0 || leftSlotCollapsed ? 48 : leftPanelWidth);
-    // 右侧：全局隐藏=0, 无模块=0, 模块收起=48, 正常=面板宽度
-    const rw = rightPanelCollapsed || rightModulesCount === 0 ? 0 : (rightSlotCollapsed ? 48 : rightPanelWidth);
+    // 左侧：全局隐藏=0, 无业务模块=56(仅图标栏), 模块收起=56, 正常=面板宽度
+    const lw = leftPanelCollapsed ? 0 : (leftModulesCount === 0 || leftSlotCollapsed ? 56 : leftPanelWidth);
+    // 右侧：全局隐藏=0, 无模块=0, 模块收起=56, 正常=面板宽度
+    const rw = rightPanelCollapsed || rightModulesCount === 0 ? 0 : (rightSlotCollapsed ? 56 : rightPanelWidth);
     
     root.style.setProperty("--lw", `${lw}px`);
     root.style.setProperty("--rw", `${rw}px`);
     root.style.setProperty("--th", `${topPanelCollapsed ? 0 : topPanelHeight}px`);
-    root.style.setProperty("--bh", `${bottomPanelCollapsed ? 0 : bottomPanelHeight}px`);
+    root.style.setProperty("--bh", `${bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight}px`);
   }, [
     leftPanelWidth, rightPanelWidth, topPanelHeight, bottomPanelHeight,
     leftPanelCollapsed, rightPanelCollapsed, topPanelCollapsed, bottomPanelCollapsed,
     leftSlotCollapsed, rightSlotCollapsed,
-    slotConfig.left.modules, slotConfig.right.modules // 监听模块列表变化，触发宽度重算
+    slotConfig.left.modules, slotConfig.right.modules,
+    effectiveBottomPanelHeight // 监听模块列表变化，触发宽度重算
   ]);
 
   // 同步外观自定义到 CSS 变量
@@ -116,7 +118,7 @@ function App() {
   return (
     <div 
       id="lazy-terminal-root"
-      className="h-screen w-screen overflow-hidden bg-background text-foreground relative"
+      className="app-shell relative h-screen w-screen overflow-hidden bg-background text-foreground"
       style={{
         display: "grid",
         gridTemplateAreas: `
@@ -124,10 +126,37 @@ function App() {
           "left mid-main   right"
           "left mid-bottom right"
         `,
-        gridTemplateColumns: `var(--lw, ${leftPanelCollapsed ? 0 : (slotConfig.left.modules.filter(m => m !== 'SettingsModule').length === 0 || leftSlotCollapsed ? 48 : leftPanelWidth)}px) 1fr var(--rw, ${rightPanelCollapsed || slotConfig.right.modules.length === 0 ? 0 : (rightSlotCollapsed ? 48 : rightPanelWidth)}px)`,
-        gridTemplateRows: `var(--th, ${topPanelCollapsed ? 0 : topPanelHeight}px) 1fr var(--bh, ${bottomPanelCollapsed ? 0 : bottomPanelHeight}px)`,
+        gridTemplateColumns: `var(--lw, ${leftPanelCollapsed ? 0 : (slotConfig.left.modules.filter(m => m !== 'SettingsModule').length === 0 || leftSlotCollapsed ? 56 : leftPanelWidth)}px) 1fr var(--rw, ${rightPanelCollapsed || slotConfig.right.modules.length === 0 ? 0 : (rightSlotCollapsed ? 56 : rightPanelWidth)}px)`,
+        gridTemplateRows: `var(--th, ${topPanelCollapsed ? 0 : topPanelHeight}px) 1fr var(--bh, ${bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight}px)`,
       }}
     >
+      <div
+        aria-hidden="true"
+        className="app-backdrop-orb"
+        style={{
+          top: "-8%",
+          left: "-6%",
+          width: "32vw",
+          height: "32vw",
+          minWidth: "320px",
+          minHeight: "320px",
+          background: "var(--app-gradient-a)",
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="app-backdrop-orb"
+        style={{
+          right: "-10%",
+          bottom: "-12%",
+          width: "34vw",
+          height: "34vw",
+          minWidth: "340px",
+          minHeight: "340px",
+          background: "var(--app-gradient-b)",
+        }}
+      />
+
       {/* 背景图片层 */}
       {backgroundImageEnabled && backgroundImage && (
         <div

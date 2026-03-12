@@ -602,11 +602,27 @@ export function TerminalView() {
 
   if (sessions.length === 0 || !activeSession) {
     return (
-      <div className="h-full w-full flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="text-6xl mb-4">💻</div>
-          <h2 className="text-xl font-semibold mb-2">欢迎使用 LazyTerm</h2>
-          <p className="text-muted-foreground">从左侧会话管理创建您的第一个终端会话</p>
+      <div className="terminal-empty-state">
+        <div className="terminal-empty-card">
+          <div className="chip-row mb-4 text-[11px] text-muted-foreground">Lazy Terminal Workspace</div>
+          <h2 className="mb-2 text-2xl font-semibold tracking-tight">把终端、SSH 和常用命令收进一个工作台</h2>
+          <p className="mb-6 max-w-md text-sm leading-6 text-muted-foreground">
+            从左侧会话面板创建本地终端或 SSH 连接。顶部管理标签页，底部承载快捷命令，整个界面会跟随你的布局配置协同工作。
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
+              <div className="mb-2 text-sm font-medium">本地终端</div>
+              <div className="text-xs leading-5 text-muted-foreground">支持 PowerShell、CMD、Bash 等本地 Shell 快速启动。</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
+              <div className="mb-2 text-sm font-medium">SSH 会话</div>
+              <div className="text-xs leading-5 text-muted-foreground">保存远程主机配置，直接发起连接并复用历史资料。</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
+              <div className="mb-2 text-sm font-medium">快捷动作</div>
+              <div className="text-xs leading-5 text-muted-foreground">在底部编排批量命令，提高重复操作效率。</div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -614,7 +630,7 @@ export function TerminalView() {
 
   return (
     <main
-      className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden"
+      className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden border border-(--terminal-border) bg-(--terminal-shell) shadow-(--panel-shadow) backdrop-blur-xl"
       onClick={() => activateTerminal(activeSessionId)}
       onContextMenu={handleContextMenu}
       style={{

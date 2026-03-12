@@ -13,20 +13,24 @@ const MODULE_COMPONENTS: Record<string, React.ComponentType> = {
 };
 
 const MODULE_ICONS: Record<string, React.ReactNode> = {
-  SessionModule: <Folder className="h-4 w-4" />,
-  SettingsModule: <Settings className="h-4 w-4" />,
-  HistoryModule: <History className="h-4 w-4" />,
+  SessionModule: <Folder className="h-6 w-6" />,
+  SettingsModule: <Settings className="h-6 w-6" />,
+  HistoryModule: <History className="h-6 w-6" />,
 };
 
 export function LeftSlot() {
   const { currentConfig, setActiveModule, toggleSlotCollapse, setActiveAndExpand } = useSlotConfigStore();
   const { modules, activeModule, collapsed } = currentConfig.left;
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
-  console.log("Current Modules in Tauri:", modules); 
+
   if (modules.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center text-muted-foreground">
-        <p>未配置模块</p>
+      <div className="module-empty">
+        <div className="module-empty-card">
+          <Settings className="h-5 w-5" />
+          <p className="text-sm font-medium text-foreground">左侧面板为空</p>
+          <p className="text-xs">在设置中添加模块后，这里会显示工作区能力。</p>
+        </div>
       </div>
     );
   }
@@ -39,16 +43,16 @@ export function LeftSlot() {
   return (
     <div className="h-full flex">
       {/* 模块导航栏 */}
-      <div className="w-12 bg-muted flex flex-col items-center py-2 border-r">
+      <div className="panel-rail activity-rail border-r">
         {displayModules.map((moduleId) => (
           <Button
             key={moduleId}
-            variant={activeModule === moduleId ? "secondary" : "ghost"}
+            variant="ghost"
             size="icon"
             className={cn(
-              "mb-2 transition-all relative", 
-              activeModule === moduleId && "bg-secondary/80",
-              activeModule === moduleId && collapsed && "after:absolute after:right-0 after:top-1/2 after:-translate-y-1/2 after:w-1 after:h-4 after:bg-primary after:rounded-l-full"
+              "activity-button w-full rounded-none! hover:bg-transparent! [&_svg]:size-6",
+              activeModule === moduleId && "activity-button-active",
+              activeModule === moduleId && collapsed && "activity-button-active-left"
             )}
             onClick={() => {
               if (collapsed) {
@@ -71,10 +75,10 @@ export function LeftSlot() {
           <Button
             variant="ghost"
             size="icon"
-            className="mb-2 mt-auto"
+            className="activity-button mt-auto w-full rounded-none! hover:bg-transparent! [&_svg]:size-6"
             onClick={() => setShowSettingsDialog(true)}
           >
-            <Settings className="h-4 w-4" />
+            <Settings className="h-6 w-6" />
           </Button>
         }
       </div>
