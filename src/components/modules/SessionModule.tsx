@@ -104,12 +104,12 @@ function NodeRowContent({
         
         // 放置指示器
         isOver && !isDragging && dropPos === 'before' && [
-          "before:content-[''] before:absolute before:top-[-1px] before:left-0 before:right-0 before:h-[2px] before:bg-primary before:z-[100]"
+          "before:content-[''] before:absolute before:top-[-1px] before:left-0 before:right-0 before:h-[2px] before:bg-sky-500 before:z-[100] bg-sky-500/8"
         ],
         isOver && !isDragging && dropPos === 'after' && [
-          "after:content-[''] after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-[2px] after:bg-primary after:z-[100]"
+          "after:content-[''] after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-[2px] after:bg-amber-500 after:z-[100] bg-amber-500/8"
         ],
-        isOver && !isDragging && dropPos === 'inside' && "bg-primary/20 ring-1 ring-primary/30 ring-inset"
+        isOver && !isDragging && dropPos === 'inside' && "bg-emerald-500/15 ring-1 ring-emerald-500/40 ring-inset"
       )}
     >
       <div className="flex items-center gap-2 flex-1 min-w-0">
