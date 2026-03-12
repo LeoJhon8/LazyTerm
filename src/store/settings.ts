@@ -3,6 +3,8 @@ import { persist } from "zustand/middleware";
 import type { TerminalColorScheme } from "@/config/themes";
 import { TERMINAL_THEMES } from "@/config/themes";
 
+export type BackgroundImageUiMode = "frosted" | "clear";
+
 interface SettingsData {
   fontSize: number;
   fontFamily: string;
@@ -27,6 +29,7 @@ interface SettingsData {
   terminalOpacity: number;            // 终端背景透明度 0~100
   backgroundImageEnabled: boolean;    // 是否开启图片背景
   backgroundImage: string;            // 背景图片路径/URL
+  backgroundImageUiMode: BackgroundImageUiMode; // 图片背景下 UI 呈现方式
   backgroundBlur: number;             // 背景模糊度 0~20 (px)
   backgroundOpacity: number;          // 背景图片不透明度 0~100
   uiOpacity: number;                  // UI 面板不透明度 30~100
@@ -68,6 +71,7 @@ const defaultSettings: SettingsData = {
   terminalOpacity: 100,
   backgroundImageEnabled: false,
   backgroundImage: "",
+  backgroundImageUiMode: "frosted",
   backgroundBlur: 0,
   backgroundOpacity: 100,
   uiOpacity: 100,
@@ -85,7 +89,9 @@ export const useSettingsStore = create<SettingsState>()(
       name: "lazy-terminal-settings",
       // 只持久化数据，不持久化方法
       partialize: (state) => {
-        const { setSettings, resetSettings, ...data } = state;
+        const data = { ...state };
+        delete data.setSettings;
+        delete data.resetSettings;
         return data;
       },
     }

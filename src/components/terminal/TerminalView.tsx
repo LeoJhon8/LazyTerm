@@ -630,7 +630,7 @@ export function TerminalView() {
 
   return (
     <main
-      className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden border border-(--terminal-border) bg-(--terminal-shell) shadow-(--panel-shadow) backdrop-blur-xl"
+      className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden border border-(--terminal-border) bg-(--terminal-shell) shadow-(--panel-shadow)"
       onClick={() => activateTerminal(activeSessionId)}
       onContextMenu={handleContextMenu}
       style={{

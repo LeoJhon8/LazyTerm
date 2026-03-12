@@ -27,6 +27,7 @@ function App() {
     appBackgroundColor,
     backgroundImageEnabled,
     backgroundImage,
+    backgroundImageUiMode,
     backgroundBlur,
     backgroundOpacity,
     uiOpacity,
@@ -38,6 +39,8 @@ function App() {
   const leftSlotCollapsed = slotConfig.left.collapsed;
   const rightSlotCollapsed = slotConfig.right.collapsed;
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
+  const hasBackgroundImage = backgroundImageEnabled && !!backgroundImage;
+  const shouldDisableUiBlur = hasBackgroundImage && backgroundImageUiMode === "clear";
 
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
 
@@ -96,7 +99,23 @@ function App() {
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--ui-opacity", `${uiOpacity / 100}`);
-  }, [uiOpacity]);
+    root.style.setProperty(
+      "--panel-backdrop-filter",
+      shouldDisableUiBlur ? "none" : "blur(20px) saturate(140%)"
+    );
+    root.style.setProperty(
+      "--panel-strong-backdrop-filter",
+      shouldDisableUiBlur ? "none" : "blur(24px) saturate(150%)"
+    );
+    root.style.setProperty(
+      "--panel-rail-backdrop-filter",
+      shouldDisableUiBlur ? "none" : "blur(18px) saturate(150%)"
+    );
+    root.style.setProperty(
+      "--terminal-backdrop-filter",
+      shouldDisableUiBlur ? "none" : "blur(24px) saturate(150%)"
+    );
+  }, [uiOpacity, shouldDisableUiBlur]);
 
   // 动态注入自定义 CSS
   useEffect(() => {
@@ -158,7 +177,7 @@ function App() {
       />
 
       {/* 背景图片层 */}
-      {backgroundImageEnabled && backgroundImage && (
+      {hasBackgroundImage && (
         <div
           className="fixed inset-0 pointer-events-none"
           style={{

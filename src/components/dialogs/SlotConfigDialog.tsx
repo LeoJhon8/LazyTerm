@@ -21,11 +21,13 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { AVAILABLE_MODULES, LOCKED_MODULES } from "@/config/default-slot-config";
+import type { SlotConfig } from "@/config/default-slot-config";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useSettingsStore } from "@/store/settings";
 import { useSshProfilesStore } from "@/store/ssh-profiles";
 import { useQuickCommandsStore } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
+import type { TerminalColorScheme } from "@/config/themes";
 import { TERMINAL_THEMES, getTerminalTheme } from "@/config/themes";
 import { FileJson, Upload, Trash2, ImagePlus, X, Palette, LayoutPanelLeft, Database, Terminal, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -57,6 +59,58 @@ const FONT_OPTIONS = [
   { value: "monospace", label: "系统等宽字体" },
 ];
 
+const APP_BACKGROUND_OPTIONS: Array<{
+  value: "system" | "light" | "dark";
+  label: string;
+}> = [
+  { value: "system", label: "跟随系统" },
+  { value: "light", label: "浅色" },
+  { value: "dark", label: "深色" },
+];
+
+type EditableThemeColorKey = keyof Pick<
+  TerminalColorScheme,
+  | "background"
+  | "foreground"
+  | "cursor"
+  | "selectionBackground"
+  | "black"
+  | "red"
+  | "green"
+  | "yellow"
+  | "blue"
+  | "magenta"
+  | "cyan"
+  | "white"
+>;
+
+const EDITABLE_THEME_COLOR_ITEMS: Array<{ key: EditableThemeColorKey; label: string }> = [
+  { key: "background", label: "背景色" },
+  { key: "foreground", label: "前景色" },
+  { key: "cursor", label: "光标颜色" },
+  { key: "selectionBackground", label: "选区背景" },
+  { key: "black", label: "Black" },
+  { key: "red", label: "Red" },
+  { key: "green", label: "Green" },
+  { key: "yellow", label: "Yellow" },
+  { key: "blue", label: "Blue" },
+  { key: "magenta", label: "Magenta" },
+  { key: "cyan", label: "Cyan" },
+  { key: "white", label: "White" },
+];
+
+interface SlotSettingsProps {
+  currentConfig: SlotConfig;
+  onToggle: (side: "left" | "right", moduleId: string) => void;
+  onActiveChange: (side: "left" | "right", moduleId: string) => void;
+  resetToDefault: () => void;
+}
+
+interface ShellInfo {
+  name: string;
+  path: string;
+}
+
 // --- 子组件 1：主题与外观设置 ---
 function ThemeSettings() {
   const appBackgroundColor = useSettingsStore((state) => state.appBackgroundColor);
@@ -67,11 +121,16 @@ function ThemeSettings() {
   const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
   const backgroundImageEnabled = useSettingsStore((state) => state.backgroundImageEnabled);
   const backgroundImage = useSettingsStore((state) => state.backgroundImage);
+  const backgroundImageUiMode = useSettingsStore((state) => state.backgroundImageUiMode);
   const backgroundBlur = useSettingsStore((state) => state.backgroundBlur);
   const backgroundOpacity = useSettingsStore((state) => state.backgroundOpacity);
   const uiOpacity = useSettingsStore((state) => state.uiOpacity);
   const customCSS = useSettingsStore((state) => state.customCSS);
   const setSettings = useSettingsStore((state) => state.setSettings);
+  const hasBackgroundImage = backgroundImageEnabled && !!backgroundImage;
+  const previewPanelBackdrop = hasBackgroundImage && backgroundImageUiMode === "frosted"
+    ? "blur(20px) saturate(140%)"
+    : "none";
 
   const handlePickBackgroundImage = async () => {
     try {
@@ -133,7 +192,7 @@ function ThemeSettings() {
           }}
         >
           {/* 背景图层 */}
-          {backgroundImageEnabled && backgroundImage && (
+          {hasBackgroundImage && (
             <div className="absolute inset-0 pointer-events-none" style={{
               zIndex: 0,
               backgroundImage: `url(${backgroundImage})`,
@@ -146,7 +205,8 @@ function ThemeSettings() {
 
           {/* UI 侧栏占位 */}
           <div className="absolute inset-y-0 left-0 w-16 border-r flex flex-col items-center py-3 z-10" style={{
-            backgroundColor: (backgroundImageEnabled && backgroundImage) ? `color-mix(in srgb, var(--color-background) ${uiOpacity}%, transparent)` : undefined,
+            backgroundColor: hasBackgroundImage ? `color-mix(in srgb, var(--color-background) ${uiOpacity}%, transparent)` : undefined,
+            backdropFilter: previewPanelBackdrop,
           }}>
             <div className="w-10 h-10 rounded-lg mb-4 flex items-center justify-center text-white shadow-sm" style={{ backgroundColor: 'var(--color-primary)' }}>
               M
@@ -158,6 +218,7 @@ function ThemeSettings() {
           {/* 终端内容区 */}
           <div className="absolute inset-y-0 left-16 right-0 p-4 z-10 truncate" style={{
             backgroundColor: termBgRgba,
+            backdropFilter: previewPanelBackdrop,
             color: activeTheme.foreground === "auto" ? "var(--foreground)" : activeTheme.foreground,
             fontFamily,
             fontSize: `${fontSize}px`
@@ -183,17 +244,13 @@ function ThemeSettings() {
         <div className="space-y-3">
           <Label className="text-base font-semibold">配色方案</Label>
           <div className="flex flex-wrap gap-2 items-center">
-            {[
-              { value: "system", label: "跟随系统" },
-              { value: "light", label: "浅色" },
-              { value: "dark", label: "深色" },
-            ].map(opt => (
+            {APP_BACKGROUND_OPTIONS.map(opt => (
               <Button
                 key={opt.value}
                 variant={appBackgroundColor === opt.value ? "default" : "outline"}
                 size="sm"
                 className={appBackgroundColor === opt.value ? "ring-2 ring-primary ring-offset-1" : ""}
-                onClick={() => setSettings({ appBackgroundColor: opt.value as any })}
+                onClick={() => setSettings({ appBackgroundColor: opt.value })}
               >{opt.label}</Button>
             ))}
           </div>
@@ -261,33 +318,23 @@ function ThemeSettings() {
             <div className="p-4 bg-muted/20 border rounded-lg space-y-4">
               <Label className="text-sm font-semibold">自定义配色详情</Label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { key: "background", label: "背景色" },
-                  { key: "foreground", label: "前景色" },
-                  { key: "cursor", label: "光标颜色" },
-                  { key: "selectionBackground", label: "选区背景" },
-                  { key: "black", label: "Black" },
-                  { key: "red", label: "Red" },
-                  { key: "green", label: "Green" },
-                  { key: "yellow", label: "Yellow" },
-                  { key: "blue", label: "Blue" },
-                  { key: "magenta", label: "Magenta" },
-                  { key: "cyan", label: "Cyan" },
-                  { key: "white", label: "White" },
-                ].map((item) => (
+                {EDITABLE_THEME_COLOR_ITEMS.map((item) => (
                   <div key={item.key} className="flex flex-col gap-1.5">
                     <Label className="text-xs text-muted-foreground">{item.label}</Label>
                     <div className="flex items-center gap-2">
                       <input
                         type="color"
-                        value={(customThemeColors as any)[item.key] || "#000000"}
+                        value={customThemeColors[item.key] || "#000000"}
                         onChange={(e) => {
-                          const newColors = { ...customThemeColors, [item.key]: e.target.value };
-                          setSettings({ customThemeColors: newColors as any });
+                          const newColors: TerminalColorScheme = {
+                            ...customThemeColors,
+                            [item.key]: e.target.value,
+                          };
+                          setSettings({ customThemeColors: newColors });
                         }}
                         className="w-6 h-6 p-0 border-0 rounded cursor-pointer"
                       />
-                      <span className="text-xs font-mono">{(customThemeColors as any)[item.key]}</span>
+                      <span className="text-xs font-mono">{customThemeColors[item.key]}</span>
                     </div>
                   </div>
                 ))}
@@ -346,6 +393,25 @@ function ThemeSettings() {
           </div>
 
           <div className="grid grid-cols-2 gap-8 pt-2">
+            <div className="space-y-2 col-span-2">
+              <Label className="text-sm text-muted-foreground">界面呈现 / UI Mode</Label>
+              <Select
+                value={backgroundImageUiMode}
+                onValueChange={(value) => setSettings({ backgroundImageUiMode: value as "frosted" | "clear" })}
+                disabled={!backgroundImageEnabled}
+              >
+                <SelectTrigger className="h-9 bg-background" aria-label="选择图片背景模式">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="frosted">保留面板毛玻璃</SelectItem>
+                  <SelectItem value="clear">完全清晰</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                保留面板毛玻璃会继续使用侧栏和终端的毛玻璃层；完全清晰会关闭这些额外模糊。
+              </p>
+            </div>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <Label className="text-sm text-muted-foreground">模糊度 / Blur</Label>
@@ -378,7 +444,6 @@ function ThemeSettings() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* @ts-ignore */}
                   {FONT_OPTIONS.map((f) => (
                     <SelectItem key={f.value} value={f.value}>
                       <span style={{ fontFamily: f.value }}>{f.label}</span>
@@ -420,7 +485,7 @@ function ThemeSettings() {
 }
 
 // --- 子组件 2：布局设置 ---
-function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault }: any) {
+function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault }: SlotSettingsProps) {
   const displayModules = AVAILABLE_MODULES.filter(mod =>
     !LOCKED_MODULES.includes(mod.id) &&
     mod.id !== "SettingModule" &&
@@ -504,10 +569,10 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
 // --- 子组件 4：终端设置 ---
 function TerminalSettings() {
   const { defaultShell, setSettings } = useSettingsStore();
-  const [shells, setShells] = useState<any[]>([]);
+  const [shells, setShells] = useState<ShellInfo[]>([]);
 
   useMountedEffect(() => {
-    invoke<any[]>("get_available_shells")
+    invoke<ShellInfo[]>("get_available_shells")
       .then(setShells)
       .catch(console.error);
   }, []);

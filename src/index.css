@@ -174,20 +174,20 @@
     background: var(--panel);
     border-color: var(--panel-border);
     box-shadow: var(--panel-glow), var(--panel-shadow);
-    backdrop-filter: blur(20px) saturate(140%);
+    backdrop-filter: var(--panel-backdrop-filter, blur(20px) saturate(140%));
   }
 
   .panel-surface-strong {
     background: var(--panel-strong);
     border-color: var(--panel-border);
     box-shadow: var(--panel-glow), var(--panel-shadow);
-    backdrop-filter: blur(24px) saturate(150%);
+    backdrop-filter: var(--panel-strong-backdrop-filter, blur(24px) saturate(150%));
   }
 
   .panel-rail {
     background: color-mix(in srgb, var(--panel) 68%, transparent);
     border-color: color-mix(in srgb, var(--panel-border) 78%, transparent);
-    backdrop-filter: blur(18px) saturate(150%);
+    backdrop-filter: var(--panel-rail-backdrop-filter, blur(18px) saturate(150%));
   }
 
   .activity-rail {
@@ -642,6 +642,7 @@
 
 .terminal-container {
   @apply h-full min-h-0 w-full min-w-0 overflow-hidden;
+  backdrop-filter: var(--terminal-backdrop-filter, blur(24px) saturate(150%));
 }
 
 .terminal-host {
