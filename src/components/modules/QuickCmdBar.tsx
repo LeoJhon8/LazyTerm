@@ -82,16 +82,16 @@ function SortableQuickCommand({
             {cmd.label}
           </Button>
         </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuItem onClick={onEdit}>
+        <ContextMenuContent className="min-w-28 text-xs">
+          <ContextMenuItem className="py-1 text-xs" onClick={onEdit}>
             <Pencil className="mr-2 h-4 w-4" />
             编辑
           </ContextMenuItem>
-          <ContextMenuItem onClick={onDelete}>
+          <ContextMenuItem className="py-1 text-xs" onClick={onDelete}>
             <Trash2 className="mr-2 h-4 w-4" />
             删除
           </ContextMenuItem>
-          <ContextMenuItem onClick={onContextMenu}>
+          <ContextMenuItem className="py-1 text-xs" onClick={onContextMenu}>
             发送到所有标签页
           </ContextMenuItem>
         </ContextMenuContent>

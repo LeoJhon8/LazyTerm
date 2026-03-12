@@ -183,21 +183,21 @@ function DraggableDroppableRow({
           </div>
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-48">
+      <ContextMenuContent className="w-40 text-xs">
         {node.type === 'folder' ? (
           <>
-            <ContextMenuItem onClick={() => onAction('new-ssh', node)}><Plus className="mr-2 h-4 w-4" /> 新建连接</ContextMenuItem>
-            <ContextMenuItem onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> 新建子文件夹</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-ssh', node)}><Plus className="mr-2 h-4 w-4" /> 新建连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> 新建子文件夹</ContextMenuItem>
           </>
         ) : (
           <>
-            <ContextMenuItem onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> 连接会话</ContextMenuItem>
-            <ContextMenuItem onClick={() => onAction('sftp-upload', node)}><Upload className="mr-2 h-4 w-4" /> SFTP 上传文件</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> 连接会话</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('sftp-upload', node)}><Upload className="mr-2 h-4 w-4" /> SFTP 上传文件</ContextMenuItem>
           </>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" /> 编辑</ContextMenuItem>
-        {!node.isRoot && <ContextMenuItem onClick={() => onAction('delete', node)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> 删除</ContextMenuItem>}
+        <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" /> 编辑</ContextMenuItem>
+        {!node.isRoot && <ContextMenuItem onClick={() => onAction('delete', node)} className="py-1 text-xs text-destructive"><Trash2 className="mr-2 h-4 w-4" /> 删除</ContextMenuItem>}
       </ContextMenuContent>
     </ContextMenu>
   );

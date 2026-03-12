@@ -77,6 +77,38 @@ function getNextActiveSessionId(sessions: TerminalSession[], removedId: string):
   return remainingSessions.length > 0 ? remainingSessions[remainingSessions.length - 1].id : null;
 }
 
+function closeSessionsByIds(
+  sessions: TerminalSession[],
+  idsToClose: Set<string>,
+  activeSessionId: string | null,
+  fallbackActiveId: string | null
+) {
+  if (idsToClose.size === 0) {
+    return {
+      sessions,
+      activeSessionId,
+    };
+  }
+
+  sessions.forEach((session) => {
+    if (idsToClose.has(session.id)) {
+      session.connector?.close();
+    }
+  });
+
+  const remainingSessions = sessions.filter((session) => !idsToClose.has(session.id));
+  const nextActiveId = activeSessionId && !idsToClose.has(activeSessionId)
+    ? activeSessionId
+    : (fallbackActiveId && remainingSessions.some((session) => session.id === fallbackActiveId)
+        ? fallbackActiveId
+        : (remainingSessions.length > 0 ? remainingSessions[remainingSessions.length - 1].id : null));
+
+  return {
+    sessions: remainingSessions,
+    activeSessionId: nextActiveId,
+  };
+}
+
 /**
  * 状态机接口定义
  */
@@ -92,8 +124,14 @@ interface TabsState {
   setActiveSession: (id: string) => void;
   /** 更新会话基础信息（如标题） */
   updateSession: (id: string, updates: Partial<Omit<TerminalSession, "id" | "connector">>) => void;
+  /** 调整会话顺序 */
+  reorderSessions: (orderedIds: string[]) => void;
   /** 关闭除指定 ID 外的其他会话 */
   closeOtherSessions: (id: string) => void;
+  /** 关闭指定标签左侧的所有会话 */
+  closeLeftSessions: (id: string) => void;
+  /** 关闭指定标签右侧的所有会话 */
+  closeRightSessions: (id: string) => void;
   /** 关闭所有会话 */
   closeAllSessions: () => void;
   /** 获取所有会话的连接器 */
@@ -228,18 +266,67 @@ export const useTabsStore = create<TabsState>()(
         }));
       },
 
-      closeOtherSessions: (id) => {
-        // 关闭非当前 ID 的所有连接器
-        get().sessions.forEach(session => {
-          if (session.id !== id && session.connector) {
-            session.connector.close();
+      reorderSessions: (orderedIds) => {
+        set((state) => {
+          if (orderedIds.length !== state.sessions.length) {
+            return state;
           }
-        });
 
-        set((state) => ({
-          sessions: state.sessions.filter(session => session.id === id),
-          activeSessionId: id,
-        }));
+          const sessionMap = new Map(state.sessions.map((session) => [session.id, session]));
+          const reorderedSessions = orderedIds
+            .map((id) => sessionMap.get(id))
+            .filter((session): session is TerminalSession => session !== undefined);
+
+          if (reorderedSessions.length !== state.sessions.length) {
+            return state;
+          }
+
+          return {
+            sessions: reorderedSessions,
+          };
+        });
+      },
+
+      closeOtherSessions: (id) => {
+        set((state) => {
+          const idsToClose = new Set(
+            state.sessions
+              .filter((session) => session.id !== id)
+              .map((session) => session.id)
+          );
+
+          return closeSessionsByIds(state.sessions, idsToClose, state.activeSessionId, id);
+        });
+      },
+
+      closeLeftSessions: (id) => {
+        set((state) => {
+          const targetIndex = state.sessions.findIndex((session) => session.id === id);
+          if (targetIndex <= 0) {
+            return state;
+          }
+
+          const idsToClose = new Set(
+            state.sessions.slice(0, targetIndex).map((session) => session.id)
+          );
+
+          return closeSessionsByIds(state.sessions, idsToClose, state.activeSessionId, id);
+        });
+      },
+
+      closeRightSessions: (id) => {
+        set((state) => {
+          const targetIndex = state.sessions.findIndex((session) => session.id === id);
+          if (targetIndex === -1 || targetIndex >= state.sessions.length - 1) {
+            return state;
+          }
+
+          const idsToClose = new Set(
+            state.sessions.slice(targetIndex + 1).map((session) => session.id)
+          );
+
+          return closeSessionsByIds(state.sessions, idsToClose, state.activeSessionId, id);
+        });
       },
 
       closeAllSessions: () => {
