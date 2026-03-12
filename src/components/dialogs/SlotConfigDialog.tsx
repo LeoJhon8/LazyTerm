@@ -33,7 +33,7 @@ import { useEffect as useMountedEffect } from "react";
 
 // 引入 Tauri 原生 API
 import { save, open as openDialog } from '@tauri-apps/plugin-dialog';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 // --- 类型定义 ---
@@ -590,9 +590,17 @@ function DataImportExport() {
   const { commands } = useQuickCommandsStore();
   const { sessions } = useTabsStore();
 
-  const [importData, setImportData] = useState("");
+  const [selectedImportFile, setSelectedImportFile] = useState<string | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
+
+  const getErrorMessage = (error: unknown) => {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return String(error);
+  };
 
   // 统一的完整导出，使用 Tauri 原生弹窗
   const handleExportAll = async () => {
@@ -634,24 +642,22 @@ function DataImportExport() {
 
       setImportMessage(`备份成功！文件已保存至：${filePath}`);
       setMessageType('success');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("备份失败:", error);
-      setImportMessage(`备份失败：${error.message || String(error)}`);
+      setImportMessage(`备份失败：${getErrorMessage(error)}`);
       setMessageType('error');
     }
   };
 
-  // 导入数据
-  const handleImport = () => {
+  const restoreFromBackup = (rawJson: string) => {
     try {
-      if (!importData.trim()) throw new Error("请先粘贴导入数据");
-      const data = JSON.parse(importData);
+      const data = JSON.parse(rawJson);
 
       if (!data.version) {
         throw new Error("无效的导入文件格式");
       }
 
-      if (!confirm("导入将覆盖当前的 SSH配置与快捷命令，确定要继续吗？")) {
+      if (!confirm("恢复将覆盖当前的 SSH 配置与快捷命令，确定要继续吗？")) {
         return;
       }
 
@@ -671,9 +677,32 @@ function DataImportExport() {
 
       setImportMessage(`成功恢复 ${importedCount} 条配置数据！`);
       setMessageType('success');
-      setImportData("");
-    } catch (error: any) {
-      setImportMessage(`导入失败：${error.message}`);
+    } catch (error: unknown) {
+      setImportMessage(`恢复失败：${getErrorMessage(error)}`);
+      setMessageType('error');
+    }
+  };
+
+  const handleImportFromFile = async () => {
+    try {
+      const selected = await openDialog({
+        title: "选择备份文件",
+        multiple: false,
+        filters: [
+          { name: "JSON 配置文件", extensions: ["json"] },
+          { name: "所有文件", extensions: ["*"] },
+        ],
+      });
+
+      if (!selected || Array.isArray(selected)) {
+        return;
+      }
+
+      setSelectedImportFile(selected);
+      const rawJson = await readTextFile(selected);
+      restoreFromBackup(rawJson);
+    } catch (error: unknown) {
+      setImportMessage(`读取备份文件失败：${getErrorMessage(error)}`);
       setMessageType('error');
     }
   };
@@ -685,79 +714,99 @@ function DataImportExport() {
         nodes: [{ id: "root-folder", type: "folder", name: "我的会话", parentId: null, isExpanded: true, isRoot: true, order: 0 }]
       });
       useQuickCommandsStore.setState({ commands: [] });
+      setSelectedImportFile(null);
       setImportMessage("所有配置数据已清空！");
       setMessageType('success');
     }
   };
 
+  const selectedFileName = selectedImportFile?.split(/[\\/]/).pop() ?? null;
+
   return (
-    <div className="space-y-6 py-4">
-      {/* 导出区域 */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Database className="h-5 w-5 text-primary" />
-          <Label className="text-lg font-bold">备份数据</Label>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="space-y-3 py-3">
+      <div className="grid gap-3 xl:grid-cols-2">
+        <section className="rounded-xl border border-border bg-card p-4">
+          <div className="mb-3 flex items-center gap-2.5">
+            <div className="rounded-lg border border-border bg-muted/30 p-2 text-foreground/80">
+              <Database className="h-4.5 w-4.5" />
+            </div>
+            <Label className="text-sm font-semibold">备份数据</Label>
+          </div>
+
           <Button
             onClick={handleExportAll}
             variant="outline"
-            className="h-auto py-6 flex flex-col items-center gap-3 rounded-2xl border-dashed border-2 hover:border-primary/50 hover:bg-primary/5 transition-all group"
+            className="group h-auto w-full justify-start rounded-lg border border-border bg-background px-3 py-3 text-left shadow-none hover:bg-muted/40"
           >
-            <div className="p-3 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
-              <FileJson className="h-6 w-6 text-primary" />
-            </div>
-            <div className="text-center">
-              <div className="font-bold">完整备份配置</div>
-              <div className="text-xs text-muted-foreground mt-1">导出所有会话、快捷命令及设置</div>
+            <div className="flex w-full items-center gap-3 text-left">
+              <div className="rounded-md border border-border bg-muted/40 p-2 text-foreground/80">
+                <FileJson className="h-4.5 w-4.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-foreground">导出 JSON 备份</div>
+              </div>
             </div>
           </Button>
-        </div>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="rounded-lg border border-border bg-muted/30 p-2 text-foreground/80">
+                <Upload className="h-4.5 w-4.5" />
+              </div>
+              <Label className="text-sm font-semibold">恢复数据</Label>
+            </div>
+
+            <Button onClick={handleClearAll} variant="outline" size="sm" className="h-7 rounded-md border-border px-2.5 text-[11px] text-muted-foreground hover:text-destructive">
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              清空所有数据
+            </Button>
+          </div>
+
+          <Button
+            onClick={handleImportFromFile}
+            variant="outline"
+            className="group h-auto w-full justify-start rounded-lg border border-dashed border-border bg-background px-3 py-3 text-left shadow-none hover:bg-muted/40"
+          >
+            <div className="flex w-full items-center gap-3 text-left">
+              <div className="rounded-md border border-border bg-muted/40 p-2 text-foreground/80">
+                <Upload className="h-4.5 w-4.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-foreground">选择 JSON 文件恢复</div>
+              </div>
+            </div>
+          </Button>
+
+          <div className="mt-2 rounded-lg border border-border bg-muted/15 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium text-foreground">
+                  {selectedFileName ?? "尚未选择文件"}
+                </div>
+                {selectedImportFile && <div className="truncate text-[11px] text-muted-foreground">{selectedImportFile}</div>}
+              </div>
+              <div className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                JSON
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
-      <Separator className="my-8" />
+      <Separator className="bg-border/70" />
 
-      {/* 导入区域 */}
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Upload className="h-5 w-5 text-primary" />
-            <Label className="text-lg font-bold">导入恢复</Label>
-          </div>
-          <Button onClick={handleClearAll} variant="destructive" size="sm" className="rounded-full px-4 h-8 text-xs font-semibold">
-            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-            清空所有数据
-          </Button>
+      {importMessage && (
+        <div className={cn(
+          "rounded-xl border px-4 py-3 text-sm break-all",
+          messageType === 'success'
+            ? "border-border bg-muted/20 text-foreground"
+            : "border-red-500/20 bg-red-500/8 text-red-700 dark:text-red-300"
+        )}>
+          {importMessage}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="import-data" className="text-sm text-muted-foreground">
-            粘贴 JSON 格式的备份数据
-          </Label>
-          <Textarea
-            id="import-data"
-            value={importData}
-            onChange={(e) => setImportData(e.target.value)}
-            placeholder='{"version":"1.0","sshProfiles":[],"quickCommands":[]}'
-            rows={8}
-            className="font-mono text-sm"
-          />
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={handleImport} className="flex-1">
-            <Upload className="h-4 w-4 mr-2" />
-            立即导入并覆盖
-          </Button>
-        </div>
-
-        {importMessage && (
-          <div className={`p-3 rounded-md text-sm break-all ${messageType === 'success'
-            ? 'bg-green-100 text-green-800 border border-green-200'
-            : 'bg-red-100 text-red-800 border border-red-200'
-            }`}>
-            {importMessage}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
