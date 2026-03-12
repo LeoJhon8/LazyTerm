@@ -24,8 +24,8 @@ interface SSHProfilesState {
   removeNode: (id: string) => void;
   toggleFolder: (id: string) => void;
   moveNode: (activeId: string, overId: string, position: 'before' | 'after' | 'inside') => void;
-  importProfiles: (profiles: any[]) => void;
-  exportProfiles: () => any[];
+  importProfiles: (profiles: SessionNode[]) => void;
+  exportProfiles: () => SessionNode[];
 }
 
 const isDescendant = (nodes: SessionNode[], parentId: string, targetId: string): boolean => {

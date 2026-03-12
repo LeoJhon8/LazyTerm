@@ -50,6 +50,8 @@ interface SftpUploadProgressPayload {
   overall_sent: number;
 }
 
+type DropPosition = 'before' | 'after' | 'inside';
+
 function getSortedFlattenedNodes(nodes: SessionNode[], parentId: string | null = null, depth = 0): (SessionNode & { depth: number })[] {
   return nodes
     .filter(n => n.parentId === parentId)
@@ -60,13 +62,36 @@ function getSortedFlattenedNodes(nodes: SessionNode[], parentId: string | null =
         acc.push(...getSortedFlattenedNodes(nodes, node.id, depth + 1));
       }
       return acc;
-    }, [] as any[]);
+    }, [] as (SessionNode & { depth: number })[]);
+}
+
+function getDropPosition(
+  node: SessionNode,
+  activeRect: { top: number; height: number } | null | undefined,
+  overRect: { top: number; height: number } | null | undefined,
+): DropPosition | null {
+  if (!activeRect || !overRect) return null;
+
+  if (node.isRoot) {
+    return 'inside';
+  }
+
+  const activeCenterY = activeRect.top + activeRect.height / 2;
+  const relativeY = activeCenterY - overRect.top;
+
+  if (node.type === 'folder') {
+    if (relativeY < overRect.height * 0.25) return 'before';
+    if (relativeY > overRect.height * 0.75) return 'after';
+    return 'inside';
+  }
+
+  return relativeY < overRect.height * 0.5 ? 'before' : 'after';
 }
 
 function NodeRowContent({ 
   node, depth, isDragging, isOver, dropPos, isOverlay 
 }: { 
-  node: SessionNode, depth: number, isDragging?: boolean, isOver?: boolean, dropPos?: any, isOverlay?: boolean 
+  node: SessionNode, depth: number, isDragging?: boolean, isOver?: boolean, dropPos?: DropPosition | null, isOverlay?: boolean 
 }) {
   const isFolder = node.type === "folder";
   return (
@@ -107,9 +132,20 @@ function NodeRowContent({
   );
 }
 
-function DraggableDroppableRow({ node, depth, onAction, activeId }: { node: SessionNode, depth: number, onAction: any, activeId: string | null }) {
+function DraggableDroppableRow({
+  node,
+  depth,
+  onAction,
+  overId,
+  dropPos,
+}: {
+  node: SessionNode;
+  depth: number;
+  onAction: (type: string, node: SessionNode) => void;
+  overId: string | null;
+  dropPos: DropPosition | null;
+}) {
   const { toggleFolder } = useSshProfilesStore();
-  const [localDropPos, setLocalDropPos] = useState<'before' | 'after' | 'inside' | null>(null);
 
   const { attributes, listeners, setNodeRef: setDraggableRef, isDragging } = useDraggable({ 
     id: node.id, 
@@ -118,38 +154,13 @@ function DraggableDroppableRow({ node, depth, onAction, activeId }: { node: Sess
   
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({ 
     id: node.id,
-    data: { dropPos: localDropPos } 
   });
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!activeId || isDragging) return;
-    
-    // 如果是根节点，只允许 "inside"
-    if (node.isRoot) {
-      setLocalDropPos('inside');
-      return;
-    }
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const relativeY = e.clientY - rect.top;
-    
-    if (node.type === 'folder') {
-      if (relativeY < rect.height * 0.25) setLocalDropPos('before');
-      else if (relativeY > rect.height * 0.75) setLocalDropPos('after');
-      else setLocalDropPos('inside');
-    } else {
-      if (relativeY < rect.height * 0.5) setLocalDropPos('before');
-      else setLocalDropPos('after');
-    }
-  };
 
   return (
     <ContextMenu>
       <ContextMenuTrigger>
         <div 
           ref={setDroppableRef} 
-          onMouseMove={handleMouseMove}
-          onMouseLeave={() => setLocalDropPos(null)}
           onClick={() => node.type === 'folder' && toggleFolder(node.id)}
           onDoubleClick={() => node.type !== 'folder' && onAction('connect', node)}
         >
@@ -158,8 +169,8 @@ function DraggableDroppableRow({ node, depth, onAction, activeId }: { node: Sess
               node={node} 
               depth={depth} 
               isDragging={isDragging} 
-              isOver={isOver} 
-              dropPos={localDropPos} 
+              isOver={isOver && overId === node.id} 
+              dropPos={overId === node.id ? dropPos : null} 
             />
           </div>
         </div>
@@ -188,7 +199,11 @@ export function SessionModule() {
   const { nodes, addFolder, addProfile, removeNode, updateNode, moveNode, ensureRoot } = useSshProfilesStore();
   const { addSession } = useTabsStore();
 
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [dragState, setDragState] = useState<{
+    activeId: string | null;
+    overId: string | null;
+    dropPos: DropPosition | null;
+  }>({ activeId: null, overId: null, dropPos: null });
   const [sshOpen, setSshOpen] = useState(false);
   const [directSshOpen, setDirectSshOpen] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
@@ -215,7 +230,7 @@ export function SessionModule() {
     invoke<AvailableShell[]>("get_available_shells")
       .then(setAvailableShells)
       .catch(err => console.error("获取可用 Shell 失败:", err));
-  }, []);
+  }, [ensureRoot]);
 
   useEffect(() => {
     return () => {
@@ -229,6 +244,24 @@ export function SessionModule() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
   const sftpSelectedTotal = useMemo(() => sftpFiles.reduce((acc, item) => acc + (item.size || 0), 0), [sftpFiles]);
+
+  const activeDragNode = useMemo(
+    () => (dragState.activeId ? nodes.find((node) => node.id === dragState.activeId) ?? null : null),
+    [dragState.activeId, nodes]
+  );
+
+  const updateDragState = (
+    activeId: string | null,
+    overId: string | null,
+    dropPos: DropPosition | null,
+  ) => {
+    setDragState((prev) => {
+      if (prev.activeId === activeId && prev.overId === overId && prev.dropPos === dropPos) {
+        return prev;
+      }
+      return { activeId, overId, dropPos };
+    });
+  };
 
   const getFileName = (path: string) => {
     const parts = path.split(/[/\\]/);
@@ -357,10 +390,10 @@ export function SessionModule() {
 
       setSftpMessageType("success");
       setSftpMessage("上传成功");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("SFTP 上传失败:", err);
       setSftpMessageType("error");
-      setSftpMessage(err?.message || String(err));
+      setSftpMessage(err instanceof Error ? err.message : String(err));
     } finally {
       if (progressUnlistenRef.current) {
         progressUnlistenRef.current();
@@ -452,25 +485,52 @@ export function SessionModule() {
         <DndContext 
           sensors={sensors} 
           collisionDetection={closestCenter} 
-          onDragStart={(e) => setActiveId(e.active.id as string)}
+          onDragStart={(e) => updateDragState(e.active.id as string, null, null)}
+          onDragOver={(e) => {
+            const { active, over } = e;
+
+            if (!over || active.id === over.id) {
+              updateDragState(active.id as string, null, null);
+              return;
+            }
+
+            const overNode = nodes.find((node) => node.id === over.id);
+            const activeRect = active.rect.current.translated ?? active.rect.current.initial;
+            const nextDropPos = overNode ? getDropPosition(overNode, activeRect, over.rect) : null;
+
+            updateDragState(active.id as string, over.id as string, nextDropPos);
+          }}
           onDragEnd={(e) => {
             const { active, over } = e;
             if (over && active.id !== over.id) {
-              const dropPos = over.data.current?.dropPos;
-              if (dropPos) moveNode(active.id as string, over.id as string, dropPos);
+              const overNode = nodes.find((node) => node.id === over.id);
+              const activeRect = active.rect.current.translated ?? active.rect.current.initial;
+              const dropPos = overNode ? getDropPosition(overNode, activeRect, over.rect) : null;
+
+              if (dropPos) {
+                moveNode(active.id as string, over.id as string, dropPos);
+              }
             }
-            setActiveId(null);
+            updateDragState(null, null, null);
           }}
+          onDragCancel={() => updateDragState(null, null, null)}
         >
           <div className="flex flex-col">
             {sortedNodes.map((fn) => (
-              <DraggableDroppableRow key={fn.id} node={fn} depth={fn.depth} onAction={handleAction} activeId={activeId} />
+              <DraggableDroppableRow
+                key={fn.id}
+                node={fn}
+                depth={fn.depth}
+                onAction={handleAction}
+                overId={dragState.overId}
+                dropPos={dragState.dropPos}
+              />
             ))}
           </div>
 
           <DragOverlay dropAnimation={null} style={{ pointerEvents: 'none' }}>
-            {activeId ? (
-              <NodeRowContent isOverlay node={nodes.find(n => n.id === activeId)!} depth={0} />
+            {activeDragNode ? (
+              <NodeRowContent isOverlay node={activeDragNode} depth={0} />
             ) : null}
           </DragOverlay>
         </DndContext>
