@@ -96,7 +96,10 @@ function NodeRowContent({
         ) : (
           <Server className="h-4 w-4 text-emerald-600/80" />
         )}
-        <span className={cn("truncate flex-1 select-none", node.isRoot ? "font-bold text-foreground" : "font-medium text-muted-foreground group-hover:text-foreground")}>
+        <span
+          title={node.name}
+          className={cn("truncate flex-1 select-none", node.isRoot ? "font-bold text-foreground" : "font-medium text-muted-foreground group-hover:text-foreground")}
+        >
           {node.name}
         </span>
       </div>

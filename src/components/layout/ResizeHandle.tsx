@@ -20,11 +20,11 @@ export function ResizeHandle({ side }: ResizeHandleProps) {
     const onMouseMove = (e: MouseEvent) => {
       if (side === "left") {
         // 对于左侧，鼠标 X 坐标即为宽度
-        const newWidth = Math.min(200, Math.max(150, e.clientX));
+        const newWidth = Math.min(300, Math.max(150, e.clientX));
         setSettings({ leftPanelWidth: newWidth });
       } else {
         // 对于右侧，宽度为 窗口宽度 - 鼠标 X 坐标
-        const newWidth = Math.min(250, Math.max(150, window.innerWidth - e.clientX));
+        const newWidth = Math.min(300, Math.max(150, window.innerWidth - e.clientX));
         setSettings({ rightPanelWidth: newWidth });
       }
     };
