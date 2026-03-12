@@ -391,6 +391,9 @@ async fn create_ssh_session<R: Runtime>(
     // 3. 打开 Channel 并请求 PTY
     let mut channel = handle.channel_open_session().await.map_err(|e| e.to_string())?;
     channel.request_pty(true, "xterm-256color", 80, 24, 0, 0, &[]).await.map_err(|e| e.to_string())?;
+    let _ = channel.set_env(false, "TERM_PROGRAM", "LazyTerm").await;
+    let _ = channel.set_env(false, "TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION")).await;
+    let _ = channel.set_env(false, "COLORTERM", "truecolor").await;
     channel.request_shell(true).await.map_err(|e| e.to_string())?;
 
     let (control_tx, mut control_rx) = mpsc::unbounded_channel::<SshControlMsg>();

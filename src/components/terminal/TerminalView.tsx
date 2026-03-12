@@ -17,6 +17,7 @@ interface TerminalInstance {
   resizeObserver: ResizeObserver;
   connector?: ITerminalConnector;
   inputDisposable?: { dispose(): void };
+  parserDisposables?: Array<{ dispose(): void }>;
   dataUnsubscribe?: () => void;
   dispose: () => void;
   webglAddon?: WebglAddon | null;
@@ -27,6 +28,24 @@ interface TerminalInstance {
     timeoutId?: number;
     resizeTimeoutId?: number;
   };
+}
+
+function shouldBlockIndexedColorChange(data: string): boolean {
+  const normalized = data.trim();
+  if (!normalized) return false;
+
+  const parts = normalized.split(";");
+  for (let index = 1; index < parts.length; index += 2) {
+    if (parts[index]?.trim() === "?") {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function shouldBlockNamedColorChange(data: string): boolean {
+  return data.trim() !== "?";
 }
 
 export function TerminalView() {
@@ -236,6 +255,18 @@ export function TerminalView() {
         return false;
       });
 
+      const parserDisposables = [
+        // 保持本地主题为权威来源，避免嵌套 SSH 登录时被远端 shell/prompt 改写调色板。
+        term.parser.registerOscHandler(4, (data) => shouldBlockIndexedColorChange(data)),
+        term.parser.registerOscHandler(10, (data) => shouldBlockNamedColorChange(data)),
+        term.parser.registerOscHandler(11, (data) => shouldBlockNamedColorChange(data)),
+        term.parser.registerOscHandler(12, (data) => shouldBlockNamedColorChange(data)),
+        term.parser.registerOscHandler(104, () => true),
+        term.parser.registerOscHandler(110, () => true),
+        term.parser.registerOscHandler(111, () => true),
+        term.parser.registerOscHandler(112, () => true),
+      ];
+
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
 
@@ -376,6 +407,7 @@ export function TerminalView() {
         resizeObserver,
         connector,
         inputDisposable,
+        parserDisposables,
         dataUnsubscribe,
         termState,
         webglAddon,
@@ -385,6 +417,7 @@ export function TerminalView() {
           connector?.close();
           containerEl.removeEventListener("wheel", handleWheel, { capture: true });
           inputDisposable.dispose();
+          parserDisposables.forEach((disposable) => disposable.dispose());
           keyDisposable.dispose();
           selectionDisposable.dispose();
           resizeObserver.disconnect();
