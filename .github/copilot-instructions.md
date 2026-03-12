@@ -2,221 +2,220 @@
 
 ## Project Overview
 
-**Lazy Terminal** is a cross-platform desktop terminal emulator built with Tauri, React, TypeScript, and Rust. It supports both local and SSH connections with a configurable multi-panel layout system.
+Lazy Terminal is a Tauri 2 desktop terminal application built with React 19, TypeScript, Zustand, xterm.js, and Rust. It supports local terminals, SSH sessions, SSH profile trees, SFTP uploads, configurable slot-based layout, and persistent appearance settings.
 
-```
-Frontend Flow: React App → Zustand Stores → Tauri IPC → Rust Backend (PTY/SSH)
-```
-
-## Architecture & Data Flow
-
-### Core Layers
-
-1. **Frontend (React/TypeScript)**: UI components, state management, terminal rendering
-2. **IPC Bridge (Tauri)**: Asynchronous communication via `invoke()` and event listeners
-3. **Backend (Rust)**: PTY management, SSH connections, process spawning
-
-### Terminal Session Lifecycle
-
-```
-User creates session → TabsStore adds TerminalSession
-  → addSession() creates Connector (LocalConnector or SshConnector)
-  → TerminalView mounts → initializes xterm.js Terminal
-  → Connector.open() → Tauri invoke to Rust backend
-  → Rust spawns PTY/SSH → returns sessionId
-  → Connector listens to `terminal-data-{sessionId}` events
-  → xterm writes output, keyboard input flows: Terminal → Connector.write() → Rust
+```text
+Frontend UI -> Zustand stores -> Terminal connectors -> Tauri IPC -> Rust backend
 ```
 
-### Layout System
+## Current Architecture
 
-The app uses a **slot-based configurable layout** (5 main areas):
-- **Left/Right panels**: Can contain multiple modules (SessionModule, SettingsModule, HistoryModule, PluginsModule)
-- **Top panel**: Fixed module (TabBar)
-- **Bottom panel**: Fixed module (QuickCmdBar)
-- **Center**: Always contains main TerminalView
+### Core layers
 
-Configuration defined in `src/config/default-slot-config.ts` and persisted via `useSlotConfigStore`.
+1. Frontend React app renders layout, dialogs, session tree, tab bar, quick commands, and terminal UI.
+2. Zustand stores own persisted UI state and session metadata.
+3. Connector classes encapsulate local PTY and SSH transport behavior.
+4. Tauri commands/events bridge frontend actions to Rust.
+5. Rust manages portable-pty, russh, russh-sftp, and system shell discovery.
 
-## State Management Pattern
+### Session lifecycle
 
-All state uses **Zustand stores with persist middleware**:
-
-```typescript
-// Example pattern from settings.ts
-export const useSettingsStore = create<SettingsState>()(
-  persist(
-    (set) => ({
-      // Initial state
-      theme: "dark",
-      // Actions
-      setTheme: (theme) => set({ theme }),
-    }),
-    { name: "lazy-terminal-settings" }
-  )
-);
+```text
+User action in SessionModule
+  -> useTabsStore.addSession()
+  -> create LocalConnector or SshConnector
+  -> connector.open()
+  -> Tauri command creates backend session and returns sessionId
+  -> connector listens to terminal-data-{sessionId}
+  -> TerminalView writes output into xterm
+  -> keyboard input flows back through connector.write()
 ```
 
-**Stores location**: `src/store/`
-- `settings.ts` - Theme, layout dimensions, terminal preferences
-- `tabs.ts` - Active session, session list (connectors NOT persisted)
-- `slot-config.ts` - Panel module configuration
-- `history.ts` - Command history
-- `quick-commands.ts` - Quick command templates
+Important behavior in the current app:
 
-**Key principle**: Connector instances live only in memory; session metadata is persisted.
+- `tabs.ts` persists session metadata, but connector instances are memory-only.
+- Local session disconnects trigger connector recreation for the same tab.
+- SSH disconnects currently fall back to a local connector.
+- Connection failures remove the failed tab and surface a UI error dialog through `connectionError`.
 
-## Connector Pattern (Terminal Types)
+## Layout System
 
-All connectors implement `ITerminalConnector` interface (`src/types/terminal.ts`):
+The app uses a five-area slot layout:
 
-```typescript
-export interface ITerminalConnector {
-  readonly protocol: 'ssh' | 'local' | 'telnet';
-  readonly isConnected: boolean;
-  open(): Promise<void>;        // Establish connection
-  close(): void;                 // Clean up
-  onData(handler: (data: string) => void): Promise<void>;  // Listen to output
-  write(data: string | Uint8Array): void;  // Send input
-  resize(cols: number, rows: number): void;  // Terminal resize
-}
-```
+- Left slot: `SessionModule` plus the settings entry point.
+- Right slot: `HistoryModule`.
+- Top slot: tab bar.
+- Bottom slot: quick command bar.
+- Center: `TerminalView`.
 
-**Implementations** (in `src/connectors/`):
-- `LocalConnector`: Spawns local PTY via Tauri `invoke("create_terminal")`
-- `SshConnector`: Opens SSH session via Tauri `invoke("create_ssh_session")`
+Layout is defined in `src/config/default-slot-config.ts` and persisted in `src/store/slot-config.ts`.
 
-**Data flow for local terminal**:
-```
-TerminalView user input → Terminal.onData()
-  → Connector.write(data) 
-  → invoke("write_to_terminal", {sessionId, data})
-  → Rust writes to PTY
-  → Rust sends "terminal-data-{sessionId}" event
-  → Connector's event listener → Terminal.write(output)
-```
+Current constraints:
+
+- `SettingsModule` is a hidden placeholder; the actual settings UI is managed by layout components, not by the module body itself.
+- Top and bottom slots are single-module regions.
+- Left and right slots can collapse independently, and `App.tsx` translates store state into CSS variables like `--lw`, `--rw`, `--th`, and `--bh`.
+
+## State Management
+
+All app state uses Zustand. Main stores:
+
+- `src/store/settings.ts`: terminal font, shell, panel sizes, background image, opacity, custom CSS.
+- `src/store/tabs.ts`: session list, active tab, connection error, reorder/close operations.
+- `src/store/slot-config.ts`: slot composition and collapse state.
+- `src/store/history.ts`: command history.
+- `src/store/quick-commands.ts`: quick command templates.
+- `src/store/ssh-profiles.ts`: tree of folders and SSH profiles.
+
+Rules to keep:
+
+- Persist only serializable state.
+- Do not try to persist connector instances, event subscriptions, or live terminal objects.
+- When adding store methods, keep them small and side-effect boundaries explicit.
+
+## Connector Pattern
+
+Connectors implement `ITerminalConnector` from `src/types/terminal.ts`.
+
+Current protocols:
+
+- `local`: backed by `create_terminal` in Rust.
+- `ssh`: backed by `create_ssh_session` in Rust.
+- `telnet`: type exists, implementation does not.
+
+Frontend should interact with sessions through connectors, not direct ad hoc `invoke()` calls from UI components.
+
+## Session Tree And SSH Workflows
+
+`SessionModule.tsx` is more than a simple list. It currently owns:
+
+- SSH profile tree rendering.
+- Folder/profile CRUD.
+- Drag-and-drop reordering.
+- Direct SSH connection flow.
+- Local shell discovery for new local sessions.
+- SFTP upload dialog and progress tracking.
+- Context menus and destructive confirmation dialogs.
+
+When modifying tree DnD behavior:
+
+- Compute drop position in DnD context handlers, not row-level mouse events.
+- Support `before`, `after`, and `inside` semantics consistently.
+- Prevent moving a folder into its own descendant.
+
+## Terminal Rendering Notes
+
+Terminal rendering depends on layout timing and container sizing.
+
+- `TerminalView` and its host containers must keep stable `h-full` / `min-h-0` behavior.
+- The `.xterm` host should stretch to full height, otherwise font-size changes can leave visual gaps.
+- Focus restoration must not depend only on non-zero size checks because tab switches can momentarily measure as zero.
+- On Windows local PTY, xterm setup should remain aligned with modern ConPTY behavior instead of legacy windows mode assumptions.
+- SSH sessions should request PTY size close to the actual frontend terminal size, not a fixed `80x24`, to avoid remote prompt wrapping artifacts.
+
+## Appearance System
+
+Appearance is controlled primarily by `src/store/settings.ts` and applied in `src/App.tsx`.
+
+The current system supports:
+
+- terminal theme selection and custom theme colors
+- background image enable/disable
+- image blur and opacity
+- UI opacity and blur mode
+- injected custom CSS
+
+When working on appearance:
+
+- Keep the background image layer separate from content layers.
+- If image mode is `clear`, UI blur must be disabled through CSS variables.
+- Avoid introducing duplicate blur sources on sidebars, rails, or the terminal host.
+
+## Backend Integration
+
+Primary backend file: `src-tauri/src/lib.rs`.
+
+Key responsibilities already implemented there:
+
+- local PTY creation with `portable-pty`
+- shell discovery
+- SSH authentication using password or private key
+- SFTP upload with progress events and cancellation state
+- frontend event emission for terminal data and terminal close
+
+When adding a backend capability:
+
+1. Add the Rust command and wire it into the Tauri command list.
+2. Add or update the frontend connector/store/UI call site.
+3. Verify any capability or permission config if command access changes.
+4. Test in `npm run tauri:dev`, not only in the browser.
 
 ## File Organization Guide
 
-```
+```text
 src/
-├── components/
-│   ├── terminal/       TerminalView.tsx (xterm.js integration)
-│   ├── layout/         Slot rendering (Left/Right/Top/Bottom)
-│   ├── modules/        Session, History, Settings, Plugins, TabBar, QuickCmdBar
-│   ├── dialogs/        SshConnectDialog, SlotConfigDialog
-│   └── ui/             Radix UI + Tailwind wrappers
-├── store/              Zustand stores (persist middleware)
-├── connectors/         LocalConnector.ts, SshConnector.ts
-├── hooks/              useTerminal.ts (xterm.js setup helper)
-├── types/              terminal.ts (ITerminalConnector, SSHConfig, etc.)
-├── config/             default-slot-config.ts (module definitions)
-└── lib/                utils.ts (utility functions)
+  components/
+    dialogs/        SSH connect dialog, slot config dialog
+    layout/         left/right/top/bottom slot rendering and handles
+    modules/        session tree, history, quick commands, tab bar
+    terminal/       TerminalView and xterm integration
+    ui/             Radix-based primitives
+  config/           themes and default slot config
+  connectors/       LocalConnector, SshConnector
+  hooks/            terminal setup helpers
+  lib/              shared utilities
+  store/            Zustand stores
+  types/            connector and config types
+
+src-tauri/
+  src/lib.rs        local terminal, SSH, SFTP, shell lookup
 ```
 
-## Critical Developer Workflows
-
-### Development
+## Development Commands
 
 ```bash
-npm run dev          # Hot-reload React dev server (port 5173)
-npm run tauri:dev    # Launch Tauri desktop app with hot reload
-npm run lint         # ESLint check
-npm run build        # Build web version
-npm run tauri:build  # Package desktop app
+npm install
+npm run dev
+npm run tauri:dev
+npm run lint
+npm run build
+npm run tauri:build
 ```
 
-The Tauri dev server bridges frontend and Rust backend automatically.
+## Working Conventions
 
-### Building/Testing Checklist
+### Frontend
 
-1. **Frontend change**: Use `npm run tauri:dev` to test in desktop context (not just web)
-2. **Rust change** (`src-tauri/src/`): Changes auto-reload in Tauri dev mode
-3. **Command invocation issue**: Check Tauri capability in `src-tauri/capabilities/default.json`
-4. **State persistence issue**: Clear localStorage (settings persisted as `lazy-terminal-*`)
+- Use existing Tailwind and Radix patterns.
+- Read state from stores directly in modules unless a component is intentionally presentational.
+- Keep changes aligned with the current slot-based layout and CSS variable approach.
 
-## Key Conventions & Patterns
+### Stores
 
-### 1. Component Composition
-- Components don't manage their own styles; use Tailwind classes
-- Module components (SessionModule, HistoryModule) are dropbox-compatible via dnd-kit
-- Modules receive no props; they read state directly from stores
+- Keep store actions deterministic where possible.
+- For destructive tab actions, preserve connector cleanup.
+- Reordering logic should preserve existing session objects, not recreate them unnecessarily.
 
-### 2. Hook Usage
-The `useTerminal.ts` hook demonstrates proper xterm.js initialization:
-- Create Terminal in useEffect
-- Use state (`setTerminalInstance`) to track readiness (not just ref)
-- Cleanup on unmount (terminal.dispose(), unlisten events)
-- Use `requestAnimationFrame` when updating state after DOM operations
+### Rust/Tauri
 
-### 3. Tauri Integration
-- Use `invoke<T>("command", {params})` for async backend calls
-- Use `listen<T>("event-name")` to subscribe to backend events
-- Always provide TypeScript types: `invoke<string>("cmd")`
-- SSH and local terminal use identical event-driven patterns
+- Prefer clear error messages because frontend surfaces them directly.
+- Preserve event naming conventions like `terminal-data-{sessionId}` and `terminal-close-{sessionId}`.
+- Be careful with Windows-specific shell behavior and admin launch paths.
 
-### 4. Settings & Config
-- Settings (theme, layout, font) are globally persisted
-- Slot configuration is UI state (which modules in which panels)
-- Both use Zustand persist → localStorage
+## Testing Checklist
 
-### 5. Styling
-- Radix UI primitive components wrapped in `src/components/ui/`
-- Tailwind CSS with custom CSS variables in `App.tsx` for layout (--lw, --rw, etc.)
-- Dark mode via `dark` class on document element
+1. Frontend-only change: run `npm run lint` and manually test via `npm run tauri:dev`.
+2. Terminal rendering change: test tab switching, resize, font-size changes, and reconnect flow.
+3. SSH change: test password and private-key login, disconnect handling, and remote resize.
+4. Session tree change: test drag/drop before/after/inside and import/export preservation.
+5. Appearance change: test with and without background image, and with `frosted` versus `clear` UI mode.
 
-## Common Implementation Tasks
+## High-Value Files
 
-### Adding a New Terminal Type
-1. Create `NewTypeConnector.ts` implementing `ITerminalConnector`
-2. Add type to `ITerminalConnector.protocol` union type
-3. Update `SessionModule.tsx` to offer UI for new type
-4. Add Tauri backend command (Rust side)
-
-### Adding a New Module
-1. Create `src/components/modules/NewModule.tsx` (read from stores, no props)
-2. Add module ID to `AVAILABLE_MODULES` in `default-slot-config.ts`
-3. Render dynamically in `LeftSlot.tsx` or `RightSlot.tsx` based on slot config
-4. Ensure it's compatible with dnd-kit sorting
-
-### Modifying Terminal Rendering
-- Edit `TerminalView.tsx` (xterm.js setup)
-- Most settings (fontSize, fontFamily, theme) come from `useSettingsStore()`
-- WebGL addon loaded conditionally for performance
-- Connector already passes data; focus on UI rendering logic
-
-## Testing Connectors
-
-**Local connector** (testing without Rust):
-- Verify `Connector.write()` calls `invoke("write_to_terminal")`
-- Mock Tauri events: manually dispatch `terminal-data-{sessionId}` events
-
-**SSH connector**:
-- Similar pattern; `invoke("create_ssh_session")` returns sessionId
-- Same event listening mechanism
-
-## Debugging Tips
-
-1. **Session not connecting**: Check `sessionId` in Connector; verify Tauri event name matches pattern
-2. **Terminal not rendering**: Verify xterm.js loaded, check `TerminalView` useEffect dependencies
-3. **Layout broken**: CSS variables (`--lw`, `--rw`, etc.) not set? Check `App.tsx` useEffect
-4. **Module not appearing**: Verify module ID in slot config and layout slot component
-
-## External Dependencies
-
-- **@xterm/xterm**: Terminal emulation
-- **zustand**: State management
-- **tauri**: Desktop framework & IPC
-- **radix-ui**: Accessible UI components
-- **tailwindcss**: Utility CSS
-- **dnd-kit**: Drag-and-drop module reordering
-- **framer-motion**: Animations
-
-## Key Files to Reference
-
-- `src/App.tsx` - Layout grid, theme setup, CSS variables
-- `src/components/layout/SlotManager.tsx` - Slot rendering
-- `src/components/terminal/TerminalView.tsx` - xterm integration
-- `src/store/tabs.ts` - Session lifecycle management
-- `src/types/terminal.ts` - Connector interface contract
-- `src-tauri/src/lib.rs` - Rust command definitions
+- `src/App.tsx`: layout CSS variables, theme sync, background image layer, custom CSS injection.
+- `src/components/modules/SessionModule.tsx`: SSH tree, DnD, SFTP upload, local shell discovery.
+- `src/components/terminal/TerminalView.tsx`: xterm lifecycle and connector binding.
+- `src/store/settings.ts`: persisted appearance and terminal preferences.
+- `src/store/tabs.ts`: session lifecycle and failure recovery.
+- `src/store/ssh-profiles.ts`: folder/profile tree state and move logic.
+- `src-tauri/src/lib.rs`: local PTY, SSH, SFTP, and shell commands.

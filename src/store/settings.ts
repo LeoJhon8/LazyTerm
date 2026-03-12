@@ -89,7 +89,7 @@ export const useSettingsStore = create<SettingsState>()(
       name: "lazy-terminal-settings",
       // 只持久化数据，不持久化方法
       partialize: (state) => {
-        const data = { ...state };
+        const data: Partial<SettingsState> = { ...state };
         delete data.setSettings;
         delete data.resetSettings;
         return data;
