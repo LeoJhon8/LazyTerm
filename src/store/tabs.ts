@@ -30,12 +30,60 @@ export interface TerminalSession {
   config?: SessionConfig;
 }
 
+export interface SessionConnectionError {
+  sessionId: string;
+  sessionTitle: string;
+  sessionType: TerminalSession["type"];
+  sessionTarget?: string;
+  message: string;
+}
+
+function getSessionTargetLabel(sessionData: Omit<TerminalSession, "id" | "connector">): string | undefined {
+  if (sessionData.type === "ssh") {
+    const sshConfig = sessionData.config?.sshConfig;
+    if (sshConfig?.username && sshConfig.host && sshConfig.port) {
+      return `${sshConfig.username}@${sshConfig.host}:${sshConfig.port}`;
+    }
+
+    if (sessionData.host && sessionData.config?.port) {
+      return `${sessionData.host}:${sessionData.config.port}`;
+    }
+  }
+
+  return undefined;
+}
+
+function getConnectionErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error.trim();
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const candidate = (error as { message?: unknown }).message;
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return "未获取到后端返回的详细错误信息。";
+}
+
+function getNextActiveSessionId(sessions: TerminalSession[], removedId: string): string | null {
+  const remainingSessions = sessions.filter((session) => session.id !== removedId);
+  return remainingSessions.length > 0 ? remainingSessions[remainingSessions.length - 1].id : null;
+}
+
 /**
  * 状态机接口定义
  */
 interface TabsState {
   sessions: TerminalSession[];
   activeSessionId: string | null;
+  connectionError: SessionConnectionError | null;
   /** 添加新会话 */
   addSession: (sessionData: Omit<TerminalSession, "id" | "connector">) => void;
   /** 移除会话 */
@@ -52,6 +100,8 @@ interface TabsState {
   getAllConnectors: () => ITerminalConnector[];
   /** 切换会话的连接器（用于 SSH 超时后切换到本地） */
   switchConnector: (sessionId: string, newType: "local" | "ssh") => void;
+  /** 清除最近一次连接失败提示 */
+  clearConnectionError: () => void;
 }
 
 export const useTabsStore = create<TabsState>()(
@@ -59,6 +109,7 @@ export const useTabsStore = create<TabsState>()(
     (set, get) => ({
       sessions: [],
       activeSessionId: null,
+      connectionError: null,
 
       addSession: (sessionData) => {
         // 生成随机 ID
@@ -106,11 +157,35 @@ export const useTabsStore = create<TabsState>()(
         set((state) => ({
           sessions: [...state.sessions, newSession],
           activeSessionId: id,
+          connectionError: null,
         }));
 
         // 异步打开 Tauri 侧的 PTY 进程
         connector.open().catch((error: unknown) => {
           console.error("[Tauri] 终端进程创建失败:", error);
+
+          const errorMessage = getConnectionErrorMessage(error);
+
+          set((state) => {
+            const sessionExists = state.sessions.some((session) => session.id === id);
+            if (!sessionExists) {
+              return state;
+            }
+
+            return {
+              sessions: state.sessions.filter((session) => session.id !== id),
+              activeSessionId: state.activeSessionId === id
+                ? getNextActiveSessionId(state.sessions, id)
+                : state.activeSessionId,
+              connectionError: {
+                sessionId: id,
+                sessionTitle: sessionData.title,
+                sessionType: sessionData.type,
+                sessionTarget: getSessionTargetLabel(sessionData),
+                message: errorMessage,
+              },
+            };
+          });
         });
       },
 
@@ -241,6 +316,10 @@ export const useTabsStore = create<TabsState>()(
             sessions: newSessions,
           };
         });
+      },
+
+      clearConnectionError: () => {
+        set({ connectionError: null });
       },
     }),
     {

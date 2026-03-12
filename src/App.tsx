@@ -4,6 +4,15 @@ import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
 import { TerminalView } from "@/components/terminal/TerminalView";
 import { SlotManager } from "@/components/layout/SlotManager";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function App() {
   const { 
@@ -25,7 +34,7 @@ function App() {
   } = useSettingsStore();
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
-  const { closeAllSessions } = useTabsStore();
+  const { closeAllSessions, connectionError, clearConnectionError } = useTabsStore();
   const leftSlotCollapsed = slotConfig.left.collapsed;
   const rightSlotCollapsed = slotConfig.right.collapsed;
 
@@ -138,6 +147,24 @@ function App() {
       {/* 内容层 — 确保在背景之上 */}
       <SlotManager />
       <TerminalView />
+
+      <AlertDialog open={!!connectionError} onOpenChange={(open) => !open && clearConnectionError()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {connectionError?.sessionType === "ssh" ? "SSH 连接失败" : "终端连接失败"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {connectionError
+                ? `${connectionError.sessionTarget || `会话“${connectionError.sessionTitle}”`} 未能建立连接。${connectionError.message}`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={clearConnectionError}>知道了</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
