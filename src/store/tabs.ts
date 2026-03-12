@@ -109,6 +109,10 @@ function closeSessionsByIds(
   };
 }
 
+function shouldReconnectLocalSession(session: TerminalSession | undefined): boolean {
+  return !!session && session.type === "local";
+}
+
 /**
  * 状态机接口定义
  */
@@ -163,6 +167,14 @@ export const useTabsStore = create<TabsState>()(
               cwd: sessionData.cwd,
               shell: sessionData.config?.shell,
               admin: sessionData.config?.admin
+            }, () => {
+              const targetSession = get().sessions.find((session) => session.id === id);
+              if (!shouldReconnectLocalSession(targetSession)) {
+                return;
+              }
+
+              console.log(`[Store] Local session ${id} disconnected, recreating connector...`);
+              get().switchConnector(id, "local");
             });
             break;
           case "ssh":
@@ -370,6 +382,14 @@ export const useTabsStore = create<TabsState>()(
             newConnector = new LocalConnector({ 
               cwd: oldSession.config?.cwd,
               shell: oldSession.config?.shell
+            }, () => {
+              const targetSession = get().sessions.find((session) => session.id === sessionId);
+              if (!shouldReconnectLocalSession(targetSession)) {
+                return;
+              }
+
+              console.log(`[Store] Local session ${sessionId} disconnected, recreating connector...`);
+              get().switchConnector(sessionId, "local");
             });
           } else if (newType === "ssh") {
             if (!oldSession.config?.sshConfig) {

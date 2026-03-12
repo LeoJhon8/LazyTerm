@@ -7,9 +7,11 @@ export class LocalConnector implements ITerminalConnector {
   private config: { cwd?: string; shell?: string; admin?: boolean };
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
+  private onDisconnectCallback?: () => void;
 
-  constructor(config: { cwd?: string; shell?: string; admin?: boolean }) {
+  constructor(config: { cwd?: string; shell?: string; admin?: boolean }, onDisconnect?: () => void) {
     this.config = config;
+    this.onDisconnectCallback = onDisconnect;
   }
 
   get isConnected(): boolean {
@@ -55,10 +57,22 @@ export class LocalConnector implements ITerminalConnector {
       }
     }
 
-    // 监听属于这个 sessionId 的数据事件
-    this.unlistenFn = await listen<string>(`terminal-data-${this.sessionId}`, (event) => {
+    const sessionId = this.sessionId;
+    const dataEventName = `terminal-data-${sessionId}`;
+    const closeEventName = `terminal-close-${sessionId}`;
+
+    const dataUnlisten = await listen<string>(dataEventName, (event) => {
       handler(event.payload);
     });
+
+    const closeUnlisten = await listen(closeEventName, () => {
+      this.handleDisconnect();
+    });
+
+    this.unlistenFn = () => {
+      dataUnlisten();
+      closeUnlisten();
+    };
   }
 
   write(data: string | Uint8Array): void {
@@ -70,7 +84,10 @@ export class LocalConnector implements ITerminalConnector {
     invoke("write_to_terminal", { 
       sessionId: this.sessionId, 
       data: dataStr 
-    }).catch(console.error);
+    }).catch((error) => {
+      console.error(error);
+      this.handleDisconnect();
+    });
   }
 
   resize(cols: number, rows: number): void {
@@ -81,7 +98,10 @@ export class LocalConnector implements ITerminalConnector {
       sessionId: this.sessionId, 
       cols, 
       rows 
-    }).catch(console.error);
+    }).catch((error) => {
+      console.error(error);
+      this.handleDisconnect();
+    });
   }
 
   close(): void {
@@ -91,6 +111,22 @@ export class LocalConnector implements ITerminalConnector {
     }
     if (this.unlistenFn) {
       this.unlistenFn();
+      this.unlistenFn = null;
     }
+  }
+
+  private handleDisconnect(): void {
+    if (!this.sessionId) {
+      return;
+    }
+
+    this.sessionId = null;
+
+    if (this.unlistenFn) {
+      this.unlistenFn();
+      this.unlistenFn = null;
+    }
+
+    this.onDisconnectCallback?.();
   }
 }

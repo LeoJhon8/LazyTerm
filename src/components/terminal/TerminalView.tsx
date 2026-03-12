@@ -68,6 +68,42 @@ function shouldBlockNamedColorChange(data: string): boolean {
   return data.trim() !== "?";
 }
 
+function extractCommand(lineText: string) {
+  const text = lineText.trim();
+  if (!text) return "";
+
+  if (text.startsWith("PS ")) {
+    const idx = text.indexOf("> ");
+    if (idx !== -1) return text.substring(idx + 2).trim();
+  }
+
+  if (/^[A-Za-z]:[\\/]/.test(text)) {
+    const idx = text.indexOf("> ");
+    if (idx !== -1) return text.substring(idx + 2).trim();
+  }
+
+  const unixMatch = text.match(/^[^@\s]+@[^:\s\\]+[:\s][^#$%]*?[#$%]\s+/);
+  if (unixMatch) {
+    return text.substring(unixMatch[0].length).trim();
+  }
+
+  const minimalMatch = text.match(/^([a-zA-Z0-9_\-/.~]+\s?)?[#$%❯➜]\s+/);
+  if (minimalMatch) {
+    return text.substring(minimalMatch[0].length).trim();
+  }
+
+  const arrowMatch = text.match(/^[>]{1,3}\s+/);
+  if (arrowMatch) {
+    return text.substring(arrowMatch[0].length).trim();
+  }
+
+  if (text && (text.endsWith(">") || text.endsWith("$") || text.endsWith("%") || text.endsWith("#"))) {
+    return "";
+  }
+
+  return text;
+}
+
 export function TerminalView() {
   const { activeSessionId, sessions } = useTabsStore();
   const { addCommand: addHistoryCommand } = useHistoryStore();
@@ -83,9 +119,31 @@ export function TerminalView() {
   const containerMap = useRef(new Map<string, HTMLDivElement>());
   const terminalMap = useRef(new Map<string, TerminalInstance>());
   const lastCommandRef = useRef<string>("");
+  const addHistoryCommandRef = useRef(addHistoryCommand);
+  const setSettingsRef = useRef(setSettings);
+  const appearanceRef = useRef({
+    fontSize,
+    fontFamily,
+    terminalColorScheme,
+    customThemeColors,
+    terminalOpacity,
+    hasBackgroundImage: !!(backgroundImageEnabled && backgroundImage),
+  });
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const activeConnector = activeSession?.connector;
   const hasBackgroundImage = backgroundImageEnabled && backgroundImage;
+
+  addHistoryCommandRef.current = addHistoryCommand;
+  setSettingsRef.current = setSettings;
+  appearanceRef.current = {
+    fontSize,
+    fontFamily,
+    terminalColorScheme,
+    customThemeColors,
+    terminalOpacity,
+    hasBackgroundImage: !!hasBackgroundImage,
+  };
 
   // =============================
   // 激活终端 & 调整自适应大小
@@ -135,9 +193,9 @@ export function TerminalView() {
   // 初始化终端核心 logic
   // =============================
   useEffect(() => {
-    if (!activeSessionId || !activeSession?.connector) return;
+    if (!activeSessionId || !activeConnector) return;
 
-    const { connector } = activeSession;
+    const connector = activeConnector;
     const containerEl = containerMap.current.get(activeSessionId);
     if (!containerEl) return;
 
@@ -243,16 +301,24 @@ export function TerminalView() {
       // =============================
       const termState = { isTransitioning: false, timeoutId: undefined, resizeTimeoutId: undefined };
 
-      const colorScheme = getTerminalTheme(terminalColorScheme, customThemeColors);
+      const {
+        fontSize: nextFontSize,
+        fontFamily: nextFontFamily,
+        terminalColorScheme: nextTerminalColorScheme,
+        customThemeColors: nextCustomThemeColors,
+        terminalOpacity: nextTerminalOpacity,
+        hasBackgroundImage: nextHasBackgroundImage,
+      } = appearanceRef.current;
+      const colorScheme = getTerminalTheme(nextTerminalColorScheme, nextCustomThemeColors);
       const term = new Terminal({
-        fontFamily,
-        fontSize,
+        fontFamily: nextFontFamily,
+        fontSize: nextFontSize,
         cursorBlink: true,
         cursorStyle: "bar",
         scrollback: 10000,
         allowProposedApi: true,
         allowTransparency: true,
-        theme: toXtermTheme(colorScheme, terminalOpacity),
+        theme: toXtermTheme(colorScheme, nextTerminalOpacity),
       });
 
       term.parser.registerEscHandler({ final: "c" }, () => {
@@ -281,7 +347,7 @@ export function TerminalView() {
       term.loadAddon(fitAddon);
 
       let webglAddon: WebglAddon | null = null;
-      const shouldUseWebgl = !hasBackgroundImage && terminalOpacity >= 100;
+      const shouldUseWebgl = !nextHasBackgroundImage && nextTerminalOpacity >= 100;
       if (shouldUseWebgl) {
         try {
           webglAddon = new WebglAddon();
@@ -307,7 +373,7 @@ export function TerminalView() {
           const currentSize = useSettingsStore.getState().fontSize;
           const delta = e.deltaY > 0 ? -1 : 1;
           const newSize = Math.max(6, Math.min(100, currentSize + delta));
-          setSettings({ fontSize: newSize });
+          setSettingsRef.current({ fontSize: newSize });
         }
       };
 
@@ -327,51 +393,6 @@ export function TerminalView() {
         });
       };
 
-      // =============================
-      // 提取历史命令记录 (智能过滤 Prompt 提示符)
-      // =============================
-      const extractCommand = (lineText: string) => {
-        const text = lineText.trim();
-        if (!text) return "";
-
-        // 1. PowerShell (兼容 Windows/Linux) "PS C:\xxx> " 或 "PS /home/user> "
-        if (text.startsWith("PS ")) {
-          const idx = text.indexOf("> ");
-          if (idx !== -1) return text.substring(idx + 2).trim();
-        }
-
-        // 2. Windows CMD "C:\xxx> " 或 "D:\> "
-        if (/^[A-Za-z]:[\\/]/.test(text)) {
-          const idx = text.indexOf("> ");
-          if (idx !== -1) return text.substring(idx + 2).trim();
-        }
-
-        // 3. Unix 经典格式 "user@host:~/dir$ " 或 "user@mac ~ % "
-        const unixMatch = text.match(/^[^@\s]+@[^:\s\\]+[:\s][^#$%]*?[#$%]\s+/);
-        if (unixMatch) {
-          return text.substring(unixMatch[0].length).trim();
-        }
-
-        // 4. 精简版/美化版终端格式 "~ % ", "$ ", "❯ ", "➜ ", "/var/log # "
-        const minimalMatch = text.match(/^([a-zA-Z0-9_\-/.~]+\s?)?[#$%❯➜]\s+/);
-        if (minimalMatch) {
-          return text.substring(minimalMatch[0].length).trim();
-        }
-
-        // 5. 简单箭头 ">>> " (Python REPL), "> " 
-        const arrowMatch = text.match(/^[>]{1,3}\s+/);
-        if (arrowMatch) {
-          return text.substring(arrowMatch[0].length).trim();
-        }
-        
-        // 如果 text 以常见的提示符结尾且没有实际命令内容，则返回空
-        if (text && (text.endsWith(">") || text.endsWith("$") || text.endsWith("%") || text.endsWith("#"))) {
-          return "";
-        }
-
-        return text;
-      };
-
       const keyDisposable = term.onKey(({ domEvent }) => {
         if (domEvent.key === "Enter") {
           const buffer = term.buffer.active;
@@ -382,7 +403,7 @@ export function TerminalView() {
             const command = extractCommand(rawText);
 
             if (command && command.length > 0 && command !== lastCommandRef.current) {
-              addHistoryCommand(command);
+              addHistoryCommandRef.current(command);
               lastCommandRef.current = command;
             }
           }
@@ -454,7 +475,7 @@ export function TerminalView() {
         if (typeof unsub === "function") unsub();
       });
     };
-  }, [activeSessionId, activeSession?.connector, activateTerminal, addHistoryCommand]);
+  }, [activeSessionId, activeConnector, activateTerminal]);
 
   // =============================
   // 监听设置变化 (字体缩放 & 主题)
@@ -535,6 +556,12 @@ export function TerminalView() {
     const handler = () => activateTerminal(activeSessionId);
     window.addEventListener("lazy-terminal-focus", handler);
     return () => window.removeEventListener("lazy-terminal-focus", handler);
+  }, [activeSessionId, activateTerminal]);
+
+  useEffect(() => {
+    const handler = () => activateTerminal(activeSessionId);
+    window.addEventListener("focus", handler);
+    return () => window.removeEventListener("focus", handler);
   }, [activeSessionId, activateTerminal]);
 
   // =============================

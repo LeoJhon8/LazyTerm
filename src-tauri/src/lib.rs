@@ -215,13 +215,20 @@ async fn create_terminal<R: Runtime>(
     let mut reader = master.try_clone_reader().map_err(|e| e.to_string())?;
 
     let session_id_clone = session_id.clone();
+    let local_sessions = state.local_sessions.clone();
     std::thread::spawn(move || {
         let mut buffer = [0u8; 8192];
         let event_name = format!("terminal-data-{}", session_id_clone);
+        let close_event_name = format!("terminal-close-{}", session_id_clone);
         while let Ok(n) = reader.read(&mut buffer) {
             if n == 0 { break; }
             let data = String::from_utf8_lossy(&buffer[..n]).to_string();
             let _ = app.emit(&event_name, data);
+        }
+
+        let should_emit_close = local_sessions.lock().unwrap().remove(&session_id_clone).is_some();
+        if should_emit_close {
+            let _ = app.emit(&close_event_name, ());
         }
     });
 
