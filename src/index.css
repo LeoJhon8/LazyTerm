@@ -138,6 +138,13 @@
   height: 100%;
 }
 
+.terminal-host > .xterm .xterm-screen {
+  box-sizing: border-box;
+  padding-inline: 8px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
 .terminal-host > .xterm .xterm-viewport {
   inset: 0;
   height: 100%;
