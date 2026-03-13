@@ -466,6 +466,7 @@
 
   .tab-item-active {
     height: 38px;
+    padding: 0 12px; 
     border-color: color-mix(in srgb, var(--panel-border) 82%, transparent);
     border-bottom-color: transparent;
     background: linear-gradient(180deg, color-mix(in srgb, var(--background) 94%, transparent), color-mix(in srgb, var(--background) 82%, transparent));
