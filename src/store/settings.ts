@@ -20,6 +20,7 @@ interface SettingsData {
   scrollback: number;
   tabStopWidth: number;
   defaultShell: string;
+  confirmCloseNonDefaultTabs: boolean;
 
 
   // 外观自定义
@@ -58,6 +59,7 @@ const defaultSettings: SettingsData = {
   scrollback: 10000,
   tabStopWidth: 4,
   defaultShell: "powershell.exe",
+  confirmCloseNonDefaultTabs: false,
 
 
   // 外观自定义默认值

@@ -568,7 +568,7 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
 
 // --- 子组件 4：终端设置 ---
 function TerminalSettings() {
-  const { defaultShell, setSettings } = useSettingsStore();
+  const { defaultShell, confirmCloseNonDefaultTabs, setSettings } = useSettingsStore();
   const [shells, setShells] = useState<ShellInfo[]>([]);
 
   useMountedEffect(() => {
@@ -619,6 +619,24 @@ function TerminalSettings() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <Separator />
+
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-border/70 bg-background/60 px-4 py-3">
+            <div className="space-y-1">
+              <Label htmlFor="confirm-close-non-default-tabs" className="text-sm font-semibold cursor-pointer">
+                关闭非默认连接标签页前二次确认
+              </Label>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                开启后，关闭 SSH、自定义 Shell、管理员终端等非默认连接时会先弹出确认框；通过 "+" 创建的默认终端不受影响。
+              </p>
+            </div>
+            <Checkbox
+              id="confirm-close-non-default-tabs"
+              checked={confirmCloseNonDefaultTabs}
+              onCheckedChange={(checked) => setSettings({ confirmCloseNonDefaultTabs: !!checked })}
+            />
           </div>
         </div>
       </div>

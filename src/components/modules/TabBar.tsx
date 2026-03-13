@@ -1,6 +1,16 @@
 import { useTabsStore } from "@/store/tabs";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -10,7 +20,7 @@ import {
 import { X, Plus } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -33,6 +43,36 @@ interface ShellInfo {
   name: string;
   path: string;
   icon_type: string;
+}
+
+interface CloseConfirmationState {
+  open: boolean;
+  title: string;
+  description: string;
+}
+
+function normalizeShellValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function isDefaultConnectionTab(
+  session: ReturnType<typeof useTabsStore.getState>["sessions"][number],
+  defaultShell: string,
+) {
+  if (session.type !== "local") {
+    return false;
+  }
+
+  if (session.config?.sshConfig || session.config?.admin) {
+    return false;
+  }
+
+  const sessionShell = session.config?.shell;
+  if (!sessionShell) {
+    return true;
+  }
+
+  return normalizeShellValue(sessionShell) === normalizeShellValue(defaultShell);
 }
 
 function SortableTab({
@@ -151,8 +191,14 @@ export function TabBar() {
     closeRightSessions,
   } = useTabsStore();
 
-  const { defaultShell } = useSettingsStore();
+  const { defaultShell, confirmCloseNonDefaultTabs } = useSettingsStore();
   const [shells, setShells] = useState<ShellInfo[]>([]);
+  const [closeConfirmation, setCloseConfirmation] = useState<CloseConfirmationState>({
+    open: false,
+    title: "",
+    description: "",
+  });
+  const pendingCloseActionRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     invoke<ShellInfo[]>("get_available_shells")
@@ -200,9 +246,90 @@ export function TabBar() {
     });
   };
 
+  const requestCloseConfirmation = (targetIds: string[], onConfirm: () => void) => {
+    if (targetIds.length === 0) {
+      return;
+    }
+
+    const targetIdSet = new Set(targetIds);
+    const targetSessions = tabs.filter((tab) => targetIdSet.has(tab.id));
+    const nonDefaultSessions = targetSessions.filter(
+      (session) => !isDefaultConnectionTab(session, defaultShell)
+    );
+
+    if (!confirmCloseNonDefaultTabs || nonDefaultSessions.length === 0) {
+      onConfirm();
+      return;
+    }
+
+    const targetCount = nonDefaultSessions.length;
+    const previewNames = nonDefaultSessions.slice(0, 3).map((session) => `“${session.title}”`);
+    const remainingCount = targetCount - previewNames.length;
+    const sessionSummary = remainingCount > 0
+      ? `${previewNames.join("、")} 等 ${targetCount} 个标签页`
+      : previewNames.join("、");
+
+    pendingCloseActionRef.current = onConfirm;
+    setCloseConfirmation({
+      open: true,
+      title: targetCount === 1
+        ? `确认关闭 ${previewNames[0]}？`
+        : `确认关闭 ${targetCount} 个非默认连接标签页？`,
+      description: `即将关闭 ${sessionSummary}。这些标签页不是默认连接，关闭后当前会话会立即断开。`,
+    });
+  };
+
+  const handleCloseDialogChange = (open: boolean) => {
+    if (open) {
+      setCloseConfirmation((state) => ({ ...state, open: true }));
+      return;
+    }
+
+    pendingCloseActionRef.current = null;
+    setCloseConfirmation((state) => ({ ...state, open: false }));
+  };
+
+  const handleConfirmClose = () => {
+    const pendingAction = pendingCloseActionRef.current;
+    pendingCloseActionRef.current = null;
+    setCloseConfirmation((state) => ({ ...state, open: false }));
+    pendingAction?.();
+  };
+
   const handleCloseTab = (event: MouseEvent<HTMLButtonElement>, id: string) => {
     event.stopPropagation();
-    removeSession(id);
+    requestCloseConfirmation([id], () => removeSession(id));
+  };
+
+  const handleCloseOthers = (id: string) => {
+    requestCloseConfirmation(
+      tabs.filter((tab) => tab.id !== id).map((tab) => tab.id),
+      () => closeOtherSessions(id)
+    );
+  };
+
+  const handleCloseLeft = (id: string) => {
+    const targetIndex = tabs.findIndex((tab) => tab.id === id);
+    if (targetIndex <= 0) {
+      return;
+    }
+
+    requestCloseConfirmation(
+      tabs.slice(0, targetIndex).map((tab) => tab.id),
+      () => closeLeftSessions(id)
+    );
+  };
+
+  const handleCloseRight = (id: string) => {
+    const targetIndex = tabs.findIndex((tab) => tab.id === id);
+    if (targetIndex === -1 || targetIndex >= tabs.length - 1) {
+      return;
+    }
+
+    requestCloseConfirmation(
+      tabs.slice(targetIndex + 1).map((tab) => tab.id),
+      () => closeRightSessions(id)
+    );
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -246,9 +373,9 @@ export function TabBar() {
                   canCloseRight={tabs[tabs.length - 1]?.id !== tab.id}
                   onSwitch={handleTabSwitch}
                   onClose={handleCloseTab}
-                  onCloseOthers={closeOtherSessions}
-                  onCloseLeft={closeLeftSessions}
-                  onCloseRight={closeRightSessions}
+                  onCloseOthers={handleCloseOthers}
+                  onCloseLeft={handleCloseLeft}
+                  onCloseRight={handleCloseRight}
                 />
               ))}
             </div>
@@ -267,6 +394,19 @@ export function TabBar() {
           <Plus />
         </Button>
       </div>
+
+      <AlertDialog open={closeConfirmation.open} onOpenChange={handleCloseDialogChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{closeConfirmation.title}</AlertDialogTitle>
+            <AlertDialogDescription>{closeConfirmation.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmClose}>确认关闭</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
