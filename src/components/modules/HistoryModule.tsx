@@ -5,6 +5,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Trash2, Search, X } from "lucide-react";
+import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
+
+function isTerminalConnector(connector: SessionConnector | undefined): connector is ITerminalConnector {
+  return connector !== undefined && connector.protocol !== "rdp";
+}
 
 export function HistoryModule() {
   const { activeSessionId } = useTabsStore();
@@ -26,7 +31,7 @@ export function HistoryModule() {
     const activeSession = useTabsStore.getState().sessions.find(
       (s) => s.id === activeSessionId
     );
-    if (activeSession?.connector?.isConnected) {
+    if (activeSession?.connector?.isConnected && isTerminalConnector(activeSession.connector)) {
       activeSession.connector.write(command + "\r");
     }
   };

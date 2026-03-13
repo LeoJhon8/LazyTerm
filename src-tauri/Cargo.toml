@@ -38,3 +38,10 @@ futures = "0.3"       # 提供 Stream 处理工具
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-fs = "2.4.5"
+base64 = "0.22.1"
+image = { version = "0.25.8", default-features = false, features = ["jpeg", "png"] }
+ironrdp = { version = "0.14.0", features = ["connector", "displaycontrol", "graphics", "input", "session"] }
+ironrdp-blocking = "0.8.0"
+sspi = { version = "=0.18.7", features = ["network_client"] }
+tokio-rustls = "0.26.4"
+x509-cert = "0.2.5"

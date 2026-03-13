@@ -38,16 +38,20 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
   // 仅在对话框由关闭变为打开时，同步初始数据
   useEffect(() => {
     if (open) {
-      if (initialConfig) {
-        setHost(initialConfig.host || "");
-        setPort(initialConfig.port?.toString() || "22");
-        setUsername(initialConfig.username || "");
-        setPassword(initialConfig.password || "");
-        setPrivateKeyPath(initialConfig.privateKeyPath || "");
-        setNickname(initialConfig.nickname || "");
-      } else {
-        resetForm();
-      }
+      const frame = window.requestAnimationFrame(() => {
+        if (initialConfig) {
+          setHost(initialConfig.host || "");
+          setPort(initialConfig.port?.toString() || "22");
+          setUsername(initialConfig.username || "");
+          setPassword(initialConfig.password || "");
+          setPrivateKeyPath(initialConfig.privateKeyPath || "");
+          setNickname(initialConfig.nickname || "");
+        } else {
+          resetForm();
+        }
+      });
+
+      return () => window.cancelAnimationFrame(frame);
     }
   }, [open, initialConfig]);
 

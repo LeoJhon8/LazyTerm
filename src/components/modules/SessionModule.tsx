@@ -5,7 +5,7 @@ import {
 } from "@dnd-kit/core";
 import { 
   Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, 
-  Pencil, Trash2, Terminal, Upload, File, X
+  Pencil, Trash2, Terminal, Upload, File, X, Monitor
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { useSshProfilesStore, type SessionNode } from "@/store/ssh-profiles";
 import { useTabsStore } from "@/store/tabs";
 import { SshConnectDialog } from "@/components/dialogs/SshConnectDialog";
+import { RdpConnectDialog } from "@/components/dialogs/RdpConnectDialog";
 import { 
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator 
 } from "@/components/ui/context-menu";
@@ -27,6 +28,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { stat, size as getFileSize } from "@tauri-apps/plugin-fs";
+import type { RDPConfig, SSHConfig } from "@/types/terminal";
 
 interface AvailableShell {
   name: string;
@@ -120,7 +122,9 @@ function NodeRowContent({
             <Folder className={cn("h-4 w-4", node.isRoot ? "text-amber-500 fill-amber-500/10" : "text-blue-500 fill-blue-500/10")} />
           </div>
         ) : (
-          <Server className={cn("h-4 w-4 text-emerald-600/80", isUploading && "text-amber-700 dark:text-cyan-300 animate-pulse")} />
+          node.type === "rdp"
+            ? <Monitor className="h-4 w-4 text-sky-600/80" />
+            : <Server className={cn("h-4 w-4 text-emerald-600/80", isUploading && "text-amber-700 dark:text-cyan-300 animate-pulse")} />
         )}
         <span
           title={node.name}
@@ -186,14 +190,17 @@ function DraggableDroppableRow({
       <ContextMenuContent className="w-40 text-xs">
         {node.type === 'folder' ? (
           <>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-ssh', node)}><Plus className="mr-2 h-4 w-4" /> 新建连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-ssh', node)}><Server className="mr-2 h-4 w-4" /> 新建 SSH 连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-rdp', node)}><Monitor className="mr-2 h-4 w-4" /> 新建 RDP 连接</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> 新建子文件夹</ContextMenuItem>
           </>
-        ) : (
+        ) : node.type === 'ssh' ? (
           <>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> 连接会话</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('sftp-upload', node)}><Upload className="mr-2 h-4 w-4" /> SFTP 上传文件</ContextMenuItem>
           </>
+        ) : (
+          <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Monitor className="mr-2 h-4 w-4" /> 连接远程桌面</ContextMenuItem>
         )}
         <ContextMenuSeparator />
         <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" /> 编辑</ContextMenuItem>
@@ -214,6 +221,8 @@ export function SessionModule() {
   }>({ activeId: null, overId: null, dropPos: null });
   const [sshOpen, setSshOpen] = useState(false);
   const [directSshOpen, setDirectSshOpen] = useState(false);
+  const [rdpOpen, setRdpOpen] = useState(false);
+  const [directRdpOpen, setDirectRdpOpen] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [targetNode, setTargetNode] = useState<SessionNode | null>(null);
@@ -261,6 +270,14 @@ export function SessionModule() {
     () => (dragState.activeId ? nodes.find((node) => node.id === dragState.activeId) ?? null : null),
     [dragState.activeId, nodes]
   );
+
+  const isSshConfig = (config: SessionNode["config"]): config is SSHConfig => {
+    return !!config && "authType" in config;
+  };
+
+  const isRdpConfig = (config: SessionNode["config"]): config is RDPConfig => {
+    return !!config && "username" in config && !("authType" in config);
+  };
 
   const updateDragState = (
     activeId: string | null,
@@ -443,6 +460,9 @@ export function SessionModule() {
       }));
 
       const cfg = sftpTargetNode.config;
+      if (!isSshConfig(cfg)) {
+        throw new Error("SFTP 仅支持 SSH 会话");
+      }
       await invoke("sftp_upload_files", {
         config: {
           host: cfg.host,
@@ -477,15 +497,21 @@ export function SessionModule() {
 
   const handleAction = (type: string, node: SessionNode) => {
     if (type === 'connect' && node.config) {
-      addSession({ title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } });
+      if (node.type === "ssh" && isSshConfig(node.config)) {
+        addSession({ title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } });
+      } else if (node.type === "rdp" && isRdpConfig(node.config)) {
+        addSession({ title: node.name, type: "rdp", host: node.config.host, config: { host: node.config.host, port: node.config.port, rdpConfig: node.config } });
+      }
     } else if (type === 'new-ssh') { setTargetNode(node); setEditNode(null); setSshOpen(true); }
+    else if (type === 'new-rdp') { setTargetNode(node); setEditNode(null); setRdpOpen(true); }
     else if (type === 'new-folder') { setTargetNode(node); setEditNode(null); setFolderOpen(true); }
     else if (type === 'edit') { 
       setEditNode(node); 
       if (node.type === 'folder') { setTempName(node.name); setFolderOpen(true); } 
-      else setSshOpen(true);
+      else if (node.type === 'ssh') setSshOpen(true);
+      else setRdpOpen(true);
     } else if (type === 'delete') { setTargetNode(node); setDeleteOpen(true); }
-    else if (type === 'sftp-upload') { handleSftpOpen(node); }
+    else if (type === 'sftp-upload' && node.type === 'ssh') { handleSftpOpen(node); }
   };
 
   const handleDirectConnect = (name: string, path: string, admin = false) => {
@@ -497,6 +523,19 @@ export function SessionModule() {
       config: { 
         shell: path,
         admin,
+      }
+    });
+  };
+
+  const handleDirectRdpConnect = (config: RDPConfig) => {
+    addSession({
+      title: config.nickname || config.host,
+      type: "rdp",
+      host: config.host,
+      config: {
+        host: config.host,
+        port: config.port,
+        rdpConfig: config,
       }
     });
   };
@@ -550,6 +589,9 @@ export function SessionModule() {
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => setDirectSshOpen(true)}>
               <Server className="mr-2 h-4 w-4 text-emerald-500" /> SSH 连接
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setDirectRdpOpen(true)}>
+              <Monitor className="mr-2 h-4 w-4 text-sky-500" /> RDP 连接
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -631,10 +673,15 @@ export function SessionModule() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <SshConnectDialog open={sshOpen} onOpenChange={setSshOpen} initialConfig={editNode?.config} onSave={(cfg) => {
+      <SshConnectDialog open={sshOpen} onOpenChange={setSshOpen} initialConfig={editNode?.type === "ssh" ? editNode.config as SSHConfig : undefined} onSave={(cfg) => {
         if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
-        else if (targetNode) addProfile(cfg, targetNode.id);
+        else if (targetNode) addProfile("ssh", cfg, targetNode.id);
         setSshOpen(false);
+      }} />
+      <RdpConnectDialog open={rdpOpen} onOpenChange={setRdpOpen} initialConfig={editNode?.type === "rdp" ? editNode.config as RDPConfig : undefined} onSave={(cfg) => {
+        if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
+        else if (targetNode) addProfile("rdp", cfg, targetNode.id);
+        setRdpOpen(false);
       }} />
       <SshConnectDialog open={directSshOpen} onOpenChange={setDirectSshOpen} isDirect={true} onSave={(cfg) => {
         addSession({ 
@@ -644,6 +691,10 @@ export function SessionModule() {
           config: { host: cfg.host, port: cfg.port, sshConfig: cfg } 
         });
         setDirectSshOpen(false);
+      }} />
+      <RdpConnectDialog open={directRdpOpen} onOpenChange={setDirectRdpOpen} isDirect={true} onSave={(cfg) => {
+        handleDirectRdpConnect(cfg);
+        setDirectRdpOpen(false);
       }} />
       <Dialog open={sftpOpen} onOpenChange={setSftpOpen}>
         <DialogContent>

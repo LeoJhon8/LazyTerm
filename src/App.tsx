@@ -3,6 +3,7 @@ import { useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
 import { TerminalView } from "@/components/terminal/TerminalView";
+import { RemoteDesktopView } from "@/components/terminal/RemoteDesktopView";
 import { SlotManager } from "@/components/layout/SlotManager";
 import {
   AlertDialog,
@@ -35,7 +36,7 @@ function App() {
   } = useSettingsStore();
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
-  const { closeAllSessions, connectionError, clearConnectionError } = useTabsStore();
+  const { closeAllSessions, connectionError, clearConnectionError, activeSessionId, sessions } = useTabsStore();
   const leftSlotCollapsed = slotConfig.left.collapsed;
   const rightSlotCollapsed = slotConfig.right.collapsed;
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
@@ -43,6 +44,7 @@ function App() {
   const shouldDisableUiBlur = hasBackgroundImage && backgroundImageUiMode === "clear";
 
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
+  const activeSession = sessions.find((session) => session.id === activeSessionId);
 
   // 应用关闭时清空所有会话
   useEffect(() => {
@@ -194,20 +196,41 @@ function App() {
 
       {/* 内容层 — 确保在背景之上 */}
       <SlotManager />
-      <TerminalView />
+      {activeSession?.type === "rdp" ? <RemoteDesktopView key={activeSession.id} /> : <TerminalView />}
 
       <AlertDialog open={!!connectionError} onOpenChange={(open) => !open && clearConnectionError()}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {connectionError?.sessionType === "ssh" ? "SSH 连接失败" : "终端连接失败"}
+              {connectionError?.sessionType === "ssh"
+                ? "SSH 连接失败"
+                : connectionError?.sessionType === "rdp"
+                  ? "远程桌面连接失败"
+                  : "终端连接失败"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {connectionError
-                ? `${connectionError.sessionTarget || `会话“${connectionError.sessionTitle}”`} 未能建立连接。${connectionError.message}`
+                ? `${connectionError.sessionTarget || `会话“${connectionError.sessionTitle}”`} 未能建立连接。${connectionError.summary}`
                 : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {connectionError ? (
+            <div className="space-y-3 text-sm">
+              <div className="rounded-2xl border border-border/60 bg-background/45 px-4 py-3 text-muted-foreground">
+                <div className="font-medium text-foreground">建议排查</div>
+                <ul className="mt-2 space-y-1.5 pl-5">
+                  {connectionError.guidance.map((item) => (
+                    <li key={item} className="list-disc">{item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-border/60 bg-black/25 px-4 py-3 text-xs leading-6 text-muted-foreground">
+                <div className="font-medium text-foreground">技术详情</div>
+                <div className="mt-1 break-all">{connectionError.technicalDetails}</div>
+              </div>
+            </div>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogAction onClick={clearConnectionError}>知道了</AlertDialogAction>
           </AlertDialogFooter>

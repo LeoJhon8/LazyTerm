@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Play, Plus, Trash2, Pencil } from "lucide-react";
 import { useQuickCommandsStore, type QuickCommand } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
+import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import {
   Dialog,
   DialogContent,
@@ -133,10 +134,14 @@ export function QuickCmdBar() {
     })
   );
 
+  const isTerminalConnector = (connector: SessionConnector | undefined): connector is ITerminalConnector => {
+    return connector !== undefined && connector.protocol !== "rdp";
+  };
+
 // 发送命令到当前激活的终端
   const handleCommandClick = (cmd: QuickCommand) => {
     const activeSession = sessions.find((session) => session.id === activeSessionId);
-    if (activeSession?.connector?.isConnected) {
+    if (activeSession?.connector?.isConnected && isTerminalConnector(activeSession.connector)) {
       const commandsToExecute = cmd.command.replace(/\r?\n/g, "\r");
       activeSession.connector.write(commandsToExecute);
       restoreTerminalFocus();

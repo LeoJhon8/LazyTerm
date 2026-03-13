@@ -1,0 +1,151 @@
+import { useEffect, useState } from "react";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import type { RDPConfig } from "@/types/terminal";
+
+interface RdpConnectDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (config: RDPConfig) => void;
+  initialConfig?: RDPConfig;
+  isDirect?: boolean;
+}
+
+export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, isDirect }: RdpConnectDialogProps) {
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("3389");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [domain, setDomain] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [width, setWidth] = useState("1280");
+  const [height, setHeight] = useState("720");
+  const [autoResize, setAutoResize] = useState(true);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      if (initialConfig) {
+        setHost(initialConfig.host || "");
+        setPort(initialConfig.port?.toString() || "3389");
+        setUsername(initialConfig.username || "");
+        setPassword(initialConfig.password || "");
+        setDomain(initialConfig.domain || "");
+        setNickname(initialConfig.nickname || "");
+        setWidth(initialConfig.width?.toString() || "1280");
+        setHeight(initialConfig.height?.toString() || "720");
+        setAutoResize(initialConfig.autoResize ?? true);
+        return;
+      }
+
+      setHost("");
+      setPort("3389");
+      setUsername("");
+      setPassword("");
+      setDomain("");
+      setNickname("");
+      setWidth("1280");
+      setHeight("720");
+      setAutoResize(true);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, initialConfig]);
+
+  const handleSave = () => {
+    if (!host || !username) {
+      return;
+    }
+
+    onSave({
+      host,
+      port: parseInt(port, 10) || 3389,
+      username,
+      password: password || undefined,
+      domain: domain || undefined,
+      nickname: nickname || undefined,
+      width: parseInt(width, 10) || 1280,
+      height: parseInt(height, 10) || 720,
+      autoResize,
+    });
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-125">
+        <DialogHeader>
+          <DialogTitle>
+            {isDirect ? "发起临时 RDP 连接" : initialConfig ? "编辑 RDP 配置" : "新建 RDP 配置"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="rdp-nickname" className="text-right">别名</Label>
+              <Input id="rdp-nickname" value={nickname} onChange={(event) => setNickname(event.target.value)} className="col-span-3" />
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="rdp-host" className="text-right">主机地址</Label>
+              <Input id="rdp-host" value={host} onChange={(event) => setHost(event.target.value)} className="col-span-3" required />
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="rdp-port" className="text-right">端口</Label>
+              <Input id="rdp-port" type="number" value={port} onChange={(event) => setPort(event.target.value)} className="col-span-3" required />
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="rdp-username" className="text-right">用户名</Label>
+              <Input id="rdp-username" value={username} onChange={(event) => setUsername(event.target.value)} className="col-span-3" required />
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="rdp-domain" className="text-right">域</Label>
+              <Input id="rdp-domain" value={domain} onChange={(event) => setDomain(event.target.value)} className="col-span-3" placeholder="可选" />
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="rdp-password" className="text-right">密码</Label>
+              <Input id="rdp-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="col-span-3" autoComplete="off" />
+            </div>
+
+            <Separator />
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="rdp-width" className="text-right">初始宽度</Label>
+              <Input id="rdp-width" type="number" min="200" value={width} onChange={(event) => setWidth(event.target.value)} className="col-span-3" />
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="rdp-height" className="text-right">初始高度</Label>
+              <Input id="rdp-height" type="number" min="200" value={height} onChange={(event) => setHeight(event.target.value)} className="col-span-3" />
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">自动跟随窗口</Label>
+              <div className="col-span-3 flex items-center gap-3">
+                <Checkbox id="rdp-auto-resize" checked={autoResize} onCheckedChange={(checked) => setAutoResize(checked === true)} />
+                <Label htmlFor="rdp-auto-resize" className="text-sm text-muted-foreground">窗口尺寸变化时自动请求远端分辨率更新</Label>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button type="submit">{initialConfig ? "保存修改" : "立即创建"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

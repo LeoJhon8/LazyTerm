@@ -3,7 +3,7 @@ import { useTabsStore } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useHistoryStore } from "@/store/history";
-import type { ITerminalConnector } from "@/types/terminal";
+import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -104,6 +104,10 @@ function extractCommand(lineText: string) {
   return text;
 }
 
+function isTerminalConnector(connector: SessionConnector | undefined): connector is ITerminalConnector {
+  return connector !== undefined && connector.protocol !== "rdp";
+}
+
 export function TerminalView() {
   const { activeSessionId, sessions } = useTabsStore();
   const { addCommand: addHistoryCommand } = useHistoryStore();
@@ -131,7 +135,7 @@ export function TerminalView() {
   });
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const activeConnector = activeSession?.connector;
+  const activeConnector = isTerminalConnector(activeSession?.connector) ? activeSession.connector : undefined;
   const hasBackgroundImage = backgroundImageEnabled && backgroundImage;
 
   addHistoryCommandRef.current = addHistoryCommand;
@@ -607,7 +611,7 @@ export function TerminalView() {
   const handleContextMenu = async (e: React.MouseEvent) => {
     e.preventDefault();
 
-    if (!activeSessionId || !activeSession?.connector) return;
+    if (!activeSessionId || !activeSession?.connector || !isTerminalConnector(activeSession.connector)) return;
 
     const instance = terminalMap.current.get(activeSessionId);
     if (!instance) return;
