@@ -18,10 +18,15 @@ export interface ITerminalConnector extends ISessionConnector {
 }
 
 export interface RdpFramePayload {
-  width: number;
-  height: number;
-  mimeType: string;
-  imageBase64: string;
+  desktopWidth: number;
+  desktopHeight: number;
+  regionLeft: number;
+  regionTop: number;
+  regionWidth: number;
+  regionHeight: number;
+  fullFrame: boolean;
+  mimeType: "image/jpeg";
+  imageBytes: ArrayBuffer;
 }
 
 export interface RdpPointerPayload {

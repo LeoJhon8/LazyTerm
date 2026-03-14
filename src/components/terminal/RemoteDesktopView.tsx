@@ -113,27 +113,16 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function base64ToUint8Array(base64: string) {
-  const binary = window.atob(base64);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return bytes;
-}
-
 function getPointerPosition(
   container: HTMLDivElement,
-  frame: Pick<RdpFramePayload, "width" | "height">,
+  frame: Pick<RdpFramePayload, "desktopWidth" | "desktopHeight">,
   clientX: number,
   clientY: number,
 ) {
   const rect = container.getBoundingClientRect();
-  const scale = Math.min(rect.width / frame.width, rect.height / frame.height);
-  const displayWidth = frame.width * scale;
-  const displayHeight = frame.height * scale;
+  const scale = Math.min(rect.width / frame.desktopWidth, rect.height / frame.desktopHeight);
+  const displayWidth = frame.desktopWidth * scale;
+  const displayHeight = frame.desktopHeight * scale;
   const offsetX = (rect.width - displayWidth) / 2;
   const offsetY = (rect.height - displayHeight) / 2;
 
@@ -141,8 +130,8 @@ function getPointerPosition(
   const y = (clientY - rect.top - offsetY) / scale;
 
   return {
-    x: Math.round(clamp(x, 0, frame.width - 1)),
-    y: Math.round(clamp(y, 0, frame.height - 1)),
+    x: Math.round(clamp(x, 0, frame.desktopWidth - 1)),
+    y: Math.round(clamp(y, 0, frame.desktopHeight - 1)),
   };
 }
 
@@ -182,8 +171,7 @@ export function RemoteDesktopView() {
       const drawToken = ++drawTokenRef.current;
 
       try {
-        const byteArray = base64ToUint8Array(frame.imageBase64);
-        const blob = new Blob([byteArray], { type: frame.mimeType });
+        const blob = new Blob([frame.imageBytes], { type: frame.mimeType });
         let decodedSource: CanvasImageSource;
         let decodedBitmap: ImageBitmap | null = null;
 
@@ -213,9 +201,9 @@ export function RemoteDesktopView() {
           return;
         }
 
-        if (canvas.width !== frame.width || canvas.height !== frame.height) {
-          canvas.width = frame.width;
-          canvas.height = frame.height;
+        if (canvas.width !== frame.desktopWidth || canvas.height !== frame.desktopHeight) {
+          canvas.width = frame.desktopWidth;
+          canvas.height = frame.desktopHeight;
         }
 
         const context = canvas.getContext("2d", {
@@ -228,8 +216,7 @@ export function RemoteDesktopView() {
           return;
         }
 
-        context.imageSmoothingEnabled = true;
-        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.imageSmoothingEnabled = false;
         context.drawImage(decodedSource, 0, 0, canvas.width, canvas.height);
         decodedBitmap?.close();
       } catch (error) {
@@ -247,11 +234,17 @@ export function RemoteDesktopView() {
     connector.onFrame((nextFrame) => {
       pendingFrameRef.current = nextFrame;
       setFrameSize((current) => {
-        if (current?.width === nextFrame.width && current.height === nextFrame.height) {
+        if (
+          current?.width === nextFrame.desktopWidth
+          && current.height === nextFrame.desktopHeight
+        ) {
           return current;
         }
 
-        return { width: nextFrame.width, height: nextFrame.height };
+        return {
+          width: nextFrame.desktopWidth,
+          height: nextFrame.desktopHeight,
+        };
       });
 
       void drawFrame();
@@ -319,7 +312,15 @@ export function RemoteDesktopView() {
       return;
     }
 
-    const point = getPointerPosition(containerRef.current, frameSize, event.clientX, event.clientY);
+    const point = getPointerPosition(
+      containerRef.current,
+      {
+        desktopWidth: frameSize.width,
+        desktopHeight: frameSize.height,
+      },
+      event.clientX,
+      event.clientY,
+    );
     connector.sendPointer({
       kind,
       x: point.x,
@@ -335,7 +336,15 @@ export function RemoteDesktopView() {
       return;
     }
 
-    const point = getPointerPosition(containerRef.current, frameSize, event.clientX, event.clientY);
+    const point = getPointerPosition(
+      containerRef.current,
+      {
+        desktopWidth: frameSize.width,
+        desktopHeight: frameSize.height,
+      },
+      event.clientX,
+      event.clientY,
+    );
     connector.sendPointer({
       kind: "wheel",
       x: point.x,

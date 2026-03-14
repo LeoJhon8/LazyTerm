@@ -1,13 +1,16 @@
 use async_trait::async_trait;
-use base64::Engine as _;
+use ironrdp::core::other_err;
 use image::codecs::jpeg::JpegEncoder;
-use image::{ImageBuffer, Rgba};
-use ironrdp::connector::credssp::{CredsspProcessGenerator, CredsspSequence, KerberosConfig};
+use image::ExtendedColorType;
+use ironrdp::connector::credssp::KerberosConfig;
 use ironrdp::connector::sspi::credssp::ClientState;
+use ironrdp::connector::sspi::credssp::{self, CredSspClient};
 use ironrdp::connector::sspi::generator::GeneratorState;
 use ironrdp::connector::sspi::network_client::NetworkClient;
+use ironrdp::connector::sspi::negotiate::ProtocolConfig;
 use ironrdp::connector::{self, ConnectionResult, Credentials};
 use ironrdp::connector::connection_activation::ConnectionActivationState;
+use ironrdp::connector::State as ConnectorState;
 use ironrdp::connector::Sequence as _;
 use ironrdp::displaycontrol::pdu::MonitorLayoutEntry;
 use ironrdp::graphics::image_processing::PixelFormat;
@@ -19,6 +22,7 @@ use ironrdp::pdu::rdp::client_info::{PerformanceFlags, TimezoneInfo};
 use ironrdp::pdu::rdp::headers::ShareDataPdu;
 use ironrdp::pdu::rdp::refresh_rectangle::RefreshRectanglePdu;
 use ironrdp::pdu::rdp::suppress_output::SuppressOutputPdu;
+use ironrdp::pdu::PduHint;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{fast_path, ActiveStage, ActiveStageOutput};
 use ironrdp::core::WriteBuf;
@@ -26,15 +30,17 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use russh::client;
 use russh_keys::key;
 use sspi::network_client::reqwest_network_client::ReqwestNetworkClient;
+use sspi::{AuthIdentity as SspiAuthIdentity, Username};
 use std::{
     collections::HashMap,
-    io::{Cursor, Write},
-    net::{TcpStream, ToSocketAddrs},
+    io::Write,
+    net::{IpAddr, TcpStream, ToSocketAddrs},
     path::Path,
     sync::{mpsc as std_mpsc, Arc, Mutex as StdMutex},
     time::{Duration, Instant},
 };
 use russh_sftp::client::SftpSession;
+use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, Mutex as TokioMutex};
@@ -60,9 +66,23 @@ enum RdpControlMsg {
 }
 
 const RDP_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-const RDP_POLL_TIMEOUT: Duration = Duration::from_millis(100);
+const RDP_POLL_TIMEOUT: Duration = Duration::from_millis(16);
 const RDP_FRAME_INTERVAL: Duration = Duration::from_millis(41);
-const RDP_JPEG_QUALITY: u8 = 72;
+const RDP_POINTER_MOVE_FRAME_INTERVAL: Duration = Duration::from_millis(22);
+const RDP_WHEEL_FRAME_INTERVAL: Duration = Duration::from_millis(26);
+const RDP_KEYBOARD_FRAME_INTERVAL: Duration = Duration::from_millis(30);
+const RDP_CLICK_FRAME_INTERVAL: Duration = Duration::from_millis(32);
+const RDP_FRAME_BATCH_WINDOW: Duration = Duration::from_millis(28);
+const RDP_POINTER_MOVE_BATCH_WINDOW: Duration = Duration::from_millis(8);
+const RDP_WHEEL_BATCH_WINDOW: Duration = Duration::from_millis(10);
+const RDP_KEYBOARD_BATCH_WINDOW: Duration = Duration::from_millis(12);
+const RDP_CLICK_BATCH_WINDOW: Duration = Duration::from_millis(12);
+const RDP_FULL_JPEG_QUALITY: u8 = 50;
+const RDP_POINTER_MOVE_JPEG_QUALITY: u8 = 28;
+const RDP_WHEEL_JPEG_QUALITY: u8 = 32;
+const RDP_KEYBOARD_JPEG_QUALITY: u8 = 38;
+const RDP_CLICK_JPEG_QUALITY: u8 = 40;
+const RDP_INTERACTION_WINDOW: Duration = Duration::from_millis(320);
 const RDP_FIRST_FRAME_WAKE_DELAY: Duration = Duration::from_millis(700);
 const RDP_FIRST_FRAME_WAKE_REPEAT: Duration = Duration::from_secs(2);
 
@@ -171,6 +191,300 @@ struct RdpSession {
 struct RdpConnectionContext {
     connection_result: ConnectionResult,
     share_id: u32,
+}
+
+struct PendingRdpFrame {
+    dirty: bool,
+    force: bool,
+    updated_at: Option<Instant>,
+}
+
+struct RdpFrameEncoderState {
+    rgb_buffer: Vec<u8>,
+    jpeg_buffer: Vec<u8>,
+    packet_buffer: Vec<u8>,
+    last_interaction: Option<(RdpInteractionKind, Instant)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RdpInteractionKind {
+    PointerMove,
+    Wheel,
+    Keyboard,
+    Click,
+}
+
+impl RdpInteractionKind {
+    fn priority(self) -> u8 {
+        match self {
+            Self::PointerMove => 4,
+            Self::Wheel => 3,
+            Self::Keyboard => 2,
+            Self::Click => 1,
+        }
+    }
+
+    fn frame_interval(self) -> Duration {
+        match self {
+            Self::PointerMove => RDP_POINTER_MOVE_FRAME_INTERVAL,
+            Self::Wheel => RDP_WHEEL_FRAME_INTERVAL,
+            Self::Keyboard => RDP_KEYBOARD_FRAME_INTERVAL,
+            Self::Click => RDP_CLICK_FRAME_INTERVAL,
+        }
+    }
+
+    fn batch_window(self) -> Duration {
+        match self {
+            Self::PointerMove => RDP_POINTER_MOVE_BATCH_WINDOW,
+            Self::Wheel => RDP_WHEEL_BATCH_WINDOW,
+            Self::Keyboard => RDP_KEYBOARD_BATCH_WINDOW,
+            Self::Click => RDP_CLICK_BATCH_WINDOW,
+        }
+    }
+
+    fn jpeg_quality(self) -> u8 {
+        match self {
+            Self::PointerMove => RDP_POINTER_MOVE_JPEG_QUALITY,
+            Self::Wheel => RDP_WHEEL_JPEG_QUALITY,
+            Self::Keyboard => RDP_KEYBOARD_JPEG_QUALITY,
+            Self::Click => RDP_CLICK_JPEG_QUALITY,
+        }
+    }
+}
+
+impl RdpFrameEncoderState {
+    fn new() -> Self {
+        Self {
+            rgb_buffer: Vec::new(),
+            jpeg_buffer: Vec::new(),
+            packet_buffer: Vec::new(),
+            last_interaction: None,
+        }
+    }
+
+    fn mark_interaction(&mut self, kind: RdpInteractionKind) {
+        let now = Instant::now();
+
+        self.last_interaction = match self.last_interaction {
+            Some((current_kind, current_at))
+                if now.duration_since(current_at) <= RDP_INTERACTION_WINDOW
+                    && current_kind.priority() > kind.priority() =>
+            {
+                Some((current_kind, now))
+            }
+            _ => Some((kind, now)),
+        };
+    }
+
+    fn interaction_kind(&self) -> Option<RdpInteractionKind> {
+        self.last_interaction.and_then(|(kind, instant)| {
+            (instant.elapsed() <= RDP_INTERACTION_WINDOW).then_some(kind)
+        })
+    }
+
+    fn frame_interval(&self) -> Duration {
+        self.interaction_kind()
+            .map(RdpInteractionKind::frame_interval)
+            .unwrap_or(RDP_FRAME_INTERVAL)
+    }
+
+    fn batch_window(&self) -> Duration {
+        self.interaction_kind()
+            .map(RdpInteractionKind::batch_window)
+            .unwrap_or(RDP_FRAME_BATCH_WINDOW)
+    }
+
+    fn jpeg_quality(&self, prioritize_speed: bool) -> u8 {
+        if let Some(kind) = self.interaction_kind() {
+            kind.jpeg_quality()
+        } else if prioritize_speed {
+            RDP_FULL_JPEG_QUALITY.saturating_sub(8)
+        } else {
+            RDP_FULL_JPEG_QUALITY
+        }
+    }
+}
+
+impl PendingRdpFrame {
+    fn new() -> Self {
+        Self {
+            dirty: false,
+            force: false,
+            updated_at: None,
+        }
+    }
+
+    fn mark_dirty(&mut self, force: bool) {
+        self.dirty = true;
+        self.force |= force;
+        self.updated_at = Some(Instant::now());
+    }
+
+    fn clear(&mut self) {
+        self.dirty = false;
+        self.force = false;
+        self.updated_at = None;
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct LocalCredsspTsRequestHint;
+
+const LOCAL_CREDSSP_TS_REQUEST_HINT: LocalCredsspTsRequestHint = LocalCredsspTsRequestHint;
+
+impl PduHint for LocalCredsspTsRequestHint {
+    fn find_size(&self, bytes: &[u8]) -> ironrdp::core::DecodeResult<Option<(bool, usize)>> {
+        match credssp::TsRequest::read_length(bytes) {
+            Ok(length) => Ok(Some((true, length))),
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
+            Err(error) => Err(other_err!("LocalCredsspTsRequestHint", source: error)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct LocalCredsspEarlyUserAuthResultHint;
+
+const LOCAL_CREDSSP_EARLY_USER_AUTH_RESULT_HINT: LocalCredsspEarlyUserAuthResultHint = LocalCredsspEarlyUserAuthResultHint;
+
+impl PduHint for LocalCredsspEarlyUserAuthResultHint {
+    fn find_size(&self, _: &[u8]) -> ironrdp::core::DecodeResult<Option<(bool, usize)>> {
+        Ok(Some((true, credssp::EARLY_USER_AUTH_RESULT_PDU_SIZE)))
+    }
+}
+
+type LocalCredsspProcessGenerator<'a> =
+    sspi::generator::Generator<'a, sspi::generator::NetworkRequest, sspi::Result<Vec<u8>>, sspi::Result<ClientState>>;
+
+#[derive(Debug, PartialEq)]
+enum LocalCredsspState {
+    Ongoing,
+    EarlyUserAuthResult,
+    Finished,
+}
+
+#[derive(Debug)]
+struct LocalCredsspSequence {
+    client: CredSspClient,
+    state: LocalCredsspState,
+    selected_protocol: ironrdp::pdu::nego::SecurityProtocol,
+}
+
+impl LocalCredsspSequence {
+    fn next_pdu_hint(&self) -> Option<&dyn PduHint> {
+        match self.state {
+            LocalCredsspState::Ongoing => Some(&LOCAL_CREDSSP_TS_REQUEST_HINT),
+            LocalCredsspState::EarlyUserAuthResult => Some(&LOCAL_CREDSSP_EARLY_USER_AUTH_RESULT_HINT),
+            LocalCredsspState::Finished => None,
+        }
+    }
+
+    fn init(
+        credentials: Credentials,
+        domain: Option<&str>,
+        protocol: ironrdp::pdu::nego::SecurityProtocol,
+        server_name: connector::ServerName,
+        server_public_key: Vec<u8>,
+    ) -> Result<(Self, credssp::TsRequest), String> {
+        let credentials: sspi::Credentials = match credentials {
+            Credentials::UsernamePassword { username, password } => {
+                let username = Username::new(&username, domain).map_err(|e| format!("invalid username: {e}"))?;
+                SspiAuthIdentity {
+                    username,
+                    password: password.into(),
+                }
+                .into()
+            }
+            Credentials::SmartCard { .. } => {
+                return Err("smart card authentication is not supported by the local CredSSP path".to_string())
+            }
+        };
+
+        let server_name = server_name.into_inner();
+        let service_principal_name = format!("TERMSRV/{server_name}");
+        let force_ntlm_only = server_name.parse::<IpAddr>().is_ok();
+        let package_list = force_ntlm_only.then(|| "!kerberos,!pku2u".to_string());
+        let protocol_config: Box<dyn ProtocolConfig> = Box::<sspi::ntlm::NtlmConfig>::default();
+
+        let client = CredSspClient::new(
+            server_public_key,
+            credentials,
+            credssp::CredSspMode::WithCredentials,
+            credssp::ClientMode::Negotiate(sspi::NegotiateConfig {
+                protocol_config,
+                package_list,
+                client_computer_name: server_name.clone(),
+            }),
+            service_principal_name,
+        )
+        .map_err(|e| format!("CredSSP init failed: {e}"))?;
+
+        Ok((
+            Self {
+                client,
+                state: LocalCredsspState::Ongoing,
+                selected_protocol: protocol,
+            },
+            credssp::TsRequest::default(),
+        ))
+    }
+
+    fn decode_server_message(&mut self, input: &[u8]) -> Result<Option<credssp::TsRequest>, String> {
+        match self.state {
+            LocalCredsspState::Ongoing => credssp::TsRequest::from_buffer(input)
+                .map(Some)
+                .map_err(|e| format!("CredSSP decode failed: {e}")),
+            LocalCredsspState::EarlyUserAuthResult => {
+                let result = credssp::EarlyUserAuthResult::from_buffer(input)
+                    .map_err(|e| format!("CredSSP early auth decode failed: {e}"))?;
+
+                match result {
+                    credssp::EarlyUserAuthResult::Success => {
+                        self.state = LocalCredsspState::Finished;
+                        Ok(None)
+                    }
+                    credssp::EarlyUserAuthResult::AccessDenied => Err("CredSSP access denied".to_string()),
+                }
+            }
+            LocalCredsspState::Finished => Err("CredSSP sequence is already finished".to_string()),
+        }
+    }
+
+    fn process_ts_request(&mut self, request: credssp::TsRequest) -> LocalCredsspProcessGenerator<'_> {
+        self.client.process(request)
+    }
+
+    fn handle_process_result(&mut self, result: ClientState, output: &mut WriteBuf) -> Result<connector::Written, String> {
+        let (size, next_state) = match self.state {
+            LocalCredsspState::Ongoing => {
+                let (ts_request_from_client, next_state) = match result {
+                    ClientState::ReplyNeeded(ts_request) => (ts_request, LocalCredsspState::Ongoing),
+                    ClientState::FinalMessage(ts_request) => (
+                        ts_request,
+                        if self.selected_protocol.contains(ironrdp::pdu::nego::SecurityProtocol::HYBRID_EX) {
+                            LocalCredsspState::EarlyUserAuthResult
+                        } else {
+                            LocalCredsspState::Finished
+                        },
+                    ),
+                };
+
+                let length = usize::from(ts_request_from_client.buffer_len());
+                let unfilled_buffer = output.unfilled_to(length);
+                ts_request_from_client
+                    .encode_ts_request(unfilled_buffer)
+                    .map_err(|e| format!("CredSSP encode failed: {e}"))?;
+                output.advance(length);
+
+                (connector::Written::from_size(length).map_err(|e| e.to_string())?, next_state)
+            }
+            LocalCredsspState::EarlyUserAuthResult => (connector::Written::Nothing, LocalCredsspState::Finished),
+            LocalCredsspState::Finished => return Err("CredSSP sequence is already done".to_string()),
+        };
+
+        self.state = next_state;
+        Ok(size)
+    }
 }
 
 /// 全局应用状态，存储所有活动会话
@@ -282,14 +596,7 @@ pub struct RdpKeyboardEventPayload {
     pub down: bool,
 }
 
-#[derive(serde::Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct RdpFrameEvent {
-    pub width: u16,
-    pub height: u16,
-    pub mime_type: String,
-    pub image_base64: String,
-}
+const RDP_FRAME_HEADER_SIZE: usize = 13;
 
 type UpgradedFramed = ironrdp_blocking::Framed<rustls::StreamOwned<rustls::ClientConnection, TcpStream>>;
 
@@ -406,6 +713,8 @@ fn connect_rdp(
     let mut network_client = ReqwestNetworkClient;
     log_rdp_info(session_id, target, "auth", "starting CredSSP and session finalization");
     let connection_context = connect_finalize_with_share_id(
+        session_id,
+        target,
         client_connector,
         &mut upgraded_framed,
         &mut network_client,
@@ -439,7 +748,7 @@ fn connect_rdp(
 }
 
 fn resolve_credssp_state(
-    generator: &mut CredsspProcessGenerator<'_>,
+    generator: &mut LocalCredsspProcessGenerator<'_>,
     network_client: &mut impl NetworkClient,
 ) -> Result<ClientState, String> {
     let mut state = generator.start();
@@ -466,22 +775,20 @@ fn perform_credssp_step(
     buf: &mut WriteBuf,
     server_name: connector::ServerName,
     server_public_key: Vec<u8>,
-    kerberos_config: Option<KerberosConfig>,
+    _kerberos_config: Option<KerberosConfig>,
 ) -> Result<(), String> {
     let selected_protocol = match connector.state {
         connector::ClientConnectorState::Credssp { selected_protocol, .. } => selected_protocol,
         _ => return Err("invalid connector state for CredSSP sequence".to_string()),
     };
 
-    let (mut sequence, mut ts_request) = CredsspSequence::init(
+    let (mut sequence, mut ts_request) = LocalCredsspSequence::init(
         connector.config.credentials.clone(),
         connector.config.domain.as_deref(),
         selected_protocol,
         server_name,
         server_public_key,
-        kerberos_config,
-    )
-    .map_err(|e| format!("CredSSP init failed: {e}"))?;
+    )?;
 
     loop {
         let client_state = {
@@ -523,6 +830,8 @@ fn perform_credssp_step(
 }
 
 fn connect_finalize_with_share_id(
+    session_id: &str,
+    target: &str,
     mut connector: connector::ClientConnector,
     framed: &mut UpgradedFramed,
     network_client: &mut impl NetworkClient,
@@ -532,8 +841,18 @@ fn connect_finalize_with_share_id(
 ) -> Result<RdpConnectionContext, String> {
     let mut buf = WriteBuf::new();
     let mut share_id: Option<u32> = None;
+    let finalize_started_at = Instant::now();
+    let mut last_state_name = connector.state.name();
+
+    log_rdp_info(
+        session_id,
+        target,
+        "auth",
+        format!("entered finalize flow at state {last_state_name}"),
+    );
 
     if connector.should_perform_credssp() {
+        let credssp_started_at = Instant::now();
         perform_credssp_step(
             &mut connector,
             framed,
@@ -543,15 +862,41 @@ fn connect_finalize_with_share_id(
             server_public_key,
             kerberos_config,
         )?;
+        log_rdp_info(
+            session_id,
+            target,
+            "auth",
+            format!(
+                "CredSSP finished in {} ms, next state {}",
+                credssp_started_at.elapsed().as_millis(),
+                connector.state.name()
+            ),
+        );
+        last_state_name = connector.state.name();
     }
 
     loop {
         buf.clear();
 
         let written = if let Some(next_pdu_hint) = connector.next_pdu_hint() {
+            let read_started_at = Instant::now();
             let pdu = framed
                 .read_by_hint(next_pdu_hint)
                 .map_err(|e| format!("read frame by hint failed: {e}"))?;
+            let read_elapsed = read_started_at.elapsed();
+
+            if read_elapsed >= Duration::from_millis(500) {
+                log_rdp_info(
+                    session_id,
+                    target,
+                    "auth",
+                    format!(
+                        "waited {} ms for server PDU while in state {}",
+                        read_elapsed.as_millis(),
+                        connector.state.name()
+                    ),
+                );
+            }
 
             if share_id.is_none()
                 && matches!(connector.state, connector::ClientConnectorState::CapabilitiesExchange { .. })
@@ -578,7 +923,29 @@ fn connect_finalize_with_share_id(
                 .map_err(|e| format!("write response failed: {e}"))?;
         }
 
+        let state_name = connector.state.name();
+        if state_name != last_state_name {
+            log_rdp_info(
+                session_id,
+                target,
+                "auth",
+                format!(
+                    "state transition: {} -> {} at {} ms",
+                    last_state_name,
+                    state_name,
+                    finalize_started_at.elapsed().as_millis()
+                ),
+            );
+            last_state_name = state_name;
+        }
+
         if let connector::ClientConnectorState::Connected { result } = connector.state {
+            log_rdp_info(
+                session_id,
+                target,
+                "auth",
+                format!("finalize flow completed in {} ms", finalize_started_at.elapsed().as_millis()),
+            );
             return Ok(RdpConnectionContext {
                 connection_result: result,
                 share_id: share_id.ok_or_else(|| "share_id was not captured during activation".to_string())?,
@@ -629,42 +996,117 @@ fn extract_tls_server_public_key(cert: &[u8]) -> Result<Vec<u8>, String> {
         .ok_or_else(|| "subject public key BIT STRING is not aligned".to_string())
 }
 
-fn emit_rdp_frame<R: Runtime>(app: &AppHandle<R>, session_id: &str, image: &DecodedImage) -> Result<(), String> {
-    let buffer = image.data().to_vec();
-    let image_buffer = ImageBuffer::<Rgba<u8>, _>::from_raw(
-        u32::from(image.width()),
-        u32::from(image.height()),
-        buffer,
-    )
-    .ok_or_else(|| "invalid RDP image buffer".to_string())?;
-
-    let dynamic_image = image::DynamicImage::ImageRgba8(image_buffer);
-    let rgb_image = dynamic_image.to_rgb8();
-    let mut encoded_bytes = Cursor::new(Vec::new());
-    let mut encoder = JpegEncoder::new_with_quality(&mut encoded_bytes, RDP_JPEG_QUALITY);
-    encoder
-        .encode_image(&image::DynamicImage::ImageRgb8(rgb_image))
-        .map_err(|e| format!("encode JPEG failed: {e}"))?;
-
-    let payload = RdpFrameEvent {
-        width: image.width(),
-        height: image.height(),
-        mime_type: "image/jpeg".to_string(),
-        image_base64: base64::engine::general_purpose::STANDARD.encode(encoded_bytes.into_inner()),
-    };
-
-    app.emit(&format!("rdp-frame-{session_id}"), payload)
-        .map_err(|e| format!("emit RDP frame failed: {e}"))
+fn rect_width(rect: &InclusiveRectangle) -> u16 {
+    rect.right.saturating_sub(rect.left).saturating_add(1)
 }
 
-fn handle_rdp_outputs<R: Runtime>(
-    app: &AppHandle<R>,
-    session_id: &str,
+fn rect_height(rect: &InclusiveRectangle) -> u16 {
+    rect.bottom.saturating_sub(rect.top).saturating_add(1)
+}
+
+fn emit_rdp_frame(
+    frame_channel: &Channel<Response>,
+    image: &DecodedImage,
+    encoder_state: &mut RdpFrameEncoderState,
+    prioritize_speed: bool,
+) -> Result<(), String> {
+    let full_rect = InclusiveRectangle {
+        left: 0,
+        top: 0,
+        right: image.width().saturating_sub(1),
+        bottom: image.height().saturating_sub(1),
+    };
+
+    let encode_rect = full_rect;
+    let rgba = image.data();
+    let pixel_count = usize::from(image.width()) * usize::from(image.height());
+    let rgb_len = pixel_count * 3;
+    if encoder_state.rgb_buffer.len() != rgb_len {
+        encoder_state.rgb_buffer.resize(rgb_len, 0);
+    }
+
+    for (rgba_pixel, rgb_pixel) in rgba.chunks_exact(4).zip(encoder_state.rgb_buffer.chunks_exact_mut(3)) {
+        rgb_pixel[0] = rgba_pixel[0];
+        rgb_pixel[1] = rgba_pixel[1];
+        rgb_pixel[2] = rgba_pixel[2];
+    }
+
+    let quality = encoder_state.jpeg_quality(prioritize_speed);
+    encoder_state.jpeg_buffer.clear();
+    let mut encoder = JpegEncoder::new_with_quality(&mut encoder_state.jpeg_buffer, quality);
+    encoder
+        .encode(
+            &encoder_state.rgb_buffer,
+            u32::from(rect_width(&encode_rect)),
+            u32::from(rect_height(&encode_rect)),
+            ExtendedColorType::Rgb8,
+        )
+        .map_err(|e| format!("encode JPEG failed: {e}"))?;
+
+    encoder_state.packet_buffer.clear();
+    encoder_state
+        .packet_buffer
+        .reserve(RDP_FRAME_HEADER_SIZE + encoder_state.jpeg_buffer.len());
+    encoder_state.packet_buffer.extend_from_slice(&image.width().to_le_bytes());
+    encoder_state.packet_buffer.extend_from_slice(&image.height().to_le_bytes());
+    encoder_state.packet_buffer.extend_from_slice(&encode_rect.left.to_le_bytes());
+    encoder_state.packet_buffer.extend_from_slice(&encode_rect.top.to_le_bytes());
+    encoder_state.packet_buffer.extend_from_slice(&rect_width(&encode_rect).to_le_bytes());
+    encoder_state.packet_buffer.extend_from_slice(&rect_height(&encode_rect).to_le_bytes());
+    encoder_state.packet_buffer.push(1);
+    encoder_state.packet_buffer.extend_from_slice(&encoder_state.jpeg_buffer);
+
+    frame_channel
+        .send(Response::new(std::mem::take(&mut encoder_state.packet_buffer)))
+        .map_err(|e| format!("send RDP frame via channel failed: {e}"))
+}
+
+fn flush_pending_rdp_frame(
+    image: &DecodedImage,
+    frame_channel: &Channel<Response>,
+    encoder_state: &mut RdpFrameEncoderState,
+    pending_frame: &mut PendingRdpFrame,
+    last_frame_emit_at: &mut Instant,
+    has_emitted_frame: &mut bool,
+) -> Result<(), String> {
+    if !pending_frame.dirty {
+        return Ok(());
+    }
+
+    let updated_at = match pending_frame.updated_at {
+        Some(updated_at) => updated_at,
+        None => return Ok(()),
+    };
+
+    let now = Instant::now();
+    let frame_interval = encoder_state.frame_interval();
+    let batch_window = encoder_state.batch_window();
+    let should_emit = pending_frame.force
+        || (last_frame_emit_at.elapsed() >= frame_interval && now.duration_since(updated_at) >= batch_window);
+
+    if !should_emit {
+        return Ok(());
+    }
+
+    let prioritize_speed = !*has_emitted_frame || pending_frame.force;
+    emit_rdp_frame(frame_channel, image, encoder_state, prioritize_speed)?;
+    *last_frame_emit_at = Instant::now();
+    *has_emitted_frame = true;
+    pending_frame.clear();
+
+    Ok(())
+}
+
+fn handle_rdp_outputs(
     framed: &mut UpgradedFramed,
     active_stage: &mut ActiveStage,
     image: &mut DecodedImage,
+    frame_channel: &Channel<Response>,
+    encoder_state: &mut RdpFrameEncoderState,
     outputs: Vec<ActiveStageOutput>,
+    pending_frame: &mut PendingRdpFrame,
     last_frame_emit_at: &mut Instant,
+    has_emitted_frame: &mut bool,
 ) -> Result<bool, String> {
     let mut should_emit_frame = false;
     let mut force_emit_frame = false;
@@ -729,6 +1171,7 @@ fn handle_rdp_outputs<R: Runtime>(
                         active_stage.set_enable_server_pointer(enable_server_pointer);
                         should_emit_frame = true;
                         force_emit_frame = true;
+                        *has_emitted_frame = false;
                         break;
                     }
                 }
@@ -736,10 +1179,18 @@ fn handle_rdp_outputs<R: Runtime>(
         }
     }
 
-    if should_emit_frame && (force_emit_frame || last_frame_emit_at.elapsed() >= RDP_FRAME_INTERVAL) {
-        emit_rdp_frame(app, session_id, image)?;
-        *last_frame_emit_at = Instant::now();
+    if should_emit_frame {
+        pending_frame.mark_dirty(force_emit_frame);
     }
+
+    flush_pending_rdp_frame(
+        image,
+        frame_channel,
+        encoder_state,
+        pending_frame,
+        last_frame_emit_at,
+        has_emitted_frame,
+    )?;
 
     Ok(true)
 }
@@ -755,18 +1206,26 @@ fn map_rdp_mouse_button(button: Option<u8>) -> Option<RdpMouseButton> {
     }
 }
 
-fn handle_rdp_control<R: Runtime>(
-    app: &AppHandle<R>,
-    session_id: &str,
+fn handle_rdp_control(
     control: RdpControlMsg,
     framed: &mut UpgradedFramed,
     active_stage: &mut ActiveStage,
     image: &mut DecodedImage,
+    frame_channel: &Channel<Response>,
     input_db: &mut RdpInputDatabase,
+    encoder_state: &mut RdpFrameEncoderState,
+    pending_frame: &mut PendingRdpFrame,
     last_frame_emit_at: &mut Instant,
+    has_emitted_frame: &mut bool,
 ) -> Result<bool, String> {
     match control {
         RdpControlMsg::Pointer(payload) => {
+            match payload.kind.as_str() {
+                "move" => encoder_state.mark_interaction(RdpInteractionKind::PointerMove),
+                "wheel" => encoder_state.mark_interaction(RdpInteractionKind::Wheel),
+                "down" | "up" => encoder_state.mark_interaction(RdpInteractionKind::Click),
+                _ => {}
+            }
             let mut operations = vec![Operation::MouseMove(MousePosition { x: payload.x, y: payload.y })];
 
             match payload.kind.as_str() {
@@ -803,9 +1262,20 @@ fn handle_rdp_control<R: Runtime>(
                 .process_fastpath_input(image, &input_db.apply(operations))
                 .map_err(|e| format!("process pointer input failed: {e}"))?;
 
-            handle_rdp_outputs(app, session_id, framed, active_stage, image, outputs, last_frame_emit_at)
+            handle_rdp_outputs(
+                framed,
+                active_stage,
+                image,
+                frame_channel,
+                encoder_state,
+                outputs,
+                pending_frame,
+                last_frame_emit_at,
+                has_emitted_frame,
+            )
         }
         RdpControlMsg::Key(payload) => {
+            encoder_state.mark_interaction(RdpInteractionKind::Keyboard);
             let operation = if payload.down {
                 Operation::KeyPressed(Scancode::from_u16(payload.scancode))
             } else {
@@ -816,14 +1286,35 @@ fn handle_rdp_control<R: Runtime>(
                 .process_fastpath_input(image, &input_db.apply([operation]))
                 .map_err(|e| format!("process keyboard input failed: {e}"))?;
 
-            handle_rdp_outputs(app, session_id, framed, active_stage, image, outputs, last_frame_emit_at)
+            handle_rdp_outputs(
+                framed,
+                active_stage,
+                image,
+                frame_channel,
+                encoder_state,
+                outputs,
+                pending_frame,
+                last_frame_emit_at,
+                has_emitted_frame,
+            )
         }
         RdpControlMsg::ReleaseAll => {
+            encoder_state.mark_interaction(RdpInteractionKind::Keyboard);
             let outputs = active_stage
                 .process_fastpath_input(image, &input_db.release_all())
                 .map_err(|e| format!("release keyboard state failed: {e}"))?;
 
-            handle_rdp_outputs(app, session_id, framed, active_stage, image, outputs, last_frame_emit_at)
+            handle_rdp_outputs(
+                framed,
+                active_stage,
+                image,
+                frame_channel,
+                encoder_state,
+                outputs,
+                pending_frame,
+                last_frame_emit_at,
+                has_emitted_frame,
+            )
         }
         RdpControlMsg::Resize(width, height) => {
             let (width, height) = MonitorLayoutEntry::adjust_display_size(width as u32, height as u32);
@@ -837,18 +1328,29 @@ fn handle_rdp_control<R: Runtime>(
             let outputs = active_stage
                 .graceful_shutdown()
                 .map_err(|e| format!("graceful shutdown failed: {e}"))?;
-            let _ = handle_rdp_outputs(app, session_id, framed, active_stage, image, outputs, last_frame_emit_at);
+            let _ = handle_rdp_outputs(
+                framed,
+                active_stage,
+                image,
+                frame_channel,
+                encoder_state,
+                outputs,
+                pending_frame,
+                last_frame_emit_at,
+                has_emitted_frame,
+            );
             Ok(false)
         }
     }
 }
 
 fn run_rdp_session<R: Runtime>(
-    app: AppHandle<R>,
+    _app: AppHandle<R>,
     session_id: String,
     target: String,
     connection_context: RdpConnectionContext,
     mut framed: UpgradedFramed,
+    frame_channel: Channel<Response>,
     control_rx: std_mpsc::Receiver<RdpControlMsg>,
 ) -> Result<(), String> {
     let share_id = connection_context.share_id;
@@ -860,8 +1362,11 @@ fn run_rdp_session<R: Runtime>(
     let mut image = DecodedImage::new(PixelFormat::RgbA32, desktop_width, desktop_height);
     let mut active_stage = ActiveStage::new(connection_context.connection_result);
     let mut input_db = RdpInputDatabase::new();
+    let mut encoder_state = RdpFrameEncoderState::new();
     let mut received_server_frame = false;
+    let mut pending_frame = PendingRdpFrame::new();
     let mut last_frame_emit_at = Instant::now() - RDP_FRAME_INTERVAL;
+    let mut has_emitted_frame = false;
     let started_at = Instant::now();
     let mut last_first_frame_wake_at: Option<Instant> = None;
 
@@ -880,14 +1385,16 @@ fn run_rdp_session<R: Runtime>(
     loop {
         while let Ok(control) = control_rx.try_recv() {
             if !handle_rdp_control(
-                &app,
-                &session_id,
                 control,
                 &mut framed,
                 &mut active_stage,
                 &mut image,
+                &frame_channel,
                 &mut input_db,
+                &mut encoder_state,
+                &mut pending_frame,
                 &mut last_frame_emit_at,
+                &mut has_emitted_frame,
             )? {
                 log_rdp_info(&session_id, &target, "close", "session closed by frontend request");
                 return Ok(());
@@ -911,6 +1418,15 @@ fn run_rdp_session<R: Runtime>(
             }
         }
 
+        flush_pending_rdp_frame(
+            &image,
+            &frame_channel,
+            &mut encoder_state,
+            &mut pending_frame,
+            &mut last_frame_emit_at,
+            &mut has_emitted_frame,
+        )?;
+
         match framed.read_pdu() {
             Ok((action, payload)) => {
                 if !received_server_frame {
@@ -928,13 +1444,15 @@ fn run_rdp_session<R: Runtime>(
                     .map_err(|e| format!("process active stage failed: {e}"))?;
 
                 if !handle_rdp_outputs(
-                    &app,
-                    &session_id,
                     &mut framed,
                     &mut active_stage,
                     &mut image,
+                    &frame_channel,
+                    &mut encoder_state,
                     outputs,
+                    &mut pending_frame,
                     &mut last_frame_emit_at,
+                    &mut has_emitted_frame,
                 )? {
                     return Ok(());
                 }
@@ -1275,6 +1793,7 @@ async fn create_rdp_session<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     config: RdpConnectConfig,
+    frame_channel: Channel<Response>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let target = rdp_target_label(&config);
@@ -1302,7 +1821,15 @@ async fn create_rdp_session<R: Runtime>(
     let app_clone = app.clone();
     let rdp_sessions = Arc::clone(&state.rdp_sessions);
     std::thread::spawn(move || {
-        match run_rdp_session(app_clone.clone(), session_id_clone.clone(), target_clone.clone(), connection_context, framed, control_rx) {
+        match run_rdp_session(
+            app_clone.clone(),
+            session_id_clone.clone(),
+            target_clone.clone(),
+            connection_context,
+            framed,
+            frame_channel,
+            control_rx,
+        ) {
             Ok(()) => log_rdp_info(&session_id_clone, &target_clone, "close", "session loop ended"),
             Err(error) => log_rdp_error(&session_id_clone, &target_clone, "runtime", &error),
         }
