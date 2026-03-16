@@ -22,7 +22,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel 
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -203,7 +203,6 @@ function DraggableDroppableRow({
           <>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Monitor className="mr-2 h-4 w-4" /> 内嵌连接远程桌面</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect-msrdpax', node)}><MonitorCheck className="mr-2 h-4 w-4" /> MsTscAx 内嵌连接</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect-mstsc', node)}><MonitorCheck className="mr-2 h-4 w-4" /> mstsc 外部窗口连接</ContextMenuItem>
           </>
         )}
         <ContextMenuSeparator />
@@ -228,7 +227,6 @@ export function SessionModule() {
   const [rdpOpen, setRdpOpen] = useState(false);
   const [directRdpOpen, setDirectRdpOpen] = useState(false);
   const [directMsrdpaxOpen, setDirectMsrdpaxOpen] = useState(false);
-  const [directMstscOpen, setDirectMstscOpen] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [targetNode, setTargetNode] = useState<SessionNode | null>(null);
@@ -246,7 +244,6 @@ export function SessionModule() {
   const [sftpOverallTotal, setSftpOverallTotal] = useState(0);
   const [sftpFileProgress, setSftpFileProgress] = useState<Record<string, { sent: number; total: number }>>({});
   const [sftpStopping, setSftpStopping] = useState(false);
-  const [mstscError, setMstscError] = useState<string | null>(null);
   const progressUnlistenRef = useRef<UnlistenFn | null>(null);
   const currentSftpUploadIdRef = useRef<string | null>(null);
 
@@ -319,45 +316,6 @@ export function SessionModule() {
     const normalized = trimmed === "~" ? "~/" : trimmed;
     const separator = normalized.endsWith("/") ? "" : "/";
     return `${normalized}${separator}${fileName}`;
-  };
-
-  const getErrorMessage = (error: unknown) => {
-    if (error instanceof Error && error.message.trim()) {
-      return error.message.trim();
-    }
-
-    if (typeof error === "string" && error.trim()) {
-      return error.trim();
-    }
-
-    if (typeof error === "object" && error !== null) {
-      const candidate = (error as { message?: unknown }).message;
-      if (typeof candidate === "string" && candidate.trim()) {
-        return candidate.trim();
-      }
-    }
-
-    return "未获取到后端返回的详细错误信息。";
-  };
-
-  const launchMstscConnection = async (config: RDPConfig) => {
-    try {
-      await invoke("launch_mstsc_rdp", {
-        config: {
-          host: config.host,
-          port: config.port,
-          username: config.username,
-          password: config.password,
-          domain: config.domain,
-          width: config.width,
-          height: config.height,
-          auto_resize: config.autoResize ?? true,
-        },
-      });
-    } catch (error) {
-      console.error("启动 mstsc 失败:", error);
-      setMstscError(getErrorMessage(error));
-    }
   };
 
   const loadLocalFiles = async (paths: string[]) => {
@@ -562,8 +520,6 @@ export function SessionModule() {
           },
         },
       });
-    } else if (type === 'connect-mstsc' && node.type === 'rdp' && node.config && isRdpConfig(node.config)) {
-      void launchMstscConnection(node.config);
     } else if (type === 'new-ssh') { setTargetNode(node); setEditNode(null); setSshOpen(true); }
     else if (type === 'new-rdp') { setTargetNode(node); setEditNode(null); setRdpOpen(true); }
     else if (type === 'new-folder') { setTargetNode(node); setEditNode(null); setFolderOpen(true); }
@@ -657,9 +613,6 @@ export function SessionModule() {
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setDirectMsrdpaxOpen(true)}>
               <MonitorCheck className="mr-2 h-4 w-4 text-sky-500" /> MsTscAx 内嵌连接
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setDirectMstscOpen(true)}>
-              <MonitorCheck className="mr-2 h-4 w-4 text-sky-500" /> mstsc 外部窗口连接
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -782,10 +735,6 @@ export function SessionModule() {
           setDirectMsrdpaxOpen(false);
         }}
       />
-      <RdpConnectDialog open={directMstscOpen} onOpenChange={setDirectMstscOpen} isDirect={true} onSave={(cfg) => {
-        void launchMstscConnection(cfg);
-        setDirectMstscOpen(false);
-      }} />
       <Dialog open={sftpOpen} onOpenChange={setSftpOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>SFTP 上传文件</DialogTitle></DialogHeader>
@@ -911,23 +860,6 @@ export function SessionModule() {
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>确认删除 "{targetNode?.name}"？</AlertDialogTitle></AlertDialogHeader>
           <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction className="bg-destructive" onClick={() => targetNode && removeNode(targetNode.id)}>删除</AlertDialogAction></AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog open={!!mstscError} onOpenChange={(open) => !open && setMstscError(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>mstsc 启动失败</AlertDialogTitle>
-            <AlertDialogDescription>
-              Windows 远程桌面客户端未能按当前配置启动。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="rounded-2xl border border-border/60 bg-black/25 px-4 py-3 text-xs leading-6 text-muted-foreground">
-            <div className="font-medium text-foreground">技术详情</div>
-            <div className="mt-1 break-all">{mstscError}</div>
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setMstscError(null)}>知道了</AlertDialogAction>
-          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
