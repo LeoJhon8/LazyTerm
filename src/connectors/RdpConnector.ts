@@ -180,7 +180,9 @@ export class RdpConnector implements IRdpConnector {
     const regionTop = view.getUint16(6, true);
     const regionWidth = view.getUint16(8, true);
     const regionHeight = view.getUint16(10, true);
-    const fullFrame = (view.getUint8(12) & 0x01) === 0x01;
+    const flags = view.getUint8(12);
+    const fullFrame = (flags & 0x01) === 0x01;
+    const encoding = (flags & 0x02) === 0x02 ? "rgba" : "jpeg";
     const imageBytes = packet.slice(RdpConnector.FRAME_HEADER_SIZE);
 
     return {
@@ -191,7 +193,7 @@ export class RdpConnector implements IRdpConnector {
       regionWidth,
       regionHeight,
       fullFrame,
-      mimeType: "image/jpeg",
+      encoding,
       imageBytes,
     };
   }

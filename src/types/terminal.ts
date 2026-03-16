@@ -25,7 +25,7 @@ export interface RdpFramePayload {
   regionWidth: number;
   regionHeight: number;
   fullFrame: boolean;
-  mimeType: "image/jpeg";
+  encoding: "jpeg" | "rgba";
   imageBytes: ArrayBuffer;
 }
 

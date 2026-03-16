@@ -77,12 +77,14 @@ const RDP_POINTER_MOVE_BATCH_WINDOW: Duration = Duration::from_millis(8);
 const RDP_WHEEL_BATCH_WINDOW: Duration = Duration::from_millis(10);
 const RDP_KEYBOARD_BATCH_WINDOW: Duration = Duration::from_millis(12);
 const RDP_CLICK_BATCH_WINDOW: Duration = Duration::from_millis(12);
-const RDP_FULL_JPEG_QUALITY: u8 = 50;
+const RDP_FULL_JPEG_QUALITY: u8 = 58;
+const RDP_REFINEMENT_JPEG_QUALITY: u8 = 66;
 const RDP_POINTER_MOVE_JPEG_QUALITY: u8 = 28;
 const RDP_WHEEL_JPEG_QUALITY: u8 = 32;
-const RDP_KEYBOARD_JPEG_QUALITY: u8 = 38;
-const RDP_CLICK_JPEG_QUALITY: u8 = 40;
+const RDP_KEYBOARD_JPEG_QUALITY: u8 = 42;
+const RDP_CLICK_JPEG_QUALITY: u8 = 46;
 const RDP_INTERACTION_WINDOW: Duration = Duration::from_millis(320);
+const RDP_REFINEMENT_DELAY: Duration = Duration::from_millis(90);
 const RDP_FIRST_FRAME_WAKE_DELAY: Duration = Duration::from_millis(700);
 const RDP_FIRST_FRAME_WAKE_REPEAT: Duration = Duration::from_secs(2);
 
@@ -204,6 +206,13 @@ struct RdpFrameEncoderState {
     jpeg_buffer: Vec<u8>,
     packet_buffer: Vec<u8>,
     last_interaction: Option<(RdpInteractionKind, Instant)>,
+    needs_refinement: bool,
+}
+
+#[derive(Clone, Copy)]
+enum RdpFrameEncodeMode {
+    Jpeg { quality: u8 },
+    RawRgba,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -250,6 +259,10 @@ impl RdpInteractionKind {
             Self::Click => RDP_CLICK_JPEG_QUALITY,
         }
     }
+
+    fn prefer_raw_rgba(self) -> bool {
+        matches!(self, Self::PointerMove | Self::Wheel)
+    }
 }
 
 impl RdpFrameEncoderState {
@@ -259,6 +272,7 @@ impl RdpFrameEncoderState {
             jpeg_buffer: Vec::new(),
             packet_buffer: Vec::new(),
             last_interaction: None,
+            needs_refinement: false,
         }
     }
 
@@ -302,6 +316,35 @@ impl RdpFrameEncoderState {
         } else {
             RDP_FULL_JPEG_QUALITY
         }
+    }
+
+    fn prefer_raw_rgba(&self) -> bool {
+        self.interaction_kind().is_some_and(RdpInteractionKind::prefer_raw_rgba)
+    }
+
+    fn encode_mode(&self, prioritize_speed: bool) -> RdpFrameEncodeMode {
+        if self.prefer_raw_rgba() {
+            RdpFrameEncodeMode::RawRgba
+        } else {
+            RdpFrameEncodeMode::Jpeg {
+                quality: self.jpeg_quality(prioritize_speed),
+            }
+        }
+    }
+
+    fn mark_degraded_emit(&mut self) {
+        self.needs_refinement = true;
+    }
+
+    fn clear_refinement(&mut self) {
+        self.needs_refinement = false;
+    }
+
+    fn should_emit_refinement(&self) -> bool {
+        self.needs_refinement
+            && self
+                .last_interaction
+                .is_some_and(|(_, instant)| instant.elapsed() > RDP_INTERACTION_WINDOW + RDP_REFINEMENT_DELAY)
     }
 }
 
@@ -595,8 +638,6 @@ pub struct RdpKeyboardEventPayload {
     pub scancode: u16,
     pub down: bool,
 }
-
-const RDP_FRAME_HEADER_SIZE: usize = 13;
 
 type UpgradedFramed = ironrdp_blocking::Framed<rustls::StreamOwned<rustls::ClientConnection, TcpStream>>;
 
@@ -1008,7 +1049,7 @@ fn emit_rdp_frame(
     frame_channel: &Channel<Response>,
     image: &DecodedImage,
     encoder_state: &mut RdpFrameEncoderState,
-    prioritize_speed: bool,
+    encode_mode: RdpFrameEncodeMode,
 ) -> Result<(), String> {
     let full_rect = InclusiveRectangle {
         left: 0,
@@ -1018,43 +1059,48 @@ fn emit_rdp_frame(
     };
 
     let encode_rect = full_rect;
-    let rgba = image.data();
-    let pixel_count = usize::from(image.width()) * usize::from(image.height());
-    let rgb_len = pixel_count * 3;
-    if encoder_state.rgb_buffer.len() != rgb_len {
-        encoder_state.rgb_buffer.resize(rgb_len, 0);
-    }
-
-    for (rgba_pixel, rgb_pixel) in rgba.chunks_exact(4).zip(encoder_state.rgb_buffer.chunks_exact_mut(3)) {
-        rgb_pixel[0] = rgba_pixel[0];
-        rgb_pixel[1] = rgba_pixel[1];
-        rgb_pixel[2] = rgba_pixel[2];
-    }
-
-    let quality = encoder_state.jpeg_quality(prioritize_speed);
-    encoder_state.jpeg_buffer.clear();
-    let mut encoder = JpegEncoder::new_with_quality(&mut encoder_state.jpeg_buffer, quality);
-    encoder
-        .encode(
-            &encoder_state.rgb_buffer,
-            u32::from(rect_width(&encode_rect)),
-            u32::from(rect_height(&encode_rect)),
-            ExtendedColorType::Rgb8,
-        )
-        .map_err(|e| format!("encode JPEG failed: {e}"))?;
-
     encoder_state.packet_buffer.clear();
-    encoder_state
-        .packet_buffer
-        .reserve(RDP_FRAME_HEADER_SIZE + encoder_state.jpeg_buffer.len());
     encoder_state.packet_buffer.extend_from_slice(&image.width().to_le_bytes());
     encoder_state.packet_buffer.extend_from_slice(&image.height().to_le_bytes());
     encoder_state.packet_buffer.extend_from_slice(&encode_rect.left.to_le_bytes());
     encoder_state.packet_buffer.extend_from_slice(&encode_rect.top.to_le_bytes());
     encoder_state.packet_buffer.extend_from_slice(&rect_width(&encode_rect).to_le_bytes());
     encoder_state.packet_buffer.extend_from_slice(&rect_height(&encode_rect).to_le_bytes());
-    encoder_state.packet_buffer.push(1);
-    encoder_state.packet_buffer.extend_from_slice(&encoder_state.jpeg_buffer);
+
+    match encode_mode {
+        RdpFrameEncodeMode::RawRgba => {
+        encoder_state.packet_buffer.push(0x01 | 0x02);
+        encoder_state.packet_buffer.extend_from_slice(image.data());
+        }
+        RdpFrameEncodeMode::Jpeg { quality } => {
+            let rgba = image.data();
+            let pixel_count = usize::from(image.width()) * usize::from(image.height());
+            let rgb_len = pixel_count * 3;
+            if encoder_state.rgb_buffer.len() != rgb_len {
+                encoder_state.rgb_buffer.resize(rgb_len, 0);
+            }
+
+            for (rgba_pixel, rgb_pixel) in rgba.chunks_exact(4).zip(encoder_state.rgb_buffer.chunks_exact_mut(3)) {
+                rgb_pixel[0] = rgba_pixel[0];
+                rgb_pixel[1] = rgba_pixel[1];
+                rgb_pixel[2] = rgba_pixel[2];
+            }
+
+            encoder_state.jpeg_buffer.clear();
+            let mut encoder = JpegEncoder::new_with_quality(&mut encoder_state.jpeg_buffer, quality);
+            encoder
+                .encode(
+                    &encoder_state.rgb_buffer,
+                    u32::from(rect_width(&encode_rect)),
+                    u32::from(rect_height(&encode_rect)),
+                    ExtendedColorType::Rgb8,
+                )
+                .map_err(|e| format!("encode JPEG failed: {e}"))?;
+
+            encoder_state.packet_buffer.push(0x01);
+            encoder_state.packet_buffer.extend_from_slice(&encoder_state.jpeg_buffer);
+        }
+    }
 
     frame_channel
         .send(Response::new(std::mem::take(&mut encoder_state.packet_buffer)))
@@ -1089,10 +1135,43 @@ fn flush_pending_rdp_frame(
     }
 
     let prioritize_speed = !*has_emitted_frame || pending_frame.force;
-    emit_rdp_frame(frame_channel, image, encoder_state, prioritize_speed)?;
+    let encode_mode = encoder_state.encode_mode(prioritize_speed);
+    emit_rdp_frame(frame_channel, image, encoder_state, encode_mode)?;
     *last_frame_emit_at = Instant::now();
     *has_emitted_frame = true;
+    match encode_mode {
+        RdpFrameEncodeMode::RawRgba => encoder_state.mark_degraded_emit(),
+        RdpFrameEncodeMode::Jpeg { quality } if quality < RDP_FULL_JPEG_QUALITY => encoder_state.mark_degraded_emit(),
+        RdpFrameEncodeMode::Jpeg { .. } => encoder_state.clear_refinement(),
+    }
     pending_frame.clear();
+
+    Ok(())
+}
+
+fn flush_rdp_refinement_frame(
+    image: &DecodedImage,
+    frame_channel: &Channel<Response>,
+    encoder_state: &mut RdpFrameEncoderState,
+    last_frame_emit_at: &mut Instant,
+    has_emitted_frame: &mut bool,
+) -> Result<(), String> {
+    if !encoder_state.should_emit_refinement() || last_frame_emit_at.elapsed() < RDP_FRAME_INTERVAL {
+        return Ok(());
+    }
+
+    emit_rdp_frame(
+        frame_channel,
+        image,
+        encoder_state,
+        RdpFrameEncodeMode::Jpeg {
+            quality: RDP_REFINEMENT_JPEG_QUALITY,
+        },
+    )?;
+
+    *last_frame_emit_at = Instant::now();
+    *has_emitted_frame = true;
+    encoder_state.clear_refinement();
 
     Ok(())
 }
@@ -1423,6 +1502,13 @@ fn run_rdp_session<R: Runtime>(
             &frame_channel,
             &mut encoder_state,
             &mut pending_frame,
+            &mut last_frame_emit_at,
+            &mut has_emitted_frame,
+        )?;
+        flush_rdp_refinement_frame(
+            &image,
+            &frame_channel,
+            &mut encoder_state,
             &mut last_frame_emit_at,
             &mut has_emitted_frame,
         )?;

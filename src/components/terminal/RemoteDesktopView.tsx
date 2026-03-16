@@ -171,36 +171,6 @@ export function RemoteDesktopView() {
       const drawToken = ++drawTokenRef.current;
 
       try {
-        const blob = new Blob([frame.imageBytes], { type: frame.mimeType });
-        let decodedSource: CanvasImageSource;
-        let decodedBitmap: ImageBitmap | null = null;
-
-        if (typeof createImageBitmap === "function") {
-          decodedBitmap = await createImageBitmap(blob);
-          decodedSource = decodedBitmap;
-        } else {
-          const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-            const objectUrl = URL.createObjectURL(blob);
-            const img = new Image();
-            img.onload = () => {
-              URL.revokeObjectURL(objectUrl);
-              resolve(img);
-            };
-            img.onerror = () => {
-              URL.revokeObjectURL(objectUrl);
-              reject(new Error("Image decode failed"));
-            };
-            img.src = objectUrl;
-          });
-
-          decodedSource = image;
-        }
-
-        if (disposed || drawToken !== drawTokenRef.current) {
-          decodedBitmap?.close();
-          return;
-        }
-
         if (canvas.width !== frame.desktopWidth || canvas.height !== frame.desktopHeight) {
           canvas.width = frame.desktopWidth;
           canvas.height = frame.desktopHeight;
@@ -212,13 +182,57 @@ export function RemoteDesktopView() {
         });
 
         if (!context) {
-          decodedBitmap?.close();
           return;
         }
 
         context.imageSmoothingEnabled = false;
-        context.drawImage(decodedSource, 0, 0, canvas.width, canvas.height);
-        decodedBitmap?.close();
+
+        if (frame.encoding === "rgba") {
+          const rgbaBytes = new Uint8ClampedArray(frame.imageBytes);
+          const expectedLength = frame.desktopWidth * frame.desktopHeight * 4;
+          if (rgbaBytes.length !== expectedLength) {
+            throw new Error(`Unexpected RGBA frame size: ${rgbaBytes.length} !== ${expectedLength}`);
+          }
+
+          if (disposed || drawToken !== drawTokenRef.current) {
+            return;
+          }
+
+          context.putImageData(new ImageData(rgbaBytes, frame.desktopWidth, frame.desktopHeight), 0, 0);
+        } else {
+          const blob = new Blob([frame.imageBytes], { type: "image/jpeg" });
+          let decodedSource: CanvasImageSource;
+          let decodedBitmap: ImageBitmap | null = null;
+
+          if (typeof createImageBitmap === "function") {
+            decodedBitmap = await createImageBitmap(blob);
+            decodedSource = decodedBitmap;
+          } else {
+            const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const objectUrl = URL.createObjectURL(blob);
+              const img = new Image();
+              img.onload = () => {
+                URL.revokeObjectURL(objectUrl);
+                resolve(img);
+              };
+              img.onerror = () => {
+                URL.revokeObjectURL(objectUrl);
+                reject(new Error("Image decode failed"));
+              };
+              img.src = objectUrl;
+            });
+
+            decodedSource = image;
+          }
+
+          if (disposed || drawToken !== drawTokenRef.current) {
+            decodedBitmap?.close();
+            return;
+          }
+
+          context.drawImage(decodedSource, 0, 0, canvas.width, canvas.height);
+          decodedBitmap?.close();
+        }
       } catch (error) {
         if (!disposed) {
           console.error("[RDP] Canvas decode failed:", error);
