@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
-import type { RDPConfig } from "@/types/terminal";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { RDPConfig, RdpBackend } from "@/types/terminal";
 
 interface RdpConnectDialogProps {
   open: boolean;
@@ -25,6 +26,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
   const [width, setWidth] = useState("1280");
   const [height, setHeight] = useState("720");
   const [autoResize, setAutoResize] = useState(true);
+  const [backend, setBackend] = useState<RdpBackend>("ironrdp");
 
   useEffect(() => {
     if (!open) {
@@ -42,6 +44,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
         setWidth(initialConfig.width?.toString() || "1280");
         setHeight(initialConfig.height?.toString() || "720");
         setAutoResize(initialConfig.autoResize ?? true);
+        setBackend(initialConfig.backend ?? "ironrdp");
         return;
       }
 
@@ -54,6 +57,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       setWidth("1280");
       setHeight("720");
       setAutoResize(true);
+      setBackend("ironrdp");
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -74,6 +78,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       width: parseInt(width, 10) || 1280,
       height: parseInt(height, 10) || 720,
       autoResize,
+      backend,
     });
     onOpenChange(false);
   };
@@ -92,6 +97,26 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="rdp-nickname" className="text-right">别名</Label>
               <Input id="rdp-nickname" value={nickname} onChange={(event) => setNickname(event.target.value)} className="col-span-3" />
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">渲染后端</Label>
+              <div className="col-span-3 space-y-2">
+                <Select value={backend} onValueChange={(value) => setBackend(value as RdpBackend)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择 RDP 后端" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ironrdp">IronRDP 内嵌渲染</SelectItem>
+                    <SelectItem value="msrdpax">MsTscAx 原生宿主骨架</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="text-xs leading-5 text-muted-foreground">
+                  {backend === "ironrdp"
+                    ? "保持当前稳定的 canvas 内嵌 RDP 方案。"
+                    : "Windows-only 第一阶段骨架：先接入 tab 内原生宿主生命周期，后续再接 sidecar 与 ActiveX 画面。"}
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">

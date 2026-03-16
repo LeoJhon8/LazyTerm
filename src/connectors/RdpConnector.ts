@@ -10,6 +10,7 @@ import type {
 
 export class RdpConnector implements IRdpConnector {
   readonly protocol = "rdp" as const;
+  readonly backend = "ironrdp" as const;
   private static readonly FRAME_HEADER_SIZE = 13;
 
   private readonly config: RDPConfig;

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Monitor, MousePointer2, RefreshCcw } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
-import type { IRdpConnector, RdpFramePayload } from "@/types/terminal";
+import { NativeRdpHostView } from "@/components/terminal/NativeRdpHostView";
+import type { INativeRdpConnector, IRdpConnector, RdpFramePayload } from "@/types/terminal";
 
 const SCANCODE_MAP: Record<string, number> = {
   Escape: 0x01,
@@ -138,7 +139,14 @@ function getPointerPosition(
 export function RemoteDesktopView() {
   const { activeSessionId, sessions } = useTabsStore();
   const activeSession = sessions.find((session) => session.id === activeSessionId);
-  const connector = activeSession?.connector?.protocol === "rdp" ? activeSession.connector as IRdpConnector : null;
+  const backend = activeSession?.config?.rdpConfig?.backend ?? "ironrdp";
+  const connector = activeSession?.connector?.protocol === "rdp" ? activeSession.connector : null;
+
+  if (activeSession && connector && backend === "msrdpax") {
+    return <NativeRdpHostView title={activeSession.title} connector={connector as INativeRdpConnector} />;
+  }
+
+  const ironConnector = connector ? connector as IRdpConnector : null;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const resizeTimerRef = useRef<number | null>(null);
@@ -149,7 +157,7 @@ export function RemoteDesktopView() {
   const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
-    if (!connector) {
+    if (!ironConnector) {
       return;
     }
 
@@ -245,7 +253,7 @@ export function RemoteDesktopView() {
       }
     };
 
-    connector.onFrame((nextFrame) => {
+    ironConnector.onFrame((nextFrame) => {
       pendingFrameRef.current = nextFrame;
       setFrameSize((current) => {
         if (
@@ -265,12 +273,12 @@ export function RemoteDesktopView() {
 
       setConnected(true);
     }).catch((error) => {
-      if (connector.isConnected) {
+      if (ironConnector.isConnected) {
         console.error("[RDP] Register frame listener failed:", error);
       }
     });
 
-    const disposeClose = connector.onClose(() => {
+    const disposeClose = ironConnector.onClose(() => {
       setConnected(false);
     });
 
@@ -284,12 +292,12 @@ export function RemoteDesktopView() {
         const context = cleanupCanvas.getContext("2d");
         context?.clearRect(0, 0, cleanupCanvas.width, cleanupCanvas.height);
       }
-      connector.releaseInputs();
+      ironConnector.releaseInputs();
     };
-  }, [connector]);
+  }, [ironConnector]);
 
   useEffect(() => {
-    if (!connector || !containerRef.current || !frameSize || !(activeSession?.config?.rdpConfig?.autoResize ?? true)) {
+    if (!ironConnector || !containerRef.current || !frameSize || !(activeSession?.config?.rdpConfig?.autoResize ?? true)) {
       return;
     }
 
@@ -302,7 +310,7 @@ export function RemoteDesktopView() {
       }
 
       resizeTimerRef.current = window.setTimeout(() => {
-        connector.resize(nextWidth, nextHeight);
+        ironConnector.resize(nextWidth, nextHeight);
       }, 250);
     });
 
@@ -315,9 +323,9 @@ export function RemoteDesktopView() {
         resizeTimerRef.current = null;
       }
     };
-  }, [activeSession?.config?.rdpConfig?.autoResize, connector, frameSize]);
+  }, [activeSession?.config?.rdpConfig?.autoResize, ironConnector, frameSize]);
 
-  if (!activeSession || !connector) {
+  if (!activeSession || !ironConnector) {
     return null;
   }
 
@@ -335,7 +343,7 @@ export function RemoteDesktopView() {
       event.clientX,
       event.clientY,
     );
-    connector.sendPointer({
+    ironConnector.sendPointer({
       kind,
       x: point.x,
       y: point.y,
@@ -359,7 +367,7 @@ export function RemoteDesktopView() {
       event.clientX,
       event.clientY,
     );
-    connector.sendPointer({
+    ironConnector.sendPointer({
       kind: "wheel",
       x: point.x,
       y: point.y,
@@ -375,7 +383,7 @@ export function RemoteDesktopView() {
     }
 
     event.preventDefault();
-    connector.sendKey({ scancode, down });
+    ironConnector.sendKey({ scancode, down });
   };
 
   return (
@@ -391,7 +399,7 @@ export function RemoteDesktopView() {
         onWheel={handleWheel}
         onKeyDown={(event) => handleKey(event, true)}
         onKeyUp={(event) => handleKey(event, false)}
-        onBlur={() => connector.releaseInputs()}
+        onBlur={() => ironConnector.releaseInputs()}
       >
         <canvas
           ref={canvasRef}

@@ -4,6 +4,7 @@ import type { ITerminalConnector, RDPConfig, SessionConnector, SSHConfig } from 
 import { LocalConnector } from "@/connectors/LocalConnector";
 import { SshConnector } from "@/connectors/SshConnector";
 import { RdpConnector } from "@/connectors/RdpConnector";
+import { NativeRdpConnector } from "@/connectors/NativeRdpConnector";
 
 /**
  * 终端会话配置接口
@@ -346,7 +347,9 @@ export const useTabsStore = create<TabsState>()(
             if (!sessionData.config?.rdpConfig) {
               throw new Error("RDP 配置不能为空");
             }
-            connector = new RdpConnector(sessionData.config.rdpConfig);
+            connector = sessionData.config.rdpConfig.backend === "msrdpax"
+              ? new NativeRdpConnector(sessionData.config.rdpConfig)
+              : new RdpConnector(sessionData.config.rdpConfig);
             break;
           case "telnet":
             throw new Error("Telnet 连接器目前尚未实现");

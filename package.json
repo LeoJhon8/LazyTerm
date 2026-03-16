@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:msrdpax-sidecar:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-msrdpax-sidecar.ps1 Debug",
+    "build:msrdpax-sidecar:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-msrdpax-sidecar.ps1 Release",
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri": "tauri",

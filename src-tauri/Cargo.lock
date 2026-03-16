@@ -152,6 +152,7 @@ dependencies = [
  "ironrdp-blocking",
  "openssl",
  "portable-pty",
+ "raw-window-handle",
  "russh",
  "russh-keys",
  "russh-sftp",

@@ -1,11 +1,12 @@
 # Lazy Terminal
 
-Lazy Terminal 是一个基于 Tauri 2、React 19、TypeScript 和 Rust 的桌面终端应用，提供本地终端、SSH 会话、会话树管理、SFTP 上传、可定制多面板布局和终端外观系统。
+Lazy Terminal 是一个基于 Tauri 2、React 19、TypeScript 和 Rust 的桌面终端应用，提供本地终端、SSH 会话、RDP 会话、会话树管理、SFTP 上传、可定制多面板布局和终端外观系统。
 
 ## 功能概览
 
 - 本地终端会话：支持自定义工作目录、Shell 选择，以及 Windows 管理员模式启动。
 - SSH 会话：支持密码和私钥认证，连接失败会给出明确错误提示。
+- RDP 会话：支持内嵌 IronRDP 远程桌面，以及通过 mstsc 启动 Windows 原生远程桌面客户端。
 - 会话树管理：以文件夹/连接节点形式维护 SSH 配置，支持拖拽排序、导入导出和右键菜单操作。
 - SFTP 上传：可在会话树中直接对 SSH 节点执行文件上传，并显示整体与单文件进度。
 - 多区域布局：左侧、右侧、顶部、底部和中心终端区域均可配置，布局状态持久化到本地。

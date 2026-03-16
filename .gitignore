@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 src-tauri/target
+
+# .NET sidecar build caches/artifacts
+src-tauri/native/msrdpax-host/bin/
+src-tauri/native/msrdpax-host/obj/
+src-tauri/native/msrdpax-host/.vs/

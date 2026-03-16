@@ -1,4 +1,5 @@
 export type SessionProtocol = 'ssh' | 'local' | 'telnet' | 'rdp';
+export type RdpBackend = 'ironrdp' | 'msrdpax' | 'mstsc-external';
 
 export interface ISessionConnector {
   readonly protocol: SessionProtocol;
@@ -43,8 +44,47 @@ export interface RdpKeyboardPayload {
   down: boolean;
 }
 
+export interface NativeHostRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scaleFactor: number;
+}
+
+export type NativeRdpSessionState =
+  | 'launching'
+  | 'ready'
+  | 'host-ready'
+  | 'control-created'
+  | 'mounted'
+  | 'visible'
+  | 'hidden'
+  | 'focused'
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'state'
+  | 'error'
+  | 'closed';
+
+export interface NativeRdpStatePayload {
+  state: NativeRdpSessionState;
+  detail?: string;
+  rect?: NativeHostRect;
+}
+
+export interface NativeRdpTracePayload {
+  timestampMs: number;
+  level: "info" | "warn" | "error";
+  stage: string;
+  message: string;
+  extra?: string;
+}
+
 export interface IRdpConnector extends ISessionConnector {
   readonly protocol: 'rdp';
+  readonly backend: 'ironrdp';
 
   onFrame(handler: (frame: RdpFramePayload) => void): Promise<void>;
   onClose(handler: () => void): () => void;
@@ -55,7 +95,19 @@ export interface IRdpConnector extends ISessionConnector {
   getFrameSize(): { width: number; height: number } | null;
 }
 
-export type SessionConnector = ITerminalConnector | IRdpConnector;
+export interface INativeRdpConnector extends ISessionConnector {
+  readonly protocol: 'rdp';
+  readonly backend: 'msrdpax';
+
+  onState(handler: (payload: NativeRdpStatePayload) => void): Promise<void>;
+  onTrace(handler: (payload: NativeRdpTracePayload) => void): () => void;
+  onClose(handler: () => void): () => void;
+  mount(rect: NativeHostRect): Promise<void>;
+  setVisible(visible: boolean): Promise<void>;
+  focus(): Promise<void>;
+}
+
+export type SessionConnector = ITerminalConnector | IRdpConnector | INativeRdpConnector;
 
 // SSH 认证方式
 export type SSHAuthType = 'password' | 'privateKey';
@@ -102,4 +154,5 @@ export interface RDPConfig {
   width?: number;
   height?: number;
   autoResize?: boolean;
+  backend?: RdpBackend;
 }
