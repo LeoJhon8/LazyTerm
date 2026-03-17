@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSlotConfigStore } from "@/store/slot-config";
+import { useTabsStore } from "@/store/tabs";
 import { Button } from "@/components/ui/button";
 import { SessionModule } from "@/components/modules/SessionModule";
 import { HistoryModule } from "@/components/modules/HistoryModule";
@@ -19,9 +20,18 @@ const MODULE_ICONS: Record<string, React.ReactNode> = {
 };
 
 export function LeftSlot() {
-  const { currentConfig, setActiveModule, toggleSlotCollapse, setActiveAndExpand } = useSlotConfigStore();
+  const { currentConfig, setActiveModule, toggleSlotCollapse, setActiveAndExpand, setSlotCollapsed } = useSlotConfigStore();
+  const { activeSessionId, sessions } = useTabsStore();
   const { modules, activeModule, collapsed } = currentConfig.left;
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const activeSession = sessions.find((session) => session.id === activeSessionId);
+  const isRdpActive = activeSession?.type === "rdp";
+
+  useEffect(() => {
+    if (isRdpActive && activeModule === "HistoryModule" && !collapsed) {
+      setSlotCollapsed("left", true);
+    }
+  }, [isRdpActive, activeModule, collapsed, setSlotCollapsed]);
 
   if (modules.length === 0) {
     return (
@@ -55,6 +65,10 @@ export function LeftSlot() {
               activeModule === moduleId && collapsed && "activity-button-active-left"
             )}
             onClick={() => {
+              if (isRdpActive && moduleId === "HistoryModule") {
+                return;
+              }
+
               if (collapsed) {
                 setActiveAndExpand("left", moduleId);
               } else {

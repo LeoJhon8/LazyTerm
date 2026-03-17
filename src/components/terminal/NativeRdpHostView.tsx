@@ -26,12 +26,24 @@ async function readHostRect(element: HTMLDivElement): Promise<NativeHostRect> {
     scaleFactor,
   };
 }
+
+function sameHostRect(a: NativeHostRect | null, b: NativeHostRect): boolean {
+  return !!a
+    && a.x === b.x
+    && a.y === b.y
+    && a.width === b.width
+    && a.height === b.height
+    && a.scaleFactor === b.scaleFactor;
+}
+
 export function NativeRdpHostView({
   title,
   connector,
+  onVisualReady,
 }: {
   title: string;
   connector: INativeRdpConnector;
+  onVisualReady?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const menuOverlayActiveRef = useRef(false);
@@ -41,6 +53,8 @@ export function NativeRdpHostView({
     detail: "正在准备 MsTscAx 原生宿主。",
   });
   const [traceItems, setTraceItems] = useState<NativeRdpTracePayload[]>([]);
+  const visualReadyNotifiedRef = useRef(false);
+  const lastMountedRectRef = useRef<NativeHostRect | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -94,39 +108,117 @@ export function NativeRdpHostView({
       return;
     }
 
-    void connector.setVisible(true);
-
+    // Keep the native window hidden until we have called mount() with the
+    // correct DOM rect.  Calling setVisible(true) before mount() causes the
+    // Win32 window to appear at a stale position and then jump, which is the
+    // "flash" when switching tabs.
+    let disposed = false;
+    let initialMountDone = false;
     let rafId: number | null = null;
+    let resizeObserver: ResizeObserver | null = null;
 
-    const pushRect = () => {
-      void readHostRect(element).then((rect) => {
-        void connector.mount(rect).catch((error) => {
-          logger.error("FE/terminal-view/native-rdp", "Mount failed", {error});
-        });
-      });
+    const pushRect = async (initial: boolean = false) => {
+      const rect = await readHostRect(element);
+      if (disposed) {
+        return;
+      }
+
+      if (!initial && sameHostRect(lastMountedRectRef.current, rect)) {
+        return;
+      }
+
+      try {
+        await connector.mount(rect);
+        lastMountedRectRef.current = rect;
+        if (initial && !initialMountDone && !disposed) {
+          initialMountDone = true;
+          // Now that initial mount succeeded, enable ResizeObserver to track
+          // future layout changes. This prevents ResizeObserver from triggering
+          // during the initial mount + CSS transition sequence.
+          if (resizeObserver) {
+            resizeObserver.observe(element);
+          }
+          void connector.setVisible(true);
+        }
+      } catch (error) {
+        if (!disposed) {
+          logger.error("FE/terminal-view/native-rdp", "Mount failed", { error });
+        }
+      }
     };
 
-    pushRect();
-    const resizeObserver = new ResizeObserver(() => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(pushRect);
+    // Delay the initial pushRect by one macrotask (setTimeout 0) so that all
+    // React effects — including App.tsx updating CSS variables like --bh (which
+    // collapses the bottom bar when switching to an RDP tab) — have fully run
+    // before we measure the DOM.  Without this, getBoundingClientRect() returns
+    // the pre-layout rect, mount() positions the Win32 window at wrong coords,
+    // and the window visibly jumps after the layout settles → two flashes.
+    // Calling getBoundingClientRect() inside the setTimeout also forces a
+    // synchronous reflow, so we always get the final stable layout values.
+    let initialPushTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      initialPushTimer = null;
+      void pushRect(true);
+    }, 0);
+
+    // Create ResizeObserver but do NOT observe yet; only observe after the
+    // initial mount completes. This prevents the observer from firing while
+    // CSS transitions (e.g., bottom bar collapsing) are in progress.
+    resizeObserver = new ResizeObserver(() => {
+      if (!initialMountDone || rafId !== null) {
+        return;
+      }
+      rafId = requestAnimationFrame(() => {
+        void pushRect(false);
+      });
     });
-    resizeObserver.observe(element);
 
     // Also re-push on window move so the sidecar follows screen position.
     let moveUnlisten: (() => void) | null = null;
     void getCurrentWindow().onMoved(() => {
-      pushRect();
+      if (initialMountDone) {
+        void pushRect(false);
+      }
     }).then((fn) => {
       moveUnlisten = fn;
     });
 
     return () => {
+      disposed = true;
+      lastMountedRectRef.current = null;
+      if (initialPushTimer !== null) {
+        clearTimeout(initialPushTimer);
+      }
       if (rafId !== null) cancelAnimationFrame(rafId);
-      resizeObserver.disconnect();
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       moveUnlisten?.();
       void connector.setVisible(false);
     };
+  }, [connector]);
+
+  useEffect(() => {
+    if (!onVisualReady || visualReadyNotifiedRef.current) {
+      return;
+    }
+
+    const visualReadyStates: NativeRdpStatePayload["state"][] = ["mounted", "visible", "focused", "connected"];
+    if (!visualReadyStates.includes(state.state)) {
+      return;
+    }
+
+    visualReadyNotifiedRef.current = true;
+    const rafId = requestAnimationFrame(() => {
+      onVisualReady();
+    });
+
+    return () => {
+      cancelAnimationFrame(rafId);
+    };
+  }, [onVisualReady, state.state]);
+
+  useEffect(() => {
+    visualReadyNotifiedRef.current = false;
   }, [connector]);
 
   useEffect(() => {

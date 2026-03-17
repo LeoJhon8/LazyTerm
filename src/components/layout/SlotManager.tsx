@@ -4,6 +4,7 @@ import { RightSlot } from "@/components/layout/RightSlot";
 import { TopSlot } from "@/components/layout/TopSlot";
 import { BottomSlot } from "@/components/layout/BottomSlot";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
+import { useTabsStore } from "@/store/tabs";
 
 export function SlotManager() {
   const {
@@ -17,7 +18,11 @@ export function SlotManager() {
     backgroundImageEnabled,
     backgroundImage,
   } = useSettingsStore();
+  const { activeSessionId, sessions } = useTabsStore();
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
+  const activeSession = sessions.find((session) => session.id === activeSessionId);
+  const shouldHideQuickCmdBar = activeSession?.type === "rdp";
+  const effectiveFooterHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? "0px" : `${effectiveBottomPanelHeight}px`;
 
   // 当有背景图片时，使面板半透明
   const panelOpacityStyle = backgroundImageEnabled && backgroundImage
@@ -62,7 +67,7 @@ export function SlotManager() {
         className="panel-surface-strong relative z-10 overflow-hidden border-t transition-all duration-300"
         style={{
           gridArea: "mid-bottom",
-          height: bottomPanelCollapsed ? "0px" : `${effectiveBottomPanelHeight}px`,
+          height: effectiveFooterHeight,
           ...panelOpacityStyle,
         }}
       >

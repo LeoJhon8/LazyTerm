@@ -227,8 +227,8 @@ internal sealed class HostApplicationContext : ApplicationContext
                 _hostForm.BeginInvoke(new Action(() => _hostForm.ShowHost()));
                 Emit(new SidecarOutboundMessage
                 {
-                    Type = "visible",
-                    Detail = "宿主窗口已显示。",
+                    Type = "state",
+                    Detail = "show 指令已投递到 UI 线程。",
                     Rect = _hostForm.CurrentRect,
                 });
                 return;
@@ -236,8 +236,8 @@ internal sealed class HostApplicationContext : ApplicationContext
                 _hostForm.BeginInvoke(new Action(() => _hostForm.HideHost()));
                 Emit(new SidecarOutboundMessage
                 {
-                    Type = "hidden",
-                    Detail = "宿主窗口已隐藏。",
+                    Type = "state",
+                    Detail = "hide 指令已投递到 UI 线程。",
                     Rect = _hostForm.CurrentRect,
                 });
                 return;
@@ -274,12 +274,16 @@ internal sealed class HostForm : Form
     private readonly Label _detailLabel;
     private readonly Action<SidecarOutboundMessage> _emit;
     private readonly System.Windows.Forms.Timer _stateTimer;
+    private readonly System.Windows.Forms.Timer _revealTimer;
     private RdpActiveXHost? _rdpHost;
     private SidecarInitPayload? _init;
     private IntPtr _parentHwnd;
     private int? _lastConnectedState;
     private bool _connectIssued;
     private bool _waitingForOcxReady;
+    private bool _showRequested;
+    private bool _hostVisible;
+    private bool _hostWindowCreated;
 
     public event Action? HostClicked;
     public NativeHostRectPayload? CurrentRect { get; private set; }
@@ -295,6 +299,7 @@ internal sealed class HostForm : Form
         BackColor = Color.FromArgb(18, 18, 18);
         ForeColor = Color.White;
         MinimumSize = new Size(200, 200);
+        Opacity = 0;
 
         _panel = new Panel
         {
@@ -338,6 +343,26 @@ internal sealed class HostForm : Form
         _stateTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _stateTimer.Tick += (_, _) => PollConnectionState();
         _stateTimer.Start();
+
+        _revealTimer = new System.Windows.Forms.Timer { Interval = 80 };
+        _revealTimer.Tick += (_, _) =>
+        {
+            _revealTimer.Stop();
+            var shouldReveal = _showRequested && _lastConnectedState == 1 && !IsDisposed;
+            if (!shouldReveal)
+            {
+                return;
+            }
+
+            Opacity = 1;
+            BringHostToFront();
+            if (_rdpHost is not null && !_rdpHost.IsDisposed)
+            {
+                _rdpHost.BringToFront();
+            }
+
+            EmitState("visible", "宿主窗口已在延迟显现后真正可见。", CurrentRect);
+        };
     }
 
     public void AttachToParent(long parentHwnd, SidecarInitPayload init)
@@ -353,35 +378,38 @@ internal sealed class HostForm : Form
 
         EnsureRdpHost();
         ConnectRdp();
-        BringHostToFront();
-        Show();
+        if (!_hostWindowCreated)
+        {
+            Show();
+            _hostWindowCreated = true;
+        }
+        ParkHostWindow();
+        _hostVisible = false;
     }
 
     public void UpdateRect(NativeHostRectPayload rect)
     {
         CurrentRect = rect;
-        // rect contains physical screen coordinates — valid for owned top-level windows.
-        NativeMethods.SetWindowPos(
-            Handle,
-            NativeMethods.HWND_TOP,
-            rect.X,
-            rect.Y,
-            Math.Max(0, rect.Width),
-            Math.Max(0, rect.Height),
-            NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
+        if (_hostVisible)
+        {
+            ApplyHostWindowRect(rect);
+        }
 
-            ApplyDisplayLayout(rect);
+        ApplyDisplayLayout(rect);
     }
 
     public void ShowHost()
     {
-        NativeMethods.ShowWindow(Handle, NativeMethods.SW_SHOW);
-        BringHostToFront();
+        _showRequested = true;
+        EmitState("state", "收到 show 请求，等待连接完成与 reveal timer。", CurrentRect);
+        UpdateHostVisibility();
     }
 
     public void HideHost()
     {
-        NativeMethods.ShowWindow(Handle, NativeMethods.SW_HIDE);
+        _showRequested = false;
+        EmitState("state", "收到 hide 请求，准备隐藏并停放宿主窗口。", CurrentRect);
+        UpdateHostVisibility();
     }
 
     public void FocusHost()
@@ -404,7 +432,69 @@ internal sealed class HostForm : Form
             0,
             0,
             0,
-            NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
+            NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+    }
+
+    private void ApplyHostWindowRect(NativeHostRectPayload rect)
+    {
+        NativeMethods.SetWindowPos(
+            Handle,
+            NativeMethods.HWND_TOP,
+            rect.X,
+            rect.Y,
+            Math.Max(0, rect.Width),
+            Math.Max(0, rect.Height),
+            NativeMethods.SWP_NOACTIVATE);
+    }
+
+    private void ParkHostWindow()
+    {
+        NativeMethods.SetWindowPos(
+            Handle,
+            NativeMethods.HWND_TOP,
+            -32000,
+            -32000,
+            1,
+            1,
+            NativeMethods.SWP_NOACTIVATE);
+    }
+
+    private void UpdateHostVisibility()
+    {
+        var connected = _lastConnectedState == 1;
+        var shouldShow = _showRequested && connected;
+
+        if (shouldShow == _hostVisible)
+        {
+            EmitState("state", $"忽略可见性更新: shouldShow={shouldShow}, hostVisible={_hostVisible}", CurrentRect);
+            return;
+        }
+
+        if (shouldShow)
+        {
+            if (CurrentRect is { } rect)
+            {
+                ApplyHostWindowRect(rect);
+            }
+            BringHostToFront();
+            if (_rdpHost is not null && !_rdpHost.IsDisposed)
+            {
+                _rdpHost.BringToFront();
+            }
+
+            _revealTimer.Stop();
+            _revealTimer.Start();
+            EmitState("state", $"宿主窗口已定位到目标区域，等待 {_revealTimer.Interval}ms 后显现。", CurrentRect);
+        }
+        else
+        {
+            _revealTimer.Stop();
+            Opacity = 0;
+            ParkHostWindow();
+            EmitState("hidden", "宿主窗口已隐藏并停放到屏幕外。", CurrentRect);
+        }
+
+        _hostVisible = shouldShow;
     }
 
     protected override CreateParams CreateParams
@@ -422,6 +512,8 @@ internal sealed class HostForm : Form
     {
         if (disposing)
         {
+            _revealTimer.Stop();
+            _revealTimer.Dispose();
             _stateTimer.Stop();
             _stateTimer.Dispose();
             DisconnectRdp();
@@ -659,20 +751,17 @@ internal sealed class HostForm : Form
                     }
                     break;
                 case 1:
-                    NativeMethods.ShowWindow(Handle, NativeMethods.SW_SHOW);
-                    BringHostToFront();
-                    if (_rdpHost is not null && !_rdpHost.IsDisposed)
-                    {
-                        _rdpHost.BringToFront();
-                    }
                     _statusPanel.Visible = false;
+                    UpdateHostVisibility();
                     EmitState("connected", "MsTscAx 会话已连接。", CurrentRect);
                     break;
                 case 2:
                     ShowStatus("远程桌面连接中", "MsTscAx 正在建立连接。", false);
+                    UpdateHostVisibility();
                     EmitState("connecting", "MsTscAx 正在建立连接。", CurrentRect);
                     break;
                 default:
+                    UpdateHostVisibility();
                     EmitState("state", $"MsTscAx 当前连接状态值: {state}", CurrentRect);
                     break;
             }

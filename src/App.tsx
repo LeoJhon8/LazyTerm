@@ -45,6 +45,8 @@ function App() {
 
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
   const activeSession = sessions.find((session) => session.id === activeSessionId);
+  const shouldHideQuickCmdBar = activeSession?.type === "rdp";
+  const effectiveBottomRowHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight;
 
   // 应用关闭时清空所有会话
   useEffect(() => {
@@ -88,13 +90,15 @@ function App() {
     root.style.setProperty("--lw", `${lw}px`);
     root.style.setProperty("--rw", `${rw}px`);
     root.style.setProperty("--th", `${topPanelCollapsed ? 0 : topPanelHeight}px`);
-    root.style.setProperty("--bh", `${bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight}px`);
+    root.style.setProperty("--bh", `${effectiveBottomRowHeight}px`);
   }, [
     leftPanelWidth, rightPanelWidth, topPanelHeight, bottomPanelHeight,
     leftPanelCollapsed, rightPanelCollapsed, topPanelCollapsed, bottomPanelCollapsed,
     leftSlotCollapsed, rightSlotCollapsed,
+    activeSession?.type,
     slotConfig.left.modules, slotConfig.right.modules,
-    effectiveBottomPanelHeight // 监听模块列表变化，触发宽度重算
+    effectiveBottomPanelHeight,
+    effectiveBottomRowHeight // 监听模块列表变化，触发布局重算
   ]);
 
   // 同步外观自定义到 CSS 变量
@@ -148,7 +152,7 @@ function App() {
           "left mid-bottom right"
         `,
         gridTemplateColumns: `var(--lw, ${leftPanelCollapsed ? 0 : (slotConfig.left.modules.filter(m => m !== 'SettingsModule').length === 0 || leftSlotCollapsed ? 56 : leftPanelWidth)}px) 1fr var(--rw, ${rightPanelCollapsed || slotConfig.right.modules.length === 0 ? 0 : (rightSlotCollapsed ? 56 : rightPanelWidth)}px)`,
-        gridTemplateRows: `var(--th, ${topPanelCollapsed ? 0 : topPanelHeight}px) 1fr var(--bh, ${bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight}px)`,
+        gridTemplateRows: `var(--th, ${topPanelCollapsed ? 0 : topPanelHeight}px) 1fr var(--bh, ${effectiveBottomRowHeight}px)`,
       }}
     >
       <div

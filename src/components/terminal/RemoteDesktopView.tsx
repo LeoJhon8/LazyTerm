@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { logger } from "@/lib/logger";
 import { Monitor, MousePointer2, RefreshCcw } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
@@ -137,7 +137,7 @@ function getPointerPosition(
   };
 }
 
-export function RemoteDesktopView() {
+export function RemoteDesktopView({ onVisualReady }: { onVisualReady?: (sessionId: string) => void }) {
   const { activeSessionId, sessions } = useTabsStore();
   const activeSession = sessions.find((session) => session.id === activeSessionId);
   const backend = activeSession?.config?.rdpConfig?.backend ?? "ironrdp";
@@ -152,8 +152,20 @@ export function RemoteDesktopView() {
   const pendingFrameRef = useRef<RdpFramePayload | null>(null);
   const decodeInFlightRef = useRef(false);
   const drawTokenRef = useRef(0);
+  const visualReadyNotifiedRef = useRef(false);
   const [connected, setConnected] = useState(true);
   const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(null);
+  const [transitionMaskVisible, setTransitionMaskVisible] = useState(true);
+
+  const markVisualReady = useCallback(() => {
+    if (!visualReadyNotifiedRef.current) {
+      visualReadyNotifiedRef.current = true;
+      setTransitionMaskVisible(false);
+      if (activeSession && onVisualReady) {
+        onVisualReady(activeSession.id);
+      }
+    }
+  }, [activeSession, onVisualReady]);
 
   useEffect(() => {
     if (!ironConnector) {
@@ -206,6 +218,7 @@ export function RemoteDesktopView() {
           }
 
           context.putImageData(new ImageData(rgbaBytes, frame.desktopWidth, frame.desktopHeight), 0, 0);
+          markVisualReady();
         } else {
           const blob = new Blob([frame.imageBytes], { type: "image/jpeg" });
           let decodedSource: CanvasImageSource;
@@ -239,6 +252,7 @@ export function RemoteDesktopView() {
 
           context.drawImage(decodedSource, 0, 0, canvas.width, canvas.height);
           decodedBitmap?.close();
+          markVisualReady();
         }
       } catch (error) {
         if (!disposed) {
@@ -286,6 +300,8 @@ export function RemoteDesktopView() {
       disposeClose();
       pendingFrameRef.current = null;
       decodeInFlightRef.current = false;
+      visualReadyNotifiedRef.current = false;
+      setTransitionMaskVisible(true);
       setFrameSize(null);
       if (cleanupCanvas) {
         const context = cleanupCanvas.getContext("2d");
@@ -293,7 +309,47 @@ export function RemoteDesktopView() {
       }
       ironConnector.releaseInputs();
     };
-  }, [ironConnector]);
+  }, [activeSession, ironConnector, markVisualReady, onVisualReady]);
+
+  useEffect(() => {
+    visualReadyNotifiedRef.current = false;
+    setTransitionMaskVisible(true);
+  }, [activeSession?.id]);
+
+  useEffect(() => {
+    if (!nativeConnector) {
+      return;
+    }
+
+    let disposed = false;
+
+    nativeConnector.onState((payload) => {
+      if (disposed) {
+        return;
+      }
+
+      if (["visible", "focused", "connected"].includes(payload.state)) {
+        markVisualReady();
+      }
+
+      if (payload.state === "disconnected" || payload.state === "closed" || payload.state === "error") {
+        setConnected(false);
+      }
+    }).catch((error) => {
+      if (!disposed) {
+        logger.error("FE/terminal-view/native-rdp", "Register native state listener failed", {error});
+      }
+    });
+
+    const disposeClose = nativeConnector.onClose(() => {
+      setConnected(false);
+    });
+
+    return () => {
+      disposed = true;
+      disposeClose();
+    };
+  }, [markVisualReady, nativeConnector]);
 
   useEffect(() => {
     if (!ironConnector || !containerRef.current || !frameSize || !(activeSession?.config?.rdpConfig?.autoResize ?? true)) {
@@ -325,7 +381,19 @@ export function RemoteDesktopView() {
   }, [activeSession?.config?.rdpConfig?.autoResize, ironConnector, frameSize]);
 
   if (activeSession && nativeConnector) {
-    return <NativeRdpHostView title={activeSession.title} connector={nativeConnector} />;
+    return (
+      <div className="relative h-full min-h-0 w-full min-w-0">
+        <NativeRdpHostView title={activeSession.title} connector={nativeConnector} />
+        {transitionMaskVisible ? (
+          <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm">
+            <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-black/50 px-5 py-3 text-sm text-white/90 shadow-2xl">
+              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-300" />
+              <span>正在同步 Windows 远程桌面画面...</span>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   if (!activeSession || !ironConnector) {
@@ -429,6 +497,15 @@ export function RemoteDesktopView() {
           <div className="absolute inset-x-0 bottom-6 mx-auto flex w-fit items-center gap-2 rounded-full border border-amber-300/25 bg-amber-500/15 px-4 py-2 text-sm text-amber-100 backdrop-blur-md">
             <RefreshCcw className="h-4 w-4" />
             <span>远程桌面连接已断开，关闭标签或重新发起连接以恢复。</span>
+          </div>
+        ) : null}
+
+        {transitionMaskVisible ? (
+          <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm">
+            <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-black/50 px-5 py-3 text-sm text-white/90 shadow-2xl">
+              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-300" />
+              <span>正在同步 Windows 远程桌面画面...</span>
+            </div>
           </div>
         ) : null}
       </div>
