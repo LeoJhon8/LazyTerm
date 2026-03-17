@@ -381,11 +381,15 @@ export function RemoteDesktopView({ onVisualReady }: { onVisualReady?: (sessionI
   }, [activeSession?.config?.rdpConfig?.autoResize, ironConnector, frameSize]);
 
   if (activeSession && nativeConnector) {
+    const hostLabel = activeSession.config?.rdpConfig?.host && activeSession.config.rdpConfig.port
+      ? `${activeSession.config.rdpConfig.host}:${activeSession.config.rdpConfig.port}`
+      : activeSession.title;
+
     return (
       <div className="relative h-full min-h-0 w-full min-w-0">
         <NativeRdpHostView
           sessionId={activeSession.id}
-          title={activeSession.title}
+          hostLabel={hostLabel}
           connector={nativeConnector}
           onVisualReady={markVisualReady}
         />

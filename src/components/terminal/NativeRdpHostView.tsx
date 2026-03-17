@@ -13,7 +13,24 @@ import type {
 
 const NATIVE_RDP_OVERLAY_EVENT = "lazy-native-rdp-overlay";
 const READY_STATES: NativeRdpStatePayload["state"][] = ["connected"];
-const DISCONNECTED_STATES: NativeRdpStatePayload["state"][] = ["disconnected", "closed", "error"];
+const FAILED_STATES: NativeRdpStatePayload["state"][] = ["error"];
+const DISCONNECTED_STATES: NativeRdpStatePayload["state"][] = ["disconnected", "closed"];
+
+function resolveOverlayMode(payload: NativeRdpStatePayload): "connecting" | "failed" | "disconnected" | "none" {
+  if (FAILED_STATES.includes(payload.state)) {
+    return "failed";
+  }
+
+  if (DISCONNECTED_STATES.includes(payload.state)) {
+    return "disconnected";
+  }
+
+  if (READY_STATES.includes(payload.state)) {
+    return "none";
+  }
+
+  return "connecting";
+}
 
 // Returns physical screen coordinates so the Win32 sidecar can use them with
 // SetWindowPos without any child-window DPI or parent-origin adjustments.
@@ -42,46 +59,63 @@ function sameHostRect(a: NativeHostRect | null, b: NativeHostRect): boolean {
 
 export function NativeRdpHostView({
   sessionId,
-  title,
+  hostLabel,
   connector,
   onVisualReady,
 }: {
   sessionId: string;
-  title: string;
+  hostLabel: string;
   connector: INativeRdpConnector;
   onVisualReady?: () => void;
 }) {
+  const initialState = connector.getLatestState();
+  const initialOverlayMode = resolveOverlayMode(initialState);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
   const hasBackgroundImage = useSettingsStore((state) => state.backgroundImageEnabled && !!state.backgroundImage);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const menuOverlayActiveRef = useRef(false);
-  const hasReachedReadyStateRef = useRef(false);
-  const disconnectedLockedRef = useRef(false);
+  const hasReachedReadyStateRef = useRef(initialOverlayMode === "none");
+  const disconnectedLockedRef = useRef(initialOverlayMode === "disconnected" || initialOverlayMode === "failed");
   const [menuMaskVisible, setMenuMaskVisible] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [overlayMode, setOverlayMode] = useState<"connecting" | "disconnected" | "none">("connecting");
-  const [state, setState] = useState<NativeRdpStatePayload>({
-    state: "launching",
-    detail: "正在准备 MsTscAx 原生宿主。",
-  });
+  const [overlayMode, setOverlayMode] = useState<"connecting" | "failed" | "disconnected" | "none">(initialOverlayMode);
+  const [state, setState] = useState<NativeRdpStatePayload>(initialState);
+  const stateRef = useRef(state);
   const visualReadyNotifiedRef = useRef(false);
   const lastMountedRectRef = useRef<NativeHostRect | null>(null);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     let disposed = false;
 
     connector.onState((payload) => {
       if (!disposed) {
-        if (disconnectedLockedRef.current && !DISCONNECTED_STATES.includes(payload.state)) {
+        if (disconnectedLockedRef.current && !DISCONNECTED_STATES.includes(payload.state) && !FAILED_STATES.includes(payload.state)) {
           return;
         }
 
         setRetrying(false);
         setState(payload);
 
+        if (FAILED_STATES.includes(payload.state)) {
+          disconnectedLockedRef.current = true;
+          setOverlayMode("failed");
+          return;
+        }
+
         if (DISCONNECTED_STATES.includes(payload.state)) {
           disconnectedLockedRef.current = true;
-          setOverlayMode("disconnected");
+          setOverlayMode(hasReachedReadyStateRef.current ? "disconnected" : "failed");
+          if (!hasReachedReadyStateRef.current && payload.state !== "error") {
+            setState({
+              ...payload,
+              state: "error",
+              detail: payload.detail ?? "Windows 远程桌面连接未能建立。",
+            });
+          }
           return;
         }
 
@@ -100,9 +134,9 @@ export function NativeRdpHostView({
         disconnectedLockedRef.current = true;
         setRetrying(false);
         hasReachedReadyStateRef.current = false;
-        setOverlayMode("disconnected");
+        setOverlayMode("failed");
         setState({
-          state: "closed",
+          state: "error",
           detail: error instanceof Error ? error.message : String(error),
         });
       }
@@ -110,13 +144,19 @@ export function NativeRdpHostView({
 
     const disposeClose = connector.onClose(() => {
       if (!disposed) {
+        if (stateRef.current.state === "error") {
+          return;
+        }
+
         disconnectedLockedRef.current = true;
         setRetrying(false);
         hasReachedReadyStateRef.current = false;
-        setOverlayMode("disconnected");
+        setOverlayMode(stateRef.current.state === "connected" ? "disconnected" : "failed");
         setState({
-          state: "closed",
-          detail: "Native RDP 原生宿主会话已断开。",
+          state: stateRef.current.state === "connected" ? "closed" : "error",
+          detail: stateRef.current.state === "connected"
+            ? "Native RDP 原生宿主会话已断开。"
+            : (stateRef.current.detail ?? "Windows 远程桌面连接未能建立。"),
         });
       }
     });
@@ -244,9 +284,9 @@ export function NativeRdpHostView({
 
   useEffect(() => {
     visualReadyNotifiedRef.current = false;
-    hasReachedReadyStateRef.current = false;
-    disconnectedLockedRef.current = false;
-  }, [connector]);
+    hasReachedReadyStateRef.current = initialOverlayMode === "none";
+    disconnectedLockedRef.current = initialOverlayMode === "disconnected" || initialOverlayMode === "failed";
+  }, [connector, initialOverlayMode]);
 
   useEffect(() => {
     const applyMenuOverlay = (active: boolean) => {
@@ -300,6 +340,7 @@ export function NativeRdpHostView({
     };
   }, [connector]);
 
+  const isFailed = overlayMode === "failed";
   const isDisconnected = overlayMode === "disconnected";
   const showMenuMask = menuMaskVisible && overlayMode === "none";
   const showStatusOverlay = !showMenuMask && overlayMode !== "none";
@@ -374,19 +415,23 @@ export function NativeRdpHostView({
       {showStatusOverlay ? (
         renderOverlay({
           chipLabel: "Windows Workspace",
-          titleText: isDisconnected ? "连接断开" : "连接中",
-          description: state.detail ?? (isDisconnected ? "Windows 远程桌面会话已断开。" : "正在同步 Windows 原生远程桌面画面。"),
+          titleText: isFailed ? "连接失败" : (isDisconnected ? "连接断开" : "连接中"),
+          description: state.detail ?? (isFailed
+            ? "Windows 远程桌面连接未能建立。"
+            : (isDisconnected ? "Windows 远程桌面会话已断开。" : "正在同步 Windows 原生远程桌面画面。")),
           cards: [
             {
-              title: "当前页面",
-              detail: title,
+              title: "目标主机",
+              detail: hostLabel,
             },
             {
               title: "连接状态",
-              detail: isDisconnected ? "会话已终止，可在当前标签内直接发起重连。" : "原生宿主正在建立或恢复 Windows 桌面连接。",
+              detail: isFailed
+                ? "连接建立失败，请检查目标地址、凭据和网络后重试。"
+                : (isDisconnected ? "会话已终止，可在当前标签内直接发起重连。" : "原生宿主正在建立或恢复 Windows 桌面连接。"),
             },
           ],
-          footer: isDisconnected ? (
+          footer: (isDisconnected || isFailed) ? (
             <Button type="button" onClick={handleReconnect} className="pointer-events-auto min-w-32">
               <RefreshCcw className="h-4 w-4" />
               重连
@@ -397,7 +442,7 @@ export function NativeRdpHostView({
               正在建立 Windows 连接
             </div>
           ),
-          interactive: isDisconnected,
+          interactive: isDisconnected || isFailed,
           zIndexClass: "z-30",
         })
       ) : null}

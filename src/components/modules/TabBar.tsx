@@ -1,6 +1,7 @@
 import { useTabsStore } from "@/store/tabs";
 import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +19,14 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { X, Plus } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
 import { invoke } from "@tauri-apps/api/core";
@@ -52,6 +61,12 @@ interface CloseConfirmationState {
   description: string;
 }
 
+interface RenameState {
+  open: boolean;
+  sessionId: string | null;
+  value: string;
+}
+
 function normalizeShellValue(value: string) {
   return value.trim().toLowerCase();
 }
@@ -84,6 +99,7 @@ function SortableTab({
   canCloseRight,
   onSwitch,
   onClose,
+  onRename,
   onCloseOthers,
   onCloseLeft,
   onCloseRight,
@@ -95,6 +111,7 @@ function SortableTab({
   canCloseRight: boolean;
   onSwitch: (id: string) => void;
   onClose: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
+  onRename: (id: string) => void;
   onCloseOthers: (id: string) => void;
   onCloseLeft: (id: string) => void;
   onCloseRight: (id: string) => void;
@@ -163,6 +180,10 @@ function SortableTab({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="min-w-28 text-xs">
+          <ContextMenuItem className="py-1 text-xs" onClick={() => onRename(id)}>
+            重命名标签页
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem className="py-1 text-xs" onClick={() => onCloseOthers(id)}>
             关闭其他标签页
           </ContextMenuItem>
@@ -190,6 +211,7 @@ export function TabBar() {
     closeOtherSessions,
     closeLeftSessions,
     closeRightSessions,
+    updateSession,
   } = useTabsStore();
 
   const { defaultShell, confirmCloseNonDefaultTabs } = useSettingsStore();
@@ -199,13 +221,37 @@ export function TabBar() {
     title: "",
     description: "",
   });
+  const [renameState, setRenameState] = useState<RenameState>({
+    open: false,
+    sessionId: null,
+    value: "",
+  });
   const pendingCloseActionRef = useRef<(() => void) | null>(null);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     invoke<ShellInfo[]>("get_available_shells")
       .then(setShells)
       .catch((err) => logger.error("FE/tab-bar", "Failed to get shells", {err}));
   }, []);
+
+  useEffect(() => {
+    if (!renameState.open) {
+      return;
+    }
+
+    const input = renameInputRef.current;
+    if (!input) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [renameState.open]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -333,6 +379,43 @@ export function TabBar() {
     );
   };
 
+  const handleRenameOpen = (id: string) => {
+    const session = tabs.find((tab) => tab.id === id);
+    if (!session) {
+      return;
+    }
+
+    setRenameState({
+      open: true,
+      sessionId: id,
+      value: session.title,
+    });
+  };
+
+  const handleRenameDialogChange = (open: boolean) => {
+    setRenameState((state) => open
+      ? { ...state, open: true }
+      : { open: false, sessionId: null, value: "" }
+    );
+  };
+
+  const handleRenameSubmit = () => {
+    const nextTitle = renameState.value.trim();
+    if (!renameState.sessionId || !nextTitle) {
+      return;
+    }
+
+    updateSession(renameState.sessionId, { title: nextTitle });
+    setRenameState({ open: false, sessionId: null, value: "" });
+  };
+
+  const handleRenameKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleRenameSubmit();
+    }
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
 
@@ -374,6 +457,7 @@ export function TabBar() {
                   canCloseRight={tabs[tabs.length - 1]?.id !== tab.id}
                   onSwitch={handleTabSwitch}
                   onClose={handleCloseTab}
+                  onRename={handleRenameOpen}
                   onCloseOthers={handleCloseOthers}
                   onCloseLeft={handleCloseLeft}
                   onCloseRight={handleCloseRight}
@@ -408,6 +492,31 @@ export function TabBar() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={renameState.open} onOpenChange={handleRenameDialogChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>重命名标签页</DialogTitle>
+            <DialogDescription>修改当前标签页显示名称。</DialogDescription>
+          </DialogHeader>
+          <Input
+            ref={renameInputRef}
+            value={renameState.value}
+            onChange={(event) => setRenameState((state) => ({ ...state, value: event.target.value }))}
+            onKeyDown={handleRenameKeyDown}
+            maxLength={80}
+            placeholder="输入标签页名称"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => handleRenameDialogChange(false)}>
+              取消
+            </Button>
+            <Button onClick={handleRenameSubmit} disabled={!renameState.value.trim()}>
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

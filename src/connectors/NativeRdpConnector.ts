@@ -8,6 +8,8 @@ import type {
 import { logger } from "@/lib/logger";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
 
+const FINAL_NATIVE_STATES: NativeRdpStatePayload["state"][] = ["disconnected", "closed", "error"];
+
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim()) {
     return error.message.trim();
@@ -42,6 +44,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
   private listenersReady = false;
   private visibilityRefCount = 0;
   private visibilityApplied: boolean | null = null;
+  private finalStateLocked = false;
   private latestState: NativeRdpStatePayload = {
     state: "launching",
     detail: "正在准备 MsTscAx 原生宿主进程。",
@@ -55,6 +58,10 @@ export class NativeRdpConnector implements INativeRdpConnector {
     return this.sessionId !== null;
   }
 
+  getLatestState(): NativeRdpStatePayload {
+    return this.latestState;
+  }
+
   async open(): Promise<void> {
     if (this.sessionId) {
       return;
@@ -62,6 +69,11 @@ export class NativeRdpConnector implements INativeRdpConnector {
 
     if (!this.connectPromise) {
       this.closedBeforeConnect = false;
+      this.finalStateLocked = false;
+      this.latestState = {
+        state: "launching",
+        detail: "正在准备 MsTscAx 原生宿主进程。",
+      };
       this.connectPromise = invokeTauri<string>("create_native_rdp_session", {
         config: {
           host: this.config.host,
@@ -97,12 +109,15 @@ export class NativeRdpConnector implements INativeRdpConnector {
   }
 
   async onState(handler: (payload: NativeRdpStatePayload) => void): Promise<void> {
-    const sessionId = await this.waitForSessionId();
-
     this.stateHandlers.add(handler);
-    await this.ensureEventListeners(sessionId);
-
     handler(this.latestState);
+
+    const sessionId = await this.getSessionIdOrNull();
+    if (!sessionId) {
+      return;
+    }
+
+    await this.ensureEventListeners(sessionId);
   }
 
   onClose(handler: () => void): () => void {
@@ -167,6 +182,11 @@ export class NativeRdpConnector implements INativeRdpConnector {
 
   close(): void {
     this.closedBeforeConnect = true;
+    this.finalStateLocked = true;
+    this.latestState = {
+      state: "closed",
+      detail: "Native RDP 原生宿主会话已关闭。",
+    };
 
     if (this.sessionId) {
       invokeTauriBackground("set_native_rdp_session_visible", {
@@ -188,6 +208,14 @@ export class NativeRdpConnector implements INativeRdpConnector {
   }
 
   private emitState(payload: NativeRdpStatePayload) {
+    if (this.finalStateLocked && !FINAL_NATIVE_STATES.includes(payload.state)) {
+      return;
+    }
+
+    if (FINAL_NATIVE_STATES.includes(payload.state)) {
+      this.finalStateLocked = true;
+    }
+
     this.latestState = payload;
     this.stateHandlers.forEach((handler) => {
       try {
@@ -196,18 +224,6 @@ export class NativeRdpConnector implements INativeRdpConnector {
         logger.error("FE/connector/native-rdp/state", "State handler failed", getErrorMessage(error));
       }
     });
-  }
-
-  private async waitForSessionId(): Promise<string> {
-    if (this.sessionId) {
-      return this.sessionId;
-    }
-
-    if (this.connectPromise) {
-      return await this.connectPromise;
-    }
-
-    throw new Error("Native RDP session has not started opening yet");
   }
 
   private async getSessionIdOrNull(): Promise<string | null> {
@@ -231,15 +247,19 @@ export class NativeRdpConnector implements INativeRdpConnector {
       return;
     }
 
+    this.finalStateLocked = true;
     invokeTauriBackground("set_native_rdp_session_visible", {
       sessionId: this.sessionId,
       visible: false,
     }, { scope: "FE/connector/native-rdp/visible" });
 
-    this.emitState({
-      state: "closed",
-      detail: "Native RDP 原生宿主会话已关闭。",
-    });
+    if (this.latestState.state !== "error") {
+      this.emitState({
+        state: "closed",
+        detail: "Native RDP 原生宿主会话已关闭。",
+      });
+    }
+
     this.cleanupListeners();
     this.sessionId = null;
     this.visibilityRefCount = 0;

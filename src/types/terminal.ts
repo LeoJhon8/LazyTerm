@@ -91,6 +91,7 @@ export interface INativeRdpConnector extends ISessionConnector {
   readonly protocol: 'rdp';
   readonly backend: 'msrdpax';
 
+  getLatestState(): NativeRdpStatePayload;
   onState(handler: (payload: NativeRdpStatePayload) => void): Promise<void>;
   onClose(handler: () => void): () => void;
   mount(rect: NativeHostRect): Promise<void>;
