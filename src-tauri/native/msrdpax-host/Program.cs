@@ -539,7 +539,7 @@ internal sealed class HostForm : Form
 
             _panel.Controls.Add(_rdpHost);
             _rdpHost.BringToFront();
-            ShowStatus("MsTscAx 控件已创建", "正在准备连接参数并发起原生 RDP 连接。", false);
+            HideStatus();
             EmitState("control-created", "MsTscAx ActiveX 控件已创建。", CurrentRect);
         }
         catch (Exception ex)
@@ -563,7 +563,7 @@ internal sealed class HostForm : Form
                 if (!_waitingForOcxReady)
                 {
                     _waitingForOcxReady = true;
-                    ShowStatus("RDP 控件初始化中", "MsTscAx 对象尚未就绪，正在等待后重试连接。", false);
+                    HideStatus();
                     EmitState("state", "MsTscAx Ocx 尚未就绪，延迟发起 Connect。", CurrentRect);
                 }
                 return;
@@ -619,7 +619,7 @@ internal sealed class HostForm : Form
 
             InvokeComMethod(client, "Connect");
             _connectIssued = true;
-            ShowStatus("正在连接远程桌面", $"目标: {_init.Host}:{_init.Port}\r\n用户: {loginUser}", false);
+            HideStatus();
             EmitState("connecting", $"MsTscAx 正在连接 {_init.Host}:{_init.Port}", CurrentRect);
         }
         catch (Exception ex)
@@ -746,7 +746,8 @@ internal sealed class HostForm : Form
                 case 0:
                     if (_connectIssued)
                     {
-                        ShowStatus("远程桌面已断开", "MsTscAx 会话当前未连接。", true);
+                        HideStatus();
+                        UpdateHostVisibility();
                         EmitState("disconnected", "MsTscAx 会话已断开。", CurrentRect);
                     }
                     break;
@@ -756,7 +757,7 @@ internal sealed class HostForm : Form
                     EmitState("connected", "MsTscAx 会话已连接。", CurrentRect);
                     break;
                 case 2:
-                    ShowStatus("远程桌面连接中", "MsTscAx 正在建立连接。", false);
+                    HideStatus();
                     UpdateHostVisibility();
                     EmitState("connecting", "MsTscAx 正在建立连接。", CurrentRect);
                     break;
@@ -780,6 +781,11 @@ internal sealed class HostForm : Form
         _statusPanel.BackColor = isError ? Color.FromArgb(66, 20, 20) : Color.FromArgb(20, 26, 42);
         _statusPanel.Visible = true;
         _statusPanel.BringToFront();
+    }
+
+    private void HideStatus()
+    {
+        _statusPanel.Visible = false;
     }
 
     private void EmitState(string type, string detail, NativeHostRectPayload? rect)

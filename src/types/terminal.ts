@@ -74,14 +74,6 @@ export interface NativeRdpStatePayload {
   rect?: NativeHostRect;
 }
 
-export interface NativeRdpTracePayload {
-  timestampMs: number;
-  level: "info" | "warn" | "error";
-  stage: string;
-  message: string;
-  extra?: string;
-}
-
 export interface IRdpConnector extends ISessionConnector {
   readonly protocol: 'rdp';
   readonly backend: 'ironrdp';
@@ -100,7 +92,6 @@ export interface INativeRdpConnector extends ISessionConnector {
   readonly backend: 'msrdpax';
 
   onState(handler: (payload: NativeRdpStatePayload) => void): Promise<void>;
-  onTrace(handler: (payload: NativeRdpTracePayload) => void): () => void;
   onClose(handler: () => void): () => void;
   mount(rect: NativeHostRect): Promise<void>;
   setVisible(visible: boolean): Promise<void>;

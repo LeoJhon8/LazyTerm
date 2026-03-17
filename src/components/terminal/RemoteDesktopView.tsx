@@ -383,15 +383,12 @@ export function RemoteDesktopView({ onVisualReady }: { onVisualReady?: (sessionI
   if (activeSession && nativeConnector) {
     return (
       <div className="relative h-full min-h-0 w-full min-w-0">
-        <NativeRdpHostView title={activeSession.title} connector={nativeConnector} />
-        {transitionMaskVisible ? (
-          <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm">
-            <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-black/50 px-5 py-3 text-sm text-white/90 shadow-2xl">
-              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-300" />
-              <span>正在同步 Windows 远程桌面画面...</span>
-            </div>
-          </div>
-        ) : null}
+        <NativeRdpHostView
+          sessionId={activeSession.id}
+          title={activeSession.title}
+          connector={nativeConnector}
+          onVisualReady={markVisualReady}
+        />
       </div>
     );
   }

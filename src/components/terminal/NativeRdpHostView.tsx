@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { logger } from "@/lib/logger";
+import { useSettingsStore } from "@/store/settings";
+import { useTabsStore } from "@/store/tabs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Layers3, Monitor, Move, PanelTopClose } from "lucide-react";
+import { LoaderCircle, RefreshCcw } from "lucide-react";
 import type {
   INativeRdpConnector,
   NativeHostRect,
   NativeRdpStatePayload,
-  NativeRdpTracePayload,
 } from "@/types/terminal";
 
 const NATIVE_RDP_OVERLAY_EVENT = "lazy-native-rdp-overlay";
+const READY_STATES: NativeRdpStatePayload["state"][] = ["connected"];
+const DISCONNECTED_STATES: NativeRdpStatePayload["state"][] = ["disconnected", "closed", "error"];
 
 // Returns physical screen coordinates so the Win32 sidecar can use them with
 // SetWindowPos without any child-window DPI or parent-origin adjustments.
@@ -37,22 +41,29 @@ function sameHostRect(a: NativeHostRect | null, b: NativeHostRect): boolean {
 }
 
 export function NativeRdpHostView({
+  sessionId,
   title,
   connector,
   onVisualReady,
 }: {
+  sessionId: string;
   title: string;
   connector: INativeRdpConnector;
   onVisualReady?: () => void;
 }) {
+  const reconnectSession = useTabsStore((state) => state.reconnectSession);
+  const hasBackgroundImage = useSettingsStore((state) => state.backgroundImageEnabled && !!state.backgroundImage);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const menuOverlayActiveRef = useRef(false);
+  const hasReachedReadyStateRef = useRef(false);
+  const disconnectedLockedRef = useRef(false);
   const [menuMaskVisible, setMenuMaskVisible] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [overlayMode, setOverlayMode] = useState<"connecting" | "disconnected" | "none">("connecting");
   const [state, setState] = useState<NativeRdpStatePayload>({
     state: "launching",
     detail: "正在准备 MsTscAx 原生宿主。",
   });
-  const [traceItems, setTraceItems] = useState<NativeRdpTracePayload[]>([]);
   const visualReadyNotifiedRef = useRef(false);
   const lastMountedRectRef = useRef<NativeHostRect | null>(null);
 
@@ -61,10 +72,35 @@ export function NativeRdpHostView({
 
     connector.onState((payload) => {
       if (!disposed) {
+        if (disconnectedLockedRef.current && !DISCONNECTED_STATES.includes(payload.state)) {
+          return;
+        }
+
+        setRetrying(false);
         setState(payload);
+
+        if (DISCONNECTED_STATES.includes(payload.state)) {
+          disconnectedLockedRef.current = true;
+          setOverlayMode("disconnected");
+          return;
+        }
+
+        if (READY_STATES.includes(payload.state)) {
+          hasReachedReadyStateRef.current = true;
+          setOverlayMode("none");
+          return;
+        }
+
+        if (!hasReachedReadyStateRef.current) {
+          setOverlayMode("connecting");
+        }
       }
     }).catch((error) => {
       if (!disposed) {
+        disconnectedLockedRef.current = true;
+        setRetrying(false);
+        hasReachedReadyStateRef.current = false;
+        setOverlayMode("disconnected");
         setState({
           state: "closed",
           detail: error instanceof Error ? error.message : String(error),
@@ -74,6 +110,10 @@ export function NativeRdpHostView({
 
     const disposeClose = connector.onClose(() => {
       if (!disposed) {
+        disconnectedLockedRef.current = true;
+        setRetrying(false);
+        hasReachedReadyStateRef.current = false;
+        setOverlayMode("disconnected");
         setState({
           state: "closed",
           detail: "Native RDP 原生宿主会话已断开。",
@@ -81,24 +121,9 @@ export function NativeRdpHostView({
       }
     });
 
-    const disposeTrace = connector.onTrace((item) => {
-      if (disposed) {
-        return;
-      }
-
-      setTraceItems((prev) => {
-        const next = [...prev, item];
-        if (next.length > 24) {
-          next.splice(0, next.length - 24);
-        }
-        return next;
-      });
-    });
-
     return () => {
       disposed = true;
       disposeClose();
-      disposeTrace();
     };
   }, [connector]);
 
@@ -219,10 +244,12 @@ export function NativeRdpHostView({
 
   useEffect(() => {
     visualReadyNotifiedRef.current = false;
+    hasReachedReadyStateRef.current = false;
+    disconnectedLockedRef.current = false;
   }, [connector]);
 
   useEffect(() => {
-    const applyMenuOverlay = (active: boolean, source: string) => {
+    const applyMenuOverlay = (active: boolean) => {
       if (menuOverlayActiveRef.current === active) {
         return;
       }
@@ -231,17 +258,15 @@ export function NativeRdpHostView({
       setMenuMaskVisible(active);
 
       if (active) {
-        logger.debug("FE/terminal-view/native-rdp", `Menu overlay active (${source}), hide native host`);
         void connector.setVisible(false);
       } else {
-        logger.debug("FE/terminal-view/native-rdp", `Menu overlay inactive (${source}), restore native host`);
         void connector.setVisible(true);
       }
     };
 
     const handleOverlayState = (event: Event) => {
       const customEvent = event as CustomEvent<boolean>;
-      applyMenuOverlay(customEvent.detail === true, "event");
+      applyMenuOverlay(customEvent.detail === true);
     };
 
     const hasVisibleWebOverlay = () => Boolean(document.body.querySelector([
@@ -253,7 +278,7 @@ export function NativeRdpHostView({
     ].join(", ")));
 
     const observer = new MutationObserver(() => {
-      applyMenuOverlay(hasVisibleWebOverlay(), "observer");
+      applyMenuOverlay(hasVisibleWebOverlay());
     });
 
     observer.observe(document.body, {
@@ -263,7 +288,7 @@ export function NativeRdpHostView({
       attributeFilter: ["data-state", "hidden", "style"],
     });
 
-    applyMenuOverlay(hasVisibleWebOverlay(), "initial-sync");
+    applyMenuOverlay(hasVisibleWebOverlay());
 
     window.addEventListener(NATIVE_RDP_OVERLAY_EVENT, handleOverlayState as EventListener);
 
@@ -275,8 +300,70 @@ export function NativeRdpHostView({
     };
   }, [connector]);
 
+  const isDisconnected = overlayMode === "disconnected";
+  const showMenuMask = menuMaskVisible && overlayMode === "none";
+  const showStatusOverlay = !showMenuMask && overlayMode !== "none";
+
+  const handleReconnect = () => {
+    if (retrying) {
+      return;
+    }
+
+    setRetrying(true);
+    hasReachedReadyStateRef.current = false;
+    disconnectedLockedRef.current = false;
+    setOverlayMode("connecting");
+    setState({
+      state: "launching",
+      detail: "正在重新连接 Windows 远程桌面。",
+    });
+    reconnectSession(sessionId);
+  };
+
+  const renderOverlay = ({
+    chipLabel,
+    titleText,
+    description,
+    cards,
+    footer,
+    interactive = false,
+    zIndexClass = "z-20",
+  }: {
+    chipLabel: string;
+    titleText: string;
+    description: string;
+    cards: Array<{ title: string; detail: string }>;
+    footer?: React.ReactNode;
+    interactive?: boolean;
+    zIndexClass?: string;
+  }) => (
+    <div className={`${interactive ? "" : "pointer-events-none "}absolute inset-0 ${zIndexClass}`}>
+      <div className="terminal-empty-state h-full">
+        <div className="terminal-empty-card text-center">
+          <div className="chip-row mx-auto mb-4 w-fit text-[11px] text-muted-foreground">{chipLabel}</div>
+          <h2 className="mb-2 text-2xl font-semibold tracking-tight">{titleText}</h2>
+          <p className="mx-auto mb-6 max-w-md text-sm leading-6 text-muted-foreground">{description}</p>
+          <div className={`grid gap-3 text-left ${cards.length >= 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+            {cards.map((card) => (
+              <div key={card.title} className="rounded-2xl border border-border/70 bg-background/56 p-4">
+                <div className="mb-2 text-sm font-medium">{card.title}</div>
+                <div className="text-xs leading-5 text-muted-foreground">{card.detail}</div>
+              </div>
+            ))}
+          </div>
+          {footer ? <div className="mt-6 flex justify-center">{footer}</div> : null}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <main className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden border border-(--terminal-border) bg-(--terminal-shell) shadow-(--panel-shadow)">
+    <main
+      className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden border border-(--terminal-border) bg-(--terminal-shell) shadow-(--panel-shadow)"
+      style={{
+        backgroundColor: hasBackgroundImage ? "transparent" : undefined,
+      }}
+    >
       <div
         ref={containerRef}
         className="absolute inset-0 z-0 overflow-hidden outline-none"
@@ -284,72 +371,58 @@ export function NativeRdpHostView({
         onClick={() => void connector.focus()}
       />
 
-      {!menuMaskVisible ? (
-        <>
-          <div className="pointer-events-none absolute inset-4 z-10 rounded-[28px] border border-sky-400/20 border-dashed bg-sky-500/4" />
-
-          <div className="pointer-events-none absolute left-4 top-4 z-10 max-w-[min(28rem,calc(100%-2rem))] rounded-2xl border border-white/10 bg-slate-950/58 px-4 py-3 text-white/80 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-md">
-            <div className="flex items-start gap-3">
-              <Monitor className="mt-0.5 h-5 w-5 shrink-0 text-sky-300" />
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-white">{title}</div>
-                <div className="mt-1 text-xs leading-5 text-white/65">
-                  MsTscAx 原生宿主已接管当前内容区域，并跟随当前标签内容区同步显示尺寸。
-                </div>
-              </div>
+      {showStatusOverlay ? (
+        renderOverlay({
+          chipLabel: "Windows Workspace",
+          titleText: isDisconnected ? "连接断开" : "连接中",
+          description: state.detail ?? (isDisconnected ? "Windows 远程桌面会话已断开。" : "正在同步 Windows 原生远程桌面画面。"),
+          cards: [
+            {
+              title: "当前页面",
+              detail: title,
+            },
+            {
+              title: "连接状态",
+              detail: isDisconnected ? "会话已终止，可在当前标签内直接发起重连。" : "原生宿主正在建立或恢复 Windows 桌面连接。",
+            },
+          ],
+          footer: isDisconnected ? (
+            <Button type="button" onClick={handleReconnect} className="pointer-events-auto min-w-32">
+              <RefreshCcw className="h-4 w-4" />
+              重连
+            </Button>
+          ) : (
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <LoaderCircle className="h-4 w-4 animate-spin text-sky-300" />
+              正在建立 Windows 连接
             </div>
-          </div>
-
-          <div className="pointer-events-none absolute bottom-4 right-4 z-10 max-w-[min(34rem,calc(100%-2rem))] rounded-2xl border border-white/10 bg-black/42 px-4 py-3 text-[11px] leading-5 text-white/72 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-md">
-            <div className="grid gap-1.5 text-left">
-              <div className="flex items-center gap-2"><Layers3 className="h-3.5 w-3.5 text-sky-300" /> 状态: {state.state}</div>
-              <div className="flex items-center gap-2"><PanelTopClose className="h-3.5 w-3.5 text-sky-300" /> 说明: {state.detail ?? "等待后续状态更新"}</div>
-              {state.rect ? (
-                <div className="flex items-center gap-2"><Move className="h-3.5 w-3.5 text-sky-300" /> 挂载区域: {state.rect.width} x {state.rect.height} @ ({state.rect.x}, {state.rect.y})</div>
-              ) : null}
-            </div>
-            {traceItems.length > 0 ? (
-              <div className="mt-3 max-h-28 overflow-hidden border-t border-white/10 pt-2 font-mono text-[10px] text-white/55">
-                {traceItems.slice(-3).map((item, index) => {
-                  const time = new Date(item.timestampMs).toLocaleTimeString();
-                  return (
-                    <div key={`${item.timestampMs}-${index}`} className="whitespace-pre-wrap wrap-break-word">
-                      [{time}] [{item.level}] {item.stage}: {item.message}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
-          </div>
-        </>
+          ),
+          interactive: isDisconnected,
+          zIndexClass: "z-30",
+        })
       ) : null}
 
-      {menuMaskVisible ? (
-        <div className="pointer-events-none absolute inset-0 z-20">
-          <div className="terminal-empty-state h-full">
-            <div className="terminal-empty-card">
-              <div className="chip-row mb-4 text-[11px] text-muted-foreground">Lazy Terminal Workspace</div>
-              <h2 className="mb-2 text-2xl font-semibold tracking-tight">把终端、SSH 和常用命令收进一个工作台</h2>
-              <p className="mb-6 max-w-md text-sm leading-6 text-muted-foreground">
-                Web 菜单已打开，当前临时遮蔽 MsTscAx 原生宿主窗口，避免原生层覆盖右键菜单与下拉选项。菜单关闭后会自动恢复当前原生远程桌面画面。
-              </p>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
-                  <div className="mb-2 text-sm font-medium">菜单交互</div>
-                  <div className="text-xs leading-5 text-muted-foreground">优先保证 Web 右键菜单与下拉菜单完整显示。</div>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
-                  <div className="mb-2 text-sm font-medium">原生会话</div>
-                  <div className="text-xs leading-5 text-muted-foreground">仅临时遮蔽 native 宿主，不销毁当前 MsTscAx 会话。</div>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
-                  <div className="mb-2 text-sm font-medium">自动恢复</div>
-                  <div className="text-xs leading-5 text-muted-foreground">菜单关闭后自动恢复原生画面与交互焦点。</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {showMenuMask ? (
+        renderOverlay({
+          chipLabel: "Lazy Terminal Workspace",
+          titleText: "把终端、SSH 和常用命令收进一个工作台",
+          description: "Web 菜单已打开，当前临时遮蔽 MsTscAx 原生宿主窗口，避免原生层覆盖右键菜单与下拉选项。菜单关闭后会自动恢复当前原生远程桌面画面。",
+          cards: [
+            {
+              title: "菜单交互",
+              detail: "优先保证 Web 右键菜单与下拉菜单完整显示。",
+            },
+            {
+              title: "原生会话",
+              detail: "仅临时遮蔽 native 宿主，不销毁当前 MsTscAx 会话。",
+            },
+            {
+              title: "自动恢复",
+              detail: "菜单关闭后自动恢复原生画面与交互焦点。",
+            },
+          ],
+          zIndexClass: "z-20",
+        })
       ) : null}
     </main>
   );

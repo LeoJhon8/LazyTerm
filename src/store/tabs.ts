@@ -295,13 +295,59 @@ interface TabsState {
   getAllConnectors: () => ITerminalConnector[];
   /** 切换会话的连接器（用于 SSH 超时后切换到本地） */
   switchConnector: (sessionId: string, newType: "local" | "ssh") => void;
+  /** 在当前标签内重新建立连接 */
+  reconnectSession: (sessionId: string) => void;
   /** 清除最近一次连接失败提示 */
   clearConnectionError: () => void;
 }
 
 export const useTabsStore = create<TabsState>()(
   persist(
-    (set, get) => ({
+    (set, get) => {
+      const createConnector = (
+        sessionData: Omit<TerminalSession, "id" | "connector">,
+        sessionId: string,
+      ): SessionConnector => {
+        switch (sessionData.type) {
+          case "local":
+            return new LocalConnector({
+              cwd: sessionData.cwd,
+              shell: sessionData.config?.shell,
+              admin: sessionData.config?.admin,
+            }, () => {
+              const targetSession = get().sessions.find((session) => session.id === sessionId);
+              if (!shouldReconnectLocalSession(targetSession)) {
+                return;
+              }
+
+              logger.info("FE/store/tabs/local-reconnect", `Local session ${sessionId} disconnected, recreating`);
+              get().switchConnector(sessionId, "local");
+            });
+          case "ssh":
+            if (!sessionData.config?.sshConfig) {
+              throw new Error("SSH 配置不能为空");
+            }
+
+            return new SshConnector(sessionData.config.sshConfig, () => {
+              logger.info("FE/store/tabs/ssh-fallback", `SSH disconnected for session ${sessionId}, switching to local`);
+              get().switchConnector(sessionId, "local");
+            });
+          case "rdp":
+            if (!sessionData.config?.rdpConfig) {
+              throw new Error("RDP 配置不能为空");
+            }
+
+            return sessionData.config.rdpConfig.backend === "msrdpax"
+              ? new NativeRdpConnector(sessionData.config.rdpConfig)
+              : new RdpConnector(sessionData.config.rdpConfig);
+          case "telnet":
+            throw new Error("Telnet 连接器目前尚未实现");
+          default:
+            throw new Error(`不支持的连接类型：${sessionData.type}`);
+        }
+      };
+
+      return {
       sessions: [],
       activeSessionId: null,
       connectionError: null,
@@ -309,54 +355,8 @@ export const useTabsStore = create<TabsState>()(
       addSession: (sessionData) => {
         // 生成随机 ID
         const id = Math.random().toString(36).substring(2, 11);
-        
-        let connector: SessionConnector;
-        
-        // 根据类型创建连接器代理
-        switch (sessionData.type) {
-          case "local":
-            // 注意：在 Tauri 中，cwd 传 undefined 则 Rust 会默认使用系统用户目录
-            connector = new LocalConnector({ 
-              cwd: sessionData.cwd,
-              shell: sessionData.config?.shell,
-              admin: sessionData.config?.admin
-            }, () => {
-              const targetSession = get().sessions.find((session) => session.id === id);
-              if (!shouldReconnectLocalSession(targetSession)) {
-                return;
-              }
 
-              logger.info("FE/store/tabs/local-reconnect", `Local session ${id} disconnected, recreating`);
-              get().switchConnector(id, "local");
-            });
-            break;
-          case "ssh":
-            // 使用 SSH 连接器，注册断开连接回调
-            if (!sessionData.config?.sshConfig) {
-              throw new Error("SSH 配置不能为空");
-            }
-            connector = new SshConnector(
-              sessionData.config.sshConfig,
-              () => {
-                // SSH 断开连接时自动切换到本地连接
-                logger.info("FE/store/tabs/ssh-fallback", `SSH disconnected for session ${id}, switching to local`);
-                get().switchConnector(id, "local");
-              }
-            );
-            break;
-          case "rdp":
-            if (!sessionData.config?.rdpConfig) {
-              throw new Error("RDP 配置不能为空");
-            }
-            connector = sessionData.config.rdpConfig.backend === "msrdpax"
-              ? new NativeRdpConnector(sessionData.config.rdpConfig)
-              : new RdpConnector(sessionData.config.rdpConfig);
-            break;
-          case "telnet":
-            throw new Error("Telnet 连接器目前尚未实现");
-          default:
-            throw new Error(`不支持的连接类型：${sessionData.type}`);
-        }
+        const connector = createConnector(sessionData, id);
 
         const newSession: TerminalSession = {
           ...sessionData,
@@ -538,29 +538,15 @@ export const useTabsStore = create<TabsState>()(
             oldSession.connector.close();
           }
 
-          // 创建新的连接器
-          let newConnector: ITerminalConnector;
-          if (newType === "local") {
-            newConnector = new LocalConnector({ 
-              cwd: oldSession.config?.cwd,
-              shell: oldSession.config?.shell
-            }, () => {
-              const targetSession = get().sessions.find((session) => session.id === sessionId);
-              if (!shouldReconnectLocalSession(targetSession)) {
-                return;
-              }
-
-              logger.info("FE/store/tabs/local-reconnect", `Local session ${sessionId} disconnected, recreating`);
-              get().switchConnector(sessionId, "local");
-            });
-          } else if (newType === "ssh") {
-            if (!oldSession.config?.sshConfig) {
-              throw new Error("SSH 配置不能为空");
-            }
-            newConnector = new SshConnector(oldSession.config.sshConfig);
-          } else {
+          const nextSession: Omit<TerminalSession, "id" | "connector"> = {
+            ...oldSession,
+            type: newType,
+          };
+          const nextConnector = createConnector(nextSession, sessionId);
+          if (nextConnector.protocol === "rdp") {
             throw new Error(`不支持的连接类型：${newType}`);
           }
+          const newConnector: ITerminalConnector = nextConnector;
 
           // 更新会话
           const newSessions = [...state.sessions];
@@ -587,10 +573,40 @@ export const useTabsStore = create<TabsState>()(
         });
       },
 
+      reconnectSession: (sessionId) => {
+        set((state) => {
+          const sessionIndex = state.sessions.findIndex((session) => session.id === sessionId);
+          if (sessionIndex === -1) {
+            logger.error("FE/store/tabs/reconnect", `Session ${sessionId} not found`);
+            return state;
+          }
+
+          const currentSession = state.sessions[sessionIndex];
+          currentSession.connector?.close();
+
+          const newConnector = createConnector(currentSession, sessionId);
+          const newSessions = [...state.sessions];
+          newSessions[sessionIndex] = {
+            ...currentSession,
+            connector: newConnector,
+          };
+
+          newConnector.open().catch((error: unknown) => {
+            logger.error("FE/store/tabs/reconnect", "Failed to reconnect session", {error});
+          });
+
+          return {
+            sessions: newSessions,
+            connectionError: null,
+          };
+        });
+      },
+
       clearConnectionError: () => {
         set({ connectionError: null });
       },
-    }),
+    };
+    },
     {
       name: "lazy-terminal-sessions",
       storage: createJSONStorage(() => localStorage),
