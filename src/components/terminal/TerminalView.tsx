@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
@@ -632,27 +632,54 @@ export function TerminalView() {
   const currentTheme = getTerminalTheme(terminalColorScheme, customThemeColors);
   const xtermTheme = toXtermTheme(currentTheme, terminalOpacity);
 
+  const emptyWrapperRef = useRef<HTMLDivElement | null>(null);
+  const [emptyAspectRatio, setEmptyAspectRatio] = useState<string>("16/9");
+  const [emptyCardHeight, setEmptyCardHeight] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    const el = emptyWrapperRef.current;
+    if (!el) return;
+
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth || 1;
+      const h = el.clientHeight || 1;
+      setEmptyAspectRatio(`${Math.max(1, Math.round(w))}/${Math.max(1, Math.round(h))}`);
+      // 让卡片比容器矮约 30%
+      setEmptyCardHeight(Math.max(120, Math.round(h * 0.7)));
+    });
+
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [emptyWrapperRef]);
+
   if (sessions.length === 0 || !activeSession) {
     return (
-      <div className="terminal-empty-state">
-        <div className="terminal-empty-card">
-          <div className="chip-row mb-4 text-[11px] text-muted-foreground">Lazy Terminal Workspace</div>
-          <h2 className="mb-2 text-2xl font-semibold tracking-tight">把终端、SSH 和常用命令收进一个工作台</h2>
-          <p className="mb-6 max-w-md text-sm leading-6 text-muted-foreground">
-            从左侧会话面板创建本地终端或 SSH 连接。顶部管理标签页，底部承载快捷命令，整个界面会跟随你的布局配置协同工作。
+      <div className="terminal-empty-state" ref={emptyWrapperRef}>
+        <div
+          className="terminal-empty-card w-full max-w-4xl mx-auto px-6 py-8"
+          style={{ aspectRatio: emptyAspectRatio, width: "80%", height: emptyCardHeight ? `${emptyCardHeight}px` : undefined }}
+        >
+          <div className="chip-row mb-4 text-[11px] text-muted-foreground">Lazy Terminal</div>
+          <h2 className="mb-2 text-2xl font-semibold tracking-tight">今天，你想连接什么？</h2>
+          <p className="mb-6 text-sm leading-6 text-muted-foreground">
+            希望能快速、轻松地连接远程服务器、Windows、Linux、Mac
           </p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
               <div className="mb-2 text-sm font-medium">本地终端</div>
-              <div className="text-xs leading-5 text-muted-foreground">支持 PowerShell、CMD、Bash 等本地 Shell 快速启动。</div>
+              <div className="text-xs leading-5 text-muted-foreground">打开本地终端，PowerShell、CMD、WSL、Bash。</div>
             </div>
             <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
-              <div className="mb-2 text-sm font-medium">SSH 会话</div>
-              <div className="text-xs leading-5 text-muted-foreground">保存远程主机配置，直接发起连接并复用历史资料。</div>
+              <div className="mb-2 text-sm font-medium">SSH 连接</div>
+              <div className="text-xs leading-5 text-muted-foreground">连上你那个linux主机，可以传文件上去</div>
             </div>
             <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
-              <div className="mb-2 text-sm font-medium">快捷动作</div>
-              <div className="text-xs leading-5 text-muted-foreground">在底部编排批量命令，提高重复操作效率。</div>
+              <div className="mb-2 text-sm font-medium">Windows 远程桌面</div>
+              <div className="text-xs leading-5 text-muted-foreground">连上你那个windows桌面</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
+              <div className="mb-2 text-sm font-medium">快捷命令</div>
+              <div className="text-xs leading-5 text-muted-foreground">点，执行。右键，编辑、删除、发送到所有标签页</div>
             </div>
           </div>
         </div>

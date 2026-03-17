@@ -342,7 +342,7 @@ export function NativeRdpHostView({
 
   const isFailed = overlayMode === "failed";
   const isDisconnected = overlayMode === "disconnected";
-  const showMenuMask = menuMaskVisible && overlayMode === "none";
+  const showMenuMask = menuMaskVisible && overlayMode === "connecting";
   const showStatusOverlay = !showMenuMask && overlayMode !== "none";
 
   const handleReconnect = () => {
@@ -450,7 +450,7 @@ export function NativeRdpHostView({
       {showMenuMask ? (
         renderOverlay({
           chipLabel: "Lazy Terminal Workspace",
-          titleText: "把终端、SSH 和常用命令收进一个工作台",
+          titleText: "所以暂时将你眼睛闭了起来",
           description: "Web 菜单已打开，当前临时遮蔽 MsTscAx 原生宿主窗口，避免原生层覆盖右键菜单与下拉选项。菜单关闭后会自动恢复当前原生远程桌面画面。",
           cards: [
             {

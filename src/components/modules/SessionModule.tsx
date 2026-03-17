@@ -603,7 +603,7 @@ export function SessionModule() {
               <Server className="mr-2 h-4 w-4 text-emerald-500" /> SSH 连接
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setDirectRdpOpen(true)}>
-              <Monitor className="mr-2 h-4 w-4 text-sky-500" /> RDP 内嵌连接
+              <Monitor className="mr-2 h-4 w-4 text-sky-500" /> windows 远程连接
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
