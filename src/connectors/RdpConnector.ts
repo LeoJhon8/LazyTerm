@@ -1,4 +1,4 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   IRdpConnector,
@@ -7,6 +7,8 @@ import type {
   RdpKeyboardPayload,
   RdpPointerPayload,
 } from "@/types/terminal";
+import { logger } from "@/lib/logger";
+import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
 
 export class RdpConnector implements IRdpConnector {
   readonly protocol = "rdp" as const;
@@ -48,7 +50,7 @@ export class RdpConnector implements IRdpConnector {
 
     if (!this.connectPromise) {
       this.closedBeforeConnect = false;
-      this.connectPromise = invoke<string>("create_rdp_session", {
+      this.connectPromise = invokeTauri<string>("create_rdp_session", {
         config: {
           host: this.config.host,
           port: this.config.port,
@@ -60,13 +62,15 @@ export class RdpConnector implements IRdpConnector {
           auto_resize: this.config.autoResize ?? true,
         },
         frameChannel: this.frameChannel,
+      }, {
+        scope: "FE/connector/rdp/open",
+        logStart: true,
+        logSuccess: true,
       }).then((sessionId) => {
         if (this.closedBeforeConnect) {
-          invoke("close_rdp_session", {
+          invokeTauriBackground("close_rdp_session", {
             sessionId,
-          }).catch((error) => {
-            console.error("[RDP] Close-after-connect failed:", error);
-          });
+          }, { scope: "FE/connector/rdp/close" });
           throw new Error("RDP connection was closed before initialization completed");
         }
 
@@ -107,11 +111,13 @@ export class RdpConnector implements IRdpConnector {
       return;
     }
 
-    invoke("send_rdp_pointer", {
+    invokeTauri("send_rdp_pointer", {
       sessionId: this.sessionId,
       payload,
+    }, {
+      scope: "FE/connector/rdp/pointer",
     }).catch((error) => {
-      console.error("[RDP] Pointer input failed:", error);
+      logger.error("FE/connector/rdp/pointer", "Pointer input failed", error);
     });
   }
 
@@ -120,11 +126,13 @@ export class RdpConnector implements IRdpConnector {
       return;
     }
 
-    invoke("send_rdp_key", {
+    invokeTauri("send_rdp_key", {
       sessionId: this.sessionId,
       payload,
+    }, {
+      scope: "FE/connector/rdp/key",
     }).catch((error) => {
-      console.error("[RDP] Keyboard input failed:", error);
+      logger.error("FE/connector/rdp/key", "Keyboard input failed", error);
     });
   }
 
@@ -133,10 +141,12 @@ export class RdpConnector implements IRdpConnector {
       return;
     }
 
-    invoke("release_rdp_inputs", {
+    invokeTauri("release_rdp_inputs", {
       sessionId: this.sessionId,
+    }, {
+      scope: "FE/connector/rdp/release",
     }).catch((error) => {
-      console.error("[RDP] Releasing inputs failed:", error);
+      logger.error("FE/connector/rdp/release", "Releasing inputs failed", error);
     });
   }
 
@@ -145,12 +155,14 @@ export class RdpConnector implements IRdpConnector {
       return;
     }
 
-    invoke("resize_rdp_session", {
+    invokeTauri("resize_rdp_session", {
       sessionId: this.sessionId,
       width,
       height,
+    }, {
+      scope: "FE/connector/rdp/resize",
     }).catch((error) => {
-      console.error("[RDP] Resize failed:", error);
+      logger.error("FE/connector/rdp/resize", "Resize failed", error);
     });
   }
 
@@ -162,11 +174,9 @@ export class RdpConnector implements IRdpConnector {
     this.closedBeforeConnect = true;
 
     if (this.sessionId) {
-      invoke("close_rdp_session", {
+      invokeTauriBackground("close_rdp_session", {
         sessionId: this.sessionId,
-      }).catch((error) => {
-        console.error("[RDP] Close failed:", error);
-      });
+      }, { scope: "FE/connector/rdp/close" });
     }
 
     this.cleanupListeners();

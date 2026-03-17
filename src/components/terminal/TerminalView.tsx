@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
+import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
@@ -185,7 +186,7 @@ export function TerminalView() {
               }, 50);
             }
           } catch (error) {
-            console.warn("Terminal activate failed:", error);
+            logger.warn("FE/terminal-view/activate", "Terminal activate failed", {error});
           }
         });
       }
@@ -256,7 +257,7 @@ export function TerminalView() {
       if (existingInstance) {
         if (existingInstance.connector === connector) return;
 
-        console.log("Connector changed:", activeSessionId);
+        logger.debug("FE/terminal-view/connector", `Connector changed: ${activeSessionId}`);
 
         existingInstance.dataUnsubscribe?.();
         existingInstance.inputDisposable?.dispose();
@@ -357,7 +358,7 @@ export function TerminalView() {
           webglAddon = new WebglAddon();
           term.loadAddon(webglAddon);
         } catch (e) {
-          console.warn("WebGL failed", e);
+          logger.warn("FE/terminal-view/webgl", "WebGL failed during init", {e});
           webglAddon = null;
         }
       }
@@ -367,7 +368,7 @@ export function TerminalView() {
       try {
         syncTerminalDimensions(term, fitAddon, connector);
       } catch (e) {
-        console.warn("Initial fit failed:", e);
+        logger.warn("FE/terminal-view/fit", "Initial fit failed", {e});
       }
 
       const handleWheel = (e: WheelEvent) => {
@@ -422,7 +423,7 @@ export function TerminalView() {
           try {
             await writeText(term.getSelection());
           } catch (e) {
-            console.error(e);
+            logger.error("FE/terminal-view/selection", "Failed to write to clipboard", {e});
           }
         }
       });
@@ -499,7 +500,7 @@ export function TerminalView() {
           terminal.loadAddon(addon);
           instance.webglAddon = addon;
         } catch (e) {
-          console.warn("WebGL failed", e);
+          logger.warn("FE/terminal-view/webgl", "WebGL failed during settings update", {e});
           instance.webglAddon = null;
         }
       }
@@ -528,7 +529,7 @@ export function TerminalView() {
             }
             terminal.focus();
           } catch (e) {
-            console.warn("Terminal fit failed after settings change:", e);
+            logger.warn("FE/terminal-view/fit", "Terminal fit failed after settings change", {e});
           }
         });
       }
@@ -623,7 +624,7 @@ export function TerminalView() {
         const text = await readText();
         if (text) activeSession.connector.write(text);
       } catch (error) {
-        console.error("Failed to read clipboard:", error);
+        logger.error("FE/terminal-view/clipboard", "Failed to read clipboard", {error});
       }
     }
   };

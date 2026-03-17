@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { ITerminalConnector, RDPConfig, SessionConnector, SSHConfig } from "@/types/terminal";
+import { logger } from "@/lib/logger";
 import { LocalConnector } from "@/connectors/LocalConnector";
 import { SshConnector } from "@/connectors/SshConnector";
 import { RdpConnector } from "@/connectors/RdpConnector";
@@ -325,7 +326,7 @@ export const useTabsStore = create<TabsState>()(
                 return;
               }
 
-              console.log(`[Store] Local session ${id} disconnected, recreating connector...`);
+              logger.info("FE/store/tabs/local-reconnect", `Local session ${id} disconnected, recreating`);
               get().switchConnector(id, "local");
             });
             break;
@@ -338,7 +339,7 @@ export const useTabsStore = create<TabsState>()(
               sessionData.config.sshConfig,
               () => {
                 // SSH 断开连接时自动切换到本地连接
-                console.log(`[Store] SSH disconnected for session ${id}, switching to local...`);
+                logger.info("FE/store/tabs/ssh-fallback", `SSH disconnected for session ${id}, switching to local`);
                 get().switchConnector(id, "local");
               }
             );
@@ -372,7 +373,7 @@ export const useTabsStore = create<TabsState>()(
 
         // 异步打开 Tauri 侧的 PTY 进程
         connector.open().catch((error: unknown) => {
-          console.error(getOpenFailureLogLabel(sessionData.type), error);
+          logger.error("FE/store/tabs/open-error", getOpenFailureLogLabel(sessionData.type), {error});
 
           const errorPresentation = getConnectionErrorPresentation(sessionData.type, error);
 
@@ -525,16 +526,15 @@ export const useTabsStore = create<TabsState>()(
         set((state) => {
           const sessionIndex = state.sessions.findIndex(s => s.id === sessionId);
           if (sessionIndex === -1) {
-            console.error(`Session ${sessionId} not found`);
+            logger.error("FE/store/tabs/switch", `Session ${sessionId} not found`);
             return state;
           }
 
           const oldSession = state.sessions[sessionIndex];
-          const title = oldSession.title; // 保持标题不变
           
           // 关闭旧的连接器（释放后端资源）
           if (oldSession.connector) {
-            console.log(`[Store] Closing old connector for session ${sessionId}...`);
+            logger.debug("FE/store/tabs/switch", `Closing old connector for session ${sessionId}`);
             oldSession.connector.close();
           }
 
@@ -550,7 +550,7 @@ export const useTabsStore = create<TabsState>()(
                 return;
               }
 
-              console.log(`[Store] Local session ${sessionId} disconnected, recreating connector...`);
+              logger.info("FE/store/tabs/local-reconnect", `Local session ${sessionId} disconnected, recreating`);
               get().switchConnector(sessionId, "local");
             });
           } else if (newType === "ssh") {
@@ -570,11 +570,11 @@ export const useTabsStore = create<TabsState>()(
             connector: newConnector,
           };
 
-          console.log(`[Store] Switched session ${sessionId} from ${oldSession.type} to ${newType}, title remains: ${title}`);
+          logger.info("FE/store/tabs/switch", `Switched session ${sessionId} from ${oldSession.type} to ${newType}`);
 
           // 异步打开新连接
           newConnector.open().catch((error: unknown) => {
-            console.error("[Tauri] 切换连接器后创建失败:", error);
+            logger.error("FE/store/tabs/switch", "Failed to open new connector", {error});
           });
 
           // 强制触发终端重新初始化：通过修改 session 对象触发 React 重新渲染

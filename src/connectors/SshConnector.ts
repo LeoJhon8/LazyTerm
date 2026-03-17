@@ -1,7 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ITerminalConnector, SSHConfig } from "@/types/terminal";
 import { useSettingsStore } from "@/store/settings";
+import { logger } from "@/lib/logger";
+import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
 
 function estimateInitialPtySize() {
   if (typeof window === "undefined") {
@@ -60,7 +61,7 @@ export class SshConnector implements ITerminalConnector {
     try {
       const initialSize = estimateInitialPtySize();
 
-      this.sessionId = await invoke<string>("create_ssh_session", {
+      this.sessionId = await invokeTauri<string>("create_ssh_session", {
         config: {
           host: this.config.host,
           port: this.config.port,
@@ -72,11 +73,15 @@ export class SshConnector implements ITerminalConnector {
           initial_cols: initialSize.cols,
           initial_rows: initialSize.rows,
         },
+      }, {
+        scope: "FE/connector/ssh/open",
+        logStart: true,
+        logSuccess: true,
       });
 
-      console.log(`[SSH] 成功连接到 ${this.config.host}:${this.config.port}`);
+      logger.info("FE/connector/ssh/open", `成功连接到 ${this.config.host}:${this.config.port}`);
     } catch (error) {
-      console.error("[SSH] 连接失败:", error);
+      logger.error("FE/connector/ssh/open", "连接失败", error);
       throw error;
     }
   }
@@ -85,17 +90,15 @@ export class SshConnector implements ITerminalConnector {
     if (!this.sessionId) return;
 
     try {
-      invoke("close_ssh_session", { sessionId: this.sessionId }).catch((err) => {
-        console.error("[SSH] 关闭会话失败:", err);
-      });
+      invokeTauriBackground("close_ssh_session", { sessionId: this.sessionId }, { scope: "FE/connector/ssh/close" });
     } catch (error) {
-      console.error("[SSH] 关闭连接时出错:", error);
+      logger.error("FE/connector/ssh/close", "关闭连接时出错", error);
     } finally {
       if (this.unlistenFn) {
         try {
           this.unlistenFn();
         } catch (error) {
-          console.warn("[SSH] 取消事件监听失败:", error);
+          logger.warn("FE/connector/ssh/close", "取消事件监听失败", error);
         }
         this.unlistenFn = null;
       }
@@ -125,7 +128,7 @@ export class SshConnector implements ITerminalConnector {
     }
 
     const eventName = `terminal-data-${this.sessionId}`;
-    console.log(`[SSH Connector] Listening for event: ${eventName}`);
+    logger.debug("FE/connector/ssh/listen", `Listening for event: ${eventName}`);
     
     // 直接将数据传递给 handler，不要使用 setTimeout 或者合并数组，xterm 底层具备极好的缓冲机制
     this.unlistenFn = await listen<string>(eventName, (event) => {
@@ -133,11 +136,11 @@ export class SshConnector implements ITerminalConnector {
       if (data) handler(data);
     });
     
-    console.log(`[SSH Connector] Event listener registered`);
+    logger.debug("FE/connector/ssh/listen", "Event listener registered");
     
     const closeEventName = `terminal-close-${this.sessionId}`;
     const closeUnlisten = await listen(closeEventName, () => {
-      console.log(`[SSH Connector] Connection closed event received`);
+      logger.info("FE/connector/ssh/listen", "Connection closed event received");
       this.handleDisconnect();
     });
     
@@ -149,7 +152,7 @@ export class SshConnector implements ITerminalConnector {
   }
 
   private handleDisconnect(): void {
-    console.log('[SSH Connector] Handling disconnection...');
+    logger.info("FE/connector/ssh/disconnect", "Handling disconnection");
     this.sessionId = null;
     if (this.onDisconnectCallback) {
       this.onDisconnectCallback();
@@ -161,23 +164,27 @@ export class SshConnector implements ITerminalConnector {
 
     const text = typeof data === "string" ? data : new TextDecoder().decode(data);
     
-    invoke("write_to_ssh_session", {
+    invokeTauri("write_to_ssh_session", {
       sessionId: this.sessionId,
       data: text,
+    }, {
+      scope: "FE/connector/ssh/write",
     }).catch((err) => {
-      console.error("[SSH] 写入失败:", err);
+      logger.error("FE/connector/ssh/write", "写入失败", err);
     });
   }
 
   resize(cols: number, rows: number): void {
     if (!this.sessionId) return;
 
-    invoke("resize_ssh_session", {
+    invokeTauri("resize_ssh_session", {
       sessionId: this.sessionId,
       cols,
       rows,
+    }, {
+      scope: "FE/connector/ssh/resize",
     }).catch((err) => {
-      console.error("[SSH] 调整大小失败:", err);
+      logger.error("FE/connector/ssh/resize", "调整大小失败", err);
     });
   }
 

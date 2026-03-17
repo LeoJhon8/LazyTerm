@@ -1,6 +1,7 @@
 import type { ITerminalConnector } from "@/types/terminal";
-import { invoke } from "@tauri-apps/api/core"; // Tauri v2 路径，v1 请用 @tauri-apps/api/tauri
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { logger } from "@/lib/logger";
+import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
 
 export class LocalConnector implements ITerminalConnector {
   public readonly protocol = 'local' as const;
@@ -21,13 +22,17 @@ export class LocalConnector implements ITerminalConnector {
   async open(): Promise<void> {
     try {
       // 1. 调用 Rust 创建 PTY 进程，并返回一个唯一的会话 ID
-      this.sessionId = await invoke<string>("create_terminal", {
+      this.sessionId = await invokeTauri<string>("create_terminal", {
         cwd: this.config.cwd,
         shell: this.config.shell,
         admin: this.config.admin
+      }, {
+        scope: "FE/connector/local/open",
+        logStart: true,
+        logSuccess: true,
       });
     } catch (error) {
-      console.error("Failed to spawn terminal via Rust:", error);
+      logger.error("FE/connector/local/open", "Failed to spawn terminal via Rust", error);
       throw error;
     }
   }
@@ -81,11 +86,13 @@ export class LocalConnector implements ITerminalConnector {
     const dataStr = typeof data === 'string' ? data : new TextDecoder().decode(data);
     
     // 3. 将输入发送给 Rust
-    invoke("write_to_terminal", { 
+    invokeTauri("write_to_terminal", {
       sessionId: this.sessionId, 
       data: dataStr 
+    }, {
+      scope: "FE/connector/local/write",
     }).catch((error) => {
-      console.error(error);
+      logger.error("FE/connector/local/write", "Write failed", error);
       this.handleDisconnect();
     });
   }
@@ -94,19 +101,21 @@ export class LocalConnector implements ITerminalConnector {
     if (!this.sessionId) return;
     
     // 4. 通知 Rust 调整大小
-    invoke("resize_terminal", { 
+    invokeTauri("resize_terminal", {
       sessionId: this.sessionId, 
       cols, 
       rows 
+    }, {
+      scope: "FE/connector/local/resize",
     }).catch((error) => {
-      console.error(error);
+      logger.error("FE/connector/local/resize", "Resize failed", error);
       this.handleDisconnect();
     });
   }
 
   close(): void {
     if (this.sessionId) {
-      invoke("close_terminal", { sessionId: this.sessionId }).catch(console.error);
+      invokeTauriBackground("close_terminal", { sessionId: this.sessionId }, { scope: "FE/connector/local/close" });
       this.sessionId = null;
     }
     if (this.unlistenFn) {

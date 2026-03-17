@@ -1,4 +1,5 @@
 import { useTabsStore } from "@/store/tabs";
+import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -203,7 +204,7 @@ export function TabBar() {
   useEffect(() => {
     invoke<ShellInfo[]>("get_available_shells")
       .then(setShells)
-      .catch(console.error);
+      .catch((err) => logger.error("FE/tab-bar", "Failed to get shells", {err}));
   }, []);
 
   const sensors = useSensors(

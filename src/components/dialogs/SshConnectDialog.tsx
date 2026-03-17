@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { logger } from "@/lib/logger";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,7 +92,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
         setPrivateKeyPath(selected[0]);
       }
     } catch (err) {
-      console.error("选择私钥文件失败", err);
+      logger.error("FE/dialog/ssh-connect", "Failed to select private key file", {err});
     }
   };
 

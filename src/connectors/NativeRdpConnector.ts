@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   INativeRdpConnector,
@@ -7,6 +6,8 @@ import type {
   NativeRdpTracePayload,
   RDPConfig,
 } from "@/types/terminal";
+import { logger } from "@/lib/logger";
+import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim()) {
@@ -66,7 +67,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
     if (!this.connectPromise) {
       this.closedBeforeConnect = false;
       this.emitTrace("info", "frontend.open", "正在请求创建 native RDP 会话");
-      this.connectPromise = invoke<string>("create_native_rdp_session", {
+      this.connectPromise = invokeTauri<string>("create_native_rdp_session", {
         config: {
           host: this.config.host,
           port: this.config.port,
@@ -77,11 +78,13 @@ export class NativeRdpConnector implements INativeRdpConnector {
           height: this.config.height,
           auto_resize: this.config.autoResize ?? true,
         },
+      }, {
+        scope: "FE/connector/native-rdp/open",
+        logStart: true,
+        logSuccess: true,
       }).then((sessionId) => {
         if (this.closedBeforeConnect) {
-          invoke("close_native_rdp_session", { sessionId }).catch((error) => {
-            console.error("[Native RDP] Close-after-connect failed:", error);
-          });
+          invokeTauriBackground("close_native_rdp_session", { sessionId }, { scope: "FE/connector/native-rdp/close" });
           throw new Error("Native RDP session was closed before initialization completed");
         }
 
@@ -139,7 +142,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
       "frontend.mount",
       `mount ${normalizedRect.width}x${normalizedRect.height} @ (${normalizedRect.x}, ${normalizedRect.y})`
     );
-    await invoke("mount_native_rdp_session", { sessionId, rect: normalizedRect });
+    await invokeTauri("mount_native_rdp_session", { sessionId, rect: normalizedRect }, { scope: "FE/connector/native-rdp/mount" });
   }
 
   async setVisible(visible: boolean): Promise<void> {
@@ -162,24 +165,23 @@ export class NativeRdpConnector implements INativeRdpConnector {
       return;
     }
 
-    await invoke("set_native_rdp_session_visible", { sessionId, visible: nextVisible });
+    await invokeTauri("set_native_rdp_session_visible", { sessionId, visible: nextVisible }, { scope: "FE/connector/native-rdp/visible" });
     this.visibilityApplied = nextVisible;
   }
 
   async focus(): Promise<void> {
     const sessionId = await this.waitForSessionId();
     this.emitTrace("info", "frontend.focus", "focus() requested");
-    await invoke("focus_native_rdp_session", { sessionId });
+    await invokeTauri("focus_native_rdp_session", { sessionId }, { scope: "FE/connector/native-rdp/focus" });
   }
 
   close(): void {
     this.closedBeforeConnect = true;
 
     if (this.sessionId) {
-      invoke("close_native_rdp_session", {
+      void invokeTauri("close_native_rdp_session", {
         sessionId: this.sessionId,
-      }).catch((error) => {
-        console.error("[Native RDP] Close failed:", error);
+      }, { scope: "FE/connector/native-rdp/close" }).catch((error) => {
         this.emitTrace("error", "frontend.close", getErrorMessage(error));
       });
     }
@@ -196,7 +198,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
       try {
         handler(payload);
       } catch (error) {
-        console.error("[Native RDP] State handler failed:", getErrorMessage(error));
+        logger.error("FE/connector/native-rdp/state", "State handler failed", getErrorMessage(error));
       }
     });
   }
@@ -218,7 +220,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
       try {
         handler(payload);
       } catch (error) {
-        console.error("[Native RDP] Trace handler failed:", getErrorMessage(error));
+        logger.error("FE/connector/native-rdp/trace", "Trace handler failed", getErrorMessage(error));
       }
     });
   }

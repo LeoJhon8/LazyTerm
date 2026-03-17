@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 import {
   Dialog,
   DialogContent,
@@ -146,7 +147,7 @@ function ThemeSettings() {
         setSettings({ backgroundImage: assetUrl });
       }
     } catch (e) {
-      console.error("选择背景图片失败:", e);
+      logger.error("FE/dialog/slot-config", "Failed to select background image", {e});
     }
   };
 
@@ -574,7 +575,7 @@ function TerminalSettings() {
   useMountedEffect(() => {
     invoke<ShellInfo[]>("get_available_shells")
       .then(setShells)
-      .catch(console.error);
+      .catch((err) => logger.error("FE/dialog/slot-config", "Failed to get available shells", {err}));
   }, []);
 
   return (
@@ -726,7 +727,7 @@ function DataImportExport() {
       setImportMessage(`备份成功！文件已保存至：${filePath}`);
       setMessageType('success');
     } catch (error: unknown) {
-      console.error("备份失败:", error);
+      logger.error("FE/dialog/slot-config", "Failed to export backup", {error});
       setImportMessage(`备份失败：${getErrorMessage(error)}`);
       setMessageType('error');
     }

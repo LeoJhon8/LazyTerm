@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { logger } from "@/lib/logger";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Layers3, Monitor, Move, PanelTopClose } from "lucide-react";
 import type {
@@ -96,7 +97,7 @@ export function NativeRdpHostView({
     const pushRect = () => {
       void readHostRect(element).then((rect) => {
         void connector.mount(rect).catch((error) => {
-          console.error("[Native RDP] mount failed:", error);
+          logger.error("FE/terminal-view/native-rdp", "Mount failed", {error});
         });
       });
     };

@@ -24,11 +24,12 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { stat, size as getFileSize } from "@tauri-apps/plugin-fs";
 import type { RDPConfig, SSHConfig } from "@/types/terminal";
+import { invokeTauri } from "@/services/tauri";
+import { logger } from "@/lib/logger";
 
 interface AvailableShell {
   name: string;
@@ -250,9 +251,9 @@ export function SessionModule() {
   useEffect(() => { 
     ensureRoot(); 
     // 获取可用 Shell
-    invoke<AvailableShell[]>("get_available_shells")
+    invokeTauri<AvailableShell[]>("get_available_shells", undefined, { scope: "FE/session-module/shells" })
       .then(setAvailableShells)
-      .catch(err => console.error("获取可用 Shell 失败:", err));
+      .catch(err => logger.error("FE/session-module/shells", "Failed to get available shells", {err}));
   }, [ensureRoot]);
 
   useEffect(() => {
@@ -335,7 +336,7 @@ export function SessionModule() {
           size = Number.isFinite(actualNumber) ? actualNumber : 0;
         }
       } catch (err) {
-        console.error("获取文件信息失败:", err);
+        logger.error("FE/session-module/sftp", "Failed to get file info", {err});
       }
       return { path, name, size };
     }));
@@ -382,7 +383,7 @@ export function SessionModule() {
         else setSftpRemotePath("~/");
       }
     } catch (err) {
-      console.error("选择文件失败:", err);
+      logger.error("FE/session-module/sftp", "Failed to select files", {err});
     }
   };
 
@@ -419,9 +420,9 @@ export function SessionModule() {
       setSftpStopping(true);
       setSftpMessageType("info");
       setSftpMessage("正在停止上传...");
-      await invoke("cancel_sftp_upload", { uploadId });
+      await invokeTauri("cancel_sftp_upload", { uploadId }, { scope: "FE/session-module/sftp/cancel" });
     } catch (err) {
-      console.error("停止 SFTP 上传失败:", err);
+      logger.error("FE/session-module/sftp", "Failed to cancel SFTP upload", {err});
       setSftpStopping(false);
       setSftpMessageType("error");
       setSftpMessage(err instanceof Error ? err.message : String(err));
@@ -467,7 +468,7 @@ export function SessionModule() {
       if (!isSshConfig(cfg)) {
         throw new Error("SFTP 仅支持 SSH 会话");
       }
-      await invoke("sftp_upload_files", {
+      await invokeTauri("sftp_upload_files", {
         config: {
           host: cfg.host,
           port: cfg.port,
@@ -478,12 +479,12 @@ export function SessionModule() {
         files,
         progressEvent,
         uploadId,
-      });
+      }, { scope: "FE/session-module/sftp/upload" });
 
       setSftpMessageType("success");
       setSftpMessage("上传成功");
     } catch (err: unknown) {
-      console.error("SFTP 上传失败:", err);
+      logger.error("FE/session-module/sftp", "SFTP upload failed", {err});
       const message = err instanceof Error ? err.message : String(err);
       const isStopped = message.includes("上传已停止");
       setSftpMessageType(isStopped ? "info" : "error");

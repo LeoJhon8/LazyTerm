@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { logger } from "@/lib/logger";
 import { Monitor, MousePointer2, RefreshCcw } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
 import { NativeRdpHostView } from "@/components/terminal/NativeRdpHostView";
@@ -243,7 +244,7 @@ export function RemoteDesktopView() {
         }
       } catch (error) {
         if (!disposed) {
-          console.error("[RDP] Canvas decode failed:", error);
+          logger.error("FE/terminal-view/rdp", "Canvas decode failed", {error});
         }
       } finally {
         decodeInFlightRef.current = false;
@@ -274,7 +275,7 @@ export function RemoteDesktopView() {
       setConnected(true);
     }).catch((error) => {
       if (ironConnector.isConnected) {
-        console.error("[RDP] Register frame listener failed:", error);
+        logger.error("FE/terminal-view/rdp", "Register frame listener failed", {error});
       }
     });
 
