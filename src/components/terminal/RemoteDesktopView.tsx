@@ -142,12 +142,10 @@ export function RemoteDesktopView() {
   const activeSession = sessions.find((session) => session.id === activeSessionId);
   const backend = activeSession?.config?.rdpConfig?.backend ?? "ironrdp";
   const connector = activeSession?.connector?.protocol === "rdp" ? activeSession.connector : null;
-
-  if (activeSession && connector && backend === "msrdpax") {
-    return <NativeRdpHostView title={activeSession.title} connector={connector as INativeRdpConnector} />;
-  }
-
-  const ironConnector = connector ? connector as IRdpConnector : null;
+  const nativeConnector = activeSession && connector && backend === "msrdpax"
+    ? connector as INativeRdpConnector
+    : null;
+  const ironConnector = connector && backend !== "msrdpax" ? connector as IRdpConnector : null;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const resizeTimerRef = useRef<number | null>(null);
@@ -325,6 +323,10 @@ export function RemoteDesktopView() {
       }
     };
   }, [activeSession?.config?.rdpConfig?.autoResize, ironConnector, frameSize]);
+
+  if (activeSession && nativeConnector) {
+    return <NativeRdpHostView title={activeSession.title} connector={nativeConnector} />;
+  }
 
   if (!activeSession || !ironConnector) {
     return null;

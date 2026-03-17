@@ -15,6 +15,34 @@ export interface SessionNode {
   order: number;
 }
 
+function normalizeRdpConfig(config: RDPConfig): RDPConfig {
+  if (config.backend !== "msrdpax") {
+    return config;
+  }
+
+  return {
+    ...config,
+    width: undefined,
+    height: undefined,
+    autoResize: true,
+  };
+}
+
+function normalizeNode(node: SessionNode): SessionNode {
+  if (node.type !== "rdp" || !node.config) {
+    return node;
+  }
+
+  return {
+    ...node,
+    config: normalizeRdpConfig(node.config as RDPConfig),
+  };
+}
+
+function normalizeNodes(nodes: SessionNode[]): SessionNode[] {
+  return nodes.map(normalizeNode);
+}
+
 interface SSHProfilesState {
   nodes: SessionNode[];
   ensureRoot: () => void;
@@ -61,14 +89,21 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
       addProfile: (type, cfg, parentId) => set((state) => {
         const siblings = state.nodes.filter(n => n.parentId === parentId);
         const maxOrder = siblings.length > 0 ? Math.max(...siblings.map(s => s.order)) : 0;
+        const normalizedConfig = type === "rdp" ? normalizeRdpConfig(cfg as RDPConfig) : cfg;
         return {
           nodes: state.nodes.map(n => n.id === parentId ? { ...n, isExpanded: true } : n)
-            .concat([{ id: `s_${Math.random().toString(36).slice(2, 9)}`, type, name: cfg.nickname || cfg.host, parentId, config: cfg, order: maxOrder + 1 }]),
+            .concat([{ id: `s_${Math.random().toString(36).slice(2, 9)}`, type, name: normalizedConfig.nickname || normalizedConfig.host, parentId, config: normalizedConfig, order: maxOrder + 1 }]),
         };
       }),
 
       updateNode: (id, updates) => set((state) => ({
-        nodes: state.nodes.map((n) => (n.id === id ? { ...n, ...updates } : n)),
+        nodes: state.nodes.map((n) => {
+          if (n.id !== id) {
+            return n;
+          }
+
+          return normalizeNode({ ...n, ...updates });
+        }),
       })),
 
       toggleFolder: (id) => set((state) => ({
@@ -147,15 +182,29 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
           if (p.id !== root!.id && !p.parentId) p.parentId = root!.id;
         });
 
-        return { nodes: validProfiles };
+        return { nodes: normalizeNodes(validProfiles) };
       }),
 
       exportProfiles: () => {
         const { nodes } = get();
         // 直接返回完整的节点数组，保留所有字段维持树形结构
-        return nodes;
+        return normalizeNodes(nodes);
       },
     }),
-    { name: "terminal-sessions-v10", storage: createJSONStorage(() => localStorage) }
+    {
+      name: "terminal-sessions-v10",
+      storage: createJSONStorage(() => localStorage),
+      merge: (persistedState, currentState) => {
+        const merged = {
+          ...currentState,
+          ...(persistedState as Partial<SSHProfilesState>),
+        };
+
+        return {
+          ...merged,
+          nodes: normalizeNodes(merged.nodes ?? []),
+        };
+      },
+    }
   )
 );

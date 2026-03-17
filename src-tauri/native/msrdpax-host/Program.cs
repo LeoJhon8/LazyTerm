@@ -346,8 +346,9 @@ internal sealed class HostForm : Form
         _parentHwnd = new IntPtr(parentHwnd);
         // Do NOT SetParent — WebView2 uses DirectComposition which always renders
         // over Win32 child windows of the same parent regardless of z-order.
-        // Instead keep as a floating top-level window and position via absolute
-        // physical screen coordinates supplied by the frontend.
+            // Instead keep as a floating top-level owned window so it stays above the
+            // main app window without remaining above unrelated applications.
+            NativeMethods.SetWindowLongPtr(Handle, NativeMethods.GWLP_HWNDPARENT, _parentHwnd);
         _titleLabel.Text = $"MsTscAx Native Host · {init.Host}:{init.Port}";
 
         EnsureRdpHost();
@@ -359,15 +360,17 @@ internal sealed class HostForm : Form
     public void UpdateRect(NativeHostRectPayload rect)
     {
         CurrentRect = rect;
-        // rect contains physical screen coordinates — valid for top-level windows.
+        // rect contains physical screen coordinates — valid for owned top-level windows.
         NativeMethods.SetWindowPos(
             Handle,
-            NativeMethods.HWND_TOPMOST,
+            NativeMethods.HWND_TOP,
             rect.X,
             rect.Y,
             Math.Max(0, rect.Width),
             Math.Max(0, rect.Height),
             NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
+
+            ApplyDisplayLayout(rect);
     }
 
     public void ShowHost()
@@ -396,7 +399,7 @@ internal sealed class HostForm : Form
     {
         NativeMethods.SetWindowPos(
             Handle,
-            NativeMethods.HWND_TOPMOST,
+            NativeMethods.HWND_TOP,
             0,
             0,
             0,
@@ -558,6 +561,64 @@ internal sealed class HostForm : Form
         }
     }
 
+    private void ApplyDisplayLayout(NativeHostRectPayload rect)
+    {
+        if (_rdpHost is null || _rdpHost.IsDisposed)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!_rdpHost.TryGetOcxObject(out var client) || client is null)
+            {
+                return;
+            }
+
+            var targetWidth = Math.Max(1, rect.Width);
+            var targetHeight = Math.Max(1, rect.Height);
+
+            TrySetComProperty(client, "DesktopWidth", targetWidth);
+            TrySetComProperty(client, "DesktopHeight", targetHeight);
+
+            if (TryGetComProperty(client, "AdvancedSettings9") is { } advanced9)
+            {
+                TrySetComProperty(advanced9, "SmartSizing", true);
+            }
+            else if (TryGetComProperty(client, "AdvancedSettings2") is { } advanced2)
+            {
+                TrySetComProperty(advanced2, "SmartSizing", true);
+            }
+
+            var connected = ReadConnectedState(client);
+            if (connected == 1)
+            {
+                // Prefer dynamic display update when available so the remote desktop
+                // resizes to the current tab content area instead of staying at the
+                // initial connection resolution.
+                var updated = TryInvokeComMethod(
+                    client,
+                    "UpdateSessionDisplaySettings",
+                    targetWidth,
+                    targetHeight,
+                    targetWidth,
+                    targetHeight,
+                    0,
+                    100,
+                    100);
+
+                if (!updated)
+                {
+                    TryInvokeComMethod(client, "Reconnect", targetWidth, targetHeight);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            EmitState("state", $"应用显示尺寸失败: {ex.Message}", rect);
+        }
+    }
+
     private void PollConnectionState()
     {
         if (_rdpHost is null || _rdpHost.IsDisposed)
@@ -690,6 +751,19 @@ internal sealed class HostForm : Form
     {
         target.GetType().InvokeMember(methodName, BindingFlags.InvokeMethod, null, target, null);
     }
+
+    private static bool TryInvokeComMethod(object target, string methodName, params object?[] args)
+    {
+        try
+        {
+            target.GetType().InvokeMember(methodName, BindingFlags.InvokeMethod, null, target, args);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }
 
 internal sealed class RdpActiveXHost : AxHost
@@ -738,6 +812,7 @@ internal sealed class RdpActiveXHost : AxHost
 
 internal static class NativeMethods
 {
+    public const int GWLP_HWNDPARENT = -8;
     public const int GWL_STYLE = -16;
     public const long WS_CHILD = 0x40000000L;
     public const long WS_POPUP = unchecked((int)0x80000000L);

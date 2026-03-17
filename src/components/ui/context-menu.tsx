@@ -4,9 +4,32 @@ import { Check, ChevronRight, Circle } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
-const ContextMenu = ContextMenuPrimitive.Root
+const NATIVE_RDP_OVERLAY_EVENT = "lazy-native-rdp-overlay"
 
-const ContextMenuTrigger = ContextMenuPrimitive.Trigger
+const ContextMenu = ({ onOpenChange, ...props }: React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Root>) => (
+  <ContextMenuPrimitive.Root
+    onOpenChange={(open) => {
+      window.dispatchEvent(new CustomEvent<boolean>(NATIVE_RDP_OVERLAY_EVENT, { detail: open }))
+      onOpenChange?.(open)
+    }}
+    {...props}
+  />
+)
+
+const ContextMenuTrigger = React.forwardRef<
+  React.ElementRef<typeof ContextMenuPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Trigger>
+>(({ onContextMenu, ...props }, ref) => (
+  <ContextMenuPrimitive.Trigger
+    ref={ref}
+    onContextMenu={(event) => {
+      window.dispatchEvent(new CustomEvent<boolean>(NATIVE_RDP_OVERLAY_EVENT, { detail: true }))
+      onContextMenu?.(event)
+    }}
+    {...props}
+  />
+))
+ContextMenuTrigger.displayName = ContextMenuPrimitive.Trigger.displayName
 
 const ContextMenuGroup = ContextMenuPrimitive.Group
 

@@ -4,9 +4,38 @@ import { Check, ChevronRight, Circle } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
-const DropdownMenu = DropdownMenuPrimitive.Root
+const NATIVE_RDP_OVERLAY_EVENT = "lazy-native-rdp-overlay"
 
-const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
+const DropdownMenu = ({ onOpenChange, ...props }: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Root>) => (
+  <DropdownMenuPrimitive.Root
+    onOpenChange={(open) => {
+      window.dispatchEvent(new CustomEvent<boolean>(NATIVE_RDP_OVERLAY_EVENT, { detail: open }))
+      onOpenChange?.(open)
+    }}
+    {...props}
+  />
+)
+
+const DropdownMenuTrigger = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>
+>(({ onPointerDown, onKeyDown, ...props }, ref) => (
+  <DropdownMenuPrimitive.Trigger
+    ref={ref}
+    onPointerDown={(event) => {
+      window.dispatchEvent(new CustomEvent<boolean>(NATIVE_RDP_OVERLAY_EVENT, { detail: true }))
+      onPointerDown?.(event)
+    }}
+    onKeyDown={(event) => {
+      if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
+        window.dispatchEvent(new CustomEvent<boolean>(NATIVE_RDP_OVERLAY_EVENT, { detail: true }))
+      }
+      onKeyDown?.(event)
+    }}
+    {...props}
+  />
+))
+DropdownMenuTrigger.displayName = DropdownMenuPrimitive.Trigger.displayName
 
 const DropdownMenuGroup = DropdownMenuPrimitive.Group
 

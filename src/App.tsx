@@ -196,7 +196,15 @@ function App() {
 
       {/* 内容层 — 确保在背景之上 */}
       <SlotManager />
-      {activeSession?.type === "rdp" ? <RemoteDesktopView key={activeSession.id} /> : <TerminalView />}
+      <section
+        id="slot-mid-main"
+        className="relative z-0 min-h-0 min-w-0 overflow-hidden"
+        style={{
+          gridArea: "mid-main",
+        }}
+      >
+        {activeSession?.type === "rdp" ? <RemoteDesktopView key={activeSession.id} /> : <TerminalView />}
+      </section>
 
       <AlertDialog open={!!connectionError} onOpenChange={(open) => !open && clearConnectionError()}>
         <AlertDialogContent>

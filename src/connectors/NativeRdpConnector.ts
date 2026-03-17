@@ -74,9 +74,9 @@ export class NativeRdpConnector implements INativeRdpConnector {
           username: this.config.username,
           password: this.config.password,
           domain: this.config.domain,
-          width: this.config.width,
-          height: this.config.height,
-          auto_resize: this.config.autoResize ?? true,
+          width: undefined,
+          height: undefined,
+          auto_resize: true,
         },
       }, {
         scope: "FE/connector/native-rdp/open",
@@ -151,7 +151,9 @@ export class NativeRdpConnector implements INativeRdpConnector {
     if (visible) {
       this.visibilityRefCount += 1;
     } else {
-      this.visibilityRefCount = Math.max(0, this.visibilityRefCount - 1);
+      // Explicit hide requests (menu overlays, focus transitions) should be
+      // authoritative, so force ref-count to zero to guarantee hidden state.
+      this.visibilityRefCount = 0;
     }
 
     const nextVisible = this.visibilityRefCount > 0;
@@ -165,8 +167,11 @@ export class NativeRdpConnector implements INativeRdpConnector {
       return;
     }
 
-    await invokeTauri("set_native_rdp_session_visible", { sessionId, visible: nextVisible }, { scope: "FE/connector/native-rdp/visible" });
+    // Update optimistically before awaiting so concurrent calls (e.g. rapid
+    // right-clicks: close-menu → open-menu in the same microtask batch) see
+    // the correct intended state and don't short-circuit erroneously.
     this.visibilityApplied = nextVisible;
+    await invokeTauri("set_native_rdp_session_visible", { sessionId, visible: nextVisible }, { scope: "FE/connector/native-rdp/visible" });
   }
 
   async focus(): Promise<void> {

@@ -31,6 +31,8 @@ import type { RDPConfig, SSHConfig } from "@/types/terminal";
 import { invokeTauri } from "@/services/tauri";
 import { logger } from "@/lib/logger";
 
+const IS_WINDOWS = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
+
 interface AvailableShell {
   name: string;
   path: string;
@@ -202,8 +204,7 @@ function DraggableDroppableRow({
           </>
         ) : (
           <>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Monitor className="mr-2 h-4 w-4" /> 内嵌连接远程桌面</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect-msrdpax', node)}><MonitorCheck className="mr-2 h-4 w-4" /> MsTscAx 内嵌连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Monitor className="mr-2 h-4 w-4" /> 连接</ContextMenuItem>
           </>
         )}
         <ContextMenuSeparator />
@@ -227,7 +228,6 @@ export function SessionModule() {
   const [directSshOpen, setDirectSshOpen] = useState(false);
   const [rdpOpen, setRdpOpen] = useState(false);
   const [directRdpOpen, setDirectRdpOpen] = useState(false);
-  const [directMsrdpaxOpen, setDirectMsrdpaxOpen] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [targetNode, setTargetNode] = useState<SessionNode | null>(null);
@@ -505,22 +505,11 @@ export function SessionModule() {
       if (node.type === "ssh" && isSshConfig(node.config)) {
         addSession({ title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } });
       } else if (node.type === "rdp" && isRdpConfig(node.config)) {
-        addSession({ title: node.name, type: "rdp", host: node.config.host, config: { host: node.config.host, port: node.config.port, rdpConfig: node.config } });
+        const rdpConfig = IS_WINDOWS
+          ? { ...node.config, backend: "msrdpax" as const, width: undefined, height: undefined, autoResize: true }
+          : node.config;
+        addSession({ title: node.name, type: "rdp", host: rdpConfig.host, config: { host: rdpConfig.host, port: rdpConfig.port, rdpConfig } });
       }
-    } else if (type === 'connect-msrdpax' && node.type === 'rdp' && node.config && isRdpConfig(node.config)) {
-      addSession({
-        title: `${node.name} (MsTscAx)`,
-        type: "rdp",
-        host: node.config.host,
-        config: {
-          host: node.config.host,
-          port: node.config.port,
-          rdpConfig: {
-            ...node.config,
-            backend: "msrdpax",
-          },
-        },
-      });
     } else if (type === 'new-ssh') { setTargetNode(node); setEditNode(null); setSshOpen(true); }
     else if (type === 'new-rdp') { setTargetNode(node); setEditNode(null); setRdpOpen(true); }
     else if (type === 'new-folder') { setTargetNode(node); setEditNode(null); setFolderOpen(true); }
@@ -547,14 +536,18 @@ export function SessionModule() {
   };
 
   const handleDirectRdpConnect = (config: RDPConfig) => {
+    const normalizedConfig = IS_WINDOWS
+      ? { ...config, backend: "msrdpax" as const, width: undefined, height: undefined, autoResize: true }
+      : config;
+
     addSession({
-      title: config.nickname || config.host,
+      title: normalizedConfig.nickname || normalizedConfig.host,
       type: "rdp",
-      host: config.host,
+      host: normalizedConfig.host,
       config: {
-        host: config.host,
-        port: config.port,
-        rdpConfig: config,
+        host: normalizedConfig.host,
+        port: normalizedConfig.port,
+        rdpConfig: normalizedConfig,
       }
     });
   };
@@ -611,9 +604,6 @@ export function SessionModule() {
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setDirectRdpOpen(true)}>
               <Monitor className="mr-2 h-4 w-4 text-sky-500" /> RDP 内嵌连接
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setDirectMsrdpaxOpen(true)}>
-              <MonitorCheck className="mr-2 h-4 w-4 text-sky-500" /> MsTscAx 内嵌连接
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -718,24 +708,6 @@ export function SessionModule() {
         handleDirectRdpConnect(cfg);
         setDirectRdpOpen(false);
       }} />
-      <RdpConnectDialog
-        open={directMsrdpaxOpen}
-        onOpenChange={setDirectMsrdpaxOpen}
-        isDirect={true}
-        initialConfig={{
-          host: "",
-          port: 3389,
-          username: "",
-          backend: "msrdpax",
-          autoResize: true,
-          width: 1280,
-          height: 720,
-        }}
-        onSave={(cfg) => {
-          handleDirectRdpConnect({ ...cfg, backend: "msrdpax" });
-          setDirectMsrdpaxOpen(false);
-        }}
-      />
       <Dialog open={sftpOpen} onOpenChange={setSftpOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>SFTP 上传文件</DialogTitle></DialogHeader>
