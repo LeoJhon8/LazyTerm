@@ -1,0 +1,139 @@
+import { useEffect, useState } from "react";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import type { VNCConfig } from "@/types/terminal";
+
+interface VncConnectDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (config: VNCConfig) => void;
+  initialConfig?: VNCConfig;
+  isDirect?: boolean;
+}
+
+export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, isDirect }: VncConnectDialogProps) {
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("5900");
+  const [password, setPassword] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [shared, setShared] = useState(true);
+  const [allowJpeg, setAllowJpeg] = useState(true);
+  const [viewOnly, setViewOnly] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      if (initialConfig) {
+        setHost(initialConfig.host || "");
+        setPort(initialConfig.port?.toString() || "5900");
+        setPassword(initialConfig.password || "");
+        setNickname(initialConfig.nickname || "");
+        setShared(initialConfig.shared ?? true);
+        setAllowJpeg(initialConfig.allowJpeg ?? true);
+        setViewOnly(initialConfig.viewOnly ?? false);
+        return;
+      }
+
+      setHost("");
+      setPort("5900");
+      setPassword("");
+      setNickname("");
+      setShared(true);
+      setAllowJpeg(true);
+      setViewOnly(false);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, initialConfig]);
+
+  const handleSave = () => {
+    if (!host) {
+      return;
+    }
+
+    onSave({
+      host,
+      port: parseInt(port, 10) || 5900,
+      password: password || undefined,
+      nickname: nickname || undefined,
+      shared,
+      allowJpeg,
+      viewOnly,
+    });
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-125">
+        <DialogHeader>
+          <DialogTitle>
+            {isDirect ? "发起临时 VNC 连接" : initialConfig ? "编辑 VNC 配置" : "新建 VNC 配置"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="vnc-nickname" className="text-right">别名</Label>
+              <Input id="vnc-nickname" value={nickname} onChange={(event) => setNickname(event.target.value)} className="col-span-3" />
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="vnc-host" className="text-right">主机地址</Label>
+              <Input id="vnc-host" value={host} onChange={(event) => setHost(event.target.value)} className="col-span-3" required />
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="vnc-port" className="text-right">端口</Label>
+              <Input id="vnc-port" type="number" value={port} onChange={(event) => setPort(event.target.value)} className="col-span-3" required />
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="vnc-password" className="text-right">密码</Label>
+              <Input id="vnc-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="col-span-3" autoComplete="off" placeholder="无密码可留空" />
+            </div>
+
+            <Separator />
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">共享会话</Label>
+              <div className="col-span-3 flex items-center gap-3">
+                <Checkbox id="vnc-shared" checked={shared} onCheckedChange={(checked) => setShared(checked === true)} />
+                <Label htmlFor="vnc-shared" className="text-sm text-muted-foreground">允许与其他 VNC 客户端共享同一桌面</Label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">JPEG 压缩</Label>
+              <div className="col-span-3 flex items-center gap-3">
+                <Checkbox id="vnc-jpeg" checked={allowJpeg} onCheckedChange={(checked) => setAllowJpeg(checked === true)} />
+                <Label htmlFor="vnc-jpeg" className="text-sm text-muted-foreground">优先使用 JPEG 帧压缩以降低带宽占用</Label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">仅查看</Label>
+              <div className="col-span-3 flex items-center gap-3">
+                <Checkbox id="vnc-view-only" checked={viewOnly} onCheckedChange={(checked) => setViewOnly(checked === true)} />
+                <Label htmlFor="vnc-view-only" className="text-sm text-muted-foreground">连接后不发送鼠标与键盘输入</Label>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button type="submit">{initialConfig ? "保存修改" : "立即创建"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

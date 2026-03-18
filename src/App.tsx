@@ -4,6 +4,7 @@ import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
 import { TerminalView } from "@/components/terminal/TerminalView";
 import { RemoteDesktopView } from "@/components/terminal/RemoteDesktopView";
+import { VncView } from "@/components/terminal/VncView";
 import { SlotManager } from "@/components/layout/SlotManager";
 import {
   AlertDialog,
@@ -45,7 +46,7 @@ function App() {
 
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
   const activeSession = sessions.find((session) => session.id === activeSessionId);
-  const shouldHideQuickCmdBar = activeSession?.type === "rdp";
+  const shouldHideQuickCmdBar = activeSession?.type === "rdp" || activeSession?.type === "vnc";
   const effectiveBottomRowHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight;
 
   // 应用关闭时清空所有会话
@@ -207,7 +208,11 @@ function App() {
           gridArea: "mid-main",
         }}
       >
-        {activeSession?.type === "rdp" ? <RemoteDesktopView key={activeSession.id} /> : <TerminalView />}
+        {activeSession?.type === "rdp"
+          ? <RemoteDesktopView key={activeSession.id} />
+          : activeSession?.type === "vnc"
+            ? <VncView key={activeSession.id} />
+            : <TerminalView />}
       </section>
 
       <AlertDialog open={!!connectionError} onOpenChange={(open) => !open && clearConnectionError()}>
@@ -218,6 +223,8 @@ function App() {
                 ? "SSH 连接失败"
                 : connectionError?.sessionType === "rdp"
                   ? "远程桌面连接失败"
+                  : connectionError?.sessionType === "vnc"
+                    ? "VNC 连接失败"
                   : "终端连接失败"}
             </AlertDialogTitle>
             <AlertDialogDescription>

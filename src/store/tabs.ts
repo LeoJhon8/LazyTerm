@@ -1,11 +1,12 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { ITerminalConnector, RDPConfig, SessionConnector, SSHConfig } from "@/types/terminal";
+import type { ITerminalConnector, RDPConfig, SessionConnector, SSHConfig, VNCConfig } from "@/types/terminal";
 import { logger } from "@/lib/logger";
 import { LocalConnector } from "@/connectors/LocalConnector";
 import { SshConnector } from "@/connectors/SshConnector";
 import { RdpConnector } from "@/connectors/RdpConnector";
 import { NativeRdpConnector } from "@/connectors/NativeRdpConnector";
+import { VncConnector } from "@/connectors/VncConnector";
 
 /**
  * 终端会话配置接口
@@ -17,6 +18,7 @@ export interface SessionConfig {
   port?: number;
   sshConfig?: SSHConfig;
   rdpConfig?: RDPConfig;
+  vncConfig?: VNCConfig;
   admin?: boolean;
 }
 
@@ -26,7 +28,7 @@ export interface SessionConfig {
 export interface TerminalSession {
   id: string;
   title: string;
-  type: "local" | "ssh" | "telnet" | "rdp";
+  type: "local" | "ssh" | "telnet" | "rdp" | "vnc";
   /** 连接器实例（仅存在于内存中，不持久化） */
   connector?: SessionConnector;
   cwd?: string;
@@ -66,6 +68,13 @@ function getSessionTargetLabel(sessionData: Omit<TerminalSession, "id" | "connec
     const rdpConfig = sessionData.config?.rdpConfig;
     if (rdpConfig?.host && rdpConfig.port) {
       return `${rdpConfig.host}:${rdpConfig.port}`;
+    }
+  }
+
+  if (sessionData.type === "vnc") {
+    const vncConfig = sessionData.config?.vncConfig;
+    if (vncConfig?.host && vncConfig.port) {
+      return `${vncConfig.host}:${vncConfig.port}`;
     }
   }
 
@@ -185,6 +194,42 @@ function buildSshErrorPresentation(technicalDetails: string): ConnectionErrorPre
   };
 }
 
+function buildVncErrorPresentation(technicalDetails: string): ConnectionErrorPresentation {
+  const normalized = technicalDetails.toLowerCase();
+
+  if (normalized.includes("authentication") || normalized.includes("password") || normalized.includes("auth")) {
+    return {
+      summary: "VNC 认证未通过。",
+      guidance: [
+        "检查连接密码是否正确。",
+        "确认目标 VNC 服务端允许当前认证方式。",
+      ],
+      technicalDetails,
+    };
+  }
+
+  if (normalized.includes("refused") || normalized.includes("10061")) {
+    return {
+      summary: "目标主机拒绝了 VNC 连接。",
+      guidance: [
+        "确认目标主机已启动 VNC 服务。",
+        "确认端口填写正确，默认通常为 5900。",
+        "检查目标主机防火墙是否允许该端口。",
+      ],
+      technicalDetails,
+    };
+  }
+
+  return {
+    summary: "VNC 连接未能建立。",
+    guidance: [
+      "检查目标主机、端口和密码是否正确。",
+      "确认网络可达，且目标 VNC 服务已启动。",
+    ],
+    technicalDetails,
+  };
+}
+
 function buildLocalErrorPresentation(technicalDetails: string): ConnectionErrorPresentation {
   return {
     summary: "本地终端启动失败。",
@@ -205,6 +250,8 @@ function getConnectionErrorPresentation(
   switch (sessionType) {
     case "rdp":
       return buildRdpErrorPresentation(technicalDetails);
+    case "vnc":
+      return buildVncErrorPresentation(technicalDetails);
     case "ssh":
       return buildSshErrorPresentation(technicalDetails);
     default:
@@ -218,6 +265,8 @@ function getOpenFailureLogLabel(sessionType: TerminalSession["type"]): string {
       return "[Tauri] SSH 会话创建失败:";
     case "rdp":
       return "[Tauri] RDP 会话创建失败:";
+    case "vnc":
+      return "[Tauri] VNC 会话创建失败:";
     case "local":
       return "[Tauri] 终端进程创建失败:";
     default:
@@ -340,6 +389,12 @@ export const useTabsStore = create<TabsState>()(
             return sessionData.config.rdpConfig.backend === "msrdpax"
               ? new NativeRdpConnector(sessionData.config.rdpConfig)
               : new RdpConnector(sessionData.config.rdpConfig);
+          case "vnc":
+            if (!sessionData.config?.vncConfig) {
+              throw new Error("VNC 配置不能为空");
+            }
+
+            return new VncConnector(sessionData.config.vncConfig);
           case "telnet":
             throw new Error("Telnet 连接器目前尚未实现");
           default:
@@ -519,7 +574,7 @@ export const useTabsStore = create<TabsState>()(
       getAllConnectors: () => {
         return get().sessions
           .map(session => session.connector)
-          .filter((connector): connector is ITerminalConnector => connector !== undefined && connector.protocol !== "rdp");
+          .filter((connector): connector is ITerminalConnector => connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc");
       },
 
       switchConnector: (sessionId, newType) => {
@@ -543,7 +598,7 @@ export const useTabsStore = create<TabsState>()(
             type: newType,
           };
           const nextConnector = createConnector(nextSession, sessionId);
-          if (nextConnector.protocol === "rdp") {
+          if (nextConnector.protocol === "rdp" || nextConnector.protocol === "vnc") {
             throw new Error(`不支持的连接类型：${newType}`);
           }
           const newConnector: ITerminalConnector = nextConnector;

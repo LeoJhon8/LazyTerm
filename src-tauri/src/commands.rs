@@ -1,9 +1,10 @@
 use crate::{
     build_rdp_config, connect_rdp, load_ssh_key, log_rdp_error, log_rdp_info, map_sftp_error,
-    rdp_target_label, run_rdp_session, AppState, Client, LocalTerminalSession, RdpConnectConfig,
+    log_vnc_error, log_vnc_info, rdp_target_label, run_rdp_session, run_vnc_session, vnc_target_label,
+    AppState, Client, LocalTerminalSession, RdpConnectConfig, VncConnectConfig,
     RdpControlMsg, RdpKeyboardEventPayload, RdpPointerEventPayload, RdpSession, ShellInfo,
     SftpUploadCancelGuard, SftpUploadItem, SftpUploadProgress, SshConnectConfig, SshControlMsg,
-    SshTerminalSession,
+    SshTerminalSession, VncControlMsg, VncKeyboardEventPayload, VncPointerEventPayload, VncSession,
 };
 use crate::logging;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -15,8 +16,10 @@ use std::sync::{mpsc as std_mpsc, Arc};
 use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream as TokioTcpStream;
 use tokio::sync::mpsc;
 use uuid::Uuid;
+use vnc::{PixelFormat as VncPixelFormat, VncConnector as RustVncConnector, VncEncoding, VncError as RustVncError};
 
 #[tauri::command]
 pub async fn create_terminal<R: Runtime>(
@@ -375,6 +378,99 @@ pub async fn create_rdp_session<R: Runtime>(
         }
         rdp_sessions.lock().unwrap().remove(&session_id_clone);
         let _ = app_clone.emit(&format!("rdp-close-{}", session_id_clone), ());
+    });
+
+    Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn create_vnc_session<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    config: VncConnectConfig,
+    frame_channel: Channel<Response>,
+) -> Result<String, String> {
+    let session_id = Uuid::new_v4().to_string();
+    let target = vnc_target_label(&config);
+    log_vnc_info(&session_id, &target, "connect", "received open request from frontend");
+
+    let tcp = TokioTcpStream::connect((config.host.as_str(), config.port)).await.map_err(|error| {
+        let message = format!("TCP connect failed: {error}");
+        log_vnc_error(&session_id, &target, "connect", &message);
+        message
+    })?;
+
+    let password = config.password.clone().unwrap_or_default();
+    let shared = config.shared.unwrap_or(true);
+    let allow_jpeg = config.allow_jpeg.unwrap_or(true);
+
+    let builder = if allow_jpeg {
+        RustVncConnector::new(tcp)
+            .set_auth_method(std::future::ready(Ok::<String, RustVncError>(password.clone())))
+            .add_encoding(VncEncoding::CursorPseudo)
+            .add_encoding(VncEncoding::Tight)
+            .add_encoding(VncEncoding::Zrle)
+            .add_encoding(VncEncoding::Raw)
+            .add_encoding(VncEncoding::DesktopSizePseudo)
+            .allow_shared(shared)
+            .set_pixel_format(VncPixelFormat::rgba())
+    } else {
+        RustVncConnector::new(tcp)
+            .set_auth_method(std::future::ready(Ok::<String, RustVncError>(password)))
+            .add_encoding(VncEncoding::CursorPseudo)
+            .add_encoding(VncEncoding::Zrle)
+            .add_encoding(VncEncoding::Raw)
+            .add_encoding(VncEncoding::DesktopSizePseudo)
+            .allow_shared(shared)
+            .set_pixel_format(VncPixelFormat::rgba())
+    };
+
+    let client = builder
+        .build()
+        .map_err(|error| {
+            let message = format!("build VNC connector failed: {error}");
+            log_vnc_error(&session_id, &target, "config", &message);
+            message
+        })?
+        .try_start()
+        .await
+        .map_err(|error| {
+            let message = format!("start VNC handshake failed: {error}");
+            log_vnc_error(&session_id, &target, "handshake", &message);
+            message
+        })?
+        .finish()
+        .map_err(|error| {
+            let message = format!("finish VNC connection failed: {error}");
+            log_vnc_error(&session_id, &target, "connect", &message);
+            message
+        })?;
+
+    let (control_tx, control_rx) = mpsc::unbounded_channel::<VncControlMsg>();
+    state
+        .vnc_sessions
+        .lock()
+        .unwrap()
+        .insert(session_id.clone(), VncSession { control_tx });
+
+    let session_id_clone = session_id.clone();
+    let target_clone = target.clone();
+    let app_clone = app.clone();
+    let vnc_sessions = Arc::clone(&state.vnc_sessions);
+    tokio::spawn(async move {
+        match run_vnc_session(
+            app_clone.clone(),
+            session_id_clone.clone(),
+            target_clone.clone(),
+            client,
+            frame_channel,
+            control_rx,
+        ).await {
+            Ok(()) => log_vnc_info(&session_id_clone, &target_clone, "close", "session loop ended"),
+            Err(error) => log_vnc_error(&session_id_clone, &target_clone, "runtime", &error),
+        }
+        vnc_sessions.lock().unwrap().remove(&session_id_clone);
+        let _ = app_clone.emit(&format!("vnc-close-{}", session_id_clone), ());
     });
 
     Ok(session_id)
@@ -955,6 +1051,56 @@ pub fn resize_rdp_session(state: State<'_, AppState>, session_id: String, width:
 pub fn close_rdp_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
     if let Some(session) = state.rdp_sessions.lock().unwrap().remove(&session_id) {
         let _ = session.control_tx.send(RdpControlMsg::Close);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn send_vnc_pointer(state: State<'_, AppState>, session_id: String, payload: VncPointerEventPayload) -> Result<(), String> {
+    let sessions = state.vnc_sessions.lock().unwrap();
+    if let Some(session) = sessions.get(&session_id) {
+        session
+            .control_tx
+            .send(VncControlMsg::Pointer(payload))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("VNC 会话不存在".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn send_vnc_key(state: State<'_, AppState>, session_id: String, payload: VncKeyboardEventPayload) -> Result<(), String> {
+    let sessions = state.vnc_sessions.lock().unwrap();
+    if let Some(session) = sessions.get(&session_id) {
+        session
+            .control_tx
+            .send(VncControlMsg::Key(payload))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("VNC 会话不存在".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn request_vnc_refresh(state: State<'_, AppState>, session_id: String, full: bool) -> Result<(), String> {
+    let sessions = state.vnc_sessions.lock().unwrap();
+    if let Some(session) = sessions.get(&session_id) {
+        session
+            .control_tx
+            .send(VncControlMsg::Refresh(full))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("VNC 会话不存在".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn close_vnc_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    if let Some(session) = state.vnc_sessions.lock().unwrap().remove(&session_id) {
+        let _ = session.control_tx.send(VncControlMsg::Close);
     }
     Ok(())
 }

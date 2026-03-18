@@ -1,15 +1,15 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { RDPConfig, SSHConfig } from "@/types/terminal";
+import type { RDPConfig, SSHConfig, VNCConfig } from "@/types/terminal";
 
-export type NodeType = "folder" | "ssh" | "rdp";
+export type NodeType = "folder" | "ssh" | "rdp" | "vnc";
 
 export interface SessionNode {
   id: string;
   type: NodeType;
   name: string;
   parentId: string | null;
-  config?: SSHConfig | RDPConfig;
+  config?: SSHConfig | RDPConfig | VNCConfig;
   isExpanded?: boolean;
   isRoot?: boolean;
   order: number;
@@ -47,7 +47,7 @@ interface SSHProfilesState {
   nodes: SessionNode[];
   ensureRoot: () => void;
   addFolder: (name: string, parentId: string) => void;
-  addProfile: (type: "ssh" | "rdp", cfg: SSHConfig | RDPConfig, parentId: string) => void;
+  addProfile: (type: "ssh" | "rdp" | "vnc", cfg: SSHConfig | RDPConfig | VNCConfig, parentId: string) => void;
   updateNode: (id: string, updates: Partial<SessionNode>) => void;
   removeNode: (id: string) => void;
   toggleFolder: (id: string) => void;
@@ -89,7 +89,9 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
       addProfile: (type, cfg, parentId) => set((state) => {
         const siblings = state.nodes.filter(n => n.parentId === parentId);
         const maxOrder = siblings.length > 0 ? Math.max(...siblings.map(s => s.order)) : 0;
-        const normalizedConfig = type === "rdp" ? normalizeRdpConfig(cfg as RDPConfig) : cfg;
+        const normalizedConfig = type === "rdp"
+          ? normalizeRdpConfig(cfg as RDPConfig)
+          : cfg;
         return {
           nodes: state.nodes.map(n => n.id === parentId ? { ...n, isExpanded: true } : n)
             .concat([{ id: `s_${Math.random().toString(36).slice(2, 9)}`, type, name: normalizedConfig.nickname || normalizedConfig.host, parentId, config: normalizedConfig, order: maxOrder + 1 }]),

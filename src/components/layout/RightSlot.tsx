@@ -22,7 +22,7 @@ export function RightSlot() {
   const { activeSessionId, sessions } = useTabsStore();
   const { modules, activeModule, collapsed } = currentConfig.right;
   const activeSession = sessions.find((session) => session.id === activeSessionId);
-  const isRdpActive = activeSession?.type === "rdp";
+  const isRdpActive = activeSession?.type === "rdp" || activeSession?.type === "vnc";
 
   useEffect(() => {
     if (isRdpActive && activeModule === "HistoryModule" && !collapsed) {

@@ -135,7 +135,7 @@ export function QuickCmdBar() {
   );
 
   const isTerminalConnector = (connector: SessionConnector | undefined): connector is ITerminalConnector => {
-    return connector !== undefined && connector.protocol !== "rdp";
+    return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
   };
 
 // 发送命令到当前激活的终端

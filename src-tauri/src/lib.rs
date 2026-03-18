@@ -39,9 +39,16 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::ipc::{Channel, Response};
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::{mpsc, Mutex as TokioMutex};
 use tokio_rustls::rustls;
+use vnc::{
+    ClientKeyEvent as VncClientKeyEvent,
+    ClientMouseEvent as VncClientMouseEvent,
+    VncClient,
+    VncEvent,
+    X11Event,
+};
 use x509_cert::der::Decode as _;
 
 mod mstsc;
@@ -68,6 +75,13 @@ enum RdpControlMsg {
     Close,
 }
 
+enum VncControlMsg {
+    Pointer(VncPointerEventPayload),
+    Key(VncKeyboardEventPayload),
+    Refresh(bool),
+    Close,
+}
+
 const RDP_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const RDP_POLL_TIMEOUT: Duration = Duration::from_millis(16);
 const RDP_FRAME_INTERVAL: Duration = Duration::from_millis(41);
@@ -90,6 +104,7 @@ const RDP_INTERACTION_WINDOW: Duration = Duration::from_millis(320);
 const RDP_REFINEMENT_DELAY: Duration = Duration::from_millis(90);
 const RDP_FIRST_FRAME_WAKE_DELAY: Duration = Duration::from_millis(700);
 const RDP_FIRST_FRAME_WAKE_REPEAT: Duration = Duration::from_secs(2);
+const VNC_REFRESH_INTERVAL: Duration = Duration::from_millis(33);
 
 fn rdp_target_label(config: &RdpConnectConfig) -> String {
     format!("{}:{}", config.host, config.port)
@@ -102,6 +117,20 @@ fn log_rdp_info(session_id: &str, target: &str, stage: &str, message: impl AsRef
 
 fn log_rdp_error(session_id: &str, target: &str, stage: &str, message: impl AsRef<str>) {
     let scope = format!("RDP/{session_id}/{target}/{stage}");
+    logging::error(&scope, message);
+}
+
+fn vnc_target_label(config: &VncConnectConfig) -> String {
+    format!("{}:{}", config.host, config.port)
+}
+
+fn log_vnc_info(session_id: &str, target: &str, stage: &str, message: impl AsRef<str>) {
+    let scope = format!("VNC/{session_id}/{target}/{stage}");
+    logging::info(&scope, message);
+}
+
+fn log_vnc_error(session_id: &str, target: &str, stage: &str, message: impl AsRef<str>) {
+    let scope = format!("VNC/{session_id}/{target}/{stage}");
     logging::error(&scope, message);
 }
 
@@ -193,6 +222,10 @@ struct SshTerminalSession {
 
 struct RdpSession {
     control_tx: std_mpsc::Sender<RdpControlMsg>,
+}
+
+struct VncSession {
+    control_tx: mpsc::UnboundedSender<VncControlMsg>,
 }
 
 struct RdpConnectionContext {
@@ -540,6 +573,7 @@ struct AppState {
     local_sessions: Arc<StdMutex<HashMap<String, LocalTerminalSession>>>,
     ssh_sessions: Arc<TokioMutex<HashMap<String, SshTerminalSession>>>,
     rdp_sessions: Arc<StdMutex<HashMap<String, RdpSession>>>,
+    vnc_sessions: Arc<StdMutex<HashMap<String, VncSession>>>,
     native_rdp_sessions: Arc<StdMutex<HashMap<String, NativeRdpSession>>>,
     sftp_upload_cancellations: Arc<StdMutex<HashMap<String, bool>>>,
 }
@@ -628,6 +662,15 @@ pub struct RdpConnectConfig {
     pub auto_resize: Option<bool>,
 }
 
+#[derive(serde::Deserialize, Debug, Clone)]
+pub struct VncConnectConfig {
+    pub host: String,
+    pub port: u16,
+    pub password: Option<String>,
+    pub shared: Option<bool>,
+    pub allow_jpeg: Option<bool>,
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeHostRect {
@@ -671,6 +714,31 @@ pub struct RdpPointerEventPayload {
 pub struct RdpKeyboardEventPayload {
     pub scancode: u16,
     pub down: bool,
+}
+
+#[derive(serde::Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VncPointerEventPayload {
+    pub x: u16,
+    pub y: u16,
+    pub button_mask: u8,
+}
+
+#[derive(serde::Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VncKeyboardEventPayload {
+    pub key_sym: u32,
+    pub down: bool,
+}
+
+#[derive(serde::Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VncCursorEventPayload {
+    pub hotspot_x: u16,
+    pub hotspot_y: u16,
+    pub width: u16,
+    pub height: u16,
+    pub rgba_bytes: Vec<u8>,
 }
 
 type UpgradedFramed = ironrdp_blocking::Framed<rustls::StreamOwned<rustls::ClientConnection, TcpStream>>;
@@ -1591,6 +1659,202 @@ fn run_rdp_session<R: Runtime>(
     }
 }
 
+fn emit_vnc_frame(
+    frame_channel: &Channel<Response>,
+    desktop_width: u16,
+    desktop_height: u16,
+    region_left: u16,
+    region_top: u16,
+    region_width: u16,
+    region_height: u16,
+    encoding_rgba: bool,
+    image_bytes: Vec<u8>,
+) -> Result<(), String> {
+    let full_frame = region_left == 0
+        && region_top == 0
+        && region_width == desktop_width
+        && region_height == desktop_height;
+
+    let mut packet = Vec::with_capacity(13 + image_bytes.len());
+    packet.extend_from_slice(&desktop_width.to_le_bytes());
+    packet.extend_from_slice(&desktop_height.to_le_bytes());
+    packet.extend_from_slice(&region_left.to_le_bytes());
+    packet.extend_from_slice(&region_top.to_le_bytes());
+    packet.extend_from_slice(&region_width.to_le_bytes());
+    packet.extend_from_slice(&region_height.to_le_bytes());
+
+    let mut flags = 0u8;
+    if full_frame {
+        flags |= 0x01;
+    }
+    if encoding_rgba {
+        flags |= 0x02;
+    }
+
+    packet.push(flags);
+    packet.extend_from_slice(&image_bytes);
+
+    frame_channel
+        .send(Response::new(packet))
+        .map_err(|e| format!("send VNC frame via channel failed: {e}"))
+}
+
+async fn handle_vnc_control(control: VncControlMsg, client: &VncClient) -> Result<bool, String> {
+    match control {
+        VncControlMsg::Pointer(payload) => {
+            client
+                .input(X11Event::PointerEvent(VncClientMouseEvent {
+                    position_x: payload.x,
+                    position_y: payload.y,
+                    bottons: payload.button_mask,
+                }))
+                .await
+                .map_err(|e| format!("send VNC pointer input failed: {e}"))?;
+            Ok(true)
+        }
+        VncControlMsg::Key(payload) => {
+            client
+                .input(X11Event::KeyEvent(VncClientKeyEvent {
+                    keycode: payload.key_sym,
+                    down: payload.down,
+                }))
+                .await
+                .map_err(|e| format!("send VNC keyboard input failed: {e}"))?;
+            Ok(true)
+        }
+        VncControlMsg::Refresh(full) => {
+            client
+                .input(if full { X11Event::FullRefresh } else { X11Event::Refresh })
+                .await
+                .map_err(|e| format!("request VNC refresh failed: {e}"))?;
+            Ok(true)
+        }
+        VncControlMsg::Close => {
+            let _ = client.close().await;
+            Ok(false)
+        }
+    }
+}
+
+async fn run_vnc_session<R: Runtime>(
+    app: AppHandle<R>,
+    session_id: String,
+    target: String,
+    client: VncClient,
+    frame_channel: Channel<Response>,
+    mut control_rx: mpsc::UnboundedReceiver<VncControlMsg>,
+) -> Result<(), String> {
+    let mut desktop_width = 0u16;
+    let mut desktop_height = 0u16;
+    let mut cursor_mode_synced = false;
+    let mut refresh_interval = tokio::time::interval(VNC_REFRESH_INTERVAL);
+    refresh_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    client
+        .input(X11Event::FullRefresh)
+        .await
+        .map_err(|e| format!("request initial VNC refresh failed: {e}"))?;
+
+    loop {
+        tokio::select! {
+            _ = refresh_interval.tick() => {
+                let _ = client.input(X11Event::Refresh).await;
+            }
+            maybe_control = control_rx.recv() => {
+                let Some(control) = maybe_control else {
+                    let _ = client.close().await;
+                    break;
+                };
+
+                if !handle_vnc_control(control, &client).await? {
+                    break;
+                }
+            }
+            event = client.recv_event() => {
+                match event.map_err(|e| format!("receive VNC event failed: {e}"))? {
+                    VncEvent::SetResolution(screen) => {
+                        desktop_width = screen.width;
+                        desktop_height = screen.height;
+                        log_vnc_info(&session_id, &target, "resolution", format!("desktop resized to {}x{}", screen.width, screen.height));
+                        let _ = client.input(X11Event::FullRefresh).await;
+                    }
+                    VncEvent::RawImage(rect, data) => {
+                        if desktop_width == 0 {
+                            desktop_width = rect.x.saturating_add(rect.width);
+                        }
+                        if desktop_height == 0 {
+                            desktop_height = rect.y.saturating_add(rect.height);
+                        }
+
+                        emit_vnc_frame(
+                            &frame_channel,
+                            desktop_width,
+                            desktop_height,
+                            rect.x,
+                            rect.y,
+                            rect.width,
+                            rect.height,
+                            true,
+                            data,
+                        )?;
+                    }
+                    VncEvent::JpegImage(rect, data) => {
+                        if desktop_width == 0 {
+                            desktop_width = rect.x.saturating_add(rect.width);
+                        }
+                        if desktop_height == 0 {
+                            desktop_height = rect.y.saturating_add(rect.height);
+                        }
+
+                        emit_vnc_frame(
+                            &frame_channel,
+                            desktop_width,
+                            desktop_height,
+                            rect.x,
+                            rect.y,
+                            rect.width,
+                            rect.height,
+                            false,
+                            data,
+                        )?;
+                    }
+                    VncEvent::Copy(_, _) => {
+                        let _ = client.input(X11Event::FullRefresh).await;
+                    }
+                    VncEvent::SetCursor(rect, data) => {
+                        app.emit(
+                            &format!("vnc-cursor-{}", session_id),
+                            VncCursorEventPayload {
+                                hotspot_x: rect.x,
+                                hotspot_y: rect.y,
+                                width: rect.width,
+                                height: rect.height,
+                                rgba_bytes: data,
+                            },
+                        ).map_err(|e| format!("emit VNC cursor event failed: {e}"))?;
+
+                        if !cursor_mode_synced {
+                            cursor_mode_synced = true;
+                            let _ = client.input(X11Event::FullRefresh).await;
+                        }
+                    }
+                    VncEvent::SetPixelFormat(pixel_format) => {
+                        log_vnc_info(&session_id, &target, "pixel-format", format!("server pixel format updated: {}bpp", pixel_format.bits_per_pixel));
+                    }
+                    VncEvent::Bell => {}
+                    VncEvent::Text(text) => {
+                        log_vnc_info(&session_id, &target, "clipboard", format!("server clipboard updated: {} chars", text.len()));
+                    }
+                    VncEvent::Error(message) => return Err(format!("VNC runtime error: {message}")),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 // --- Tauri 指令实现已拆分至 commands/mstsc/native_rdp ---
 
 mod danger {
@@ -1662,6 +1926,7 @@ pub fn run() {
             local_sessions: Arc::new(StdMutex::new(HashMap::new())),
             ssh_sessions: Arc::new(TokioMutex::new(HashMap::new())),
             rdp_sessions: Arc::new(StdMutex::new(HashMap::new())),
+            vnc_sessions: Arc::new(StdMutex::new(HashMap::new())),
             native_rdp_sessions: Arc::new(StdMutex::new(HashMap::new())),
             sftp_upload_cancellations: Arc::new(StdMutex::new(HashMap::new())),
         })
@@ -1670,6 +1935,7 @@ pub fn run() {
             commands::get_available_shells,
             commands::create_ssh_session,
             commands::create_rdp_session,
+            commands::create_vnc_session,
             native_rdp::create_native_rdp_session,
             native_rdp::mount_native_rdp_session,
             native_rdp::set_native_rdp_session_visible,
@@ -1683,13 +1949,17 @@ pub fn run() {
             commands::write_to_ssh_session,
             commands::send_rdp_pointer,
             commands::send_rdp_key,
+            commands::send_vnc_pointer,
+            commands::send_vnc_key,
+            commands::request_vnc_refresh,
             commands::release_rdp_inputs,
             commands::resize_terminal,
             commands::resize_ssh_session,
             commands::resize_rdp_session,
             commands::close_terminal,
             commands::close_ssh_session,
-            commands::close_rdp_session
+            commands::close_rdp_session,
+            commands::close_vnc_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

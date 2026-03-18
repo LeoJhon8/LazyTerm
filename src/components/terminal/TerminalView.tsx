@@ -106,7 +106,7 @@ function extractCommand(lineText: string) {
 }
 
 function isTerminalConnector(connector: SessionConnector | undefined): connector is ITerminalConnector {
-  return connector !== undefined && connector.protocol !== "rdp";
+  return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
 }
 
 export function TerminalView() {

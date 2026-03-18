@@ -1,4 +1,4 @@
-export type SessionProtocol = 'ssh' | 'local' | 'telnet' | 'rdp';
+export type SessionProtocol = 'ssh' | 'local' | 'telnet' | 'rdp' | 'vnc';
 export type RdpBackend = 'ironrdp' | 'msrdpax' | 'mstsc-external';
 
 export interface ISessionConnector {
@@ -30,6 +30,18 @@ export interface RdpFramePayload {
   imageBytes: ArrayBuffer;
 }
 
+export interface VncFramePayload {
+  desktopWidth: number;
+  desktopHeight: number;
+  regionLeft: number;
+  regionTop: number;
+  regionWidth: number;
+  regionHeight: number;
+  fullFrame: boolean;
+  encoding: "jpeg" | "rgba";
+  imageBytes: ArrayBuffer;
+}
+
 export interface RdpPointerPayload {
   kind: 'move' | 'down' | 'up' | 'wheel';
   x: number;
@@ -42,6 +54,25 @@ export interface RdpPointerPayload {
 export interface RdpKeyboardPayload {
   scancode: number;
   down: boolean;
+}
+
+export interface VncPointerPayload {
+  x: number;
+  y: number;
+  buttonMask: number;
+}
+
+export interface VncKeyboardPayload {
+  keySym: number;
+  down: boolean;
+}
+
+export interface VncCursorPayload {
+  hotspotX: number;
+  hotspotY: number;
+  width: number;
+  height: number;
+  rgbaBytes: Uint8Array;
 }
 
 export interface NativeHostRect {
@@ -99,7 +130,19 @@ export interface INativeRdpConnector extends ISessionConnector {
   focus(): Promise<void>;
 }
 
-export type SessionConnector = ITerminalConnector | IRdpConnector | INativeRdpConnector;
+export interface IVncConnector extends ISessionConnector {
+  readonly protocol: 'vnc';
+
+  onFrame(handler: (frame: VncFramePayload) => void): Promise<void>;
+  onCursor(handler: (cursor: VncCursorPayload) => void): Promise<void>;
+  onClose(handler: () => void): () => void;
+  sendPointer(payload: VncPointerPayload): void;
+  sendKey(payload: VncKeyboardPayload): void;
+  requestFrame(full?: boolean): void;
+  getFrameSize(): { width: number; height: number } | null;
+}
+
+export type SessionConnector = ITerminalConnector | IRdpConnector | INativeRdpConnector | IVncConnector;
 
 // SSH 认证方式
 export type SSHAuthType = 'password' | 'privateKey';
@@ -147,4 +190,22 @@ export interface RDPConfig {
   height?: number;
   autoResize?: boolean;
   backend?: RdpBackend;
+}
+
+export interface VNCConfig {
+  host: string;
+  port: number;
+  password?: string;
+  nickname?: string;
+  shared?: boolean;
+  viewOnly?: boolean;
+  allowJpeg?: boolean;
+}
+
+export function isGraphicalProtocol(protocol: SessionProtocol): protocol is 'rdp' | 'vnc' {
+  return protocol === 'rdp' || protocol === 'vnc';
+}
+
+export function isTerminalProtocol(protocol: SessionProtocol): protocol is 'ssh' | 'local' | 'telnet' {
+  return !isGraphicalProtocol(protocol);
 }

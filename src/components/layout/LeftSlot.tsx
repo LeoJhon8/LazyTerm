@@ -25,7 +25,7 @@ export function LeftSlot() {
   const { modules, activeModule, collapsed } = currentConfig.left;
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const activeSession = sessions.find((session) => session.id === activeSessionId);
-  const isRdpActive = activeSession?.type === "rdp";
+  const isRdpActive = activeSession?.type === "rdp" || activeSession?.type === "vnc";
 
   useEffect(() => {
     if (isRdpActive && activeModule === "HistoryModule" && !collapsed) {

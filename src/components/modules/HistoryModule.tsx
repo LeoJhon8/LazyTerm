@@ -8,7 +8,7 @@ import { Trash2, Search, X } from "lucide-react";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 
 function isTerminalConnector(connector: SessionConnector | undefined): connector is ITerminalConnector {
-  return connector !== undefined && connector.protocol !== "rdp";
+  return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
 }
 
 export function HistoryModule() {

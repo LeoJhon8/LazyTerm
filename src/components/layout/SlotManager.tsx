@@ -21,7 +21,7 @@ export function SlotManager() {
   const { activeSessionId, sessions } = useTabsStore();
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
   const activeSession = sessions.find((session) => session.id === activeSessionId);
-  const shouldHideQuickCmdBar = activeSession?.type === "rdp";
+  const shouldHideQuickCmdBar = activeSession?.type === "rdp" || activeSession?.type === "vnc";
   const effectiveFooterHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? "0px" : `${effectiveBottomPanelHeight}px`;
 
   // 当有背景图片时，使面板半透明
