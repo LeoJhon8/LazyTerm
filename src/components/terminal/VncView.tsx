@@ -1,10 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Monitor, MousePointer2, RefreshCcw } from "lucide-react";
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
 import type { IVncConnector, VncCursorPayload, VncFramePayload } from "@/types/terminal";
-
-const VNC_PRESENT_DELAY_MS = 10;
 
 const KEYSYM_MAP: Record<string, number> = {
   Backspace: 0xff08,
@@ -105,28 +103,25 @@ function mapKeyboardEventToKeysym(event: React.KeyboardEvent<HTMLDivElement>): n
   return null;
 }
 
+function isCompleteSnapshot(frame: VncFramePayload) {
+  return frame.fullFrame
+    && frame.regionLeft === 0
+    && frame.regionTop === 0
+    && frame.regionWidth === frame.desktopWidth
+    && frame.regionHeight === frame.desktopHeight;
+}
+
 export function VncView() {
   const { activeSessionId, sessions } = useTabsStore();
   const activeSession = sessions.find((session) => session.id === activeSessionId);
   const connector = activeSession?.connector?.protocol === "vnc" ? activeSession.connector as IVncConnector : null;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const backBufferCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pointerMaskRef = useRef(0);
-  const pendingFrameRef = useRef<VncFramePayload | null>(null);
-  const decodeInFlightRef = useRef(false);
-  const drawTokenRef = useRef(0);
   const pointerTargetRef = useRef<number | null>(null);
-  const presentTimerRef = useRef<number | null>(null);
-  const presentRafRef = useRef<number | null>(null);
   const [connected, setConnected] = useState(true);
   const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(null);
-  const [transitionMaskVisible, setTransitionMaskVisible] = useState(true);
   const [cursorStyle, setCursorStyle] = useState("default");
-
-  const markVisualReady = useCallback(() => {
-    setTransitionMaskVisible(false);
-  }, []);
 
   useEffect(() => {
     if (!connector) {
@@ -135,74 +130,32 @@ export function VncView() {
 
     let disposed = false;
     const cleanupCanvas = canvasRef.current;
-    if (!backBufferCanvasRef.current) {
-      backBufferCanvasRef.current = document.createElement("canvas");
-    }
+    let paintToken = 0;
 
-    const presentBackBuffer = () => {
-      presentRafRef.current = null;
+    const paintSnapshot = async (frame: VncFramePayload) => {
+      if (!isCompleteSnapshot(frame) || disposed) {
+        return;
+      }
+
+      // Accept full RGBA snapshots or PNG snapshots (PNG is non-progressive).
+      if (frame.encoding !== "rgba" && frame.encoding !== "png") {
+        return;
+      }
 
       const frontCanvas = canvasRef.current;
-      const backCanvas = backBufferCanvasRef.current;
-      if (!frontCanvas || !backCanvas || disposed) {
+      if (!frontCanvas) {
         return;
       }
 
-      if (frontCanvas.width !== backCanvas.width || frontCanvas.height !== backCanvas.height) {
-        frontCanvas.width = backCanvas.width;
-        frontCanvas.height = backCanvas.height;
-      }
-
-      const frontContext = frontCanvas.getContext("2d", {
-        alpha: false,
-        desynchronized: true,
-      });
-
-      if (!frontContext) {
-        return;
-      }
-
-      frontContext.imageSmoothingEnabled = false;
-      frontContext.clearRect(0, 0, frontCanvas.width, frontCanvas.height);
-      frontContext.drawImage(backCanvas, 0, 0);
-      markVisualReady();
-    };
-
-    const schedulePresent = () => {
-      if (presentTimerRef.current !== null) {
-        window.clearTimeout(presentTimerRef.current);
-      }
-
-      presentTimerRef.current = window.setTimeout(() => {
-        presentTimerRef.current = null;
-        if (presentRafRef.current !== null) {
-          window.cancelAnimationFrame(presentRafRef.current);
-        }
-        presentRafRef.current = window.requestAnimationFrame(presentBackBuffer);
-      }, VNC_PRESENT_DELAY_MS);
-    };
-
-    const drawFrame = async () => {
-      if (decodeInFlightRef.current || disposed) {
-        return;
-      }
-
-      const frame = pendingFrameRef.current;
-      const backCanvas = backBufferCanvasRef.current;
-      if (!frame || !backCanvas) {
-        return;
-      }
-
-      decodeInFlightRef.current = true;
-      const drawToken = ++drawTokenRef.current;
+      const currentToken = ++paintToken;
 
       try {
-        if (backCanvas.width !== frame.desktopWidth || backCanvas.height !== frame.desktopHeight) {
-          backCanvas.width = frame.desktopWidth;
-          backCanvas.height = frame.desktopHeight;
+        if (frontCanvas.width !== frame.desktopWidth || frontCanvas.height !== frame.desktopHeight) {
+          frontCanvas.width = frame.desktopWidth;
+          frontCanvas.height = frame.desktopHeight;
         }
 
-        const context = backCanvas.getContext("2d", {
+        const context = frontCanvas.getContext("2d", {
           alpha: false,
           desynchronized: true,
         });
@@ -212,19 +165,15 @@ export function VncView() {
         }
 
         context.imageSmoothingEnabled = false;
+        context.clearRect(0, 0, frontCanvas.width, frontCanvas.height);
 
         if (frame.encoding === "rgba") {
           const rgbaBytes = new Uint8ClampedArray(frame.imageBytes);
-          const imageData = new ImageData(rgbaBytes, frame.regionWidth, frame.regionHeight);
-
-          if (disposed || drawToken !== drawTokenRef.current) {
-            return;
-          }
-
-          context.putImageData(imageData, frame.regionLeft, frame.regionTop);
-          schedulePresent();
+          const imageData = new ImageData(rgbaBytes, frame.desktopWidth, frame.desktopHeight);
+          context.putImageData(imageData, 0, 0);
         } else {
-          const blob = new Blob([frame.imageBytes], { type: "image/jpeg" });
+          const mime = frame.encoding === "png" ? "image/png" : "image/jpeg";
+          const blob = new Blob([frame.imageBytes], { type: mime });
           let decodedSource: CanvasImageSource;
           let decodedBitmap: ImageBitmap | null = null;
 
@@ -249,42 +198,37 @@ export function VncView() {
             decodedSource = image;
           }
 
-          if (disposed || drawToken !== drawTokenRef.current) {
+          if (disposed || currentToken !== paintToken) {
             decodedBitmap?.close();
             return;
           }
 
-          context.drawImage(decodedSource, frame.regionLeft, frame.regionTop, frame.regionWidth, frame.regionHeight);
+          context.drawImage(decodedSource, 0, 0, frame.desktopWidth, frame.desktopHeight);
           decodedBitmap?.close();
-          schedulePresent();
+        }
+
+        if (!disposed && currentToken === paintToken) {
+          setFrameSize((current) => {
+            if (current?.width === frame.desktopWidth && current.height === frame.desktopHeight) {
+              return current;
+            }
+
+            return {
+              width: frame.desktopWidth,
+              height: frame.desktopHeight,
+            };
+          });
+          setConnected(true);
         }
       } catch (error) {
         if (!disposed) {
           logger.error("FE/terminal-view/vnc", "Canvas decode failed", { error });
         }
-      } finally {
-        decodeInFlightRef.current = false;
-        if (!disposed && pendingFrameRef.current !== frame) {
-          void drawFrame();
-        }
       }
     };
 
     connector.onFrame((nextFrame) => {
-      pendingFrameRef.current = nextFrame;
-      setFrameSize((current) => {
-        if (current?.width === nextFrame.desktopWidth && current.height === nextFrame.desktopHeight) {
-          return current;
-        }
-
-        return {
-          width: nextFrame.desktopWidth,
-          height: nextFrame.desktopHeight,
-        };
-      });
-
-      void drawFrame();
-      setConnected(true);
+      void paintSnapshot(nextFrame);
     }).catch((error) => {
       if (connector.isConnected) {
         logger.error("FE/terminal-view/vnc", "Register frame listener failed", { error });
@@ -293,7 +237,6 @@ export function VncView() {
 
     connector.onCursor((nextCursor) => {
       setCursorStyle(buildCursorStyle(nextCursor));
-      connector.requestFrame(true);
     }).catch((error) => {
       if (connector.isConnected) {
         logger.error("FE/terminal-view/vnc", "Register cursor listener failed", { error });
@@ -308,35 +251,20 @@ export function VncView() {
 
     return () => {
       disposed = true;
+      paintToken += 1;
       disposeClose();
-      pendingFrameRef.current = null;
-      decodeInFlightRef.current = false;
       pointerMaskRef.current = 0;
       pointerTargetRef.current = null;
-      if (presentTimerRef.current !== null) {
-        window.clearTimeout(presentTimerRef.current);
-        presentTimerRef.current = null;
-      }
-      if (presentRafRef.current !== null) {
-        window.cancelAnimationFrame(presentRafRef.current);
-        presentRafRef.current = null;
-      }
-      setTransitionMaskVisible(true);
       setFrameSize(null);
       setCursorStyle("default");
       if (cleanupCanvas) {
         const context = cleanupCanvas.getContext("2d");
         context?.clearRect(0, 0, cleanupCanvas.width, cleanupCanvas.height);
       }
-      if (backBufferCanvasRef.current) {
-        const context = backBufferCanvasRef.current.getContext("2d");
-        context?.clearRect(0, 0, backBufferCanvasRef.current.width, backBufferCanvasRef.current.height);
-      }
     };
-  }, [connector, markVisualReady]);
+  }, [connector]);
 
   useEffect(() => {
-    setTransitionMaskVisible(true);
     pointerMaskRef.current = 0;
     pointerTargetRef.current = null;
     setCursorStyle("default");
@@ -501,14 +429,6 @@ export function VncView() {
           </div>
         ) : null}
 
-        {transitionMaskVisible ? (
-          <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm">
-            <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-black/50 px-5 py-3 text-sm text-white/90 shadow-2xl">
-              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-300" />
-              <span>正在同步 VNC 桌面画面...</span>
-            </div>
-          </div>
-        ) : null}
       </div>
     </main>
   );

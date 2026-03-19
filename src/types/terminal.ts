@@ -38,7 +38,7 @@ export interface VncFramePayload {
   regionWidth: number;
   regionHeight: number;
   fullFrame: boolean;
-  encoding: "jpeg" | "rgba";
+  encoding: "jpeg" | "rgba" | "png";
   imageBytes: ArrayBuffer;
 }
 

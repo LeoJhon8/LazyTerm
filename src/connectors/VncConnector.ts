@@ -183,7 +183,9 @@ export class VncConnector implements IVncConnector {
     const regionHeight = view.getUint16(10, true);
     const flags = view.getUint8(12);
     const fullFrame = (flags & 0x01) === 0x01;
-    const encoding = (flags & 0x02) === 0x02 ? "rgba" : "jpeg";
+    const isRgba = (flags & 0x02) === 0x02;
+    const isPng = (flags & 0x04) === 0x04;
+    const encoding = isRgba ? "rgba" : (isPng ? "png" : "jpeg");
     const imageBytes = packet.slice(VncConnector.FRAME_HEADER_SIZE);
 
     return {

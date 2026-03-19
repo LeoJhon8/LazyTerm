@@ -1084,12 +1084,12 @@ pub fn send_vnc_key(state: State<'_, AppState>, session_id: String, payload: Vnc
 }
 
 #[tauri::command]
-pub fn request_vnc_refresh(state: State<'_, AppState>, session_id: String, full: bool) -> Result<(), String> {
+pub fn request_vnc_refresh(state: State<'_, AppState>, session_id: String, _full: bool) -> Result<(), String> {
     let sessions = state.vnc_sessions.lock().unwrap();
     if let Some(session) = sessions.get(&session_id) {
         session
             .control_tx
-            .send(VncControlMsg::Refresh(full))
+            .send(VncControlMsg::Refresh)
             .map_err(|e| e.to_string())?;
         Ok(())
     } else {
