@@ -100,7 +100,7 @@ const RDP_WHEEL_BATCH_WINDOW: Duration = Duration::from_millis(10);
 const RDP_KEYBOARD_BATCH_WINDOW: Duration = Duration::from_millis(12);
 const RDP_CLICK_BATCH_WINDOW: Duration = Duration::from_millis(12);
 const RDP_FULL_JPEG_QUALITY: u8 = 58;
-const RDP_REFINEMENT_JPEG_QUALITY: u8 = 66;
+// RDP refinement quality removed as it's currently unused.
 const RDP_POINTER_MOVE_JPEG_QUALITY: u8 = 28;
 const RDP_WHEEL_JPEG_QUALITY: u8 = 32;
 const RDP_KEYBOARD_JPEG_QUALITY: u8 = 42;
@@ -1267,11 +1267,11 @@ fn flush_pending_rdp_frame(
 }
 
 fn flush_rdp_refinement_frame(
-    image: &DecodedImage,
-    frame_channel: &Channel<Response>,
+    _image: &DecodedImage,
+    _frame_channel: &Channel<Response>,
     encoder_state: &mut RdpFrameEncoderState,
     last_frame_emit_at: &mut Instant,
-    has_emitted_frame: &mut bool,
+    _has_emitted_frame: &mut bool,
 ) -> Result<(), String> {
     if !encoder_state.should_emit_refinement() || last_frame_emit_at.elapsed() < RDP_FRAME_INTERVAL {
         return Ok(());

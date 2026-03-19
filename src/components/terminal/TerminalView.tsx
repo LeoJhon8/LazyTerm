@@ -634,7 +634,7 @@ export function TerminalView() {
 
   const emptyWrapperRef = useRef<HTMLDivElement | null>(null);
   const [emptyAspectRatio, setEmptyAspectRatio] = useState<string>("16/9");
-  const [emptyCardHeight, setEmptyCardHeight] = useState<number | undefined>(undefined);
+  const [, setEmptyCardHeight] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     const el = emptyWrapperRef.current;

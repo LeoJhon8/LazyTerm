@@ -1,5 +1,5 @@
 ---
-name: Tailwind CSS
+name: tailwind-css
 description: Write Tailwind utility classes with proper responsive design, dark mode, and configuration.
 metadata: {"clawdbot":{"emoji":"🌊","requires":{"bins":["npx"]},"os":["linux","darwin","win32"]}}
 ---
