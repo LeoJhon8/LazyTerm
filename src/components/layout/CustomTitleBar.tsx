@@ -53,12 +53,11 @@ export function CustomTitleBar() {
     <header className="window-titlebar panel-surface-strong">
       <div
         className="window-titlebar__drag-region"
-        data-tauri-drag-region
         onDoubleClick={() => {
           void handleToggleMaximize();
         }}
       >
-        <div className="window-titlebar__brand" data-tauri-drag-region>
+        <div className="window-titlebar__brand">
           <div className="window-titlebar__logo" aria-hidden="true">
             {!logoError ? (
               <img
@@ -82,7 +81,7 @@ export function CustomTitleBar() {
               "LT"
             )}
           </div>
-          <div className="window-titlebar__titles" data-tauri-drag-region>
+          <div className="window-titlebar__titles">
             <span className="window-titlebar__app-name">LazyTerm</span>
             <span className="window-titlebar__session-name">
               {activeSession ? activeSession.title : "无活动会话"}
