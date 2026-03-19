@@ -1,4 +1,4 @@
-export type SessionProtocol = 'ssh' | 'local' | 'telnet' | 'rdp' | 'vnc';
+export type SessionProtocol = 'ssh' | 'local' | 'rdp' | 'vnc';
 export type RdpBackend = 'ironrdp' | 'msrdpax' | 'mstsc-external';
 
 export interface ISessionConnector {
@@ -11,7 +11,7 @@ export interface ISessionConnector {
 
 // 终端连接器接口定义
 export interface ITerminalConnector extends ISessionConnector {
-  readonly protocol: 'ssh' | 'local' | 'telnet';
+  readonly protocol: 'ssh' | 'local';
 
   onData(handler: (data: string) => void): Promise<void>;
   write(data: string | Uint8Array): void;
@@ -173,11 +173,7 @@ export interface LocalConfig {
   shell?: string;
 }
 
-// Telnet 配置
-export interface TelnetConfig {
-  host: string;
-  port: number;
-}
+// Telnet support removed — telnet 协议相关配置已从项目中移除。
 
 export interface RDPConfig {
   host: string;
@@ -206,6 +202,6 @@ export function isGraphicalProtocol(protocol: SessionProtocol): protocol is 'rdp
   return protocol === 'rdp' || protocol === 'vnc';
 }
 
-export function isTerminalProtocol(protocol: SessionProtocol): protocol is 'ssh' | 'local' | 'telnet' {
-  return !isGraphicalProtocol(protocol);
+export function isTerminalProtocol(protocol: SessionProtocol): protocol is 'ssh' | 'local' {
+  return protocol === 'ssh' || protocol === 'local';
 }

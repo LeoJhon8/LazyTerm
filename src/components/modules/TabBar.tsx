@@ -30,7 +30,7 @@ import {
 import { X, Plus } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -226,8 +226,10 @@ export function TabBar() {
     sessionId: null,
     value: "",
   });
+  const [isTabsOverflowing, setIsTabsOverflowing] = useState(false);
   const pendingCloseActionRef = useRef<(() => void) | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const tabsContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     invoke<ShellInfo[]>("get_available_shells")
@@ -252,6 +254,36 @@ export function TabBar() {
 
     return () => window.clearTimeout(timer);
   }, [renameState.open]);
+
+  useEffect(() => {
+    const updateTabsOverflow = () => {
+      const container = tabsContainerRef.current;
+      if (!container) {
+        return;
+      }
+
+      const nextOverflow = container.scrollWidth > container.clientWidth + 1;
+      setIsTabsOverflowing((current) => (current === nextOverflow ? current : nextOverflow));
+    };
+
+    const frame = window.requestAnimationFrame(updateTabsOverflow);
+    const container = tabsContainerRef.current;
+
+    if (!container || typeof ResizeObserver === "undefined") {
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateTabsOverflow();
+    });
+
+    observer.observe(container);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [tabs, isTabsOverflowing]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -434,6 +466,36 @@ export function TabBar() {
     reorderSessions(arrayMove(currentOrder, oldIndex, newIndex));
   };
 
+  const handleTabsWheel = (event: WheelEvent<HTMLDivElement>) => {
+    const container = tabsContainerRef.current;
+    if (!container || container.scrollWidth <= container.clientWidth) {
+      return;
+    }
+
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      ? event.deltaX
+      : event.deltaY;
+
+    if (delta === 0) {
+      return;
+    }
+
+    container.scrollLeft += delta;
+    event.preventDefault();
+  };
+
+  const addTabButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="tabbar-add-button h-11! w-11! rounded-none! hover:bg-transparent! [&_svg]:size-5!"
+      onClick={handleAddTab}
+      aria-label="新增标签页"
+    >
+      <Plus />
+    </Button>
+  );
+
   return (
     <div className="tabbar-surface">
       <div className="min-w-0 flex-1 overflow-hidden">
@@ -446,7 +508,11 @@ export function TabBar() {
             items={tabs.map((tab) => tab.id)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="tabbar-scroll no-scrollbar">
+            <div
+              ref={tabsContainerRef}
+              className="tabbar-scroll no-scrollbar"
+              onWheel={handleTabsWheel}
+            >
               {tabs.map((tab) => (
                 <SortableTab
                   key={tab.id}
@@ -463,22 +529,22 @@ export function TabBar() {
                   onCloseRight={handleCloseRight}
                 />
               ))}
+
+              {!isTabsOverflowing ? (
+                <div className="tabbar-action tabbar-action-inline relative z-10 shrink-0">
+                  {addTabButton}
+                </div>
+              ) : null}
             </div>
           </SortableContext>
         </DndContext>
       </div>
 
-      <div className="tabbar-action relative z-10">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="tabbar-add-button h-11! w-11! rounded-none! hover:bg-transparent! [&_svg]:size-5!"
-          onClick={handleAddTab}
-          aria-label="新增标签页"
-        >
-          <Plus />
-        </Button>
-      </div>
+      {isTabsOverflowing ? (
+        <div className="tabbar-action relative z-10">
+          {addTabButton}
+        </div>
+      ) : null}
 
       <AlertDialog open={closeConfirmation.open} onOpenChange={handleCloseDialogChange}>
         <AlertDialogContent>

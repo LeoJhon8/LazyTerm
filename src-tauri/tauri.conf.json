@@ -15,6 +15,7 @@
         "title": "LazyTerm",
         "width": 800,
         "height": 600,
+        "decorations": false,
         "resizable": true,
         "fullscreen": false
       }

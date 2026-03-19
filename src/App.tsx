@@ -6,6 +6,7 @@ import { TerminalView } from "@/components/terminal/TerminalView";
 import { RemoteDesktopView } from "@/components/terminal/RemoteDesktopView";
 import { VncView } from "@/components/terminal/VncView";
 import { SlotManager } from "@/components/layout/SlotManager";
+import { CustomTitleBar } from "@/components/layout/CustomTitleBar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,6 +23,7 @@ function App() {
     rightPanelWidth,
     topPanelHeight,
     bottomPanelHeight,
+    titleBarHeight,
     leftPanelCollapsed,
     rightPanelCollapsed,
     topPanelCollapsed,
@@ -78,6 +80,7 @@ function App() {
   // 同步布局设置到 CSS 变量（含模块收起状态与迁移监听）
   useEffect(() => {
     const root = document.documentElement;
+    root.style.setProperty("--titlebar-height", `${titleBarHeight}px`);
     
     // 过滤掉 SettingsModule 的左侧实际可见模块
     const leftModulesCount = slotConfig.left.modules.filter(m => m !== 'SettingsModule').length;
@@ -96,6 +99,7 @@ function App() {
     leftPanelWidth, rightPanelWidth, topPanelHeight, bottomPanelHeight,
     leftPanelCollapsed, rightPanelCollapsed, topPanelCollapsed, bottomPanelCollapsed,
     leftSlotCollapsed, rightSlotCollapsed,
+    titleBarHeight,
     activeSession?.type,
     slotConfig.left.modules, slotConfig.right.modules,
     effectiveBottomPanelHeight,
@@ -142,9 +146,11 @@ function App() {
   }, [customCSS]);
 
   return (
-    <div 
+    <div className="app-frame relative h-screen w-screen overflow-hidden bg-background text-foreground">
+      <CustomTitleBar />
+      <div 
       id="lazy-terminal-root"
-      className="app-shell relative h-screen w-screen overflow-hidden bg-background text-foreground"
+      className="app-shell relative min-h-0 flex-1 overflow-hidden bg-background text-foreground"
       style={{
         display: "grid",
         gridTemplateAreas: `
@@ -255,6 +261,7 @@ function App() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </div>
     </div>
   );
 }

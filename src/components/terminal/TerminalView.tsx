@@ -657,31 +657,13 @@ export function TerminalView() {
       <div className="terminal-empty-state" ref={emptyWrapperRef}>
         <div
           className="terminal-empty-card w-full max-w-4xl mx-auto px-6 py-8"
-          style={{ aspectRatio: emptyAspectRatio, width: "80%", height: emptyCardHeight ? `${emptyCardHeight}px` : undefined }}
+          style={{ aspectRatio: emptyAspectRatio, width: "60%", height: "30%" }}
         >
-          <div className="chip-row mb-4 text-[11px] text-muted-foreground">Lazy Terminal</div>
+          <div className="chip-row mb-4 text-[11px] text-muted-foreground">LazyTerm</div>
           <h2 className="mb-2 text-2xl font-semibold tracking-tight">今天，你想连接什么？</h2>
           <p className="mb-6 text-sm leading-6 text-muted-foreground">
-            希望能快速、轻松地连接远程服务器、Windows、Linux、Mac
+            轻松、快速建立ssh连接，windows远程桌面，VNC连接，本地终端。
           </p>
-          <div className="grid gap-3 sm:grid-cols-4">
-            <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
-              <div className="mb-2 text-sm font-medium">本地终端</div>
-              <div className="text-xs leading-5 text-muted-foreground">打开本地终端，PowerShell、CMD、WSL、Bash。</div>
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
-              <div className="mb-2 text-sm font-medium">SSH 连接</div>
-              <div className="text-xs leading-5 text-muted-foreground">连上你那个linux主机，可以传文件上去</div>
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
-              <div className="mb-2 text-sm font-medium">Windows 远程桌面</div>
-              <div className="text-xs leading-5 text-muted-foreground">连上你那个windows桌面</div>
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-background/56 p-4">
-              <div className="mb-2 text-sm font-medium">快捷命令</div>
-              <div className="text-xs leading-5 text-muted-foreground">点，执行。右键，编辑、删除、发送到所有标签页</div>
-            </div>
-          </div>
         </div>
       </div>
     );

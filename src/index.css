@@ -38,6 +38,7 @@
 @layer base {
   :root {
     --radius: 0.95rem;
+    --titlebar-height: 44px;
     --background: oklch(0.982 0.006 95);
     --foreground: oklch(0.236 0.02 245);
     --card: oklch(0.995 0.003 95);
@@ -143,6 +144,180 @@
   .app-shell {
     position: relative;
     isolation: isolate;
+  }
+
+  .app-frame {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .window-titlebar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    min-height: var(--titlebar-height);
+    height: var(--titlebar-height);
+    border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 78%, transparent);
+    padding-left: 14px;
+    padding-right: 0;
+    user-select: none;
+    position: relative;
+    z-index: 30;
+  }
+
+  .window-titlebar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--panel-border) 88%, transparent), transparent);
+    opacity: 0.72;
+    pointer-events: none;
+  }
+
+  .window-titlebar__drag-region {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-right: 16px;
+  }
+
+  .window-titlebar__brand {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .window-titlebar__logo {
+    display: inline-flex;
+    height: calc(var(--titlebar-height) - 12px);
+    width: calc(var(--titlebar-height) - 12px);
+    min-height: 28px;
+    min-width: 28px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--primary-foreground);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    box-shadow: none;
+    padding: 2px;
+  }
+
+  .window-titlebar__logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: inherit;
+    display: block;
+  }
+
+  /* Make the icon look more like a Windows app icon */
+  .window-titlebar__logo {
+    background: var(--panel-strong);
+    border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
+    box-shadow: 0 6px 18px rgba(2, 6, 23, 0.18), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+
+  .window-titlebar__logo-img {
+    border-radius: 6px;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .window-titlebar__titles {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+  }
+
+  .window-titlebar__app-name {
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--foreground);
+    line-height: 1;
+  }
+
+  .window-titlebar__session-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.7rem;
+    color: color-mix(in srgb, var(--muted-foreground) 92%, transparent);
+    line-height: 1.1;
+  }
+
+  .window-titlebar__meta {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .window-titlebar__meta-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 70px;
+    height: calc(var(--titlebar-height) - 18px);
+    padding: 0 12px;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
+    background: color-mix(in srgb, var(--background) 76%, transparent);
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--muted-foreground) 88%, transparent);
+  }
+
+  .window-titlebar__controls {
+    display: flex;
+    height: 100%;
+    align-items: stretch;
+  }
+
+  .window-titlebar__control {
+    display: inline-flex;
+    width: clamp(46px, calc(var(--titlebar-height) + 2px), 56px);
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-left: none;
+    background: transparent;
+    color: color-mix(in srgb, var(--muted-foreground) 92%, transparent);
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  .window-titlebar__control:hover {
+    color: var(--foreground);
+  }
+
+  .window-titlebar__control--neutral:hover {
+    background: color-mix(in srgb, var(--background) 42%, transparent);
+  }
+
+  .window-titlebar__control--danger:hover {
+    background: color-mix(in srgb, var(--destructive) 84%, transparent);
+    color: var(--destructive-foreground);
+  }
+
+  .window-titlebar__control:focus-visible {
+    outline: none;
+    background: color-mix(in srgb, var(--accent) 84%, transparent);
+    color: var(--accent-foreground);
   }
 
   .app-shell::before {
@@ -414,14 +589,17 @@
     min-width: 0;
     flex: 1 1 auto;
     align-items: flex-end;
+    gap: 0;
     overflow-x: auto;
     overflow-y: hidden;
+    padding-right: 4px;
     padding-left: 10px;
     padding-top: 6px;
   }
 
   .tabbar-action {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
     padding: 0 8px;
@@ -479,6 +657,21 @@
     height: 22px;
     width: 22px;
     border-radius: 7px;
+  }
+
+  @media (max-width: 900px) {
+    .window-titlebar__meta {
+      display: none;
+    }
+
+    .window-titlebar__drag-region {
+      padding-right: 8px;
+    }
+
+    .window-titlebar__logo {
+      height: calc(var(--titlebar-height) - 12px);
+      width: calc(var(--titlebar-height) - 12px);
+    }
   }
 
   .quickcmd-surface {

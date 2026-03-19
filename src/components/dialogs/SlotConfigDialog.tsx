@@ -117,6 +117,7 @@ function ThemeSettings() {
   const appBackgroundColor = useSettingsStore((state) => state.appBackgroundColor);
   const fontSize = useSettingsStore((state) => state.fontSize);
   const fontFamily = useSettingsStore((state) => state.fontFamily);
+  const titleBarHeight = useSettingsStore((state) => state.titleBarHeight);
   const terminalColorScheme = useSettingsStore((state) => state.terminalColorScheme);
   const customThemeColors = useSettingsStore((state) => state.customThemeColors);
   const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
@@ -461,6 +462,14 @@ function ThemeSettings() {
               </div>
               <input type="range" min="10" max="24" step="1" value={fontSize} onChange={(e) => setSettings({ fontSize: parseInt(e.target.value) })} className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary" />
             </div>
+          </div>
+          <div className="space-y-2 pt-2">
+            <div className="flex justify-between items-center">
+              <Label className="text-sm text-muted-foreground">自定义标题栏高度</Label>
+              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-mono">{titleBarHeight}px</span>
+            </div>
+            <input type="range" min="32" max="64" step="1" value={titleBarHeight} onChange={(e) => setSettings({ titleBarHeight: parseInt(e.target.value) })} className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary" />
+            <p className="text-xs text-muted-foreground">调整应用顶部自定义窗口栏高度，影响拖拽区和最小化、最大化、关闭按钮所在区域。</p>
           </div>
         </div>
 

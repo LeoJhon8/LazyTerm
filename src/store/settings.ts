@@ -8,6 +8,7 @@ export type BackgroundImageUiMode = "frosted" | "clear";
 interface SettingsData {
   fontSize: number;
   fontFamily: string;
+  titleBarHeight: number;
   leftPanelWidth: number;
   rightPanelWidth: number;
   topPanelHeight: number;
@@ -47,6 +48,7 @@ export type SettingsState = SettingsData & SettingsActions;
 const defaultSettings: SettingsData = {
   fontSize: 14,
   fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+  titleBarHeight: 44,
   leftPanelWidth: 200,
   rightPanelWidth: 200,
   topPanelHeight: 40,
