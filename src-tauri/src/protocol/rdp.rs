@@ -5,7 +5,7 @@ use crate::{
     RdpPointerEventPayload, RdpKeyboardEventPayload,
 };
 use crate::utils::{log_rdp_error, log_rdp_info, rdp_target_label};
-use crate::{build_rdp_config, connect_rdp, run_rdp_session};
+use super::{build_rdp_config, connect_rdp, run_rdp_session};
 use std::sync::{mpsc as std_mpsc, Arc};
 use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, Emitter, Runtime, State};

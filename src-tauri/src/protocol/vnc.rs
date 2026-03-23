@@ -5,7 +5,7 @@ use crate::{
     VncPointerEventPayload, VncKeyboardEventPayload,
 };
 use crate::utils::{log_vnc_error, log_vnc_info, vnc_target_label};
-use crate::run_vnc_session;
+use super::run_vnc_session;
 use std::sync::Arc;
 use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, Emitter, Runtime, State};

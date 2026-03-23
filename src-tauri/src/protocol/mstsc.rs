@@ -1,4 +1,5 @@
-use crate::{build_rdp_full_address, RdpConnectConfig};
+use crate::RdpConnectConfig;
+use super::build_rdp_full_address;
 use std::process::Command;
 use uuid::Uuid;
 
