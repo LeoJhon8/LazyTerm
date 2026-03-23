@@ -16,6 +16,8 @@
 
 Lazy Terminal 是一个基于 Tauri 2 的桌面终端应用，支持五种协议：本地 PTY、SSH、RDP（ironrdp / msrdpax sidecar / mstsc）和 VNC。代码库分为 React 前端 (`src/`) 和 Rust 后端 (`src-tauri/`)。
 
+详细架构说明请参考项目根目录的 `architecture.md`。
+
 ### 数据流
 
 ```
@@ -39,12 +41,12 @@ React UI (components/) → Zustand 状态 (store/) → 连接器 (connectors/) �
 连接器实例在 `useTabsStore.addSession()` 中通过 `createConnector()` 创建，仅存在于内存中（不持久化）。断线行为：本地终端自动重建，SSH 降级为本地终端。
 
 **Zustand 状态管理**（均使用 `persist` 中间件持久化到 localStorage）：
-- `tabs.ts` — 会话列表、活跃标签、连接错误、连接器生命周期
-- `settings.ts` — 终端字体/主题、面板尺寸、背景图片、透明度、自定义 CSS
-- `slot-config.ts` — 插槽模块分配和折叠状态
-- `ssh-profiles.ts` — 文件夹/连接配置树（folder/ssh/rdp/vnc 节点类型）
-- `history.ts` — 命令历史（最多 30 条，自动去重）
-- `quick-commands.ts` — 用户自定义快捷命令列表
+- `tabs.ts` — 会话列表、活跃标签、连接错误、连接器生命周期（Key: `lazy-terminal-tabs`）
+- `settings.ts` — 终端字体/主题、面板尺寸、背景图片、透明度、自定义 CSS（Key: `lazy-terminal-settings`）
+- `slot-config.ts` — 插槽模块分配和折叠状态（Key: `lazy-terminal-slot-config`）
+- `ssh-profiles.ts` — 文件夹/连接配置树（folder/ssh/rdp/vnc 节点类型）（Key: `terminal-sessions-v10`）
+- `history.ts` — 命令历史（最多 30 条，自动去重）（Key: `lazy-terminal-history`）
+- `quick-commands.ts` — 用户自定义快捷命令列表（Key: `lazy-terminal-quick-commands`）
 
 **终端渲染** (`TerminalView.tsx`)：在 `terminalMap` 中维护每个会话的 xterm.js 实例池。使用早期缓冲区捕获连接器建立前到达的数据。拦截远端 OSC 颜色序列以保持本地主题权威。背景图片或透明度激活时禁用 WebGL 渲染器。支持 Ctrl+滚轮调整字体、选中自动复制到剪贴板、右键粘贴。
 
@@ -57,7 +59,13 @@ React UI (components/) → Zustand 状态 (store/) → 连接器 (connectors/) �
 
 ### Rust 后端
 
-**文件组织**：`lib.rs`（数据结构、RDP/VNC 会话运行器、Tauri 构建器）、`commands.rs`（全部 29 个 Tauri 命令实现）、`mstsc.rs`（系统 mstsc 启动器）、`native_rdp.rs`（C# sidecar 通信）、`logging.rs`（轻量日志器）。
+**文件组织**：
+- `lib.rs` — 库入口、数据结构、Tauri 构建器
+- `state.rs` — 全局状态 `AppState` 定义
+- `types.rs` — 前后端共享类型
+- `error.rs` — 错误类型定义
+- `protocol/` — 协议核心实现与 Tauri 命令（SSH/RDP/VNC）
+- `logging.rs` — 轻量日志器
 
 **全局状态** (`AppState`)：每种协议类型的会话对象 Map，通过 `StdMutex`（本地/RDP/VNC）或 `TokioMutex`（SSH）保护。通过 `tauri::manage()` 注入。
 
@@ -88,7 +96,30 @@ React UI (components/) → Zustand 状态 (store/) → 连接器 (connectors/) �
 - 通过 `babel-plugin-react-compiler` 启用了 React Compiler
 - Store 方法应保持确定性，副作用边界要明确
 - 连接器实例绝不能被序列化 — 仅持久化会话元数据
-- 事件命名：`{protocol}-data-{session_id}`、`{protocol}-close-{session_id}`
-- 新增 Tauri 命令时：在 `commands.rs` 中实现，在 `lib.rs` 的 `generate_handler!` 中注册，更新前端连接器，检查 capabilities 权限
+- 事件命名：`{protocol}-data-{session_id}`、`{protocol}-close-{session_id}`、`{protocol}-error-{session_id}`
+- 新增 Tauri 命令时：在 `protocol/` 中实现，在 `lib.rs` 的 `generate_handler!` 中注册，更新前端连接器，检查 capabilities 权限
 - RDP/VNC 会话使用图形渲染（Canvas），非 xterm.js — 终端主题等外观设置不适用
 - Vite 配置中使用了 `nodePolyfills()` 以在浏览器上下文中兼容 Node.js API
+
+## 新增功能开发指南
+
+### 添加新协议支持
+
+1. 在 `src/types/terminal.ts` 定义连接器接口
+2. 在 `src/connectors/` 实现连接器类
+3. 在 `src/store/tabs.ts` 的 `createConnector()` 中添加创建逻辑
+4. 在 `src-tauri/src/protocol/` 创建命令文件和协议实现
+6. 在 `src-tauri/src/lib.rs` 注册命令
+7. 更新 `src-tauri/capabilities/default.json` 权限配置
+
+### 添加新布局模块
+
+1. 在 `src/components/modules/` 创建模块组件
+2. 在 `src/config/slot-modules.ts` 注册模块配置
+3. 模块将自动出现在插槽配置中
+
+### 添加新 Store
+
+1. 参考现有 store 在 `src/store/` 创建文件
+2. 使用 `persist` 中间件启用持久化
+3. 导出 `create()` 方法供组件使用

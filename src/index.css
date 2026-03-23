@@ -127,6 +127,12 @@
     background-attachment: fixed;
   }
 
+  /* 当启用背景图片时，禁用 body 的默认背景渐变 */
+  body.has-background-image {
+    background-image: none;
+    background-color: var(--background);
+  }
+
   button,
   input,
   textarea,

@@ -63,6 +63,7 @@ function App() {
   // 动态处理全局背景色和暗色模式跟班
   useEffect(() => {
     const root = document.documentElement;
+    const body = document.body;
     // 移除之前的强制覆盖
     root.style.removeProperty("--color-background");
     root.style.removeProperty("--background");
@@ -75,7 +76,14 @@ function App() {
     } else {
       root.classList.remove("dark");
     }
-  }, [appBackgroundColor]);
+
+    // 当启用背景图片时，禁用 body 的默认背景渐变
+    if (hasBackgroundImage) {
+      body.classList.add("has-background-image");
+    } else {
+      body.classList.remove("has-background-image");
+    }
+  }, [appBackgroundColor, hasBackgroundImage]);
 
   // 同步布局设置到 CSS 变量（含模块收起状态与迁移监听）
   useEffect(() => {
@@ -189,12 +197,12 @@ function App() {
         }}
       />
 
-      {/* 背景图片层 */}
+      {/* 背景图片层 - 使用负 z-index 确保在所有内容后面 */}
       {hasBackgroundImage && (
         <div
           className="fixed inset-0 pointer-events-none"
           style={{
-            zIndex: 0,
+            zIndex: -1,
             backgroundImage: `url(${backgroundImage})`,
             backgroundSize: "cover",
             backgroundPosition: "center",

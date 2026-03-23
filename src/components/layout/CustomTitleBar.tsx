@@ -99,7 +99,7 @@ export function CustomTitleBar() {
                   : activeSession.type === "rdp"
                     ? "RDP"
                     : "VNC"
-              : "桌面终端"}
+              : "开始桌面"}
           </span>
         </div>
       </div>
