@@ -13,8 +13,10 @@
     "windows": [
       {
         "title": "LazyTerm",
-        "width": 800,
-        "height": 600,
+        "width": 1540,
+        "height": 840,
+        "minWidth": 1540,
+        "minHeight": 840,
         "decorations": false,
         "resizable": true,
         "fullscreen": false
