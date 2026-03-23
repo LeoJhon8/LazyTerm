@@ -1,26 +1,20 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { ITerminalConnector, RDPConfig, SessionConnector, SSHConfig, VNCConfig } from "@/types/terminal";
+import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import { logger } from "@/lib/logger";
-import { LocalConnector } from "@/connectors/LocalConnector";
-import { SshConnector } from "@/connectors/SshConnector";
-import { RdpConnector } from "@/connectors/RdpConnector";
-import { NativeRdpConnector } from "@/connectors/NativeRdpConnector";
-import { VncConnector } from "@/connectors/VncConnector";
+import { createConnector, type SessionCreationData } from "@/connectors/ConnectorFactory";
+import {
+  getConnectionErrorPresentation,
+  getOpenFailureLogLabel,
+  getSessionTargetLabel,
+  type SessionConnectionError,
+} from "@/services/connectionErrorService";
 
 /**
  * 终端会话配置接口
+ * 从 ConnectorFactory 复用 SessionCreationData
  */
-export interface SessionConfig {
-  cwd?: string;
-  shell?: string;
-  host?: string;
-  port?: number;
-  sshConfig?: SSHConfig;
-  rdpConfig?: RDPConfig;
-  vncConfig?: VNCConfig;
-  admin?: boolean;
-}
+export type SessionConfig = NonNullable<SessionCreationData["config"]>;
 
 /**
  * 终端会话对象定义
@@ -36,243 +30,8 @@ export interface TerminalSession {
   config?: SessionConfig;
 }
 
-export interface SessionConnectionError {
-  sessionId: string;
-  sessionTitle: string;
-  sessionType: TerminalSession["type"];
-  sessionTarget?: string;
-  summary: string;
-  guidance: string[];
-  technicalDetails: string;
-}
-
-interface ConnectionErrorPresentation {
-  summary: string;
-  guidance: string[];
-  technicalDetails: string;
-}
-
-function getSessionTargetLabel(sessionData: Omit<TerminalSession, "id" | "connector">): string | undefined {
-  if (sessionData.type === "ssh") {
-    const sshConfig = sessionData.config?.sshConfig;
-    if (sshConfig?.username && sshConfig.host && sshConfig.port) {
-      return `${sshConfig.username}@${sshConfig.host}:${sshConfig.port}`;
-    }
-
-    if (sessionData.host && sessionData.config?.port) {
-      return `${sessionData.host}:${sessionData.config.port}`;
-    }
-  }
-
-  if (sessionData.type === "rdp") {
-    const rdpConfig = sessionData.config?.rdpConfig;
-    if (rdpConfig?.host && rdpConfig.port) {
-      return `${rdpConfig.host}:${rdpConfig.port}`;
-    }
-  }
-
-  if (sessionData.type === "vnc") {
-    const vncConfig = sessionData.config?.vncConfig;
-    if (vncConfig?.host && vncConfig.port) {
-      return `${vncConfig.host}:${vncConfig.port}`;
-    }
-  }
-
-  return undefined;
-}
-
-function getConnectionErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message.trim();
-  }
-
-  if (typeof error === "string" && error.trim()) {
-    return error.trim();
-  }
-
-  if (typeof error === "object" && error !== null) {
-    const candidate = (error as { message?: unknown }).message;
-    if (typeof candidate === "string" && candidate.trim()) {
-      return candidate.trim();
-    }
-  }
-
-  return "未获取到后端返回的详细错误信息。";
-}
-
-function buildRdpErrorPresentation(technicalDetails: string): ConnectionErrorPresentation {
-  const normalized = technicalDetails.toLowerCase();
-
-  if (normalized.includes("仅支持密码认证")) {
-    return {
-      summary: "当前 RDP 连接只支持密码认证。",
-      guidance: [
-        "请填写密码后重新连接。",
-        "如果目标环境依赖其它认证方式，需要继续扩展后端认证支持。",
-      ],
-      technicalDetails,
-    };
-  }
-
-  if (normalized.includes("lookup addr failed") || normalized.includes("socket address not found") || normalized.includes("invalid server name")) {
-    return {
-      summary: "目标主机地址无法解析。",
-      guidance: [
-        "检查主机名或 IP 是否填写正确。",
-        "如果使用域名，确认本机 DNS 可以解析该地址。",
-      ],
-      technicalDetails,
-    };
-  }
-
-  if (normalized.includes("tcp connect failed")) {
-    if (normalized.includes("10061") || normalized.includes("actively refused")) {
-      return {
-        summary: "目标主机拒绝了远程桌面连接。",
-        guidance: [
-          "确认目标主机已启用远程桌面服务。",
-          "确认端口填写正确，默认通常为 3389。",
-          "检查目标主机防火墙是否允许该端口。",
-        ],
-        technicalDetails,
-      };
-    }
-
-    return {
-      summary: "无法连接到远程桌面主机。",
-      guidance: [
-        "确认目标主机在线且网络可达。",
-        "确认端口填写正确，默认通常为 3389。",
-        "检查防火墙、安全组或 NAT 转发是否放通该端口。",
-      ],
-      technicalDetails,
-    };
-  }
-
-  if (normalized.includes("tls handshake") || normalized.includes("begin connection failed")) {
-    return {
-      summary: "已连到目标端口，但远端没有完成远程桌面握手。",
-      guidance: [
-        "确认该端口对应的是 RDP 服务，而不是其它协议。",
-        "确认 Windows 远程桌面服务已启用。",
-        "如果经过代理或端口映射，确认它没有截断 TLS 或 RDP 协商。",
-      ],
-      technicalDetails,
-    };
-  }
-
-  if (normalized.includes("credssp") || normalized.includes("logon") || normalized.includes("authentication") || normalized.includes("finalize connection failed")) {
-    return {
-      summary: "远程桌面握手已进入认证阶段，但认证或会话初始化没有通过。",
-      guidance: [
-        "检查用户名、密码和域是否正确。",
-        "确认服务器允许该账号使用远程桌面登录。",
-        "如果服务器策略限制了 NLA 或加密方式，需要核对目标端配置。",
-      ],
-      technicalDetails,
-    };
-  }
-
-  return {
-    summary: "远程桌面连接未能建立。",
-    guidance: [
-      "先确认地址、端口和账号配置正确。",
-      "再检查目标主机远程桌面服务和网络连通性。",
-    ],
-    technicalDetails,
-  };
-}
-
-function buildSshErrorPresentation(technicalDetails: string): ConnectionErrorPresentation {
-  return {
-    summary: "SSH 连接未能建立。",
-    guidance: [
-      "检查主机、端口和认证信息是否正确。",
-      "确认服务器 SSH 服务已启动且网络可达。",
-    ],
-    technicalDetails,
-  };
-}
-
-function buildVncErrorPresentation(technicalDetails: string): ConnectionErrorPresentation {
-  const normalized = technicalDetails.toLowerCase();
-
-  if (normalized.includes("authentication") || normalized.includes("password") || normalized.includes("auth")) {
-    return {
-      summary: "VNC 认证未通过。",
-      guidance: [
-        "检查连接密码是否正确。",
-        "确认目标 VNC 服务端允许当前认证方式。",
-      ],
-      technicalDetails,
-    };
-  }
-
-  if (normalized.includes("refused") || normalized.includes("10061")) {
-    return {
-      summary: "目标主机拒绝了 VNC 连接。",
-      guidance: [
-        "确认目标主机已启动 VNC 服务。",
-        "确认端口填写正确，默认通常为 5900。",
-        "检查目标主机防火墙是否允许该端口。",
-      ],
-      technicalDetails,
-    };
-  }
-
-  return {
-    summary: "VNC 连接未能建立。",
-    guidance: [
-      "检查目标主机、端口和密码是否正确。",
-      "确认网络可达，且目标 VNC 服务已启动。",
-    ],
-    technicalDetails,
-  };
-}
-
-function buildLocalErrorPresentation(technicalDetails: string): ConnectionErrorPresentation {
-  return {
-    summary: "本地终端启动失败。",
-    guidance: [
-      "检查默认 Shell 路径是否存在。",
-      "如果启用了管理员模式，确认当前系统允许内联提升。",
-    ],
-    technicalDetails,
-  };
-}
-
-function getConnectionErrorPresentation(
-  sessionType: TerminalSession["type"],
-  error: unknown,
-): ConnectionErrorPresentation {
-  const technicalDetails = getConnectionErrorMessage(error);
-
-  switch (sessionType) {
-    case "rdp":
-      return buildRdpErrorPresentation(technicalDetails);
-    case "vnc":
-      return buildVncErrorPresentation(technicalDetails);
-    case "ssh":
-      return buildSshErrorPresentation(technicalDetails);
-    default:
-      return buildLocalErrorPresentation(technicalDetails);
-  }
-}
-
-function getOpenFailureLogLabel(sessionType: TerminalSession["type"]): string {
-  switch (sessionType) {
-    case "ssh":
-      return "[Tauri] SSH 会话创建失败:";
-    case "rdp":
-      return "[Tauri] RDP 会话创建失败:";
-    case "vnc":
-      return "[Tauri] VNC 会话创建失败:";
-    case "local":
-      return "[Tauri] 终端进程创建失败:";
-    default:
-      return "[Tauri] 会话创建失败:";
-  }
-}
+// SessionConnectionError 类型从 connectionErrorService 导入
+export type { SessionConnectionError };
 
 function getNextActiveSessionId(sessions: TerminalSession[], removedId: string): string | null {
   const remainingSessions = sessions.filter((session) => session.id !== removedId);
@@ -353,51 +112,19 @@ interface TabsState {
 export const useTabsStore = create<TabsState>()(
   persist(
     (set, get) => {
-      const createConnector = (
-        sessionData: Omit<TerminalSession, "id" | "connector">,
-        sessionId: string,
-      ): SessionConnector => {
-        switch (sessionData.type) {
-          case "local":
-            return new LocalConnector({
-              cwd: sessionData.cwd,
-              shell: sessionData.config?.shell,
-              admin: sessionData.config?.admin,
-            }, () => {
-              const targetSession = get().sessions.find((session) => session.id === sessionId);
-              if (!shouldReconnectLocalSession(targetSession)) {
-                return;
-              }
-
-              logger.info("FE/store/tabs/local-reconnect", `Local session ${sessionId} disconnected, recreating`);
-              get().switchConnector(sessionId, "local");
-            });
-          case "ssh":
-            if (!sessionData.config?.sshConfig) {
-              throw new Error("SSH 配置不能为空");
-            }
-
-            return new SshConnector(sessionData.config.sshConfig, () => {
-              logger.info("FE/store/tabs/ssh-fallback", `SSH disconnected for session ${sessionId}, switching to local`);
-              get().switchConnector(sessionId, "local");
-            });
-          case "rdp":
-            if (!sessionData.config?.rdpConfig) {
-              throw new Error("RDP 配置不能为空");
-            }
-
-            return sessionData.config.rdpConfig.backend === "msrdpax"
-              ? new NativeRdpConnector(sessionData.config.rdpConfig)
-              : new RdpConnector(sessionData.config.rdpConfig);
-          case "vnc":
-            if (!sessionData.config?.vncConfig) {
-              throw new Error("VNC 配置不能为空");
-            }
-
-            return new VncConnector(sessionData.config.vncConfig);
-          default:
-            throw new Error(`不支持的连接类型：${sessionData.type}`);
+      const handleLocalDisconnect = (targetSessionId: string) => {
+        const targetSession = get().sessions.find((session) => session.id === targetSessionId);
+        if (!shouldReconnectLocalSession(targetSession)) {
+          return;
         }
+
+        logger.info("FE/store/tabs/local-reconnect", `Local session ${targetSessionId} disconnected, recreating`);
+        get().switchConnector(targetSessionId, "local");
+      };
+
+      const handleSshDisconnect = (targetSessionId: string) => {
+        logger.info("FE/store/tabs/ssh-fallback", `SSH disconnected for session ${targetSessionId}, switching to local`);
+        get().switchConnector(targetSessionId, "local");
       };
 
       return {
@@ -409,7 +136,11 @@ export const useTabsStore = create<TabsState>()(
         // 生成随机 ID
         const id = Math.random().toString(36).substring(2, 11);
 
-        const connector = createConnector(sessionData, id);
+        const connector = createConnector(
+          sessionData as SessionCreationData,
+          id,
+          sessionData.type === "local" ? handleLocalDisconnect : handleSshDisconnect,
+        );
 
         const newSession: TerminalSession = {
           ...sessionData,
@@ -595,7 +326,11 @@ export const useTabsStore = create<TabsState>()(
             ...oldSession,
             type: newType,
           };
-          const nextConnector = createConnector(nextSession, sessionId);
+          const nextConnector = createConnector(
+          nextSession as SessionCreationData,
+          sessionId,
+          nextSession.type === "local" ? handleLocalDisconnect : handleSshDisconnect,
+        );
           if (nextConnector.protocol === "rdp" || nextConnector.protocol === "vnc") {
             throw new Error(`不支持的连接类型：${newType}`);
           }
@@ -637,7 +372,11 @@ export const useTabsStore = create<TabsState>()(
           const currentSession = state.sessions[sessionIndex];
           currentSession.connector?.close();
 
-          const newConnector = createConnector(currentSession, sessionId);
+          const newConnector = createConnector(
+            currentSession as SessionCreationData,
+            sessionId,
+            currentSession.type === "local" ? handleLocalDisconnect : handleSshDisconnect,
+          );
           const newSessions = [...state.sessions];
           newSessions[sessionIndex] = {
             ...currentSession,

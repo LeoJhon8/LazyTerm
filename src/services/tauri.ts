@@ -1,20 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
+import { getErrorMessage } from "@/lib/errorUtils";
 
 interface InvokeLogOptions {
   scope?: string;
   logStart?: boolean;
   logSuccess?: boolean;
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) return error.message.trim();
-  if (typeof error === "string" && error.trim()) return error.trim();
-  if (typeof error === "object" && error !== null) {
-    const candidate = (error as { message?: unknown }).message;
-    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
-  }
-  return "unknown invoke error";
 }
 
 export async function invokeTauri<T>(

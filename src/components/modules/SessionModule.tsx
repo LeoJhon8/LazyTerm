@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { 
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, 
   useDraggable, useDroppable
 } from "@dnd-kit/core";
 import { 
   Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, 
-  Pencil, Trash2, Terminal, Upload, File, X, Monitor
+  Pencil, Trash2, Terminal, Upload, Monitor
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { useTabsStore } from "@/store/tabs";
 import { SshConnectDialog } from "@/components/dialogs/SshConnectDialog";
 import { RdpConnectDialog } from "@/components/dialogs/RdpConnectDialog";
 import { VncConnectDialog } from "@/components/dialogs/VncConnectDialog";
+import { SftpUploadDialog } from "@/components/dialogs/SftpUploadDialog";
 import { 
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator 
 } from "@/components/ui/context-menu";
@@ -25,36 +26,13 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck } from "lucide-react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { stat, size as getFileSize } from "@tauri-apps/plugin-fs";
 import type { RDPConfig, SSHConfig, VNCConfig } from "@/types/terminal";
-import { invokeTauri } from "@/services/tauri";
+import type { ShellInfo } from "@/types/shell";
+import { getAvailableShells } from "@/services/shellService";
 import { logger } from "@/lib/logger";
+import { useDialogState } from "@/hooks/useDialogState";
 
 const IS_WINDOWS = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
-
-interface AvailableShell {
-  name: string;
-  path: string;
-  icon_type: string;
-}
-
-interface SftpLocalFile {
-  path: string;
-  name: string;
-  size: number;
-}
-
-interface SftpUploadProgressPayload {
-  file_index: number;
-  file_name: string;
-  local_path: string;
-  file_size: number;
-  file_sent: number;
-  overall_total: number;
-  overall_sent: number;
-}
 
 type DropPosition = 'before' | 'after' | 'inside';
 
@@ -151,14 +129,12 @@ function DraggableDroppableRow({
   onAction,
   overId,
   dropPos,
-  uploadingNodeId,
 }: {
   node: SessionNode;
   depth: number;
   onAction: (type: string, node: SessionNode) => void;
   overId: string | null;
   dropPos: DropPosition | null;
-  uploadingNodeId: string | null;
 }) {
   const { toggleFolder } = useSshProfilesStore();
 
@@ -186,7 +162,6 @@ function DraggableDroppableRow({
               isDragging={isDragging} 
               isOver={isOver && overId === node.id} 
               dropPos={overId === node.id ? dropPos : null} 
-              isUploading={node.type === "ssh" && uploadingNodeId === node.id}
             />
           </div>
         </div>
@@ -221,59 +196,32 @@ export function SessionModule() {
   const { nodes, addFolder, addProfile, removeNode, updateNode, moveNode, ensureRoot } = useSshProfilesStore();
   const { addSession } = useTabsStore();
 
+  // 拖拽状态
   const [dragState, setDragState] = useState<{
     activeId: string | null;
     overId: string | null;
     dropPos: DropPosition | null;
   }>({ activeId: null, overId: null, dropPos: null });
-  const [sshOpen, setSshOpen] = useState(false);
-  const [directSshOpen, setDirectSshOpen] = useState(false);
-  const [rdpOpen, setRdpOpen] = useState(false);
-  const [directRdpOpen, setDirectRdpOpen] = useState(false);
-  const [vncOpen, setVncOpen] = useState(false);
-  const [directVncOpen, setDirectVncOpen] = useState(false);
-  const [folderOpen, setFolderOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // 弹窗状态管理
+  const dialog = useDialogState();
+  const [tempName, setTempName] = useState("");
   const [targetNode, setTargetNode] = useState<SessionNode | null>(null);
   const [editNode, setEditNode] = useState<SessionNode | null>(null);
-  const [tempName, setTempName] = useState("");
-  const [availableShells, setAvailableShells] = useState<AvailableShell[]>([]);
-  const [sftpOpen, setSftpOpen] = useState(false);
-  const [sftpRemotePath, setSftpRemotePath] = useState("");
-  const [sftpUploading, setSftpUploading] = useState(false);
-  const [sftpMessage, setSftpMessage] = useState<string | null>(null);
-  const [sftpMessageType, setSftpMessageType] = useState<"success" | "error" | "info">("success");
-  const [sftpTargetNode, setSftpTargetNode] = useState<SessionNode | null>(null);
-  const [sftpFiles, setSftpFiles] = useState<SftpLocalFile[]>([]);
-  const [sftpOverallSent, setSftpOverallSent] = useState(0);
-  const [sftpOverallTotal, setSftpOverallTotal] = useState(0);
-  const [sftpFileProgress, setSftpFileProgress] = useState<Record<string, { sent: number; total: number }>>({});
-  const [sftpStopping, setSftpStopping] = useState(false);
-  const progressUnlistenRef = useRef<UnlistenFn | null>(null);
-  const currentSftpUploadIdRef = useRef<string | null>(null);
+  const [sftpNode, setSftpNode] = useState<SessionNode | null>(null);
+
+  // 可用 Shell 列表
+  const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
 
   useEffect(() => { 
     ensureRoot(); 
-    // 获取可用 Shell
-    invokeTauri<AvailableShell[]>("get_available_shells", undefined, { scope: "FE/session-module/shells" })
+    getAvailableShells()
       .then(setAvailableShells)
       .catch(err => logger.error("FE/session-module/shells", "Failed to get available shells", {err}));
   }, [ensureRoot]);
 
-  useEffect(() => {
-    return () => {
-      if (progressUnlistenRef.current) {
-        progressUnlistenRef.current();
-        progressUnlistenRef.current = null;
-      }
-      currentSftpUploadIdRef.current = null;
-    };
-  }, []);
-
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
-  const sftpSelectedTotal = useMemo(() => sftpFiles.reduce((acc, item) => acc + (item.size || 0), 0), [sftpFiles]);
-  const activeSftpNodeId = sftpUploading ? sftpTargetNode?.id ?? null : null;
 
   const activeDragNode = useMemo(
     () => (dragState.activeId ? nodes.find((node) => node.id === dragState.activeId) ?? null : null),
@@ -305,207 +253,14 @@ export function SessionModule() {
     });
   };
 
-  const getFileName = (path: string) => {
-    const parts = path.split(/[/\\]/);
-    return parts[parts.length - 1] || path;
-  };
-
-  const formatBytes = (value: number) => {
-    if (!Number.isFinite(value) || value <= 0) return "0 B";
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
-    const size = value / Math.pow(1024, index);
-    return `${size.toFixed(size >= 100 || index === 0 ? 0 : size >= 10 ? 1 : 2)} ${units[index]}`;
-  };
-
-  const resolveRemotePath = (basePath: string, fileName: string, isBatch: boolean) => {
-    const trimmed = basePath.trim();
-    if (!trimmed) return "";
-    if (!isBatch && !trimmed.endsWith("/")) return trimmed;
-    const normalized = trimmed === "~" ? "~/" : trimmed;
-    const separator = normalized.endsWith("/") ? "" : "/";
-    return `${normalized}${separator}${fileName}`;
-  };
-
-  const loadLocalFiles = async (paths: string[]) => {
-    const items = await Promise.all(paths.map(async (path) => {
-      const name = getFileName(path);
-      let size = 0;
-      try {
-        const info = await stat(path);
-        const rawSize = (info as { size?: number | bigint | string; len?: number | bigint | string }).size
-          ?? (info as { len?: number | bigint | string }).len
-          ?? 0;
-        const sizeNumber = typeof rawSize === "bigint" ? Number(rawSize) : Number(rawSize);
-        size = Number.isFinite(sizeNumber) ? sizeNumber : 0;
-        if (size === 0) {
-          const actualSize = await getFileSize(path);
-          const actualNumber = typeof actualSize === "bigint" ? Number(actualSize) : Number(actualSize);
-          size = Number.isFinite(actualNumber) ? actualNumber : 0;
-        }
-      } catch (err) {
-        logger.error("FE/session-module/sftp", "Failed to get file info", {err});
-      }
-      return { path, name, size };
-    }));
-    return items;
-  };
-
-  const handleSftpPickFiles = async (node: SessionNode, append = false) => {
-    if (!node.config) return;
-    if (sftpUploading) {
-      if (activeSftpNodeId === node.id) {
-        setSftpMessage(null);
-        setSftpOpen(true);
-        return;
-      }
-      setSftpMessageType("error");
-      setSftpMessage(`连接“${sftpTargetNode?.name ?? "当前连接"}”正在上传，请等待完成后再发起新的上传`);
-      setSftpOpen(true);
-      return;
+  const openDialog = (type: Parameters<typeof dialog.open>[0], node: SessionNode | null = null) => {
+    setTargetNode(node);
+    if (node?.type === 'folder') {
+      setTempName(node.name);
+    } else {
+      setTempName("");
     }
-    try {
-      const selected = await openFileDialog({
-        multiple: true,
-        directory: false,
-        title: "选择要上传的文件",
-      });
-      if (!selected) return;
-      const paths = Array.isArray(selected) ? selected : [selected];
-      if (paths.length === 0) return;
-      const newFiles = await loadLocalFiles(paths);
-      setSftpFiles(prev => {
-        if (!append) return newFiles;
-        const map = new Map(prev.map(item => [item.path, item]));
-        newFiles.forEach(item => map.set(item.path, item));
-        return Array.from(map.values());
-      });
-      setSftpTargetNode(node);
-      setSftpMessage(null);
-      setSftpOpen(true);
-      setSftpFileProgress({});
-      setSftpOverallSent(0);
-      setSftpOverallTotal(0);
-      if (!append) {
-        if (newFiles.length === 1) setSftpRemotePath(`~/${newFiles[0].name}`);
-        else setSftpRemotePath("~/");
-      }
-    } catch (err) {
-      logger.error("FE/session-module/sftp", "Failed to select files", {err});
-    }
-  };
-
-  const handleSftpOpen = (node: SessionNode) => {
-    if (!node.config) return;
-    if (sftpUploading) {
-      if (activeSftpNodeId === node.id) {
-        setSftpMessage(null);
-        setSftpOpen(true);
-        return;
-      }
-      setSftpMessageType("error");
-      setSftpMessage(`连接“${sftpTargetNode?.name ?? "当前连接"}”正在上传，请等待完成后再发起新的上传`);
-      setSftpOpen(true);
-      return;
-    }
-
-    setSftpTargetNode(node);
-    setSftpFiles([]);
-    setSftpRemotePath("");
-    setSftpMessage(null);
-    setSftpFileProgress({});
-    setSftpOverallSent(0);
-    setSftpOverallTotal(0);
-    setSftpStopping(false);
-    setSftpOpen(true);
-  };
-
-  const handleStopSftpUpload = async () => {
-    const uploadId = currentSftpUploadIdRef.current;
-    if (!uploadId || !sftpUploading || sftpStopping) return;
-
-    try {
-      setSftpStopping(true);
-      setSftpMessageType("info");
-      setSftpMessage("正在停止上传...");
-      await invokeTauri("cancel_sftp_upload", { uploadId }, { scope: "FE/session-module/sftp/cancel" });
-    } catch (err) {
-      logger.error("FE/session-module/sftp", "Failed to cancel SFTP upload", {err});
-      setSftpStopping(false);
-      setSftpMessageType("error");
-      setSftpMessage(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const handleSftpUpload = async () => {
-    if (!sftpTargetNode?.config || sftpFiles.length === 0 || !sftpRemotePath) return;
-    if (progressUnlistenRef.current) {
-      progressUnlistenRef.current();
-      progressUnlistenRef.current = null;
-    }
-    const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    const progressEvent = `sftp-upload-progress-${uploadId}`;
-    currentSftpUploadIdRef.current = uploadId;
-    setSftpUploading(true);
-    setSftpStopping(false);
-    setSftpMessage(null);
-
-    const totalBytes = sftpFiles.reduce((acc, item) => acc + (item.size || 0), 0);
-    setSftpOverallTotal(totalBytes);
-    setSftpOverallSent(0);
-    setSftpFileProgress(Object.fromEntries(sftpFiles.map(item => [item.path, { sent: 0, total: item.size }])));
-
-    try {
-      progressUnlistenRef.current = await listen<SftpUploadProgressPayload>(progressEvent, (event) => {
-        const payload = event.payload;
-        setSftpOverallTotal(payload.overall_total);
-        setSftpOverallSent(payload.overall_sent);
-        setSftpFileProgress(prev => ({
-          ...prev,
-          [payload.local_path]: { sent: payload.file_sent, total: payload.file_size },
-        }));
-      });
-
-      const isBatch = sftpFiles.length > 1;
-      const files = sftpFiles.map(item => ({
-        local_path: item.path,
-        remote_path: resolveRemotePath(sftpRemotePath, item.name, isBatch),
-      }));
-
-      const cfg = sftpTargetNode.config;
-      if (!isSshConfig(cfg)) {
-        throw new Error("SFTP 仅支持 SSH 会话");
-      }
-      await invokeTauri("sftp_upload_files", {
-        config: {
-          host: cfg.host,
-          port: cfg.port,
-          username: cfg.username,
-          password: cfg.authType === "password" ? cfg.password : undefined,
-          private_key_path: cfg.authType === "privateKey" ? cfg.privateKeyPath : undefined,
-        },
-        files,
-        progressEvent,
-        uploadId,
-      }, { scope: "FE/session-module/sftp/upload" });
-
-      setSftpMessageType("success");
-      setSftpMessage("上传成功");
-    } catch (err: unknown) {
-      logger.error("FE/session-module/sftp", "SFTP upload failed", {err});
-      const message = err instanceof Error ? err.message : String(err);
-      const isStopped = message.includes("上传已停止");
-      setSftpMessageType(isStopped ? "info" : "error");
-      setSftpMessage(isStopped ? "上传已停止" : message);
-    } finally {
-      if (progressUnlistenRef.current) {
-        progressUnlistenRef.current();
-        progressUnlistenRef.current = null;
-      }
-      setSftpUploading(false);
-      setSftpStopping(false);
-      currentSftpUploadIdRef.current = null;
-    }
+    dialog.open(type, node?.id ?? null, node?.type === 'folder' ? node.name : "");
   };
 
   const handleAction = (type: string, node: SessionNode) => {
@@ -520,23 +275,22 @@ export function SessionModule() {
       } else if (node.type === "vnc" && isVncConfig(node.config)) {
         addSession({ title: node.name, type: "vnc", host: node.config.host, config: { host: node.config.host, port: node.config.port, vncConfig: node.config } });
       }
-    } else if (type === 'new-ssh') { setTargetNode(node); setEditNode(null); setSshOpen(true); }
-    else if (type === 'new-rdp') { setTargetNode(node); setEditNode(null); setRdpOpen(true); }
-    else if (type === 'new-vnc') { setTargetNode(node); setEditNode(null); setVncOpen(true); }
-    else if (type === 'new-folder') { setTargetNode(node); setEditNode(null); setFolderOpen(true); }
+    } else if (type === 'new-ssh') { setEditNode(null); openDialog('ssh', node); }
+    else if (type === 'new-rdp') { setEditNode(null); openDialog('rdp', node); }
+    else if (type === 'new-vnc') { setEditNode(null); openDialog('vnc', node); }
+    else if (type === 'new-folder') { setEditNode(null); openDialog('folder', node); }
     else if (type === 'edit') { 
       setEditNode(node); 
-      if (node.type === 'folder') { setTempName(node.name); setFolderOpen(true); } 
-      else if (node.type === 'ssh') setSshOpen(true);
-      else if (node.type === 'rdp') setRdpOpen(true);
-      else setVncOpen(true);
-    } else if (type === 'delete') { setTargetNode(node); setDeleteOpen(true); }
-    else if (type === 'sftp-upload' && node.type === 'ssh') { handleSftpOpen(node); }
+      if (node.type === 'folder') openDialog('folder', node);
+      else if (node.type === 'ssh') openDialog('ssh', node);
+      else if (node.type === 'rdp') openDialog('rdp', node);
+      else openDialog('vnc', node);
+    } else if (type === 'delete') { setTargetNode(node); dialog.open('delete', node.id); }
+    else if (type === 'sftp-upload' && node.type === 'ssh') { setSftpNode(node); dialog.open('sftp', node.id); }
   };
 
   const handleDirectConnect = (name: string, path: string, admin = false) => {
     const title = `${name}${admin ? ' (Admin)' : ''}`;
-    
     addSession({
       title,
       type: "local",
@@ -615,7 +369,6 @@ export function SessionModule() {
                   {getShellIcon(shell.icon_type)}
                   {shell.name}
                 </DropdownMenuItem>
-                {/* Windows 下所有本地 Shell (CMD, PS, Bash) 都显示管理员选项 */}
                 <DropdownMenuItem onClick={() => handleDirectConnect(shell.name, shell.path, true)}>
                   <ShieldAlert className="mr-2 h-4 w-4 text-amber-500" />
                   {shell.name} 管理员
@@ -624,13 +377,13 @@ export function SessionModule() {
             ))}
 
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setDirectSshOpen(true)}>
+            <DropdownMenuItem onClick={() => dialog.open('directSsh')}>
               <Server className="mr-2 h-4 w-4 text-emerald-500" /> SSH 连接
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setDirectRdpOpen(true)}>
+            <DropdownMenuItem onClick={() => dialog.open('directRdp')}>
               <Monitor className="mr-2 h-4 w-4 text-sky-500" /> windows 远程连接
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setDirectVncOpen(true)}>
+            <DropdownMenuItem onClick={() => dialog.open('directVnc')}>
               <Monitor className="mr-2 h-4 w-4 text-emerald-500" /> VNC 连接
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -644,16 +397,13 @@ export function SessionModule() {
           onDragStart={(e) => updateDragState(e.active.id as string, null, null)}
           onDragOver={(e) => {
             const { active, over } = e;
-
             if (!over || active.id === over.id) {
               updateDragState(active.id as string, null, null);
               return;
             }
-
             const overNode = nodes.find((node) => node.id === over.id);
             const activeRect = active.rect.current.translated ?? active.rect.current.initial;
             const nextDropPos = overNode ? getDropPosition(overNode, activeRect, over.rect) : null;
-
             updateDragState(active.id as string, over.id as string, nextDropPos);
           }}
           onDragEnd={(e) => {
@@ -662,7 +412,6 @@ export function SessionModule() {
               const overNode = nodes.find((node) => node.id === over.id);
               const activeRect = active.rect.current.translated ?? active.rect.current.initial;
               const dropPos = overNode ? getDropPosition(overNode, activeRect, over.rect) : null;
-
               if (dropPos) {
                 moveNode(active.id as string, over.id as string, dropPos);
               }
@@ -680,7 +429,6 @@ export function SessionModule() {
                 onAction={handleAction}
                 overId={dragState.overId}
                 dropPos={dragState.dropPos}
-                uploadingNodeId={activeSftpNodeId}
               />
             ))}
           </div>
@@ -693,7 +441,8 @@ export function SessionModule() {
         </DndContext>
       </div>
 
-      <Dialog open={folderOpen} onOpenChange={setFolderOpen}>
+      {/* 文件夹弹窗 */}
+      <Dialog open={dialog.isOpen('folder')} onOpenChange={() => dialog.close()}>
         <DialogContent>
           <DialogHeader><DialogTitle>{editNode ? "重命名" : "新建文件夹"}</DialogTitle></DialogHeader>
           <Input 
@@ -701,175 +450,113 @@ export function SessionModule() {
             onChange={(e) => setTempName(e.target.value)} 
             placeholder="请输入名称" 
             autoFocus 
-            onKeyDown={e => e.key === 'Enter' && (editNode ? updateNode(editNode.id, { name: tempName }) : targetNode && addFolder(tempName, targetNode.id), setFolderOpen(false), setTempName(""))}
+            onKeyDown={e => e.key === 'Enter' && (editNode ? updateNode(editNode.id, { name: tempName }) : targetNode && addFolder(tempName, targetNode.id), dialog.close(), setTempName(""))}
           />
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setFolderOpen(false)}>取消</Button>
+            <Button variant="ghost" onClick={() => dialog.close()}>取消</Button>
             <Button onClick={() => {
               if (editNode) updateNode(editNode.id, { name: tempName });
               else if (targetNode) addFolder(tempName, targetNode.id);
-              setFolderOpen(false); setTempName("");
+              dialog.close(); setTempName("");
             }}>确定</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <SshConnectDialog open={sshOpen} onOpenChange={setSshOpen} initialConfig={editNode?.type === "ssh" ? editNode.config as SSHConfig : undefined} onSave={(cfg) => {
-        if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
-        else if (targetNode) addProfile("ssh", cfg, targetNode.id);
-        setSshOpen(false);
-      }} />
-      <RdpConnectDialog open={rdpOpen} onOpenChange={setRdpOpen} initialConfig={editNode?.type === "rdp" ? editNode.config as RDPConfig : undefined} onSave={(cfg) => {
-        if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
-        else if (targetNode) addProfile("rdp", cfg, targetNode.id);
-        setRdpOpen(false);
-      }} />
-      <VncConnectDialog open={vncOpen} onOpenChange={setVncOpen} initialConfig={editNode?.type === "vnc" ? editNode.config as VNCConfig : undefined} onSave={(cfg) => {
-        if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
-        else if (targetNode) addProfile("vnc", cfg, targetNode.id);
-        setVncOpen(false);
-      }} />
-      <SshConnectDialog open={directSshOpen} onOpenChange={setDirectSshOpen} isDirect={true} onSave={(cfg) => {
-        addSession({ 
-          title: cfg.nickname || cfg.host, 
-          type: "ssh", 
-          host: cfg.host, 
-          config: { host: cfg.host, port: cfg.port, sshConfig: cfg } 
-        });
-        setDirectSshOpen(false);
-      }} />
-      <RdpConnectDialog open={directRdpOpen} onOpenChange={setDirectRdpOpen} isDirect={true} onSave={(cfg) => {
-        handleDirectRdpConnect(cfg);
-        setDirectRdpOpen(false);
-      }} />
-      <VncConnectDialog open={directVncOpen} onOpenChange={setDirectVncOpen} isDirect={true} onSave={(cfg) => {
-        handleDirectVncConnect(cfg);
-        setDirectVncOpen(false);
-      }} />
-      <Dialog open={sftpOpen} onOpenChange={setSftpOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>SFTP 上传文件</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            {sftpTargetNode && (
-              <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                当前连接: {sftpTargetNode.name}
-                {sftpUploading && " · 上传进行中，可先收起后从同连接恢复"}
-              </div>
-            )}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-muted-foreground">本地文件</div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    已选择 {sftpFiles.length} 个文件 / {formatBytes(sftpSelectedTotal)}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 px-2"
-                    disabled={sftpUploading}
-                    onClick={() => sftpTargetNode && handleSftpPickFiles(sftpTargetNode, sftpFiles.length > 0)}
-                  >
-                    <Plus className="mr-1 h-3.5 w-3.5" /> 添加文件
-                  </Button>
-                </div>
-              </div>
-              <div className="rounded-md border bg-muted/20">
-                {sftpFiles.length === 0 ? (
-                  <div className="px-3 py-6 text-xs text-muted-foreground text-center">
-                    暂无文件，请添加要上传的文件
-                  </div>
-                ) : (
-                  <div className="divide-y">
-                    {sftpFiles.map((item) => {
-                      const progress = sftpFileProgress[item.path];
-                      const percent = progress && progress.total > 0 ? Math.min(100, Math.round((progress.sent / progress.total) * 100)) : 0;
-                      return (
-                        <div key={item.path} className="group px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <File className="h-4 w-4 text-muted-foreground" />
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm truncate">{item.name}</div>
-                              <div className="text-xs text-muted-foreground">{formatBytes(item.size)}</div>
-                            </div>
-                            <button
-                              type="button"
-                              disabled={sftpUploading}
-                              className="opacity-0 group-hover:opacity-100 transition text-muted-foreground hover:text-destructive disabled:pointer-events-none disabled:opacity-30"
-                              onClick={() => setSftpFiles(prev => prev.filter(file => file.path !== item.path))}
-                              aria-label="移除文件"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                          {sftpUploading && progress && (
-                            <div className="mt-2">
-                              <div className="h-1.5 w-full rounded-full bg-muted">
-                                <div className="h-1.5 rounded-full bg-primary" style={{ width: `${percent}%` }} />
-                              </div>
-                              <div className="mt-1 text-[10px] text-muted-foreground">{percent}%</div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">远程路径</div>
-              <Input 
-                value={sftpRemotePath} 
-                disabled={sftpUploading}
-                onChange={(e) => setSftpRemotePath(e.target.value)} 
-                placeholder="例如: /home/user/file.txt 或 ~/file.txt"
-              />
-              {sftpFiles.length > 1 && (
-                <div className="text-[10px] text-muted-foreground">
-                  批量上传时，远程路径将作为目录使用
-                </div>
-              )}
-            </div>
-            {sftpUploading && sftpOverallTotal > 0 && (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>总进度</span>
-                  <span>{formatBytes(sftpOverallSent)} / {formatBytes(sftpOverallTotal)}</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-muted">
-                  <div
-                    className="h-2 rounded-full bg-primary"
-                    style={{ width: `${Math.min(100, Math.round((sftpOverallSent / sftpOverallTotal) * 100))}%` }}
-                  />
-                </div>
-              </div>
-            )}
-            {sftpMessage && (
-              <div className={cn(
-                "text-xs px-2 py-1 rounded border",
-                sftpMessageType === "success" && "bg-green-100 text-green-800 border-green-200",
-                sftpMessageType === "error" && "bg-red-100 text-red-800 border-red-200",
-                sftpMessageType === "info" && "bg-sky-100 text-sky-800 border-sky-200 dark:bg-cyan-500/12 dark:text-cyan-100 dark:border-cyan-400/30"
-              )}>
-                {sftpMessage}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={sftpUploading ? handleStopSftpUpload : () => setSftpOpen(false)} disabled={sftpStopping}>
-              {sftpUploading ? (sftpStopping ? "停止中..." : "停止上传") : "取消"}
-            </Button>
-            <Button onClick={handleSftpUpload} disabled={sftpUploading || sftpFiles.length === 0 || !sftpRemotePath}>
-              {sftpUploading ? "上传中..." : "开始上传"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+
+      {/* SSH 弹窗 */}
+      <SshConnectDialog 
+        open={dialog.isOpen('ssh')} 
+        onOpenChange={() => dialog.close()} 
+        initialConfig={editNode?.type === "ssh" ? editNode.config as SSHConfig : undefined} 
+        onSave={(cfg) => {
+          if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
+          else if (targetNode) addProfile("ssh", cfg, targetNode.id);
+          dialog.close();
+        }} 
+      />
+
+      {/* RDP 弹窗 */}
+      <RdpConnectDialog 
+        open={dialog.isOpen('rdp')} 
+        onOpenChange={() => dialog.close()} 
+        initialConfig={editNode?.type === "rdp" ? editNode.config as RDPConfig : undefined} 
+        onSave={(cfg) => {
+          if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
+          else if (targetNode) addProfile("rdp", cfg, targetNode.id);
+          dialog.close();
+        }} 
+      />
+
+      {/* VNC 弹窗 */}
+      <VncConnectDialog 
+        open={dialog.isOpen('vnc')} 
+        onOpenChange={() => dialog.close()} 
+        initialConfig={editNode?.type === "vnc" ? editNode.config as VNCConfig : undefined} 
+        onSave={(cfg) => {
+          if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
+          else if (targetNode) addProfile("vnc", cfg, targetNode.id);
+          dialog.close();
+        }} 
+      />
+
+      {/* 直接连接弹窗 */}
+      <SshConnectDialog 
+        open={dialog.isOpen('directSsh')} 
+        onOpenChange={() => dialog.close()} 
+        isDirect={true} 
+        onSave={(cfg) => {
+          addSession({ 
+            title: cfg.nickname || cfg.host, 
+            type: "ssh", 
+            host: cfg.host, 
+            config: { host: cfg.host, port: cfg.port, sshConfig: cfg } 
+          });
+          dialog.close();
+        }} 
+      />
+      <RdpConnectDialog 
+        open={dialog.isOpen('directRdp')} 
+        onOpenChange={() => dialog.close()} 
+        isDirect={true} 
+        onSave={(cfg) => {
+          handleDirectRdpConnect(cfg);
+          dialog.close();
+        }} 
+      />
+      <VncConnectDialog 
+        open={dialog.isOpen('directVnc')} 
+        onOpenChange={() => dialog.close()} 
+        isDirect={true} 
+        onSave={(cfg) => {
+          handleDirectVncConnect(cfg);
+          dialog.close();
+        }} 
+      />
+
+      {/* SFTP 上传弹窗 */}
+      <SftpUploadDialog
+        open={dialog.isOpen('sftp')}
+        onOpenChange={() => dialog.close()}
+        targetNode={sftpNode}
+      />
+
+      {/* 删除确认弹窗 */}
+      <AlertDialog open={dialog.isOpen('delete')} onOpenChange={() => dialog.close()}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>确认删除 "{targetNode?.name}"？</AlertDialogTitle></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction className="bg-destructive" onClick={() => targetNode && removeNode(targetNode.id)}>删除</AlertDialogAction></AlertDialogFooter>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除 "{targetNode?.name}"？</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => dialog.close()}>取消</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive" onClick={() => { 
+              if (targetNode) {
+                removeNode(targetNode.id);
+              }
+              dialog.close(); 
+            }}>
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>

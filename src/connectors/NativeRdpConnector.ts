@@ -6,28 +6,10 @@ import type {
   RDPConfig,
 } from "@/types/terminal";
 import { logger } from "@/lib/logger";
+import { getErrorMessage } from "@/lib/errorUtils";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
 
 const FINAL_NATIVE_STATES: NativeRdpStatePayload["state"][] = ["disconnected", "closed", "error"];
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message.trim();
-  }
-
-  if (typeof error === "string" && error.trim()) {
-    return error.trim();
-  }
-
-  if (typeof error === "object" && error !== null) {
-    const candidate = (error as { message?: unknown }).message;
-    if (typeof candidate === "string" && candidate.trim()) {
-      return candidate.trim();
-    }
-  }
-
-  return "未知错误";
-}
 
 export class NativeRdpConnector implements INativeRdpConnector {
   readonly protocol = "rdp" as const;

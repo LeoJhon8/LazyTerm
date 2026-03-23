@@ -164,6 +164,7 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-rustls",
  "uuid",

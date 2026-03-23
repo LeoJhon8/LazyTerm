@@ -31,7 +31,6 @@ import { useTabsStore } from "@/store/tabs";
 import type { TerminalColorScheme } from "@/config/themes";
 import { TERMINAL_THEMES, getTerminalTheme } from "@/config/themes";
 import { FileJson, Upload, Trash2, ImagePlus, X, Palette, LayoutPanelLeft, Database, Terminal, Plus } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect as useMountedEffect } from "react";
 
 // 引入 Tauri 原生 API
@@ -107,10 +106,8 @@ interface SlotSettingsProps {
   resetToDefault: () => void;
 }
 
-interface ShellInfo {
-  name: string;
-  path: string;
-}
+import type { ShellInfo } from "@/types/shell";
+import { getAvailableShells } from "@/services/shellService";
 
 // --- 子组件 1：主题与外观设置 ---
 function ThemeSettings() {
@@ -582,7 +579,7 @@ function TerminalSettings() {
   const [shells, setShells] = useState<ShellInfo[]>([]);
 
   useMountedEffect(() => {
-    invoke<ShellInfo[]>("get_available_shells")
+    getAvailableShells()
       .then(setShells)
       .catch((err) => logger.error("FE/dialog/slot-config", "Failed to get available shells", {err}));
   }, []);

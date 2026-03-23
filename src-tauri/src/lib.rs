@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use ironrdp::core::other_err;
 use image::codecs::jpeg::JpegEncoder;
 use image::{ExtendedColorType, ImageFormat};
@@ -26,9 +25,6 @@ use ironrdp::pdu::PduHint;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{fast_path, ActiveStage, ActiveStageOutput};
 use ironrdp::core::WriteBuf;
-use portable_pty::MasterPty;
-use russh::client;
-use russh_keys::key;
 use sspi::network_client::reqwest_network_client::ReqwestNetworkClient;
 use sspi::{AuthIdentity as SspiAuthIdentity, Username};
 use std::{
@@ -51,41 +47,51 @@ use vnc::{
 };
 use x509_cert::der::Decode as _;
 
-mod mstsc;
-mod native_rdp;
-mod commands;
 mod logging;
+mod error;
+mod types;
+mod protocol;
+mod state;
+mod utils;
 
-use native_rdp::NativeRdpSession;
+pub use error::AppError;
+pub use error::into_tauri_result;
+pub use error::AppResult;
+pub use state::AppState;
+pub use utils::{
+    log_rdp_error, log_rdp_info, log_vnc_error, log_vnc_info,
+    map_sftp_error, rdp_target_label, vnc_target_label,
+};
 
-// --- 数据结构定义 ---
+// 从 types 模块导入并重新导出纯数据类型
+pub use crate::types::{
+    LocalTerminalSession, 
+    SshTerminalSession, 
+    SshControlMsg, 
+    SshConnectConfig,
+    RdpSession, 
+    RdpControlMsg, 
+    RdpConnectConfig, 
+    RdpPointerEventPayload, 
+    RdpKeyboardEventPayload,
+    VncSession, 
+    VncControlMsg, 
+    VncControlOutcome,
+    VncConnectConfig, 
+    VncPointerEventPayload, 
+    VncKeyboardEventPayload,
+    SftpUploadProgress, 
+    SftpUploadItem, 
+    SftpUploadCancelGuard,
+    ShellInfo, 
+    VncCursorEventPayload, 
+    NativeHostRect, 
+    NativeRdpStateEventPayload, 
+    NativeRdpTraceEventPayload,
+};
 
-/// 用于控制 SSH 后台任务的内部消息
-enum SshControlMsg {
-    SendData(Vec<u8>),
-    Resize(u32, u32),
-    Close,
-}
-
-enum RdpControlMsg {
-    Pointer(RdpPointerEventPayload),
-    Key(RdpKeyboardEventPayload),
-    ReleaseAll,
-    Resize(u16, u16),
-    Close,
-}
-
-enum VncControlMsg {
-    Pointer(VncPointerEventPayload),
-    Key(VncKeyboardEventPayload),
-    Refresh,
-    Close,
-}
-
-enum VncControlOutcome {
-    Continue(Option<bool>),
-    Close,
-}
+// --- 内部使用的额外类型定义 ---
+// 注意：VncControlOutcome 已从 types 模块导入
 
 const RDP_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const RDP_POLL_TIMEOUT: Duration = Duration::from_millis(16);
@@ -113,59 +119,6 @@ const VNC_INPUT_REFRESH_DELAY: Duration = Duration::from_millis(75);
 const VNC_IDLE_KEEPALIVE_INTERVAL: Duration = Duration::from_millis(1000);
 const VNC_SNAPSHOT_COMMIT_DELAY: Duration = Duration::from_millis(60);
 
-fn rdp_target_label(config: &RdpConnectConfig) -> String {
-    format!("{}:{}", config.host, config.port)
-}
-
-fn log_rdp_info(session_id: &str, target: &str, stage: &str, message: impl AsRef<str>) {
-    let scope = format!("RDP/{session_id}/{target}/{stage}");
-    logging::info(&scope, message);
-}
-
-fn log_rdp_error(session_id: &str, target: &str, stage: &str, message: impl AsRef<str>) {
-    let scope = format!("RDP/{session_id}/{target}/{stage}");
-    logging::error(&scope, message);
-}
-
-fn vnc_target_label(config: &VncConnectConfig) -> String {
-    format!("{}:{}", config.host, config.port)
-}
-
-fn log_vnc_info(session_id: &str, target: &str, stage: &str, message: impl AsRef<str>) {
-    let scope = format!("VNC/{session_id}/{target}/{stage}");
-    logging::info(&scope, message);
-}
-
-fn log_vnc_error(session_id: &str, target: &str, stage: &str, message: impl AsRef<str>) {
-    let scope = format!("VNC/{session_id}/{target}/{stage}");
-    logging::error(&scope, message);
-}
-
-fn map_sftp_error(context: &str, err: &impl std::fmt::Display, path: Option<&str>) -> String {
-    let msg = err.to_string();
-    let hint = if msg.contains("PermissionDenied") {
-        "权限不足，请检查账号权限或目标目录权限。"
-    } else if msg.contains("NoSuchFile") {
-        "路径不存在，请确认远端目录已存在或可创建。"
-    } else if msg.contains("ConnectionLost") || msg.contains("Connection") {
-        "连接中断，请检查网络或服务端连接状态。"
-    } else if msg.contains("Failure") {
-        "远端返回失败，请检查服务端 SFTP 配置。"
-    } else {
-        "请检查服务器与路径配置。"
-    };
-    if let Some(p) = path {
-        format!("{context}：{hint} (path={p})")
-    } else {
-        format!("{context}：{hint}")
-    }
-}
-
-/// 本地终端会话管理
-struct LocalTerminalSession {
-    master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
-}
 fn request_rdp_refresh(
     framed: &mut UpgradedFramed,
     user_channel_id: u16,
@@ -222,18 +175,7 @@ fn request_rdp_refresh(
 }
 
 
-/// SSH 终端会话管理
-struct SshTerminalSession {
-    control_tx: mpsc::UnboundedSender<SshControlMsg>,
-}
-
-struct RdpSession {
-    control_tx: std_mpsc::Sender<RdpControlMsg>,
-}
-
-struct VncSession {
-    control_tx: mpsc::UnboundedSender<VncControlMsg>,
-}
+ 
 
 struct RdpConnectionContext {
     connection_result: ConnectionResult,
@@ -575,190 +517,7 @@ impl LocalCredsspSequence {
     }
 }
 
-/// 全局应用状态，存储所有活动会话
-struct AppState {
-    local_sessions: Arc<StdMutex<HashMap<String, LocalTerminalSession>>>,
-    ssh_sessions: Arc<TokioMutex<HashMap<String, SshTerminalSession>>>,
-    rdp_sessions: Arc<StdMutex<HashMap<String, RdpSession>>>,
-    vnc_sessions: Arc<StdMutex<HashMap<String, VncSession>>>,
-    native_rdp_sessions: Arc<StdMutex<HashMap<String, NativeRdpSession>>>,
-    sftp_upload_cancellations: Arc<StdMutex<HashMap<String, bool>>>,
-}
-
-struct SftpUploadCancelGuard {
-    upload_id: String,
-    cancellations: Arc<StdMutex<HashMap<String, bool>>>,
-}
-
-impl Drop for SftpUploadCancelGuard {
-    fn drop(&mut self) {
-        if let Ok(mut cancellations) = self.cancellations.lock() {
-            cancellations.remove(&self.upload_id);
-        }
-    }
-}
-
-// --- Russh 客户端回调处理 ---
-
-#[derive(Clone)]
-struct Client;
-
-#[async_trait]
-impl client::Handler for Client {
-    type Error = russh::Error;
-
-    async fn check_server_key(
-        &mut self,
-        _server_public_key: &key::PublicKey,
-    ) -> Result<bool, Self::Error> {
-        logging::info("SSH/handler", "收到服务器公钥响应");
-        Ok(true)
-    }
-
-    async fn disconnected(&mut self, reason: client::DisconnectReason<Self::Error>) -> Result<(), Self::Error> {
-        logging::warn("SSH/handler", format!("连接已断开: {reason:?}"));
-        Ok(())
-    }
-}
-
-/// 前端传入的 SSH 配置
-#[derive(serde::Deserialize, Debug)]
-pub struct SshConnectConfig {
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    pub password: Option<String>,
-    pub private_key_path: Option<String>,
-    pub private_key_passphrase: Option<String>, // 濡傛灉绉侀挜鏈夊瘑鐮?
-    pub initial_cols: Option<u32>,
-    pub initial_rows: Option<u32>,
-}
-#[derive(serde::Deserialize, Debug)]
-pub struct SftpUploadItem {
-    pub local_path: String,
-    pub remote_path: String,
-}
-
-#[derive(serde::Serialize, Debug)]
-pub struct SftpUploadProgress {
-    pub file_index: usize,
-    pub file_name: String,
-    pub local_path: String,
-    pub file_size: u64,
-    pub file_sent: u64,
-    pub overall_total: u64,
-    pub overall_sent: u64,
-}
-
-#[derive(serde::Serialize, Debug)]
-pub struct ShellInfo {
-    pub name: String,
-    pub path: String,
-    pub icon_type: String, // 'cmd', 'powershell', 'bash', 'ssh'
-}
-
-#[derive(serde::Deserialize, Debug, Clone)]
-pub struct RdpConnectConfig {
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    pub password: Option<String>,
-    pub domain: Option<String>,
-    pub width: Option<u32>,
-    pub height: Option<u32>,
-    pub auto_resize: Option<bool>,
-}
-
-#[derive(serde::Deserialize, Debug, Clone)]
-pub struct VncConnectConfig {
-    pub host: String,
-    pub port: u16,
-    pub password: Option<String>,
-    pub shared: Option<bool>,
-    pub allow_jpeg: Option<bool>,
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeHostRect {
-    pub x: i32,
-    pub y: i32,
-    pub width: i32,
-    pub height: i32,
-    pub scale_factor: f64,
-}
-
-#[derive(serde::Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeRdpStateEventPayload {
-    pub state: String,
-    pub detail: Option<String>,
-    pub rect: Option<NativeHostRect>,
-}
-
-#[derive(serde::Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeRdpTraceEventPayload {
-    pub timestamp_ms: u64,
-    pub level: String,
-    pub stage: String,
-    pub message: String,
-    pub extra: Option<String>,
-}
-
-#[derive(serde::Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct RdpPointerEventPayload {
-    pub kind: String,
-    pub x: u16,
-    pub y: u16,
-    pub button: Option<u8>,
-    pub delta_x: Option<i16>,
-    pub delta_y: Option<i16>,
-}
-
-#[derive(serde::Deserialize, Debug, Clone)]
-pub struct RdpKeyboardEventPayload {
-    pub scancode: u16,
-    pub down: bool,
-}
-
-#[derive(serde::Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct VncPointerEventPayload {
-    pub x: u16,
-    pub y: u16,
-    pub button_mask: u8,
-}
-
-#[derive(serde::Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct VncKeyboardEventPayload {
-    pub key_sym: u32,
-    pub down: bool,
-}
-
-#[derive(serde::Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct VncCursorEventPayload {
-    pub hotspot_x: u16,
-    pub hotspot_y: u16,
-    pub width: u16,
-    pub height: u16,
-    pub rgba_bytes: Vec<u8>,
-}
-
 type UpgradedFramed = ironrdp_blocking::Framed<rustls::StreamOwned<rustls::ClientConnection, TcpStream>>;
-
-/// 核心功能：使用 russh-keys 解析多种格式的私钥
-fn load_ssh_key(path: &str, passphrase: Option<String>) -> Result<key::KeyPair, String> {
-    let key_content = std::fs::read_to_string(path)
-        .map_err(|e| format!("无法读取密钥文件: {}", e))?;
-
-    // decode_secret_key 支持: OpenSSH, PKCS#1, PKCS#8 以及多种加密算法
-    russh_keys::decode_secret_key(&key_content, passphrase.as_deref())
-        .map_err(|e| format!("私钥解析失败: {:?}. 请检查格式或密码。", e))
-}
 
 fn build_rdp_config(config: &RdpConnectConfig) -> Result<connector::Config, String> {
     let password = config
@@ -2088,35 +1847,35 @@ pub fn run() {
             sftp_upload_cancellations: Arc::new(StdMutex::new(HashMap::new())),
         })
         .invoke_handler(tauri::generate_handler![
-            commands::create_terminal,
-            commands::get_available_shells,
-            commands::create_ssh_session,
-            commands::create_rdp_session,
-            commands::create_vnc_session,
-            native_rdp::create_native_rdp_session,
-            native_rdp::mount_native_rdp_session,
-            native_rdp::set_native_rdp_session_visible,
-            native_rdp::focus_native_rdp_session,
-            native_rdp::close_native_rdp_session,
-            mstsc::launch_mstsc_rdp,
-            commands::sftp_upload_file,
-            commands::sftp_upload_files,
-            commands::cancel_sftp_upload,
-            commands::write_to_terminal,
-            commands::write_to_ssh_session,
-            commands::send_rdp_pointer,
-            commands::send_rdp_key,
-            commands::send_vnc_pointer,
-            commands::send_vnc_key,
-            commands::request_vnc_refresh,
-            commands::release_rdp_inputs,
-            commands::resize_terminal,
-            commands::resize_ssh_session,
-            commands::resize_rdp_session,
-            commands::close_terminal,
-            commands::close_ssh_session,
-            commands::close_rdp_session,
-            commands::close_vnc_session
+            protocol::create_terminal,
+            protocol::get_available_shells,
+            protocol::create_ssh_session,
+            protocol::create_rdp_session,
+            protocol::create_vnc_session,
+            protocol::create_native_rdp_session,
+            protocol::mount_native_rdp_session,
+            protocol::set_native_rdp_session_visible,
+            protocol::focus_native_rdp_session,
+            protocol::close_native_rdp_session,
+            protocol::launch_mstsc_rdp,
+            protocol::sftp_upload_file,
+            protocol::sftp_upload_files,
+            protocol::cancel_sftp_upload,
+            protocol::write_to_terminal,
+            protocol::write_to_ssh_session,
+            protocol::send_rdp_pointer,
+            protocol::send_rdp_key,
+            protocol::send_vnc_pointer,
+            protocol::send_vnc_key,
+            protocol::request_vnc_refresh,
+            protocol::release_rdp_inputs,
+            protocol::resize_terminal,
+            protocol::resize_ssh_session,
+            protocol::resize_rdp_session,
+            protocol::close_terminal,
+            protocol::close_ssh_session,
+            protocol::close_rdp_session,
+            protocol::close_vnc_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

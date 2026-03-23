@@ -72,7 +72,7 @@ export function ResizeHandle({ side }: ResizeHandleProps) {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [isDragging, side, setSettings]);
+  }, [isDragging, side, leftPanelWidth, leftSlotCollapsed, rightPanelWidth, rightSlotCollapsed, setSettings, setSlotCollapsed]);
 
   return (
     <div

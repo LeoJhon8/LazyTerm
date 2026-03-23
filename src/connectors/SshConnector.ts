@@ -1,15 +1,36 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ITerminalConnector, SSHConfig } from "@/types/terminal";
-import { useSettingsStore } from "@/store/settings";
 import { logger } from "@/lib/logger";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
 
-function estimateInitialPtySize() {
+/**
+ * 估算初始 PTY 大小所需的字体配置
+ */
+export interface PtyFontConfig {
+  fontFamily: string;
+  fontSize: number;
+}
+
+/**
+ * 获取默认字体配置
+ */
+function getDefaultFontConfig(): PtyFontConfig {
+  return {
+    fontFamily: "Consolas, 'Courier New', monospace",
+    fontSize: 14,
+  };
+}
+
+/**
+ * 估算初始 PTY 大小
+ * 根据容器尺寸和字体配置计算行列数
+ */
+function estimateInitialPtySize(fontConfig?: PtyFontConfig): { cols: number; rows: number } {
   if (typeof window === "undefined") {
     return { cols: 80, rows: 24 };
   }
 
-  const { fontFamily, fontSize } = useSettingsStore.getState();
+  const { fontFamily, fontSize } = fontConfig ?? getDefaultFontConfig();
   const terminalContainer = document.querySelector<HTMLElement>(".terminal-container");
   const containerWidth = terminalContainer?.clientWidth ?? Math.max(window.innerWidth, 800);
   const containerHeight = terminalContainer?.clientHeight ?? Math.max(window.innerHeight, 600);
@@ -35,18 +56,24 @@ function estimateInitialPtySize() {
   return { cols, rows };
 }
 
+export interface SshConnectorOptions {
+  config: SSHConfig;
+  fontConfig?: PtyFontConfig;
+  onDisconnect?: () => void;
+}
+
 export class SshConnector implements ITerminalConnector {
   readonly protocol = "ssh" as const;
   private config: SSHConfig;
+  private fontConfig?: PtyFontConfig;
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
   private onDisconnectCallback?: () => void;
 
-  // 已移除： buffer 和 flushTimer （信任前端 xterm 的队列）
-
-  constructor(config: SSHConfig, onDisconnect?: () => void) {
-    this.config = config;
-    this.onDisconnectCallback = onDisconnect;
+  constructor(options: SshConnectorOptions) {
+    this.config = options.config;
+    this.fontConfig = options.fontConfig;
+    this.onDisconnectCallback = options.onDisconnect;
   }
 
   get isConnected(): boolean {
@@ -59,7 +86,7 @@ export class SshConnector implements ITerminalConnector {
     }
 
     try {
-      const initialSize = estimateInitialPtySize();
+      const initialSize = estimateInitialPtySize(this.fontConfig);
 
       this.sessionId = await invokeTauri<string>("create_ssh_session", {
         config: {

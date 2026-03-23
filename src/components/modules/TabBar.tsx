@@ -29,7 +29,6 @@ import {
 } from "@/components/ui/dialog";
 import { X, Plus } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
 import {
   DndContext,
@@ -48,12 +47,8 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
-interface ShellInfo {
-  name: string;
-  path: string;
-  icon_type: string;
-}
+import type { ShellInfo } from "@/types/shell";
+import { getAvailableShells } from "@/services/shellService";
 
 interface CloseConfirmationState {
   open: boolean;
@@ -232,7 +227,7 @@ export function TabBar() {
   const tabsContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    invoke<ShellInfo[]>("get_available_shells")
+    getAvailableShells()
       .then(setShells)
       .catch((err) => logger.error("FE/tab-bar", "Failed to get shells", {err}));
   }, []);

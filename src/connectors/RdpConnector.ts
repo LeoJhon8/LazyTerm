@@ -1,5 +1,3 @@
-import { Channel } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   IRdpConnector,
   RDPConfig,
@@ -8,102 +6,25 @@ import type {
   RdpPointerPayload,
 } from "@/types/terminal";
 import { logger } from "@/lib/logger";
-import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
+import { invokeTauri } from "@/services/tauri";
+import { BaseGraphicalConnector } from "./BaseGraphicalConnector";
 
-export class RdpConnector implements IRdpConnector {
+export class RdpConnector
+  extends BaseGraphicalConnector<RDPConfig, RdpFramePayload, RdpPointerPayload, RdpKeyboardPayload>
+  implements IRdpConnector
+{
   readonly protocol = "rdp" as const;
   readonly backend = "ironrdp" as const;
-  private static readonly FRAME_HEADER_SIZE = 13;
-
-  private readonly config: RDPConfig;
-  private readonly frameChannel: Channel<ArrayBuffer>;
-  private sessionId: string | null = null;
-  private connectPromise: Promise<string> | null = null;
-  private closedBeforeConnect = false;
-  private closeUnlisten: UnlistenFn | null = null;
-  private closeHandlers = new Set<() => void>();
-  private frameHandler: ((frame: RdpFramePayload) => void) | null = null;
-  private frameSize: { width: number; height: number } | null = null;
-  private latestFrame: RdpFramePayload | null = null;
 
   constructor(config: RDPConfig) {
-    this.config = config;
-    this.frameChannel = new Channel<ArrayBuffer>((packet) => {
-      const frame = this.parseFramePacket(packet);
-      this.frameSize = {
-        width: frame.desktopWidth,
-        height: frame.desktopHeight,
-      };
-      this.latestFrame = frame;
-      this.frameHandler?.(frame);
-    });
-  }
-
-  get isConnected(): boolean {
-    return this.sessionId !== null;
-  }
-
-  async open(): Promise<void> {
-    if (this.sessionId) {
-      return;
-    }
-
-    if (!this.connectPromise) {
-      this.closedBeforeConnect = false;
-      this.connectPromise = invokeTauri<string>("create_rdp_session", {
-        config: {
-          host: this.config.host,
-          port: this.config.port,
-          username: this.config.username,
-          password: this.config.password,
-          domain: this.config.domain,
-          width: this.config.width,
-          height: this.config.height,
-          auto_resize: this.config.autoResize ?? true,
-        },
-        frameChannel: this.frameChannel,
-      }, {
-        scope: "FE/connector/rdp/open",
-        logStart: true,
-        logSuccess: true,
-      }).then((sessionId) => {
-        if (this.closedBeforeConnect) {
-          invokeTauriBackground("close_rdp_session", {
-            sessionId,
-          }, { scope: "FE/connector/rdp/close" });
-          throw new Error("RDP connection was closed before initialization completed");
-        }
-
-        this.sessionId = sessionId;
-        return sessionId;
-      }).finally(() => {
-        this.connectPromise = null;
-      });
-    }
-
-    await this.connectPromise;
-  }
-
-  async onFrame(handler: (frame: RdpFramePayload) => void): Promise<void> {
-    const sessionId = await this.waitForSessionId();
-
-    this.frameHandler = handler;
-    this.closeUnlisten?.();
-
-    this.closeUnlisten = await listen(`rdp-close-${sessionId}`, () => {
-      this.handleDisconnect();
-    });
-
-    if (this.latestFrame) {
-      handler(this.latestFrame);
-    }
-  }
-
-  onClose(handler: () => void): () => void {
-    this.closeHandlers.add(handler);
-    return () => {
-      this.closeHandlers.delete(handler);
-    };
+    super(
+      config,
+      "rdp",
+      "create_rdp_session",
+      "close_rdp_session",
+      "rdp-close",
+      RdpConnector.parseFramePacket,
+    );
   }
 
   sendPointer(payload: RdpPointerPayload): void {
@@ -111,12 +32,11 @@ export class RdpConnector implements IRdpConnector {
       return;
     }
 
-    invokeTauri("send_rdp_pointer", {
-      sessionId: this.sessionId,
-      payload,
-    }, {
-      scope: "FE/connector/rdp/pointer",
-    }).catch((error) => {
+    invokeTauri(
+      "send_rdp_pointer",
+      { sessionId: this.sessionId, payload },
+      { scope: "FE/connector/rdp/pointer" },
+    ).catch((error) => {
       logger.error("FE/connector/rdp/pointer", "Pointer input failed", error);
     });
   }
@@ -126,12 +46,11 @@ export class RdpConnector implements IRdpConnector {
       return;
     }
 
-    invokeTauri("send_rdp_key", {
-      sessionId: this.sessionId,
-      payload,
-    }, {
-      scope: "FE/connector/rdp/key",
-    }).catch((error) => {
+    invokeTauri(
+      "send_rdp_key",
+      { sessionId: this.sessionId, payload },
+      { scope: "FE/connector/rdp/key" },
+    ).catch((error) => {
       logger.error("FE/connector/rdp/key", "Keyboard input failed", error);
     });
   }
@@ -141,11 +60,11 @@ export class RdpConnector implements IRdpConnector {
       return;
     }
 
-    invokeTauri("release_rdp_inputs", {
-      sessionId: this.sessionId,
-    }, {
-      scope: "FE/connector/rdp/release",
-    }).catch((error) => {
+    invokeTauri(
+      "release_rdp_inputs",
+      { sessionId: this.sessionId },
+      { scope: "FE/connector/rdp/release" },
+    ).catch((error) => {
       logger.error("FE/connector/rdp/release", "Releasing inputs failed", error);
     });
   }
@@ -155,35 +74,39 @@ export class RdpConnector implements IRdpConnector {
       return;
     }
 
-    invokeTauri("resize_rdp_session", {
-      sessionId: this.sessionId,
-      width,
-      height,
-    }, {
-      scope: "FE/connector/rdp/resize",
-    }).catch((error) => {
+    invokeTauri(
+      "resize_rdp_session",
+      { sessionId: this.sessionId, width, height },
+      { scope: "FE/connector/rdp/resize" },
+    ).catch((error) => {
       logger.error("FE/connector/rdp/resize", "Resize failed", error);
     });
   }
 
-  getFrameSize(): { width: number; height: number } | null {
-    return this.frameSize;
+  protected buildCreateSessionArgs(): Record<string, unknown> {
+    return {
+      config: {
+        host: this.config.host,
+        port: this.config.port,
+        username: this.config.username,
+        password: this.config.password,
+        domain: this.config.domain,
+        width: this.config.width,
+        height: this.config.height,
+        auto_resize: this.config.autoResize ?? true,
+      },
+      frameChannel: this.frameChannel,
+    };
   }
 
-  close(): void {
-    this.closedBeforeConnect = true;
-
-    if (this.sessionId) {
-      invokeTauriBackground("close_rdp_session", {
-        sessionId: this.sessionId,
-      }, { scope: "FE/connector/rdp/close" });
-    }
-
-    this.cleanupListeners();
-    this.sessionId = null;
+  protected extractFrameSize(frame: RdpFramePayload): { width: number; height: number } {
+    return {
+      width: frame.desktopWidth,
+      height: frame.desktopHeight,
+    };
   }
 
-  private parseFramePacket(packet: ArrayBuffer): RdpFramePayload {
+  private static parseFramePacket(packet: ArrayBuffer): RdpFramePayload {
     const view = new DataView(packet);
     const desktopWidth = view.getUint16(0, true);
     const desktopHeight = view.getUint16(2, true);
@@ -194,7 +117,7 @@ export class RdpConnector implements IRdpConnector {
     const flags = view.getUint8(12);
     const fullFrame = (flags & 0x01) === 0x01;
     const encoding = (flags & 0x02) === 0x02 ? "rgba" : "jpeg";
-    const imageBytes = packet.slice(RdpConnector.FRAME_HEADER_SIZE);
+    const imageBytes = packet.slice(BaseGraphicalConnector.FRAME_HEADER_SIZE);
 
     return {
       desktopWidth,
@@ -207,37 +130,5 @@ export class RdpConnector implements IRdpConnector {
       encoding,
       imageBytes,
     };
-  }
-
-  private async waitForSessionId(): Promise<string> {
-    if (this.sessionId) {
-      return this.sessionId;
-    }
-
-    if (this.connectPromise) {
-      return await this.connectPromise;
-    }
-
-    throw new Error("RDP session has not started opening yet");
-  }
-
-  private handleDisconnect(): void {
-    if (!this.sessionId) {
-      return;
-    }
-
-    this.cleanupListeners();
-    this.latestFrame = null;
-    this.sessionId = null;
-    this.closeHandlers.forEach((handler) => handler());
-  }
-
-  private cleanupListeners(): void {
-    if (this.closeUnlisten) {
-      this.closeUnlisten();
-      this.closeUnlisten = null;
-    }
-
-    this.frameHandler = null;
   }
 }
