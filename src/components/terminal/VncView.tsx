@@ -112,7 +112,9 @@ function isCompleteSnapshot(frame: VncFramePayload) {
 }
 
 export function VncView() {
-  const { activeSessionId, sessions } = useTabsStore();
+  const { activeSessionIds, focusSessionId, sessions } = useTabsStore();
+  // 当前仅支持单会话显示，取 activeSessionIds 的第一个或 focusSessionId
+  const activeSessionId = activeSessionIds.length > 0 ? activeSessionIds[0] : focusSessionId;
   const activeSession = sessions.find((session) => session.id === activeSessionId);
   const connector = activeSession?.connector?.protocol === "vnc" ? activeSession.connector as IVncConnector : null;
   const containerRef = useRef<HTMLDivElement | null>(null);

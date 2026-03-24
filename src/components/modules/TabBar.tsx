@@ -198,8 +198,8 @@ function SortableTab({
 export function TabBar() {
   const {
     sessions: tabs,
-    activeSessionId: activeTabId,
-    setActiveSession,
+    focusSessionId: activeTabId,
+    setFocusSession,
     removeSession,
     addSession,
     reorderSessions,
@@ -314,7 +314,7 @@ export function TabBar() {
   };
 
   const handleTabSwitch = (id: string) => {
-    setActiveSession(id);
+    setFocusSession(id);
     requestAnimationFrame(() => {
       window.dispatchEvent(new Event("lazy-terminal-focus"));
     });

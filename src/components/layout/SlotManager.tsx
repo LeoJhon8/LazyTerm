@@ -18,10 +18,10 @@ export function SlotManager() {
     backgroundImageEnabled,
     backgroundImage,
   } = useSettingsStore();
-  const { activeSessionId, sessions } = useTabsStore();
+  const { focusSessionId, sessions } = useTabsStore();
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
-  const activeSession = sessions.find((session) => session.id === activeSessionId);
-  const shouldHideQuickCmdBar = activeSession?.type === "rdp" || activeSession?.type === "vnc";
+  const focusSession = sessions.find((session) => session.id === focusSessionId);
+  const shouldHideQuickCmdBar = focusSession?.type === "rdp" || focusSession?.type === "vnc";
   const effectiveFooterHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? "0px" : `${effectiveBottomPanelHeight}px`;
 
   // 当有背景图片时，使面板半透明

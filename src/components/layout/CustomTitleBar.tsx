@@ -9,13 +9,13 @@ import logo256 from "../../../src-tauri/icons/LazyTerm-256.png";
 const appWindow = getCurrentWindow();
 
 export function CustomTitleBar() {
-  const { activeSessionId, sessions } = useTabsStore();
+  const { focusSessionId, sessions } = useTabsStore();
   const [isMaximized, setIsMaximized] = useState(false);
   const [logoError, setLogoError] = useState(false);
 
-  const activeSession = useMemo(
-    () => sessions.find((session) => session.id === activeSessionId),
-    [activeSessionId, sessions],
+  const focusSession = useMemo(
+    () => sessions.find((session) => session.id === focusSessionId),
+    [focusSessionId, sessions],
   );
 
   useEffect(() => {
@@ -84,19 +84,19 @@ export function CustomTitleBar() {
           <div className="window-titlebar__titles">
             <span className="window-titlebar__app-name">LazyTerm</span>
             <span className="window-titlebar__session-name">
-              {activeSession ? activeSession.title : "无活动会话"}
+              {focusSession ? focusSession.title : "无活动会话"}
             </span>
           </div>
         </div>
 
         <div className="window-titlebar__meta" data-tauri-drag-region>
           <span className="window-titlebar__meta-pill">
-            {activeSession
-              ? activeSession.type === "local"
+            {focusSession
+              ? focusSession.type === "local"
                 ? "本地终端"
-                : activeSession.type === "ssh"
+                : focusSession.type === "ssh"
                   ? "SSH"
-                  : activeSession.type === "rdp"
+                  : focusSession.type === "rdp"
                     ? "RDP"
                     : "VNC"
               : "开始桌面"}

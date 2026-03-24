@@ -39,7 +39,7 @@ function App() {
   } = useSettingsStore();
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
-  const { closeAllSessions, connectionError, clearConnectionError, activeSessionId, sessions } = useTabsStore();
+  const { closeAllSessions, connectionError, clearConnectionError, activeSessionIds, focusSessionId, sessions } = useTabsStore();
   const leftSlotCollapsed = slotConfig.left.collapsed;
   const rightSlotCollapsed = slotConfig.right.collapsed;
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
@@ -47,8 +47,10 @@ function App() {
   const shouldDisableUiBlur = hasBackgroundImage && backgroundImageUiMode === "clear";
 
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
-  const activeSession = sessions.find((session) => session.id === activeSessionId);
-  const shouldHideQuickCmdBar = activeSession?.type === "rdp" || activeSession?.type === "vnc";
+  // 当前仅支持单会话显示，取 activeSessionIds 的第一个或 focusSessionId
+  const displaySessionId = activeSessionIds.length > 0 ? activeSessionIds[0] : focusSessionId;
+  const displaySession = sessions.find((session) => session.id === displaySessionId);
+  const shouldHideQuickCmdBar = displaySession?.type === "rdp" || displaySession?.type === "vnc";
   const effectiveBottomRowHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight;
 
   // 应用关闭时清空所有会话
@@ -108,7 +110,7 @@ function App() {
     leftPanelCollapsed, rightPanelCollapsed, topPanelCollapsed, bottomPanelCollapsed,
     leftSlotCollapsed, rightSlotCollapsed,
     titleBarHeight,
-    activeSession?.type,
+    displaySession?.type,
     slotConfig.left.modules, slotConfig.right.modules,
     effectiveBottomPanelHeight,
     effectiveBottomRowHeight // 监听模块列表变化，触发布局重算
@@ -222,10 +224,10 @@ function App() {
           gridArea: "mid-main",
         }}
       >
-        {activeSession?.type === "rdp"
-          ? <RemoteDesktopView key={activeSession.id} />
-          : activeSession?.type === "vnc"
-            ? <VncView key={activeSession.id} />
+        {displaySession?.type === "rdp"
+          ? <RemoteDesktopView key={displaySession.id} />
+          : displaySession?.type === "vnc"
+            ? <VncView key={displaySession.id} />
             : <TerminalView />}
       </section>
 

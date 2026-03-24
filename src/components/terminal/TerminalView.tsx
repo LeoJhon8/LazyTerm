@@ -110,7 +110,9 @@ function isTerminalConnector(connector: SessionConnector | undefined): connector
 }
 
 export function TerminalView() {
-  const { activeSessionId, sessions } = useTabsStore();
+  const { activeSessionIds, focusSessionId, sessions } = useTabsStore();
+  // 当前仅支持单会话显示，取 activeSessionIds 的第一个或 focusSessionId
+  const activeSessionId = activeSessionIds.length > 0 ? activeSessionIds[0] : focusSessionId;
   const { addCommand: addHistoryCommand } = useHistoryStore();
   const fontSize = useSettingsStore((state) => state.fontSize);
   const fontFamily = useSettingsStore((state) => state.fontFamily);

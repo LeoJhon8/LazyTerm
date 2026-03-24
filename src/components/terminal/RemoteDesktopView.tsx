@@ -138,7 +138,9 @@ function getPointerPosition(
 }
 
 export function RemoteDesktopView({ onVisualReady }: { onVisualReady?: (sessionId: string) => void }) {
-  const { activeSessionId, sessions } = useTabsStore();
+  const { activeSessionIds, focusSessionId, sessions } = useTabsStore();
+  // 当前仅支持单会话显示，取 activeSessionIds 的第一个或 focusSessionId
+  const activeSessionId = activeSessionIds.length > 0 ? activeSessionIds[0] : focusSessionId;
   const activeSession = sessions.find((session) => session.id === activeSessionId);
   const backend = activeSession?.config?.rdpConfig?.backend ?? "ironrdp";
   const connector = activeSession?.connector?.protocol === "rdp" ? activeSession.connector : null;

@@ -105,7 +105,7 @@ function SortableQuickCommand({
 
 export function QuickCmdBar() {
   const { commands, addCommand, removeCommand, updateCommand, reorderCommands } = useQuickCommandsStore();
-  const { activeSessionId, sessions, getAllConnectors } = useTabsStore();
+  const { focusSessionId, sessions, getAllConnectors } = useTabsStore();
   const [configOpen, setConfigOpen] = useState(false);
   const [editingCmd, setEditingCmd] = useState<QuickCommand | null>(null);
   const commandsContainerRef = useRef<HTMLDivElement>(null);
@@ -138,12 +138,12 @@ export function QuickCmdBar() {
     return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
   };
 
-// 发送命令到当前激活的终端
+// 发送命令到当前焦点会话的终端
   const handleCommandClick = (cmd: QuickCommand) => {
-    const activeSession = sessions.find((session) => session.id === activeSessionId);
-    if (activeSession?.connector?.isConnected && isTerminalConnector(activeSession.connector)) {
+    const focusSession = sessions.find((session) => session.id === focusSessionId);
+    if (focusSession?.connector?.isConnected && isTerminalConnector(focusSession.connector)) {
       const commandsToExecute = cmd.command.replace(/\r?\n/g, "\r");
-      activeSession.connector.write(commandsToExecute);
+      focusSession.connector.write(commandsToExecute);
       restoreTerminalFocus();
     }
   };

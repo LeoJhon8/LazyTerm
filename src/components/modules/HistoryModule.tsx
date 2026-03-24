@@ -12,7 +12,7 @@ function isTerminalConnector(connector: SessionConnector | undefined): connector
 }
 
 export function HistoryModule() {
-  const { activeSessionId } = useTabsStore();
+  const { focusSessionId } = useTabsStore();
   const commands = useHistoryStore((state) => state.commands);
   const clearCommands = useHistoryStore((state) => state.clearCommands);
   const removeCommand = useHistoryStore((state) => state.removeCommand);
@@ -26,13 +26,13 @@ export function HistoryModule() {
     );
   }, [commands, searchQuery]);
 
-  // 发送命令到当前终端
+  // 发送命令到焦点会话的终端
   const sendCommand = (command: string) => {
-    const activeSession = useTabsStore.getState().sessions.find(
-      (s) => s.id === activeSessionId
+    const focusSession = useTabsStore.getState().sessions.find(
+      (s) => s.id === focusSessionId
     );
-    if (activeSession?.connector?.isConnected && isTerminalConnector(activeSession.connector)) {
-      activeSession.connector.write(command + "\r");
+    if (focusSession?.connector?.isConnected && isTerminalConnector(focusSession.connector)) {
+      focusSession.connector.write(command + "\r");
     }
   };
 

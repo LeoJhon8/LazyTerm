@@ -19,10 +19,10 @@ const MODULE_ICONS: Record<string, React.ReactNode> = {
 
 export function RightSlot() {
   const { currentConfig, setActiveModule, toggleSlotCollapse, setActiveAndExpand, setSlotCollapsed } = useSlotConfigStore();
-  const { activeSessionId, sessions } = useTabsStore();
+  const { focusSessionId, sessions } = useTabsStore();
   const { modules, activeModule, collapsed } = currentConfig.right;
-  const activeSession = sessions.find((session) => session.id === activeSessionId);
-  const isRdpActive = activeSession?.type === "rdp" || activeSession?.type === "vnc";
+  const focusSession = sessions.find((session) => session.id === focusSessionId);
+  const isRdpActive = focusSession?.type === "rdp" || focusSession?.type === "vnc";
 
   useEffect(() => {
     if (isRdpActive && activeModule === "HistoryModule" && !collapsed) {
