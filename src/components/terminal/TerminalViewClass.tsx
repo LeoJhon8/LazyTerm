@@ -655,37 +655,39 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       data-session-id={sessionId}
       data-pane-id={paneId}
     >
-      <div
-        ref={(el) => {
-          if (!el) return;
-          
-          // 检查是否有缓存的容器和终端实例
-          const cachedContainer = containerMap.current.get(sessionId);
-          const cachedInstance = terminalMap.current.get(sessionId);
-          
-          if (cachedContainer && cachedInstance && cachedContainer !== el) {
-            // 将终端的 DOM 元素移动到新容器中
-            const terminalElement = cachedContainer.querySelector('.xterm');
-            if (terminalElement) {
-              el.appendChild(terminalElement);
-            }
-            // 更新缓存的容器引用
-            containerMap.current.set(sessionId, el);
-            // 触发尺寸调整
-            requestAnimationFrame(() => {
-              try {
-                cachedInstance.fitAddon.fit();
-              } catch (e) {
-                logger.warn("FE/terminal-view/refit", "Terminal refit failed after container move", { e });
+      <div className="terminal-host absolute inset-0 h-full w-full overflow-hidden p-2 pb-2">
+        <div
+          ref={(el) => {
+            if (!el) return;
+            
+            // 检查是否有缓存的容器和终端实例
+            const cachedContainer = containerMap.current.get(sessionId);
+            const cachedInstance = terminalMap.current.get(sessionId);
+            
+            if (cachedContainer && cachedInstance && cachedContainer !== el) {
+              // 将终端的 DOM 元素移动到新容器中
+              const terminalElement = cachedContainer.querySelector('.xterm');
+              if (terminalElement) {
+                el.appendChild(terminalElement);
               }
-            });
-          } else {
-            // 首次挂载，直接缓存容器
-            containerMap.current.set(sessionId, el);
-          }
-        }}
-        className="terminal-host absolute inset-0 h-full w-full overflow-hidden"
-      />
+              // 更新缓存的容器引用
+              containerMap.current.set(sessionId, el);
+              // 触发尺寸调整
+              requestAnimationFrame(() => {
+                try {
+                  cachedInstance.fitAddon.fit();
+                } catch (e) {
+                  logger.warn("FE/terminal-view/refit", "Terminal refit failed after container move", { e });
+                }
+              });
+            } else {
+              // 首次挂载，直接缓存容器
+              containerMap.current.set(sessionId, el);
+            }
+          }}
+          className="terminal-xterm-wrapper h-full w-full overflow-hidden"
+        />
+      </div>
     </main>
   );
 }

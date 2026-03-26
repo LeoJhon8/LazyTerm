@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { logger } from "@/lib/logger";
+import { useTabsStore } from "./tabs";
 import {
   type Pane,
   type PaneDirection,
@@ -293,7 +294,15 @@ export const usePanesStore = create<PanesState>()(
       const { panes, focusedPaneId } = get();
       const newFocusId = focusPaneUtil(panes, paneId, focusedPaneId);
       set({ focusedPaneId: newFocusId });
-      logger.debug("FE/store/panes", "Focused pane", { paneId });
+      
+      // 同步更新 tabs store 的 focusSessionId，使 TabBar 的蓝色指示线跟随焦点 pane
+      const focusedPane = panes.find((p) => p.id === newFocusId);
+      if (focusedPane?.sessionId) {
+        useTabsStore.getState().setFocusSession(focusedPane.sessionId);
+        logger.debug("FE/store/panes", "Focused pane and synced focusSession", { paneId, sessionId: focusedPane.sessionId });
+      } else {
+        logger.debug("FE/store/panes", "Focused pane (no session)", { paneId });
+      }
     },
 
     setPaneSize: (paneId, size) => {

@@ -850,6 +850,11 @@
 
 .terminal-host {
   @apply h-full min-h-0 w-full min-w-0 overflow-hidden;
+  box-sizing: border-box;
+}
+
+.terminal-xterm-wrapper {
+  @apply h-full w-full overflow-hidden;
 }
 
 .terminal-host > .xterm {
@@ -857,16 +862,8 @@
   width: 100%;
 }
 
-.terminal-host > .xterm .xterm-scrollable-element,
-.terminal-host > .xterm .xterm-screen {
+.terminal-host > .xterm .xterm-scrollable-element {
   height: 100%;
-}
-
-.terminal-host > .xterm .xterm-screen {
-  box-sizing: border-box;
-  padding-inline: 8px;
-  padding-top: 8px;
-  padding-bottom: 8px;
 }
 
 .terminal-host > .xterm .xterm-viewport {
@@ -888,4 +885,9 @@
 .xterm .xterm-viewport,
 .xterm .xterm-screen {
   background-color: transparent !important;
+}
+
+/* 优化终端选中样式 - 仅使用圆角 */
+.xterm .xterm-selection div {
+  border-radius: 2px;
 }
