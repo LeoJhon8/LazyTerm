@@ -9,6 +9,7 @@ import {
   getSessionTargetLabel,
   type SessionConnectionError,
 } from "@/services/connectionErrorService";
+import { useSettingsStore } from "@/store/settings";
 
 /**
  * Session 生命周期回调接口
@@ -496,9 +497,16 @@ export const useTabsStore = create<TabsState>()(
               oldSession.connector.close();
             }
 
+            // 降级到本地终端时，使用用户设置的默认 shell
+            const { defaultShell } = useSettingsStore.getState();
+            const nextConfig = newType === "local" 
+              ? { ...oldSession.config, shell: defaultShell }
+              : oldSession.config;
+
             const nextSession: Omit<TerminalSession, "id" | "connector"> = {
               ...oldSession,
               type: newType,
+              config: nextConfig,
             };
             const nextConnector = createConnector(
               nextSession as SessionCreationData,
@@ -515,6 +523,7 @@ export const useTabsStore = create<TabsState>()(
             newSessions[sessionIndex] = {
               ...oldSession,
               type: newType,
+              config: nextConfig,
               connector: newConnector,
             };
 
