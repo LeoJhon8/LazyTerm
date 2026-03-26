@@ -2,9 +2,9 @@ import { useEffect, useRef } from "react";
 import { useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
-import { TerminalView } from "@/components/terminal/TerminalView";
-import { RemoteDesktopView } from "@/components/terminal/RemoteDesktopView";
-import { VncView } from "@/components/terminal/VncView";
+import { usePanesStore } from "@/store/panes";
+
+import { PaneContainer } from "@/components/layout/PaneContainer";
 import { SlotManager } from "@/components/layout/SlotManager";
 import { CustomTitleBar } from "@/components/layout/CustomTitleBar";
 import {
@@ -39,7 +39,8 @@ function App() {
   } = useSettingsStore();
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
-  const { closeAllSessions, connectionError, clearConnectionError, activeSessionIds, focusSessionId, sessions } = useTabsStore();
+  const { closeAllSessions, connectionError, clearConnectionError, focusSessionId, sessions } = useTabsStore();
+  const { initializePanes, panes, getFocusedPane } = usePanesStore();
   const leftSlotCollapsed = slotConfig.left.collapsed;
   const rightSlotCollapsed = slotConfig.right.collapsed;
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
@@ -47,10 +48,13 @@ function App() {
   const shouldDisableUiBlur = hasBackgroundImage && backgroundImageUiMode === "clear";
 
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
-  // 当前仅支持单会话显示，取 activeSessionIds 的第一个或 focusSessionId
-  const displaySessionId = activeSessionIds.length > 0 ? activeSessionIds[0] : focusSessionId;
-  const displaySession = sessions.find((session) => session.id === displaySessionId);
-  const shouldHideQuickCmdBar = displaySession?.type === "rdp" || displaySession?.type === "vnc";
+  
+  // 获取焦点面板的会话来决定是否隐藏快捷命令栏
+  const focusedPane = getFocusedPane();
+  const focusSession = focusSessionId 
+    ? sessions.find(s => s.id === focusSessionId)
+    : null;
+  const shouldHideQuickCmdBar = focusSession?.type === "rdp" || focusSession?.type === "vnc";
   const effectiveBottomRowHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight;
 
   // 应用关闭时清空所有会话
@@ -61,6 +65,13 @@ function App() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [closeAllSessions]);
+
+  // 初始化分屏系统
+  useEffect(() => {
+    initializePanes();
+  }, [initializePanes]);
+
+
 
   // 动态处理全局背景色和暗色模式跟班
   useEffect(() => {
@@ -110,7 +121,7 @@ function App() {
     leftPanelCollapsed, rightPanelCollapsed, topPanelCollapsed, bottomPanelCollapsed,
     leftSlotCollapsed, rightSlotCollapsed,
     titleBarHeight,
-    displaySession?.type,
+    focusSession?.type,
     slotConfig.left.modules, slotConfig.right.modules,
     effectiveBottomPanelHeight,
     effectiveBottomRowHeight // 监听模块列表变化，触发布局重算
@@ -224,11 +235,7 @@ function App() {
           gridArea: "mid-main",
         }}
       >
-        {displaySession?.type === "rdp"
-          ? <RemoteDesktopView key={displaySession.id} />
-          : displaySession?.type === "vnc"
-            ? <VncView key={displaySession.id} />
-            : <TerminalView />}
+        <PaneContainer />
       </section>
 
       <AlertDialog open={!!connectionError} onOpenChange={(open) => !open && clearConnectionError()}>

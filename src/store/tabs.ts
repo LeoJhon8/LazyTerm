@@ -11,6 +11,42 @@ import {
 } from "@/services/connectionErrorService";
 
 /**
+ * Session 生命周期回调接口
+ * 由 TabBar 实现并注册，用于集中管理 pane 生命周期
+ */
+export interface SessionLifecycleCallbacks {
+  /** 当新 session 被创建时调用 */
+  onSessionCreated: (sessionId: string) => void;
+  /** 当 session 被移除时调用 */
+  onSessionRemoved: (sessionId: string) => void;
+  /** 当焦点 session 变化时调用（关闭会话后切换到其他会话） */
+  onFocusSessionChanged: (sessionId: string) => void;
+  /** 当最后一个 session 被关闭时调用 */
+  onAllSessionsClosed: () => void;
+}
+
+// 全局回调引用（由 TabBar 设置）
+let sessionLifecycleCallbacks: SessionLifecycleCallbacks | null = null;
+
+/**
+ * 注册 session 生命周期回调
+ * 由 TabBar 在挂载时调用
+ */
+export function registerSessionLifecycleCallbacks(callbacks: SessionLifecycleCallbacks) {
+  sessionLifecycleCallbacks = callbacks;
+  logger.debug("FE/store/tabs", "Session lifecycle callbacks registered");
+}
+
+/**
+ * 注销 session 生命周期回调
+ * 由 TabBar 在卸载时调用
+ */
+export function unregisterSessionLifecycleCallbacks() {
+  sessionLifecycleCallbacks = null;
+  logger.debug("FE/store/tabs", "Session lifecycle callbacks unregistered");
+}
+
+/**
  * 终端会话配置接口
  * 从 ConnectorFactory 复用 SessionCreationData
  */
@@ -59,6 +95,13 @@ function closeSessionsByIds(
     }
   });
 
+  // 通知生命周期回调（由 TabBar 处理 pane 移除）
+  if (sessionLifecycleCallbacks) {
+    idsToClose.forEach(id => {
+      sessionLifecycleCallbacks!.onSessionRemoved(id);
+    });
+  }
+
   const remainingSessions = sessions.filter((session) => !idsToClose.has(session.id));
   
   // 计算下一个焦点会话
@@ -104,8 +147,11 @@ interface TabsState {
    */
   activeSessionIds: string[];
   connectionError: SessionConnectionError | null;
-  /** 添加新会话 */
-  addSession: (sessionData: Omit<TerminalSession, "id" | "connector">) => void;
+  /** 
+   * 添加新会话
+   * @returns 新创建的会话 ID
+   */
+  addSession: (sessionData: Omit<TerminalSession, "id" | "connector">) => string;
   /** 移除会话 */
   removeSession: (id: string) => void;
   /**
@@ -198,6 +244,11 @@ export const useTabsStore = create<TabsState>()(
             connectionError: null,
           }));
 
+          // 通知生命周期回调（由 TabBar 处理 pane 创建）
+          if (sessionLifecycleCallbacks) {
+            sessionLifecycleCallbacks.onSessionCreated(id);
+          }
+
           // 异步打开 Tauri 侧的 PTY 进程
           connector.open().catch((error: unknown) => {
             logger.error("FE/store/tabs/open-error", getOpenFailureLogLabel(sessionData.type), {error});
@@ -213,6 +264,11 @@ export const useTabsStore = create<TabsState>()(
               const newSessions = state.sessions.filter((session) => session.id !== id);
               const wasFocus = state.focusSessionId === id;
               const wasInActive = state.activeSessionIds.includes(id);
+
+              // 通知生命周期回调（由 TabBar 处理 pane 移除）
+              if (sessionLifecycleCallbacks) {
+                sessionLifecycleCallbacks.onSessionRemoved(id);
+              }
 
               return {
                 sessions: newSessions,
@@ -232,25 +288,31 @@ export const useTabsStore = create<TabsState>()(
               };
             });
           });
+
+          // 返回新创建的会话 ID
+          return id;
         },
 
         removeSession: (id) => {
           const targetSession = get().sessions.find(s => s.id === id);
+          const remainingCount = get().sessions.length - 1;
           
           // 1. 先触发连接器的资源回收逻辑（通知 Rust 关闭进程）
           if (targetSession?.connector) {
             targetSession.connector.close();
           }
 
-          // 2. 更新状态
+          // 2. 先更新状态，计算新的焦点会话
+          let nextFocusId: string | null = null;
+          
           set((state) => {
             const newSessions = state.sessions.filter(s => s.id !== id);
-            let nextFocusId = state.focusSessionId;
+            let newFocusId = state.focusSessionId;
             let nextActiveIds = state.activeSessionIds.filter(sid => sid !== id);
 
             // 处理焦点状态切换逻辑
             if (state.focusSessionId === id) {
-              nextFocusId = newSessions.length > 0 
+              newFocusId = newSessions.length > 0 
                 ? newSessions[newSessions.length - 1].id 
                 : null;
             }
@@ -259,16 +321,31 @@ export const useTabsStore = create<TabsState>()(
             nextActiveIds = nextActiveIds.filter(sid => newSessions.some(s => s.id === sid));
 
             // 如果没有活跃会话了，但有焦点会话，将焦点会话加入活跃列表
-            if (nextActiveIds.length === 0 && nextFocusId) {
-              nextActiveIds = [nextFocusId];
+            if (nextActiveIds.length === 0 && newFocusId) {
+              nextActiveIds = [newFocusId];
             }
+
+            // 保存新的焦点 ID 用于后续回调
+            nextFocusId = newFocusId;
 
             return {
               sessions: newSessions,
-              focusSessionId: nextFocusId,
+              focusSessionId: newFocusId,
               activeSessionIds: nextActiveIds,
             };
           });
+
+          // 3. 通知生命周期回调（状态更新后触发，确保 TabBar 能获取最新状态）
+          if (sessionLifecycleCallbacks) {
+            sessionLifecycleCallbacks.onSessionRemoved(id);
+            
+            if (remainingCount === 0) {
+              sessionLifecycleCallbacks.onAllSessionsClosed();
+            } else if (nextFocusId) {
+              // 焦点会话变化，通知 TabBar 重新绑定 pane
+              sessionLifecycleCallbacks.onFocusSessionChanged(nextFocusId);
+            }
+          }
         },
 
         // 兼容方法：映射到 setFocusSession
@@ -384,6 +461,11 @@ export const useTabsStore = create<TabsState>()(
           get().sessions.forEach(session => {
             session.connector?.close();
           });
+
+          // 通知生命周期回调（由 TabBar 处理 pane 清理）
+          if (sessionLifecycleCallbacks) {
+            sessionLifecycleCallbacks.onAllSessionsClosed();
+          }
 
           set({
             sessions: [],

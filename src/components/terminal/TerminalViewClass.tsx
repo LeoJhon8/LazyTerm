@@ -10,7 +10,24 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
 import { getTerminalTheme, toXtermTheme } from "@/config/themes";
+import {
+  type BaseSessionViewProps,
+  useBaseSessionView,
+  LoadingPlaceholder,
+  VIEW_CONTAINER_CLASSNAME,
+} from "./BaseSessionView";
+import { Terminal as TerminalIcon } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
+import { cn } from "@/lib/utils";
+
+// 全局 Terminal 实例缓存，确保切换 tab 时输出历史不丢失
+const globalTerminalCache = new Map<string, TerminalInstance>();
+const globalContainerCache = new Map<string, HTMLDivElement>();
+
+/**
+ * Terminal 视图组件
+ * 继承 BaseSessionView 的模板方法模式
+ */
 
 interface TerminalInstance {
   terminal: Terminal;
@@ -22,8 +39,6 @@ interface TerminalInstance {
   dataUnsubscribe?: () => void;
   dispose: () => void;
   webglAddon?: WebglAddon | null;
-
-  // 用于在切换连接的一瞬间拦截终端破坏性重置指令的状态
   termState: {
     isTransitioning: boolean;
     timeoutId?: number;
@@ -88,7 +103,7 @@ function extractCommand(lineText: string) {
     return text.substring(unixMatch[0].length).trim();
   }
 
-  const minimalMatch = text.match(/^([a-zA-Z0-9_\-/.~]+\s?)?[#$%❯➜]\s+/);
+  const minimalMatch = text.match(/^([a-zA-Z0_9_\-/.~]+\s?)?[#$%❯➜]\s+/);
   if (minimalMatch) {
     return text.substring(minimalMatch[0].length).trim();
   }
@@ -109,10 +124,19 @@ function isTerminalConnector(connector: SessionConnector | undefined): connector
   return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
 }
 
-export function TerminalView() {
-  const { activeSessionIds, focusSessionId, sessions } = useTabsStore();
-  // 当前仅支持单会话显示，取 activeSessionIds 的第一个或 focusSessionId
-  const activeSessionId = activeSessionIds.length > 0 ? activeSessionIds[0] : focusSessionId;
+/**
+ * TerminalView 组件
+ * 实现 BaseSessionView 定义的 renderContent 抽象方法
+ */
+export function TerminalViewClass(props: BaseSessionViewProps) {
+  const { paneId, sessionId } = props;
+  
+  // 调用基类 Hook 获取通用状态和逻辑
+  const baseResult = useBaseSessionView(props);
+  const { session } = baseResult;
+  
+  // Terminal 特有状态
+  const { sessions } = useTabsStore();
   const { addCommand: addHistoryCommand } = useHistoryStore();
   const fontSize = useSettingsStore((state) => state.fontSize);
   const fontFamily = useSettingsStore((state) => state.fontFamily);
@@ -123,8 +147,9 @@ export function TerminalView() {
   const backgroundImage = useSettingsStore((state) => state.backgroundImage);
   const setSettings = useSettingsStore((state) => state.setSettings);
 
-  const containerMap = useRef(new Map<string, HTMLDivElement>());
-  const terminalMap = useRef(new Map<string, TerminalInstance>());
+  // 使用全局缓存替代组件级别的 ref，确保切换 tab 时输出历史不丢失
+  const containerMap = useRef(globalContainerCache);
+  const terminalMap = useRef(globalTerminalCache);
   const lastCommandRef = useRef<string>("");
   const addHistoryCommandRef = useRef(addHistoryCommand);
   const setSettingsRef = useRef(setSettings);
@@ -137,7 +162,7 @@ export function TerminalView() {
     hasBackgroundImage: !!(backgroundImageEnabled && backgroundImage),
   });
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const activeSession = sessions.find((s) => s.id === sessionId);
   const activeConnector = isTerminalConnector(activeSession?.connector) ? activeSession.connector : undefined;
   const hasBackgroundImage = backgroundImageEnabled && backgroundImage;
 
@@ -152,18 +177,16 @@ export function TerminalView() {
     hasBackgroundImage: !!hasBackgroundImage,
   };
 
-  // =============================
   // 激活终端 & 调整自适应大小
-  // =============================
   const activateTerminal = useCallback(
     function activateTerminalInternal(
-      sessionId?: string | null,
+      targetSessionId?: string | null,
       requireFocus: boolean = true,
       retryCount: number = 0
     ) {
-      if (!sessionId) return;
-      const instance = terminalMap.current.get(sessionId);
-      const container = containerMap.current.get(sessionId);
+      if (!targetSessionId) return;
+      const instance = terminalMap.current.get(targetSessionId);
+      const container = containerMap.current.get(targetSessionId);
 
       if (instance && container) {
         requestAnimationFrame(() => {
@@ -184,11 +207,11 @@ export function TerminalView() {
 
             if (!hasLayoutSize && retryCount < 6) {
               window.setTimeout(() => {
-                activateTerminalInternal(sessionId, requireFocus, retryCount + 1);
+                activateTerminalInternal(targetSessionId, requireFocus, retryCount + 1);
               }, 50);
             }
           } catch (error) {
-            logger.warn("FE/terminal-view/activate", "Terminal activate failed", {error});
+            logger.warn("FE/terminal-view/activate", "Terminal activate failed", { error });
           }
         });
       }
@@ -196,21 +219,17 @@ export function TerminalView() {
     []
   );
 
-  // =============================
-  // 初始化终端核心 logic
-  // =============================
+  // 初始化终端核心逻辑
   useEffect(() => {
-    if (!activeSessionId || !activeConnector) return;
+    if (!sessionId || !activeConnector) return;
 
     const connector = activeConnector;
-    const containerEl = containerMap.current.get(activeSessionId);
+    const containerEl = containerMap.current.get(sessionId);
     if (!containerEl) return;
 
-    const existingInstance = terminalMap.current.get(activeSessionId);
+    const existingInstance = terminalMap.current.get(sessionId);
 
     let isMounted = true;
-
-    // 早期缓冲区：防止后端刚连接上时发出的欢迎信息丢失
     let tempBuffer = "";
     let currentTermInstance: TerminalInstance | null = null;
     let isCurrentConnector = true;
@@ -249,17 +268,15 @@ export function TerminalView() {
           tempBuffer = "";
         }
 
-        activateTerminal(activeSessionId);
+        activateTerminal(sessionId);
         return;
       }
 
-      // =============================
       // Connector 切换 (降级/重连) 处理
-      // =============================
       if (existingInstance) {
         if (existingInstance.connector === connector) return;
 
-        logger.debug("FE/terminal-view/connector", `Connector changed: ${activeSessionId}`);
+        logger.debug("FE/terminal-view/connector", `Connector changed: ${sessionId}`);
 
         existingInstance.dataUnsubscribe?.();
         existingInstance.inputDisposable?.dispose();
@@ -280,7 +297,7 @@ export function TerminalView() {
         }
 
         existingInstance.terminal.write(
-          "\r\n\x1b[33m ⚠️ Session connection changed. Output preserved. \x1b[0m" + spacer
+          "\r\n\x1b[33m 警告: 会话连接已更改，输出保留。 \x1b[0m" + spacer
         );
 
         currentTermInstance = existingInstance;
@@ -299,13 +316,11 @@ export function TerminalView() {
           tempBuffer = "";
         }
 
-        activateTerminal(activeSessionId);
+        activateTerminal(sessionId);
         return;
       }
 
-      // =============================
       // 创建全新 Terminal 实例
-      // =============================
       const termState = { isTransitioning: false, timeoutId: undefined, resizeTimeoutId: undefined };
 
       const {
@@ -339,7 +354,6 @@ export function TerminalView() {
       });
 
       const parserDisposables = [
-        // 保持本地主题为权威来源，避免嵌套 SSH 登录时被远端 shell/prompt 改写调色板。
         term.parser.registerOscHandler(4, (data) => shouldBlockIndexedColorChange(data)),
         term.parser.registerOscHandler(10, (data) => shouldBlockNamedColorChange(data)),
         term.parser.registerOscHandler(11, (data) => shouldBlockNamedColorChange(data)),
@@ -360,7 +374,7 @@ export function TerminalView() {
           webglAddon = new WebglAddon();
           term.loadAddon(webglAddon);
         } catch (e) {
-          logger.warn("FE/terminal-view/webgl", "WebGL failed during init", {e});
+          logger.warn("FE/terminal-view/webgl", "WebGL failed during init", { e });
           webglAddon = null;
         }
       }
@@ -370,7 +384,7 @@ export function TerminalView() {
       try {
         syncTerminalDimensions(term, fitAddon, connector);
       } catch (e) {
-        logger.warn("FE/terminal-view/fit", "Initial fit failed", {e});
+        logger.warn("FE/terminal-view/fit", "Initial fit failed", { e });
       }
 
       const handleWheel = (e: WheelEvent) => {
@@ -417,21 +431,18 @@ export function TerminalView() {
         }
       });
 
-      // =============================
-      // 其他事件绑定
-      // =============================
       const selectionDisposable = term.onSelectionChange(async () => {
         if (term.hasSelection()) {
           try {
             await writeText(term.getSelection());
           } catch (e) {
-            logger.error("FE/terminal-view/selection", "Failed to write to clipboard", {e});
+            logger.error("FE/terminal-view/selection", "Failed to write to clipboard", { e });
           }
         }
       });
 
       const resizeObserver = new ResizeObserver(() => {
-        activateTerminal(activeSessionId, false);
+        activateTerminal(sessionId, false);
       });
       resizeObserver.observe(containerEl);
 
@@ -462,7 +473,7 @@ export function TerminalView() {
         },
       };
 
-      terminalMap.current.set(activeSessionId, instance);
+      terminalMap.current.set(sessionId, instance);
 
       currentTermInstance = instance;
       if (tempBuffer) {
@@ -470,7 +481,7 @@ export function TerminalView() {
         tempBuffer = "";
       }
 
-      activateTerminal(activeSessionId);
+      activateTerminal(sessionId);
     };
 
     initTerminal();
@@ -482,11 +493,9 @@ export function TerminalView() {
         if (typeof unsub === "function") unsub();
       });
     };
-  }, [activeSessionId, activeConnector, activateTerminal]);
+  }, [sessionId, activeConnector, activateTerminal]);
 
-  // =============================
-  // 监听设置变化 (字体缩放 & 主题)
-  // =============================  // 处理配置更改时的热更新
+  // 监听设置变化
   useEffect(() => {
     const colorScheme = getTerminalTheme(terminalColorScheme, customThemeColors);
     terminalMap.current.forEach((instance, id) => {
@@ -502,7 +511,7 @@ export function TerminalView() {
           terminal.loadAddon(addon);
           instance.webglAddon = addon;
         } catch (e) {
-          logger.warn("FE/terminal-view/webgl", "WebGL failed during settings update", {e});
+          logger.warn("FE/terminal-view/webgl", "WebGL failed during settings update", { e });
           instance.webglAddon = null;
         }
       }
@@ -511,7 +520,7 @@ export function TerminalView() {
         instance.webglAddon = null;
       }
 
-      if (id === activeSessionId) {
+      if (id === sessionId) {
         requestAnimationFrame(() => {
           try {
             const dims = fitAddon.proposeDimensions();
@@ -521,7 +530,6 @@ export function TerminalView() {
             fitAddon.fit();
 
             if (dims && connector && sizeChanged) {
-              // 防抖处理：避免用户通过滚轮快速缩放字体时疯狂发送 resize 导致终端输出重复字符
               if (termState.resizeTimeoutId) {
                 clearTimeout(termState.resizeTimeoutId);
               }
@@ -531,16 +539,14 @@ export function TerminalView() {
             }
             terminal.focus();
           } catch (e) {
-            logger.warn("FE/terminal-view/fit", "Terminal fit failed after settings change", {e});
+            logger.warn("FE/terminal-view/fit", "Terminal fit failed after settings change", { e });
           }
         });
       }
     });
-  }, [fontSize, fontFamily, terminalColorScheme, customThemeColors, terminalOpacity, activeSessionId, hasBackgroundImage]);
+  }, [fontSize, fontFamily, terminalColorScheme, customThemeColors, terminalOpacity, sessionId, hasBackgroundImage]);
 
-  // =============================
   // 清理已被关闭的会话
-  // =============================
   useEffect(() => {
     const currentIds = new Set(sessions.map((s) => s.id));
 
@@ -552,71 +558,60 @@ export function TerminalView() {
     });
   }, [sessions]);
 
-  // =============================
   // 标签页切换激活
-  // =============================
   useEffect(() => {
-    activateTerminal(activeSessionId);
-  }, [activeSessionId, activateTerminal]);
+    activateTerminal(sessionId);
+  }, [sessionId, activateTerminal]);
 
   useEffect(() => {
-    const handler = () => activateTerminal(activeSessionId);
+    const handler = () => activateTerminal(sessionId);
     window.addEventListener("lazy-terminal-focus", handler);
     return () => window.removeEventListener("lazy-terminal-focus", handler);
-  }, [activeSessionId, activateTerminal]);
+  }, [sessionId, activateTerminal]);
 
   useEffect(() => {
-    const handler = () => activateTerminal(activeSessionId);
+    const handler = () => activateTerminal(sessionId);
     window.addEventListener("focus", handler);
     return () => window.removeEventListener("focus", handler);
-  }, [activeSessionId, activateTerminal]);
+  }, [sessionId, activateTerminal]);
 
-  // =============================
   // 窗口可见性改变激活
-  // =============================
   useEffect(() => {
     const handler = () => {
       if (document.visibilityState === "visible") {
-        activateTerminal(activeSessionId);
+        activateTerminal(sessionId);
       }
     };
     document.addEventListener("visibilitychange", handler);
     return () => document.removeEventListener("visibilitychange", handler);
-  }, [activeSessionId, activateTerminal]);
+  }, [sessionId, activateTerminal]);
 
-  // =============================
   // 窗口缩放调整终端尺寸
-  // =============================
   useEffect(() => {
-    const handler = () => activateTerminal(activeSessionId, false);
+    const handler = () => activateTerminal(sessionId, false);
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
-  }, [activeSessionId, activateTerminal]);
+  }, [sessionId, activateTerminal]);
 
-  // =============================
   // 监听侧边栏折叠状态变化
-  // =============================
   const leftSlotCollapsed = useSlotConfigStore((state) => state.currentConfig.left.collapsed);
   const rightSlotCollapsed = useSlotConfigStore((state) => state.currentConfig.right.collapsed);
-  
-  useEffect(() => {
-    // 当侧边栏折叠状态变化时，等待布局转换完成后重新调整终端
-    const timer = setTimeout(() => {
-      activateTerminal(activeSessionId, true);
-    }, 300); // 这里的延迟应该略大于 CSS transition 的持续时间 (300ms)
-    
-    return () => clearTimeout(timer);
-  }, [activeSessionId, leftSlotCollapsed, rightSlotCollapsed, activateTerminal]);
 
-  // =============================
-  // 鼠标右键 (无选中文本时粘贴，有选中文本时取消选中)
-  // =============================
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      activateTerminal(sessionId, true);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [sessionId, leftSlotCollapsed, rightSlotCollapsed, activateTerminal]);
+
+  // 鼠标右键处理
   const handleContextMenu = async (e: React.MouseEvent) => {
     e.preventDefault();
 
-    if (!activeSessionId || !activeSession?.connector || !isTerminalConnector(activeSession.connector)) return;
+    if (!sessionId || !activeSession?.connector || !isTerminalConnector(activeSession.connector)) return;
 
-    const instance = terminalMap.current.get(activeSessionId);
+    const instance = terminalMap.current.get(sessionId);
     if (!instance) return;
 
     if (instance.terminal.hasSelection()) {
@@ -626,7 +621,7 @@ export function TerminalView() {
         const text = await readText();
         if (text) activeSession.connector.write(text);
       } catch (error) {
-        logger.error("FE/terminal-view/clipboard", "Failed to read clipboard", {error});
+        logger.error("FE/terminal-view/clipboard", "Failed to read clipboard", { error });
       }
     }
   };
@@ -634,65 +629,63 @@ export function TerminalView() {
   const currentTheme = getTerminalTheme(terminalColorScheme, customThemeColors);
   const xtermTheme = toXtermTheme(currentTheme, terminalOpacity);
 
-  const emptyWrapperRef = useRef<HTMLDivElement | null>(null);
-  const [emptyAspectRatio, setEmptyAspectRatio] = useState<string>("16/9");
-  const [, setEmptyCardHeight] = useState<number | undefined>(undefined);
-
-  useEffect(() => {
-    const el = emptyWrapperRef.current;
-    if (!el) return;
-
-    const ro = new ResizeObserver(() => {
-      const w = el.clientWidth || 1;
-      const h = el.clientHeight || 1;
-      setEmptyAspectRatio(`${Math.max(1, Math.round(w))}/${Math.max(1, Math.round(h))}`);
-      // 让卡片比容器矮约 30%
-      setEmptyCardHeight(Math.max(120, Math.round(h * 0.7)));
-    });
-
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [emptyWrapperRef]);
-
-  if (sessions.length === 0 || !activeSession) {
+  // 空状态渲染
+  if (!activeSession) {
     return (
-      <div className="terminal-empty-state" ref={emptyWrapperRef}>
-        <div
-          className="terminal-empty-card w-full max-w-4xl mx-auto px-6 py-8"
-          style={{ aspectRatio: emptyAspectRatio, width: "60%", height: "30%" }}
-        >
-          <div className="chip-row mb-4 text-[11px] text-muted-foreground">LazyTerm</div>
-          <h2 className="mb-2 text-2xl font-semibold tracking-tight">今天，你想连接什么？</h2>
-          <p className="mb-6 text-sm leading-6 text-muted-foreground">
-            轻松、快速建立ssh连接，windows远程桌面，VNC连接，本地终端。
-          </p>
-        </div>
+      <div className="terminal-empty-state h-full w-full flex items-center justify-center">
+        <LoadingPlaceholder
+          icon={<TerminalIcon className="h-10 w-10 text-emerald-300" />}
+          title="今天，你想连接什么？"
+          description="轻松、快速建立ssh连接，windows远程桌面，VNC连接，本地终端。"
+        />
       </div>
     );
   }
 
+  // 渲染内容（对应基类的 renderContent 抽象方法）
   return (
     <main
-      className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden border border-(--terminal-border) bg-(--terminal-shell) shadow-(--panel-shadow)"
-      onClick={() => activateTerminal(activeSessionId)}
+      className={cn(VIEW_CONTAINER_CLASSNAME, "bg-(--terminal-shell)")}
+      onClick={() => activateTerminal(sessionId)}
       onContextMenu={handleContextMenu}
       style={{
         backgroundColor: hasBackgroundImage ? "transparent" : xtermTheme.background,
       }}
+      data-view-type="terminal"
+      data-session-id={sessionId}
+      data-pane-id={paneId}
     >
-      {sessions.map((s) => (
-        <div
-          key={s.id}
-          ref={(el) => {
-            if (el) containerMap.current.set(s.id, el);
-          }}
-          className={
-            s.id === activeSessionId
-              ? "terminal-host absolute inset-0 h-full w-full overflow-hidden"
-              : "hidden"
+      <div
+        ref={(el) => {
+          if (!el) return;
+          
+          // 检查是否有缓存的容器和终端实例
+          const cachedContainer = containerMap.current.get(sessionId);
+          const cachedInstance = terminalMap.current.get(sessionId);
+          
+          if (cachedContainer && cachedInstance && cachedContainer !== el) {
+            // 将终端的 DOM 元素移动到新容器中
+            const terminalElement = cachedContainer.querySelector('.xterm');
+            if (terminalElement) {
+              el.appendChild(terminalElement);
+            }
+            // 更新缓存的容器引用
+            containerMap.current.set(sessionId, el);
+            // 触发尺寸调整
+            requestAnimationFrame(() => {
+              try {
+                cachedInstance.fitAddon.fit();
+              } catch (e) {
+                logger.warn("FE/terminal-view/refit", "Terminal refit failed after container move", { e });
+              }
+            });
+          } else {
+            // 首次挂载，直接缓存容器
+            containerMap.current.set(sessionId, el);
           }
-        />
-      ))}
+        }}
+        className="terminal-host absolute inset-0 h-full w-full overflow-hidden"
+      />
     </main>
   );
 }

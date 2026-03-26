@@ -196,7 +196,264 @@
 *   RDP/VNC 会话不支持分屏，存储在 `isGraphicalSession()` 方法中校验
 *   图形会话激活时，自动隐藏底部快捷命令栏
 
-### 6.4 Bug 修复记录
+### 6.4 视图组件重构：模板方法模式 (2026-03-25)
+
+#### 设计目标
+将三个视图组件（TerminalView、RemoteDesktopView、VncView）抽象出一个共同的父类，使用**模板方法模式**统一架构。
+
+#### 架构设计
+
+**抽象基类 `BaseSessionView`**
+- 定义模板方法 `render()`，规定渲染算法骨架
+- 提供 `useBaseSessionView()` Hook，封装通用状态管理
+- 定义抽象方法 `renderContent()` 和 `getViewType()`，子类必须实现
+
+**子类实现**
+| 子类 | 实现内容 | 视图类型 |
+|------|----------|----------|
+| `TerminalViewClass` | xterm.js 终端渲染 | terminal |
+| `RemoteDesktopViewClass` | Canvas RDP 画面渲染 | rdp |
+| `VncViewClass` | Canvas VNC 画面渲染 | vnc |
+
+#### 核心代码结构
+```typescript
+// 基类定义模板方法
+abstract class BaseSessionView {
+  public render(props): ReactElement {
+    const baseResult = this.useBaseViewLogic(props);  // 步骤1
+    return this.renderWrapper(baseResult, props);      // 步骤2
+  }
+  
+  protected abstract renderContent(result, props): ReactNode;  // 子类实现
+  protected abstract getViewType(): string;                    // 子类实现
+}
+
+// 子类通过 Hook 组合实现
+function TerminalViewClass(props) {
+  const baseResult = useBaseSessionView(props);  // 复用基类逻辑
+  // ... 特有逻辑
+  return <main data-view-type="terminal">{/* 内容 */}</main>;
+}
+```
+
+#### 新增文件
+| 文件路径 | 说明 |
+|----------|------|
+| `src/components/terminal/BaseSessionView.tsx` | 抽象基类，定义模板方法和共享组件 |
+| `src/components/terminal/TerminalViewClass.tsx` | 终端视图子类 |
+| `src/components/terminal/RemoteDesktopViewClass.tsx` | RDP 视图子类 |
+| `src/components/terminal/VncViewClass.tsx` | VNC 视图子类 |
+| `src/components/terminal/index.ts` | 统一导出 |
+| `src/components/terminal/README.md` | 架构文档 |
+
+#### 修改文件
+| 文件路径 | 修改内容 |
+|----------|----------|
+| `src/components/layout/PaneView.tsx` | 使用新的 Class 组件替换原有组件 |
+| `src/components/terminal/TerminalView.tsx` | 删除 | 已被 `TerminalViewClass.tsx` 替代 |
+| `src/components/terminal/RemoteDesktopView.tsx` | 删除 | 已被 `RemoteDesktopViewClass.tsx` 替代 |
+| `src/components/terminal/VncView.tsx` | 删除 | 已被 `VncViewClass.tsx` 替代 |
+
+#### 代码清理 (2026-03-25)
+
+**删除重复文件：**
+删除了 `terminal` 目录下的 3 个旧版本文件：
+- `TerminalView.tsx` → 使用 `TerminalViewClass.tsx`
+- `RemoteDesktopView.tsx` → 使用 `RemoteDesktopViewClass.tsx`
+- `VncView.tsx` → 使用 `VncViewClass.tsx`
+
+**当前文件结构：**
+```
+src/components/terminal/
+├── BaseSessionView.tsx           # 抽象基类
+├── BaseGraphicSessionView.tsx    # 图形化视图抽象子类
+├── TerminalViewClass.tsx         # 终端视图
+├── RemoteDesktopViewClass.tsx    # RDP 视图
+├── VncViewClass.tsx              # VNC 视图
+├── NativeRdpHostView.tsx         # Native RDP 宿主视图
+├── index.ts                      # 统一导出
+└── README.md                     # 架构文档
+```
+
+#### Pane 工具属性重构 (2026-03-25)
+
+**设计目标：**
+将 Pane 相关的操作逻辑从 Store 中抽取出来，形成独立的工具属性文件，支持：
+- 被外部直接调用操作（新增、减少 Pane）
+- 最少可为 0 个 Pane（`MIN_PANES = 0`）- 没有 pane 时展示桌面首页
+- 最多支持 2 个 Pane（`MAX_PANES = 2`）
+- 默认初始化：当 MIN_PANES = 0 时为空数组，否则创建默认 Pane
+- **分屏状态不持久化**：每次打开应用重置，分屏是"本次会话"的布局选择
+
+**重构方案：**
+
+1. **新建 `src/lib/pane-utils.ts`**
+   - 纯函数式的 Pane 操作工具
+   - 导出常量 `MIN_PANES` / `MAX_PANES`
+   - 提供完整的 CRUD 操作函数
+
+2. **简化 `src/store/panes.ts`**
+   - Store 只负责状态管理和持久化
+   - 具体操作委托给 `pane-utils.ts`
+   - 保持原有接口不变（向后兼容）
+
+**工具函数列表：**
+
+| 类别 | 函数 | 说明 |
+|------|------|------|
+| **常量** | `MIN_PANES` / `MAX_PANES` | 0 / 2 |
+| **创建** | `createDefaultPane()` | 创建默认 Pane |
+| | `initializePanes()` | 初始化 Pane 列表 |
+| **查询** | `findPaneById()` | 根据 ID 查找 |
+| | `findPaneBySession()` | 根据会话查找 |
+| | `canAddPane()` / `canRemovePane()` | 检查操作可行性 |
+| **核心操作** | `addPane()` | 新增 Pane |
+| | `removePane()` | 移除 Pane |
+| | `splitPane()` | 拆分 Pane |
+| | `mergePane()` | 合并 Pane |
+| **修改** | `setPaneSession()` | 设置会话 |
+| | `swapPaneSessions()` | 交换会话 |
+| | `setPaneSize()` | 设置大小 |
+| **焦点** | `focusPane()` | 切换焦点 |
+| | `getNextFocusablePane()` | 获取下一个焦点 |
+
+**使用示例：**
+
+```typescript
+// 直接调用工具函数（不经过 Store）
+import { addPane, removePane, canAddPane, MAX_PANES } from "@/lib/pane-utils";
+
+// 检查是否可以添加
+if (canAddPane(currentPanes)) {
+  const result = addPane(currentPanes, "session-123");
+  if (result.success) {
+    // result.panes - 新的 Pane 列表
+    // result.focusedPaneId - 新 Pane 的 ID
+  }
+}
+```
+
+#### 图形化视图抽象子类 (2026-03-25)
+
+**设计目标：**
+RDP 和 VNC 都是图形化远程桌面协议，具有大量共同点：
+- Canvas 渲染（RGBA/JPEG/PNG）
+- 鼠标/键盘输入处理
+- 指针位置计算
+- 帧大小管理
+
+**解决方案：**
+创建 `BaseGraphicSessionView.tsx` 作为 `BaseSessionView` 的图形化抽象子类。
+
+**继承层次：**
+```
+BaseSessionView (基础抽象类)
+    │
+    ├── TerminalViewClass (终端视图 - 文本模式)
+    │
+    └── BaseGraphicSessionView (图形化抽象子类)
+            │
+            ├── RemoteDesktopViewClass (RDP 视图)
+            └── VncViewClass (VNC 视图)
+```
+
+**提供的功能：**
+
+| 功能 | 说明 |
+|------|------|
+| `useBaseGraphicSessionView` | Hook，提供 Canvas/容器引用、帧渲染工具 |
+| `renderRgbaFrame` | 渲染 RGBA 帧到 Canvas |
+| `renderBlobFrame` | 渲染 Blob 帧（JPEG/PNG）到 Canvas |
+| `getPointerPositionCentered` | 居中缩放模式的指针位置计算 |
+| `getPointerPositionScaled` | 填充模式的指针位置计算 |
+| `RDP_SCANCODE_MAP` | RDP 扫描码映射表 |
+| `VNC_KEYSYM_MAP` | VNC Keysym 映射表 |
+| `getRdpScancode` | 获取 RDP 扫描码 |
+| `mapVncKeyboardEvent` | 映射 VNC 键盘事件 |
+| `buildCursorStyleFromRgba` | 从 RGBA 数据构建光标样式 |
+
+**收益：**
+- RDP 和 VNC 的 Canvas 渲染逻辑统一
+- 指针位置计算算法复用
+- 键盘映射表集中管理
+- 新增图形协议时可直接继承图形化抽象子类
+
+#### 代码冗余优化 (2026-03-25 后续)
+
+对重构后的代码进行冗余检查并优化：
+
+**发现的冗余：**
+| 问题 | 位置 | 解决方案 |
+|------|------|----------|
+| 重复的 `clamp` 函数 | `RemoteDesktopViewClass.tsx`, `VncViewClass.tsx` | 提取到 `BaseSessionView.tsx` 并统一导出 |
+| 未使用的图标导入 | `MousePointer2`, `RefreshCcw` | 删除未使用的导入 |
+| 重复的容器样式类名 | 三个视图的 `main` 容器 | 提取常量 `VIEW_CONTAINER_CLASSNAME` |
+| 重复的 Canvas 样式 | RDP 和 VNC 的 `canvas` 元素 | 提取常量 `CANVAS_CLASSNAME`, `HIDDEN_CLASSNAME` |
+| 重复的交互容器样式 | RDP 和 VNC 的交互层 | 提取常量 `INTERACTIVE_CONTAINER_CLASSNAME` |
+
+**分屏状态不持久化设计决策：**
+
+| 特性 | 持久化 | 不持久化 |
+|------|--------|----------|
+| 会话列表 | ✓ | 保留用户连接的会话 |
+| SSH 配置 | ✓ | 保留用户保存的连接配置 |
+| 设置偏好 | ✓ | 保留用户界面设置 |
+| **分屏布局** | ✗ | **每次打开应用重置** |
+
+**理由：**
+1. 分屏是"本次工作"的布局选择，而非用户长期偏好
+2. 不同使用场景需要不同布局（单屏调试 vs 双屏对比）
+3. 避免重新打开应用时继承上一次可能不合适的分屏状态
+4. 简化状态管理，减少潜在 bug
+
+**新建标签页适配 Pane 系统：**
+
+修改所有新建标签页的操作，使其适配 pane 和新的后端渲染流程：
+
+1. **修改 `addSession` 返回类型**：从 `void` 改为 `string`（返回 session ID）
+
+2. **修改 `TabBar.tsx`**：`handleAddTab` 创建 session 后自动关联到当前 pane
+
+3. **修改 `SessionModule.tsx`**：
+   - `handleAction`（连接 SSH/RDP/VNC）创建 session 后自动处理 pane
+   - `handleDirectConnect`（本地 shell）创建 session 后自动处理 pane
+   - `handleDirectRdpConnect` 创建 session 后自动处理 pane
+   - `handleDirectVncConnect` 创建 session 后自动处理 pane
+   - `SshConnectDialog` 直接连接回调处理 pane 关联
+
+4. **修改 `App.tsx`**：添加同步 effect，当焦点会话没有对应 pane 时自动创建
+
+** pane 关联逻辑：**
+```typescript
+if (sessionId) {
+  if (focusedPaneId) {
+    // 有焦点 pane，直接关联
+    setPaneSession(focusedPaneId, sessionId);
+  } else if (panes.length === 0) {
+    // 没有 pane，创建新 pane 并关联
+    addPane(sessionId);
+  }
+}
+```
+
+**新增导出：**
+```typescript
+// BaseSessionView.tsx
+export const VIEW_CONTAINER_CLASSNAME = "terminal-container relative z-0...";
+export const CANVAS_CLASSNAME = "max-h-full max-w-full select-none object-contain";
+export const HIDDEN_CLASSNAME = "hidden";
+export const INTERACTIVE_CONTAINER_CLASSNAME = "relative flex h-full...";
+export function clamp(value: number, min: number, max: number): number;
+```
+
+#### 设计优势
+1. **代码复用**：通用状态管理、连接状态处理逻辑集中在基类 Hook
+2. **结构统一**：所有视图遵循相同的渲染流程和样式常量
+3. **易于扩展**：添加新视图类型只需实现抽象方法并复用样式常量
+4. **类型安全**：TypeScript 确保子类实现完整性
+5. **维护便捷**：样式统一在基类管理，修改一处全局生效
+
+### 6.5 Bug 修复记录
 
 | 日期 | 问题描述 | 修复方案 |
 | :--- | :--- | :--- |

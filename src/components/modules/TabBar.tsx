@@ -1,4 +1,5 @@
-import { useTabsStore } from "@/store/tabs";
+import { useTabsStore, registerSessionLifecycleCallbacks, unregisterSessionLifecycleCallbacks } from "@/store/tabs";
+import { usePanesStore } from "@/store/panes";
 import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { X, Plus } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
+import { useEffect, useRef, useState, useCallback, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -174,7 +175,7 @@ function SortableTab({
             </Button>
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent className="min-w-28 text-xs">
+        <ContextMenuContent className="min-w-32 text-xs">
           <ContextMenuItem className="py-1 text-xs" onClick={() => onRename(id)}>
             重命名标签页
           </ContextMenuItem>
@@ -208,6 +209,14 @@ export function TabBar() {
     closeRightSessions,
     updateSession,
   } = useTabsStore();
+  
+  const {
+    focusedPaneId,
+    setPaneSession,
+    focusPane,
+    canSplit,
+    splitPane,
+  } = usePanesStore();
 
   const { defaultShell, confirmCloseNonDefaultTabs } = useSettingsStore();
   const [shells, setShells] = useState<ShellInfo[]>([]);
@@ -231,6 +240,124 @@ export function TabBar() {
       .then(setShells)
       .catch((err) => logger.error("FE/tab-bar", "Failed to get shells", {err}));
   }, []);
+
+  /**
+   * 激活会话（将 session 绑定到 pane）
+   * 当会话变为活动会话时调用（新建会话、切换会话）
+   * 
+   * 逻辑：
+   * - 如果没有 pane，新建 pane 并绑定
+   * - 如果有焦点 pane，绑定到焦点 pane
+   * - 如果有 pane 但没有焦点，绑定到第一个 pane
+   */
+  const activateSession = useCallback((sessionId: string) => {
+    const panesStore = usePanesStore.getState();
+    const { panes, focusedPaneId } = panesStore;
+    
+    logger.debug("FE/TabBar", "Activating session", { sessionId, panesCount: panes.length, focusedPaneId });
+    
+    if (panes.length === 0) {
+      // 没有 pane，创建新 pane 并关联
+      const newPaneId = panesStore.addPane(sessionId);
+      logger.debug("FE/TabBar", "Created new pane for session", { sessionId, newPaneId });
+    } else if (focusedPaneId) {
+      // 有焦点 pane，绑定到焦点 pane
+      panesStore.setPaneSession(focusedPaneId, sessionId);
+      logger.debug("FE/TabBar", "Bound session to focused pane", { focusedPaneId, sessionId });
+    } else {
+      // 有 pane 但没有焦点，绑定到第一个 pane
+      const firstPane = panes[0];
+      panesStore.setPaneSession(firstPane.id, sessionId);
+      panesStore.focusPane(firstPane.id);
+      logger.debug("FE/TabBar", "Bound session to first pane", { paneId: firstPane.id, sessionId });
+    }
+  }, []);
+
+  /**
+   * 将会话设为焦点
+   * 当会话变为 focus session 时调用（切换 tab、关闭其他 tab）
+   * 
+   * 逻辑：
+   * - 如果目标 session 已在某个 pane 中，将焦点设到该 pane
+   * - 如果只有 1 个 pane，直接替换 pane 中的 session
+   * - 如果多个 pane 且目标 session 未显示，在当前焦点 pane 中显示
+   */
+  const focusSession = useCallback((sessionId: string) => {
+    const panesStore = usePanesStore.getState();
+    const { panes, focusedPaneId } = panesStore;
+    
+    logger.debug("FE/TabBar", "Focusing session", { sessionId, panesCount: panes.length });
+    
+    // 查找目标 session 是否已经在某个 pane 中显示
+    const targetPane = panesStore.getPaneBySession(sessionId);
+    if (targetPane) {
+      // 目标 session 已经在某个 pane 中，将焦点设到该 pane
+      panesStore.focusPane(targetPane.id);
+      logger.debug("FE/TabBar", "Focused to pane with session", { paneId: targetPane.id, sessionId });
+    } else if (panes.length === 1) {
+      // 只有 1 个 pane，直接替换 session
+      panesStore.setPaneSession(panes[0].id, sessionId);
+      panesStore.focusPane(panes[0].id);
+      logger.debug("FE/TabBar", "Replaced single pane session", { paneId: panes[0].id, sessionId });
+    } else if (focusedPaneId) {
+      // 多个 pane，在当前焦点 pane 中显示
+      panesStore.setPaneSession(focusedPaneId, sessionId);
+      logger.debug("FE/TabBar", "Set session to focused pane", { paneId: focusedPaneId, sessionId });
+    }
+  }, []);
+
+  /**
+   * 移除会话（关闭 session 时调用）
+   * 直接删除对应的 pane
+   */
+  const removeSessionPane = useCallback((sessionId: string) => {
+    const panesStore = usePanesStore.getState();
+    
+    logger.debug("FE/TabBar", "Removing pane for session", { sessionId });
+    
+    const pane = panesStore.getPaneBySession(sessionId);
+    if (pane) {
+      panesStore.removePane(pane.id);
+      logger.debug("FE/TabBar", "Removed pane", { paneId: pane.id, sessionId });
+    }
+  }, []);
+
+  // 注册 session 生命周期回调
+  const handleSessionCreated = useCallback((sessionId: string) => {
+    activateSession(sessionId);
+  }, [activateSession]);
+
+  const handleSessionRemoved = useCallback((sessionId: string) => {
+    removeSessionPane(sessionId);
+  }, [removeSessionPane]);
+
+  const handleFocusSessionChanged = useCallback((sessionId: string) => {
+    // 关闭会话后焦点切换到其他会话，需要重新绑定 pane
+    logger.debug("FE/TabBar", "Focus session changed, activating", { sessionId });
+    activateSession(sessionId);
+  }, [activateSession]);
+
+  const handleAllSessionsClosed = useCallback(() => {
+    logger.debug("FE/TabBar", "All sessions closed, clearing panes");
+    usePanesStore.getState().clearPanes();
+  }, []);
+
+  useEffect(() => {
+    const callbacks = {
+      onSessionCreated: handleSessionCreated,
+      onSessionRemoved: handleSessionRemoved,
+      onFocusSessionChanged: handleFocusSessionChanged,
+      onAllSessionsClosed: handleAllSessionsClosed,
+    };
+
+    registerSessionLifecycleCallbacks(callbacks);
+    logger.debug("FE/TabBar", "Session lifecycle callbacks registered");
+
+    return () => {
+      unregisterSessionLifecycleCallbacks();
+      logger.debug("FE/TabBar", "Session lifecycle callbacks unregistered");
+    };
+  }, [handleSessionCreated, handleSessionRemoved, handleFocusSessionChanged, handleAllSessionsClosed]);
 
   useEffect(() => {
     if (!renameState.open) {
@@ -303,6 +430,8 @@ export function TabBar() {
           ? "CMD"
           : "Terminal";
 
+    // 创建新会话 - pane 的创建和关联由生命周期回调自动处理
+    logger.debug("FE/TabBar", "Creating new session", { title });
     addSession({
       title,
       type: "local",
@@ -313,13 +442,46 @@ export function TabBar() {
     });
   };
 
-  const handleTabSwitch = (id: string) => {
+  const handleTabSwitch = (id: string, paneId?: string) => {
     setFocusSession(id);
+    
+    // 使用 focusSession 处理 pane 绑定和焦点切换
+    if (paneId) {
+      // 指定了 paneId，直接切换到该 pane
+      setPaneSession(paneId, id);
+      focusPane(paneId);
+    } else {
+      focusSession(id);
+    }
+    
     requestAnimationFrame(() => {
       window.dispatchEvent(new Event("lazy-terminal-focus"));
     });
   };
-
+  
+  // 处理在当前面板打开会话
+  const handleOpenInCurrentPane = (sessionId: string) => {
+    setFocusSession(sessionId);
+    activateSession(sessionId);
+  };
+  
+  // 处理在新面板打开会话
+  const handleOpenInNewPane = (sessionId: string) => {
+    if (!canSplit()) {
+      // 如果不能分屏，在当前面板打开
+      handleOpenInCurrentPane(sessionId);
+      return;
+    }
+    
+    if (focusedPaneId) {
+      // 拆分当前面板
+      const newPaneId = splitPane(focusedPaneId, "horizontal", sessionId);
+      if (newPaneId) {
+        setFocusSession(sessionId);
+      }
+    }
+  };
+  
   const requestCloseConfirmation = (targetIds: string[], onConfirm: () => void) => {
     if (targetIds.length === 0) {
       return;
@@ -540,7 +702,7 @@ export function TabBar() {
           {addTabButton}
         </div>
       ) : null}
-
+      
       <AlertDialog open={closeConfirmation.open} onOpenChange={handleCloseDialogChange}>
         <AlertDialogContent>
           <AlertDialogHeader>

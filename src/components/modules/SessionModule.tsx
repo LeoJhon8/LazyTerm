@@ -265,6 +265,7 @@ export function SessionModule() {
 
   const handleAction = (type: string, node: SessionNode) => {
     if (type === 'connect' && node.config) {
+      // 创建会话 - pane 的创建和关联由 TabBar 的生命周期回调集中处理
       if (node.type === "ssh" && isSshConfig(node.config)) {
         addSession({ title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } });
       } else if (node.type === "rdp" && isRdpConfig(node.config)) {
@@ -291,6 +292,7 @@ export function SessionModule() {
 
   const handleDirectConnect = (name: string, path: string, admin = false) => {
     const title = `${name}${admin ? ' (Admin)' : ''}`;
+    // 创建会话 - pane 的创建和关联由 TabBar 的生命周期回调集中处理
     addSession({
       title,
       type: "local",
@@ -306,6 +308,7 @@ export function SessionModule() {
       ? { ...config, backend: "msrdpax" as const, width: undefined, height: undefined, autoResize: true }
       : config;
 
+    // 创建会话 - pane 的创建和关联由 TabBar 的生命周期回调集中处理
     addSession({
       title: normalizedConfig.nickname || normalizedConfig.host,
       type: "rdp",
@@ -319,6 +322,7 @@ export function SessionModule() {
   };
 
   const handleDirectVncConnect = (config: VNCConfig) => {
+    // 创建会话 - pane 的创建和关联由 TabBar 的生命周期回调集中处理
     addSession({
       title: config.nickname || config.host,
       type: "vnc",
@@ -500,19 +504,20 @@ export function SessionModule() {
       />
 
       {/* 直接连接弹窗 */}
-      <SshConnectDialog 
-        open={dialog.isOpen('directSsh')} 
-        onOpenChange={() => dialog.close()} 
-        isDirect={true} 
+      <SshConnectDialog
+        open={dialog.isOpen('directSsh')}
+        onOpenChange={() => dialog.close()}
+        isDirect={true}
         onSave={(cfg) => {
-          addSession({ 
-            title: cfg.nickname || cfg.host, 
-            type: "ssh", 
-            host: cfg.host, 
-            config: { host: cfg.host, port: cfg.port, sshConfig: cfg } 
+          // 创建会话 - pane 的创建和关联由 TabBar 的生命周期回调集中处理
+          addSession({
+            title: cfg.nickname || cfg.host,
+            type: "ssh",
+            host: cfg.host,
+            config: { host: cfg.host, port: cfg.port, sshConfig: cfg }
           });
           dialog.close();
-        }} 
+        }}
       />
       <RdpConnectDialog 
         open={dialog.isOpen('directRdp')} 
