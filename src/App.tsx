@@ -23,7 +23,6 @@ function App() {
     rightPanelWidth,
     topPanelHeight,
     bottomPanelHeight,
-    titleBarHeight,
     leftPanelCollapsed,
     rightPanelCollapsed,
     topPanelCollapsed,
@@ -101,7 +100,6 @@ function App() {
   // 同步布局设置到 CSS 变量（含模块收起状态与迁移监听）
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty("--titlebar-height", `${titleBarHeight}px`);
     
     // 过滤掉 SettingsModule 的左侧实际可见模块
     const leftModulesCount = slotConfig.left.modules.filter(m => m !== 'SettingsModule').length;
@@ -120,7 +118,6 @@ function App() {
     leftPanelWidth, rightPanelWidth, topPanelHeight, bottomPanelHeight,
     leftPanelCollapsed, rightPanelCollapsed, topPanelCollapsed, bottomPanelCollapsed,
     leftSlotCollapsed, rightSlotCollapsed,
-    titleBarHeight,
     focusSession?.type,
     slotConfig.left.modules, slotConfig.right.modules,
     effectiveBottomPanelHeight,

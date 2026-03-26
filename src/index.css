@@ -38,7 +38,7 @@
 @layer base {
   :root {
     --radius: 0.95rem;
-    --titlebar-height: 44px;
+    --titlebar-height: 42px;
     --background: oklch(0.982 0.006 95);
     --foreground: oklch(0.236 0.02 245);
     --card: oklch(0.995 0.003 95);
