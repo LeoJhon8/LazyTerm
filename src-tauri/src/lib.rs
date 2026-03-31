@@ -1,5 +1,10 @@
 //! Lazy Terminal 核心库
 //! 包含应用状态定义和 Tauri 入口
+//!
+//! # VNC 实现说明
+//!
+//! VNC 协议基于 LibVNCClient C 库实现，通过 FFI 与 Rust 集成。
+//! 需要系统安装 libvncclient 开发库才能构建。
 
 mod logging;
 mod error;

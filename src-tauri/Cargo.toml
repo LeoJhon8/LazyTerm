@@ -14,6 +14,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.5.4", features = [] }
+# LibVNCClient FFI 构建依赖
+cc = "1.0"
+pkg-config = "0.3"
 
 [dependencies]
 # Tauri 核心
@@ -22,20 +25,20 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
 
-# 本地 PTY 支持 (保留你原有的功能)
+# 本地 PTY 支持
 portable-pty = "0.8" 
 
-# 异步 SSH 支持 (方案 B 核心)
-russh = "0.45"        # 异步 SSH 协议实现
+# 异步 SSH 支持
+russh = "0.45"
 russh-keys = { version = "0.45", features = ["openssl"] }
 openssl = { version = "0.10", features = ["vendored"] }
 russh-sftp = "2.1.1"
-async-trait = "0.1"   # russh 必须的 trait 宏
+async-trait = "0.1"
 
 # 异步运行时与工具
 tokio = { version = "1.0", features = ["full"] } 
 uuid = { version = "1.0", features = ["v4"] }
-futures = "0.3"       # 提供 Stream 处理工具
+futures = "0.3"
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-fs = "2.4.5"
@@ -47,4 +50,10 @@ sspi = { version = "=0.18.7", features = ["network_client"] }
 tokio-rustls = "0.26.4"
 x509-cert = "0.2.5"
 raw-window-handle = "0.6.2"
-vnc = { package = "vnc-rs", version = "0.5.3" }
+
+# LibVNCClient FFI 依赖
+parking_lot = "0.12"
+once_cell = "1.19"
+
+# 日志
+log = "0.4"

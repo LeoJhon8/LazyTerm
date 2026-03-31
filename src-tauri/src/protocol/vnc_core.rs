@@ -1,19 +1,19 @@
 //! VNC 核心逻辑模块
-//! 包含 VNC 帧处理、光标同步和会话运行逻辑
+//! 
+//! 本模块基于 LibVNCClient FFI 实现 VNC 协议核心功能。
 
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::ipc::Response;
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Runtime};
 use tokio::sync::mpsc;
+use tokio::time::{interval, Instant};
 
-use crate::types::{VncControlMsg, VncControlOutcome, VncCursorEventPayload};
+use crate::types::{VncControlMsg, VncControlOutcome};
 use crate::utils::log_vnc_info;
-use vnc::{
-    ClientKeyEvent as VncClientKeyEvent,
-    ClientMouseEvent as VncClientMouseEvent,
-    VncClient,
-    VncEvent,
-    X11Event,
+
+use super::vnc_client::{
+    MouseButton, VncClient, VncClientConfig, VncEncoding, VncEventLoopHandle, ControlMessage,
 };
 
 // ============================================================================
@@ -25,7 +25,7 @@ const VNC_IDLE_KEEPALIVE_INTERVAL: Duration = Duration::from_millis(1000);
 const VNC_SNAPSHOT_COMMIT_DELAY: Duration = Duration::from_millis(60);
 
 // ============================================================================
-// VNC 帧发射
+// 帧发射（保持与原有实现相同的二进制协议）
 // ============================================================================
 
 fn emit_vnc_frame(
@@ -73,7 +73,7 @@ fn emit_vnc_frame(
 }
 
 // ============================================================================
-// VNC 快照缓冲区和 BLIT
+// 快照缓冲区
 // ============================================================================
 
 fn ensure_vnc_snapshot_buffer(
@@ -94,72 +94,6 @@ fn ensure_vnc_snapshot_buffer(
     Ok(())
 }
 
-fn blit_vnc_rgba_rect(
-    snapshot_rgba: &mut [u8],
-    desktop_width: u16,
-    desktop_height: u16,
-    region_left: u16,
-    region_top: u16,
-    region_width: u16,
-    region_height: u16,
-    rgba_bytes: &[u8],
-) -> Result<(), String> {
-    let expected_len = region_width as usize * region_height as usize * 4;
-    if rgba_bytes.len() != expected_len {
-        return Err(format!(
-            "VNC frame size mismatch: expected {} bytes, got {} bytes",
-            expected_len,
-            rgba_bytes.len()
-        ));
-    }
-
-    if region_left as usize + region_width as usize > desktop_width as usize
-        || region_top as usize + region_height as usize > desktop_height as usize
-    {
-        return Err(format!(
-            "VNC frame region out of bounds: region={}x{}@{},{} desktop={}x{}",
-            region_width,
-            region_height,
-            region_left,
-            region_top,
-            desktop_width,
-            desktop_height
-        ));
-    }
-
-    let desktop_stride = desktop_width as usize * 4;
-    let region_stride = region_width as usize * 4;
-    let dest_x = region_left as usize * 4;
-
-    for row in 0..region_height as usize {
-        let source_start = row * region_stride;
-        let source_end = source_start + region_stride;
-        let dest_start = (region_top as usize + row) * desktop_stride + dest_x;
-        let dest_end = dest_start + region_stride;
-        snapshot_rgba[dest_start..dest_end].copy_from_slice(&rgba_bytes[source_start..source_end]);
-    }
-
-    Ok(())
-}
-
-fn decode_vnc_jpeg_rect(jpeg_bytes: &[u8], region_width: u16, region_height: u16) -> Result<Vec<u8>, String> {
-    let decoded = image::load_from_memory_with_format(jpeg_bytes, image::ImageFormat::Jpeg)
-        .map_err(|e| format!("decode VNC JPEG frame failed: {e}"))?
-        .to_rgba8();
-
-    if decoded.width() != region_width as u32 || decoded.height() != region_height as u32 {
-        return Err(format!(
-            "decoded VNC JPEG size mismatch: expected {}x{}, got {}x{}",
-            region_width,
-            region_height,
-            decoded.width(),
-            decoded.height()
-        ));
-    }
-
-    Ok(decoded.into_raw())
-}
-
 fn emit_vnc_snapshot(
     frame_channel: &tauri::ipc::Channel<Response>,
     desktop_width: u16,
@@ -168,7 +102,6 @@ fn emit_vnc_snapshot(
 ) -> Result<(), String> {
     use image::{ImageBuffer, DynamicImage, ImageFormat};
 
-    // Encode RGBA snapshot into PNG (non-progressive) to avoid progressive scan artifacts
     let buf = match ImageBuffer::from_raw(desktop_width as u32, desktop_height as u32, snapshot_rgba.to_vec()) {
         Some(buf) => buf,
         None => return Err("failed to build image buffer for snapshot".to_string()),
@@ -197,35 +130,48 @@ fn emit_vnc_snapshot(
 // VNC 控制消息处理
 // ============================================================================
 
-pub async fn handle_vnc_control(control: VncControlMsg, client: &VncClient) -> Result<VncControlOutcome, String> {
-    match control {
-        VncControlMsg::Pointer(payload) => {
-            client
-                .input(X11Event::PointerEvent(VncClientMouseEvent {
-                    position_x: payload.x,
-                    position_y: payload.y,
-                    bottons: payload.button_mask,
-                }))
-                .await
-                .map_err(|e| format!("send VNC pointer input failed: {e}"))?;
-            Ok(VncControlOutcome::Continue(Some(true)))
-        }
-        VncControlMsg::Key(payload) => {
-            client
-                .input(X11Event::KeyEvent(VncClientKeyEvent {
-                    keycode: payload.key_sym,
-                    down: payload.down,
-                }))
-                .await
-                .map_err(|e| format!("send VNC keyboard input failed: {e}"))?;
-            Ok(VncControlOutcome::Continue(Some(true)))
-        }
-        VncControlMsg::Refresh => {
-            Ok(VncControlOutcome::Continue(Some(true)))
-        }
-        VncControlMsg::Close => {
-            let _ = client.close().await;
-            Ok(VncControlOutcome::Close)
+/// 控制消息处理器
+pub struct VncController {
+    client: Arc<VncClient>,
+}
+
+impl VncController {
+    pub fn new(client: Arc<VncClient>) -> Self {
+        Self { client }
+    }
+
+    pub async fn handle_control(&self, control: VncControlMsg) -> Result<VncControlOutcome, String> {
+        match control {
+            VncControlMsg::Pointer(payload) => {
+                let mut buttons = Vec::new();
+                if payload.button_mask & 1 != 0 { buttons.push(MouseButton::Left); }
+                if payload.button_mask & 2 != 0 { buttons.push(MouseButton::Middle); }
+                if payload.button_mask & 4 != 0 { buttons.push(MouseButton::Right); }
+                if payload.button_mask & 8 != 0 { buttons.push(MouseButton::ScrollUp); }
+                if payload.button_mask & 16 != 0 { buttons.push(MouseButton::ScrollDown); }
+
+                self.client
+                    .send_pointer(payload.x, payload.y, &buttons)
+                    .await
+                    .map_err(|e| format!("send VNC pointer input failed: {e}"))?;
+                
+                Ok(VncControlOutcome::Continue(Some(true)))
+            }
+            VncControlMsg::Key(payload) => {
+                self.client
+                    .send_key(payload.key_sym, payload.down)
+                    .await
+                    .map_err(|e| format!("send VNC keyboard input failed: {e}"))?;
+                
+                Ok(VncControlOutcome::Continue(Some(true)))
+            }
+            VncControlMsg::Refresh => {
+                Ok(VncControlOutcome::Continue(Some(true)))
+            }
+            VncControlMsg::Close => {
+                self.client.close().await;
+                Ok(VncControlOutcome::Close)
+            }
         }
     }
 }
@@ -242,159 +188,176 @@ pub async fn run_vnc_session<R: Runtime>(
     frame_channel: tauri::ipc::Channel<Response>,
     mut control_rx: mpsc::UnboundedReceiver<VncControlMsg>,
 ) -> Result<(), String> {
+    let client = Arc::new(client);
+    let controller = VncController::new(client.clone());
+
     let mut desktop_width = 0u16;
     let mut desktop_height = 0u16;
-    let mut cursor_mode_synced = false;
+    let mut _cursor_mode_synced = false;
     let mut pending_refresh: Option<bool> = Some(true);
     let mut snapshot_rgba = Vec::new();
     let mut snapshot_dirty = false;
-    let refresh_timer = tokio::time::sleep(Duration::ZERO);
-    let snapshot_timer = tokio::time::sleep(Duration::from_secs(3600));
-    tokio::pin!(refresh_timer);
-    tokio::pin!(snapshot_timer);
+    
+    let mut refresh_timer = interval(VNC_IDLE_KEEPALIVE_INTERVAL);
+    refresh_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    
+    let mut snapshot_timer = interval(VNC_SNAPSHOT_COMMIT_DELAY);
+    snapshot_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    snapshot_timer.tick().await;
+
+    let (event_handle, mut event_result) = start_vnc_event_loop(
+        client.clone(),
+        app.clone(),
+        session_id.clone(),
+    );
 
     loop {
         tokio::select! {
-            _ = &mut snapshot_timer, if snapshot_dirty => {
+            _ = snapshot_timer.tick(), if snapshot_dirty => {
                 if desktop_width > 0 && desktop_height > 0 && !snapshot_rgba.is_empty() {
-                    emit_vnc_snapshot(&frame_channel, desktop_width, desktop_height, &snapshot_rgba)?;
+                    if let Err(e) = emit_vnc_snapshot(&frame_channel, desktop_width, desktop_height, &snapshot_rgba) {
+                        log::warn!("Failed to emit VNC snapshot: {}", e);
+                    }
                 }
                 snapshot_dirty = false;
             }
-            _ = &mut refresh_timer => {
+            
+            _ = refresh_timer.tick() => {
                 let full_refresh = pending_refresh.take().unwrap_or(false);
-                client
-                    .input(if full_refresh { X11Event::FullRefresh } else { X11Event::Refresh })
-                    .await
-                    .map_err(|e| format!("request VNC refresh failed: {e}"))?;
-
-                refresh_timer
-                    .as_mut()
-                    .reset(tokio::time::Instant::now() + VNC_IDLE_KEEPALIVE_INTERVAL);
+                
+                if let Err(e) = client.request_update(0, 0, 4096, 4096, !full_refresh).await {
+                    log::error!("VNC refresh request failed: {}", e);
+                    break;
+                }
+                
+                pending_refresh = None;
             }
+            
             maybe_control = control_rx.recv() => {
                 let Some(control) = maybe_control else {
                     let _ = client.close().await;
                     break;
                 };
 
-                match handle_vnc_control(control, &client).await? {
-                    VncControlOutcome::Continue(refresh_request) => {
+                match controller.handle_control(control).await {
+                    Ok(VncControlOutcome::Continue(refresh_request)) => {
                         if let Some(full_refresh) = refresh_request {
                             pending_refresh = Some(pending_refresh.unwrap_or(false) || full_refresh);
-                            let delay = if full_refresh {
-                                Duration::ZERO
-                            } else {
-                                VNC_INPUT_REFRESH_DELAY
-                            };
-                            refresh_timer
-                                .as_mut()
-                                .reset(tokio::time::Instant::now() + delay);
+                            if full_refresh {
+                                let next_tick = Instant::now() + VNC_INPUT_REFRESH_DELAY;
+                                refresh_timer.reset_at(next_tick);
+                            }
                         }
                     }
-                    VncControlOutcome::Close => break,
+                    Ok(VncControlOutcome::Close) => {
+                        let _ = client.close().await;
+                        break;
+                    }
+                    Err(e) => {
+                        log::error!("VNC control error: {}", e);
+                        break;
+                    }
                 }
             }
-            event = client.recv_event() => {
-                match event.map_err(|e| format!("receive VNC event failed: {e}"))? {
-                    VncEvent::SetResolution(screen) => {
-                        desktop_width = screen.width;
-                        desktop_height = screen.height;
-                        ensure_vnc_snapshot_buffer(&mut snapshot_rgba, desktop_width, desktop_height)?;
-                        log_vnc_info(&session_id, &target, "resolution", format!("desktop resized to {}x{}", screen.width, screen.height));
-                        pending_refresh = Some(true);
-                        refresh_timer
-                            .as_mut()
-                            .reset(tokio::time::Instant::now());
-                    }
-                    VncEvent::RawImage(rect, data) => {
-                        if desktop_width == 0 {
-                            desktop_width = rect.x.saturating_add(rect.width);
-                        }
-                        if desktop_height == 0 {
-                            desktop_height = rect.y.saturating_add(rect.height);
-                        }
-
-                        ensure_vnc_snapshot_buffer(&mut snapshot_rgba, desktop_width, desktop_height)?;
-                        blit_vnc_rgba_rect(
-                            &mut snapshot_rgba,
-                            desktop_width,
-                            desktop_height,
-                            rect.x,
-                            rect.y,
-                            rect.width,
-                            rect.height,
-                            &data,
-                        )?;
-                        snapshot_dirty = true;
-                        snapshot_timer
-                            .as_mut()
-                            .reset(tokio::time::Instant::now() + VNC_SNAPSHOT_COMMIT_DELAY);
-                    }
-                    VncEvent::JpegImage(rect, data) => {
-                        if desktop_width == 0 {
-                            desktop_width = rect.x.saturating_add(rect.width);
-                        }
-                        if desktop_height == 0 {
-                            desktop_height = rect.y.saturating_add(rect.height);
-                        }
-
-                        ensure_vnc_snapshot_buffer(&mut snapshot_rgba, desktop_width, desktop_height)?;
-                        let decoded = decode_vnc_jpeg_rect(&data, rect.width, rect.height)?;
-                        blit_vnc_rgba_rect(
-                            &mut snapshot_rgba,
-                            desktop_width,
-                            desktop_height,
-                            rect.x,
-                            rect.y,
-                            rect.width,
-                            rect.height,
-                            &decoded,
-                        )?;
-                        snapshot_dirty = true;
-                        snapshot_timer
-                            .as_mut()
-                            .reset(tokio::time::Instant::now() + VNC_SNAPSHOT_COMMIT_DELAY);
-                    }
-                    VncEvent::Copy(_, _) => {
-                        pending_refresh = Some(true);
-                        refresh_timer
-                            .as_mut()
-                            .reset(tokio::time::Instant::now());
-                    }
-                    VncEvent::SetCursor(rect, data) => {
-                        app.emit(
-                            &format!("vnc-cursor-{}", session_id),
-                            VncCursorEventPayload {
-                                hotspot_x: rect.x,
-                                hotspot_y: rect.y,
-                                width: rect.width,
-                                height: rect.height,
-                                rgba_bytes: data,
-                            },
-                        ).map_err(|e| format!("emit VNC cursor event failed: {e}"))?;
-
-                        if !cursor_mode_synced {
-                            cursor_mode_synced = true;
+            
+            result = client.handle_message() => {
+                match result {
+                    Ok(true) => {
+                        let fb = client.framebuffer();
+                        let (new_width, new_height) = fb.size();
+                        
+                        if new_width != desktop_width || new_height != desktop_height {
+                            desktop_width = new_width;
+                            desktop_height = new_height;
+                            ensure_vnc_snapshot_buffer(&mut snapshot_rgba, desktop_width, desktop_height)?;
+                            log_vnc_info(&session_id, &target, "resolution", format!("desktop resized to {}x{}", desktop_width, desktop_height));
                             pending_refresh = Some(true);
-                            refresh_timer
-                                .as_mut()
-                                .reset(tokio::time::Instant::now());
                         }
+                        
+                        snapshot_dirty = true;
                     }
-                    VncEvent::SetPixelFormat(pixel_format) => {
-                        log_vnc_info(&session_id, &target, "pixel-format", format!("server pixel format updated: {}bpp", pixel_format.bits_per_pixel));
+                    Ok(false) => {}
+                    Err(e) => {
+                        log::error!("VNC message handling error: {}", e);
+                        break;
                     }
-                    VncEvent::Bell => {}
-                    VncEvent::Text(text) => {
-                        log_vnc_info(&session_id, &target, "clipboard", format!("server clipboard updated: {} chars", text.len()));
-                    }
-                    VncEvent::Error(message) => return Err(format!("VNC runtime error: {message}")),
-                    _ => {}
                 }
+            }
+            
+            result = &mut event_result => {
+                if let Err(e) = result {
+                    log::error!("VNC event loop error: {:?}", e);
+                }
+                break;
             }
         }
     }
 
+    event_handle.shutdown();
     Ok(())
+}
+
+/// 启动 VNC 事件处理循环
+fn start_vnc_event_loop(
+    client: Arc<VncClient>,
+    _app: AppHandle<impl Runtime>,
+    _session_id: String,
+) -> (VncEventLoopHandle, tokio::sync::oneshot::Receiver<()>) {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let (control_tx, mut control_rx) = mpsc::unbounded_channel();
+
+    let handle = VncEventLoopHandle { control_tx };
+
+    tokio::spawn(async move {
+        let _cursor_mode_synced = false;
+        let _last_fb_update: Option<(u16, u16, u16, u16)> = None;
+
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(10)) => {}
+                
+                Some(msg) = control_rx.recv() => {
+                    match msg {
+                        ControlMessage::RequestRefresh { full } => {
+                            let _ = client.request_update(0, 0, 4096, 4096, !full).await;
+                        }
+                        ControlMessage::Shutdown => {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        let _ = tx.send(());
+    });
+
+    (handle, rx)
+}
+
+// ============================================================================
+// 辅助函数
+// ============================================================================
+
+/// 将 VNC 配置转换为 LibVNCClient 配置
+pub fn convert_config(
+    config: &crate::types::VncConnectConfig,
+) -> VncClientConfig {
+    VncClientConfig {
+        host: config.host.clone(),
+        port: config.port,
+        password: config.password.clone(),
+        shared: config.shared.unwrap_or(true),
+        view_only: false,
+        jpeg_quality: 8,
+        compression_level: 6,
+        encodings: vec![
+            VncEncoding::Tight,
+            VncEncoding::Zrle,
+            VncEncoding::Hextile,
+            VncEncoding::Raw,
+            VncEncoding::CursorPseudo,
+            VncEncoding::DesktopSizePseudo,
+        ],
+    }
 }

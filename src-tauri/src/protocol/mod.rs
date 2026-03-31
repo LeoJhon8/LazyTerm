@@ -1,29 +1,42 @@
-//! 协议共享模块
-//! 包含 SSH 认证、SFTP 工具等共享逻辑
+//! 协议模块
+//! 包含所有协议实现：SSH、RDP、VNC、本地终端等
+//!
+//! # VNC 实现
+//!
+//! VNC 协议基于 LibVNCClient FFI 实现，提供完整的 VNC 客户端功能。
 
+// 共享模块
 pub mod ssh_auth;
 pub mod sftp_utils;
-pub mod rdp;
-pub mod rdp_core;
-pub mod vnc;
-pub mod vnc_core;
+pub mod tls;
+
+// 终端协议
 pub mod terminal;
 pub mod ssh;
 pub mod sftp;
+
+// RDP 协议
+pub mod rdp;
+pub mod rdp_core;
 pub mod mstsc;
 pub mod native_rdp;
-pub mod tls;
 
-// 将常用命令直接导出到 `protocol::` 方便调用（迁移自 commands 模块）
+// VNC 协议 - LibVNCClient FFI 实现
+pub mod vnc_ffi;
+pub mod vnc_client;
+pub mod vnc_core;
+pub mod vnc;
+
+// 导出常用命令
 pub use terminal::*;
 pub use ssh::*;
 pub use rdp::*;
-pub use vnc::*;
 pub use sftp::*;
 pub use mstsc::*;
 pub use native_rdp::*;
+pub use vnc::*;
 
-// 导出核心逻辑函数供命令模块使用
+// 导出核心逻辑函数
 pub use rdp_core::{
     build_rdp_config, build_rdp_full_address, connect_rdp, run_rdp_session,
 };
