@@ -3,20 +3,19 @@
 //! 管理 LibVNCClient 的 C 回调与 Rust 代码的桥接
 //! 使用 thread-local 存储和通道实现安全的回调传递
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ffi::{c_char, c_int, c_uchar, c_void, CStr};
-use std::os::raw::{c_schar, c_uint};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::ffi::{c_char, c_int};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, Weak};
 use once_cell::sync::Lazy;
 
 use super::super::vnc_ffi as ffi;
-use super::frame::{FrameBuffer, PixelFormat};
+use super::frame::FrameBuffer;
 use super::ClipboardEvent;
 
 /// 帧缓冲区更新信息
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FrameBufferUpdate {
     pub x: u16,
     pub y: u16,
@@ -26,6 +25,7 @@ pub struct FrameBufferUpdate {
 
 /// 光标信息
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct CursorInfo {
     pub hotspot_x: u16,
     pub hotspot_y: u16,
@@ -36,6 +36,7 @@ pub struct CursorInfo {
 
 /// 回调事件类型
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum CallbackEvent {
     FrameBufferUpdate(FrameBufferUpdate),
     CursorShape(CursorInfo),
@@ -48,7 +49,6 @@ pub enum CallbackEvent {
 /// 
 /// 每个 VNC 连接都有一个对应的上下文，存储回调状态
 pub(crate) struct SessionContext {
-    pub session_id: String,
     pub event_sender: Sender<CallbackEvent>,
     pub framebuffer: FrameBuffer,
 }
@@ -102,7 +102,7 @@ pub unsafe extern "C" fn framebuffer_update_callback(
         // 获取帧缓冲区数据
         let fb_ptr = ffi::RfbClientGetFrameBuffer(client);
         if !fb_ptr.is_null() {
-            let (fb_width, fb_height) = ctx.framebuffer.size();
+            let (fb_width, _fb_height) = ctx.framebuffer.size();
             let bytes_per_pixel = 4; // LibVNCClient 默认使用 32 位
             let stride = fb_width as usize * bytes_per_pixel;
             
@@ -169,41 +169,15 @@ pub unsafe extern "C" fn handle_cursor_shape_callback(
     yhot: c_int,
     width: c_int,
     height: c_int,
-    bytes_per_row: c_int,
-    mask: *mut c_uchar,
+    _bytes_per_pixel: c_int,
 ) {
     let ptr = client as usize;
     
     if let Some(ctx) = get_context(ptr) {
         let cursor_size = (width * height * 4) as usize;
-        let mut rgba_data = vec![0u8; cursor_size];
-        
-        if !mask.is_null() {
-            // LibVNCClient 提供的光标数据格式需要解析
-            // 简化处理：假设是标准的光标位图格式
-            let mask_slice = std::slice::from_raw_parts(mask, (bytes_per_row * height) as usize);
-            
-            // 这里需要根据实际情况解析光标数据
-            // 标准 X11 光标格式包含位图和掩码
-            for y in 0..height as usize {
-                for x in 0..width as usize {
-                    let idx = (y * width as usize + x) * 4;
-                    let mask_idx = y * bytes_per_row as usize + x / 8;
-                    let bit = 7 - (x % 8);
-                    let visible = (mask_slice[mask_idx] >> bit) & 1 != 0;
-                    
-                    if visible {
-                        // 白色光标（简化）
-                        rgba_data[idx] = 255;     // R
-                        rgba_data[idx + 1] = 255; // G
-                        rgba_data[idx + 2] = 255; // B
-                        rgba_data[idx + 3] = 255; // A
-                    } else {
-                        rgba_data[idx + 3] = 0;   // 透明
-                    }
-                }
-            }
-        }
+        // 当前 FFI 层尚未暴露 rcSource/rcMask 访问器，这里先发送一个透明占位光标，
+        // 保持回调链路可用并与新版 libvncclient 的 GotCursorShapeProc ABI 对齐。
+        let rgba_data = vec![0u8; cursor_size];
         
         let _ = ctx.event_sender.send(CallbackEvent::CursorShape(CursorInfo {
             hotspot_x: xhot as u16,
@@ -246,7 +220,7 @@ pub unsafe extern "C" fn got_cursor_pos_callback(
     client: *mut ffi::RfbClient,
     x: c_int,
     y: c_int,
-) {
+) -> i8 {
     let ptr = client as usize;
     
     if let Some(ctx) = get_context(ptr) {
@@ -255,6 +229,8 @@ pub unsafe extern "C" fn got_cursor_pos_callback(
             y: y as u16,
         });
     }
+
+    -1
 }
 
 /// 分辨率变更回调（实际上是 MallocFrameBuffer 回调）
@@ -263,7 +239,7 @@ pub unsafe extern "C" fn got_cursor_pos_callback(
 /// 此函数在 LibVNCClient 内部线程中调用
 pub unsafe extern "C" fn malloc_framebuffer_callback(
     client: *mut ffi::RfbClient,
-) {
+) -> i8 {
     let ptr = client as usize;
     
     if let Some(ctx) = get_context(ptr) {
@@ -274,4 +250,6 @@ pub unsafe extern "C" fn malloc_framebuffer_callback(
         
         let _ = ctx.event_sender.send(CallbackEvent::ResolutionChange { width, height });
     }
+
+    ffi::RfbClientDefaultMallocFrameBuffer(client)
 }

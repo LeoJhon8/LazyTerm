@@ -544,6 +544,7 @@ pub fn build_rdp_config(config: &RdpConnectConfig) -> Result<connector::Config, 
     })
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn build_rdp_full_address(config: &RdpConnectConfig) -> String {
     if config.port == 3389 {
         config.host.clone()

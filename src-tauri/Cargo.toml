@@ -12,6 +12,11 @@ rust-version = "1.77.2"
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = ["vnc-libvncclient"]
+vnc-libvncclient = []
+vnc-rust = []
+
 [build-dependencies]
 tauri-build = { version = "2.5.4", features = [] }
 # LibVNCClient FFI 构建依赖

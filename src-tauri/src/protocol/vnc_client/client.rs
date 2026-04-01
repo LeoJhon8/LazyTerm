@@ -26,6 +26,7 @@ pub enum VncConnectionState {
 
 /// VNC 客户端配置
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct VncClientConfig {
     pub host: String,
     pub port: u16,
@@ -129,37 +130,25 @@ impl VncClient {
                 *inner.state.write() = VncConnectionState::Error;
                 return Err(VncError::MemoryAllocationFailed);
             }
-
-            // 设置服务器地址
-            let host_cstr = CString::new(config.host.clone())
-                .map_err(|_| VncError::FfiError("Invalid hostname".to_string()))?;
             
             // 配置客户端
             // 注意：这些设置需要在 rfbInitClient 之前完成
             // 这里我们使用命令行参数方式初始化
 
             // 构建参数
-            let mut args: Vec<*mut c_char> = vec![];
+            let mut arg_storage: Vec<CString> = Vec::new();
             
             // 程序名
-            let prog_name = CString::new("vnc_client").unwrap();
-            args.push(prog_name.into_raw());
-            
-            // 服务器地址
-            let server_arg = format!("{}:{}", config.host, config.port);
-            let server_cstr = CString::new(server_arg).unwrap();
-            args.push(server_cstr.into_raw());
-            
+            arg_storage.push(CString::new("vnc_client").unwrap());
+
             // 共享标志
             if config.shared {
-                let shared_flag = CString::new("-shared").unwrap();
-                args.push(shared_flag.into_raw());
+                arg_storage.push(CString::new("-shared").unwrap());
             }
             
             // 视口标志
             if config.view_only {
-                let viewonly_flag = CString::new("-viewonly").unwrap();
-                args.push(viewonly_flag.into_raw());
+                arg_storage.push(CString::new("-viewonly").unwrap());
             }
             
             // 编码
@@ -179,41 +168,43 @@ impl VncClient {
                 })
                 .collect::<Vec<_>>()
                 .join(",");
-            let encoding_arg = format!("-encodings={}", encodings_str);
-            let encoding_cstr = CString::new(encoding_arg).unwrap();
-            args.push(encoding_cstr.into_raw());
-            
-            // JPEG 质量
-            let quality_arg = format!("-quality={}", config.jpeg_quality);
-            let quality_cstr = CString::new(quality_arg).unwrap();
-            args.push(quality_cstr.into_raw());
-            
+            arg_storage.push(CString::new("-encodings").unwrap());
+            arg_storage.push(CString::new(encodings_str).unwrap());
+
             // 压缩级别
-            let compress_arg = format!("-compresslevel={}", config.compression_level);
-            let compress_cstr = CString::new(compress_arg).unwrap();
-            args.push(compress_cstr.into_raw());
+            arg_storage.push(CString::new("-compress").unwrap());
+            arg_storage.push(CString::new(config.compression_level.to_string()).unwrap());
 
             // 设置密码（如果提供）
-            if let Some(ref password) = config.password {
+            if let Some(ref _password) = config.password {
                 // LibVNCClient 使用 GetPassword 回调来获取密码
                 // 这里简化处理，实际实现需要设置回调
             }
 
-            let mut argc = args.len() as c_int;
-            let argv = args.as_mut_ptr();
+            // HOST 必须放在最后，否则 libvncclient 会把最后一个参数视为目标地址。
+            let host_arg = if config.port == 5900 {
+                config.host.clone()
+            } else {
+                format!("{}:{}", config.host, config.port)
+            };
+            arg_storage.push(
+                CString::new(host_arg)
+                    .map_err(|_| VncError::FfiError("Invalid hostname".to_string()))?
+            );
+
+            let mut argv_storage: Vec<*mut c_char> = arg_storage
+                .iter_mut()
+                .map(|arg| arg.as_ptr() as *mut c_char)
+                .collect();
+            let mut argc = argv_storage.len() as c_int;
+            let argv = argv_storage.as_mut_ptr();
 
             // 初始化客户端
             *inner.state.write() = VncConnectionState::Authenticating;
             
             let result = ffi::rfbInitClient(client, &mut argc, argv);
 
-            // 清理参数内存
-            for arg in args {
-                let _ = CString::from_raw(arg);
-            }
-
             if result == 0 {
-                ffi::rfbClientCleanup(client);
                 *inner.state.write() = VncConnectionState::Error;
                 return Err(VncError::ConnectionFailed(
                     "Failed to initialize VNC client".to_string()
@@ -225,7 +216,6 @@ impl VncClient {
 
             // 创建会话上下文
             let context = Arc::new(SessionContext {
-                session_id: format!("{:p}", client),
                 event_sender,
                 framebuffer: inner.framebuffer.clone(),
             });
@@ -403,6 +393,7 @@ impl VncClient {
     }
 
     /// 获取当前状态
+    #[allow(dead_code)]
     pub fn state(&self) -> VncConnectionState {
         *self.inner.state.read()
     }
@@ -416,7 +407,8 @@ impl VncClient {
         let inner = self.inner.clone();
         
         task::spawn_blocking(move || {
-            let client_ptr = *inner.raw_client.lock();
+            let client_ptr = inner.raw_client.lock().take();
+            *inner.context.lock() = None;
             
             if let Some(ptr) = client_ptr {
                 unsafe {
@@ -426,8 +418,6 @@ impl VncClient {
                 }
             }
             
-            *inner.raw_client.lock() = None;
-            *inner.context.lock() = None;
             *inner.state.write() = VncConnectionState::Disconnected;
         }).await.ok();
     }
@@ -438,7 +428,8 @@ impl Drop for VncClient {
         if !self.inner.closed.load(Ordering::SeqCst) {
             // 尝试同步关闭
             let inner = self.inner.clone();
-            let client_ptr = *inner.raw_client.lock();
+            let client_ptr = inner.raw_client.lock().take();
+            *inner.context.lock() = None;
             
             if let Some(ptr) = client_ptr {
                 unsafe {

@@ -2,6 +2,8 @@
 //!
 //! 提供对 VNC 帧缓冲区的安全访问和像素格式转换
 
+#![allow(dead_code)]
+
 use std::sync::Arc;
 use parking_lot::RwLock;
 

@@ -38,6 +38,5 @@ pub use vnc::*;
 
 // 导出核心逻辑函数
 pub use rdp_core::{
-    build_rdp_config, build_rdp_full_address, connect_rdp, run_rdp_session,
+    build_rdp_config, connect_rdp, run_rdp_session,
 };
-pub use vnc_core::run_vnc_session;

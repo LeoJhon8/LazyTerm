@@ -2,7 +2,8 @@
 //!
 //! 提供基于 Tokio 的异步事件循环，处理 VNC 服务器消息
 
-use std::sync::Arc;
+#![allow(dead_code)]
+
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::interval;
@@ -75,7 +76,7 @@ where
 async fn run_event_loop<F>(
     client: VncClient,
     control_rx: &mut mpsc::UnboundedReceiver<ControlMessage>,
-    event_handler: &mut F,
+    _event_handler: &mut F,
 ) -> VncResult<()>
 where
     F: FnMut(CallbackEvent) + Send,
@@ -88,11 +89,7 @@ where
     refresh_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     // 创建快照定时器
-    let mut snapshot_interval = interval(Duration::from_millis(60));
-    snapshot_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
     let mut pending_full_refresh = true;
-    let mut snapshot_dirty = false;
 
     loop {
         tokio::select! {
@@ -124,10 +121,7 @@ where
             // 处理服务器消息
             result = client.handle_message() => {
                 match result {
-                    Ok(true) => {
-                        // 处理了消息
-                        snapshot_dirty = true;
-                    }
+                    Ok(true) => {}
                     Ok(false) => {
                         // 无消息，继续
                     }

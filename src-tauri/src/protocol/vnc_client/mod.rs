@@ -22,15 +22,14 @@ mod frame;
 mod event_loop;
 mod feature_gate;
 
-pub use client::{VncClient, VncClientConfig, VncConnectionState};
-pub use callbacks::CallbackEvent;
+pub use client::{VncClient, VncClientConfig};
 pub use event_loop::{VncEventLoopHandle, ControlMessage};
-pub use feature_gate::VncBackend;
 
 use thiserror::Error;
 
 /// VNC 客户端错误类型
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum VncError {
     #[error("连接失败: {0}")]
     ConnectionFailed(String),
@@ -68,6 +67,7 @@ pub type VncResult<T> = Result<T, VncError>;
 
 /// VNC 编码类型
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum VncEncoding {
     Raw,
     CopyRect,
@@ -84,6 +84,7 @@ pub enum VncEncoding {
 
 impl VncEncoding {
     /// 转换为 FFI 编码常量
+    #[allow(dead_code)]
     pub fn to_int(&self) -> i32 {
         use super::vnc_ffi as ffi;
         match self {
@@ -127,6 +128,7 @@ impl MouseButton {
 
 /// 剪贴板文本事件
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ClipboardEvent {
     pub text: String,
 }

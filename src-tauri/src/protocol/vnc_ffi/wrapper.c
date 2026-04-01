@@ -9,6 +9,7 @@
  */
 
 #include <rfb/rfbclient.h>
+#include <stdlib.h>
 #include <string.h>
 
 // ============================================================================
@@ -57,9 +58,9 @@ void RfbClientSetGotFrameBufferUpdate(rfbClient* client, GotFrameBufferUpdatePro
     }
 }
 
-void RfbClientSetHandleCursorShape(rfbClient* client, HandleCursorShapeProc callback) {
+void RfbClientSetHandleCursorShape(rfbClient* client, GotCursorShapeProc callback) {
     if (client) {
-        client->HandleCursorShape = callback;
+        client->GotCursorShape = callback;
     }
 }
 
@@ -69,9 +70,9 @@ void RfbClientSetGotXCutText(rfbClient* client, GotXCutTextProc callback) {
     }
 }
 
-void RfbClientSetGotCursorPos(rfbClient* client, GotCursorPosProc callback) {
+void RfbClientSetGotCursorPos(rfbClient* client, HandleCursorPosProc callback) {
     if (client) {
-        client->GotCursorPos = callback;
+        client->HandleCursorPos = callback;
     }
 }
 
@@ -81,8 +82,8 @@ void RfbClientSetGotCursorPos(rfbClient* client, GotCursorPosProc callback) {
 
 void RfbClientSetServerHost(rfbClient* client, const char* host) {
     if (client && host) {
-        strncpy(client->serverHost, host, MAX_HOST_NAME_LEN - 1);
-        client->serverHost[MAX_HOST_NAME_LEN - 1] = '\0';
+        free(client->serverHost);
+        client->serverHost = strdup(host);
     }
 }
 
@@ -93,9 +94,13 @@ void RfbClientSetServerPort(rfbClient* client, int port) {
 }
 
 void RfbClientSetPassword(rfbClient* client, const char* password) {
-    if (client && password) {
-        client->password = strdup(password);
-    }
+    (void)client;
+    (void)password;
+    /*
+     * 当前 libvncclient 通过 GetPassword 回调提供密码，而不是暴露
+     * rfbClient.password 字段。该包装器暂未被 Rust 侧调用，因此保留为 no-op，
+     * 避免和不同版本头文件的内部结构耦合。
+     */
 }
 
 void RfbClientSetShared(rfbClient* client, rfbBool shared) {
@@ -121,15 +126,13 @@ void RfbClientClearEncodings(rfbClient* client) {
 }
 
 void RfbClientAddEncoding(rfbClient* client, int encoding) {
-    if (!client) return;
-    
-    // 自动扩展编码数组
-    int32_t* newEncodings = realloc(client->supportedEncodings, 
-                                    (client->nEncodings + 1) * sizeof(int32_t));
-    if (newEncodings) {
-        client->supportedEncodings = newEncodings;
-        client->supportedEncodings[client->nEncodings++] = encoding;
-    }
+    (void)client;
+    (void)encoding;
+    /*
+     * 新版 libvncclient 不再通过 rfbClient 内部公开的 supportedEncodings/nEncodings
+     * 字段来配置编码。当前 Rust 侧已经通过 rfbInitClient 的命令行参数设置编码，
+     * 这里保留 no-op 兼容实现。
+     */
 }
 
 // ============================================================================

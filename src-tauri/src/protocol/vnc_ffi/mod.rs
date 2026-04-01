@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! LibVNCClient FFI 绑定模块
 //!
 //! 本模块提供对 libvncclient C 库的低级 FFI 绑定。
@@ -9,8 +11,8 @@
 //! - 回调函数在 LibVNCClient 内部线程中调用，需要注意 Send/Sync 约束
 //! - 使用 `std::sync::mpsc` 进行跨线程通信
 
-use std::ffi::{c_char, c_int, c_uint, c_void, CStr};
-use std::os::raw::{c_schar, c_uchar};
+use std::ffi::{c_char, c_int, c_uint, CStr};
+use std::os::raw::c_uchar;
 
 // ============================================================================
 // 常量定义
@@ -99,7 +101,7 @@ pub struct RfbFramebufferUpdateMsg {
 /// MallocFrameBuffer 回调类型
 pub type MallocFrameBufferCallback = unsafe extern "C" fn(
     client: *mut RfbClient,
-);
+) -> i8;
 
 /// 帧缓冲区更新回调类型
 pub type FramebufferUpdateCallback = unsafe extern "C" fn(
@@ -117,8 +119,7 @@ pub type HandleCursorShapeCallback = unsafe extern "C" fn(
     yhot: c_int,
     width: c_int,
     height: c_int,
-    bytes_per_row: c_int,
-    mask: *mut c_uchar,
+    bytes_per_pixel: c_int,
 );
 
 /// 剪贴板文本回调类型
@@ -133,7 +134,7 @@ pub type GotCursorPosCallback = unsafe extern "C" fn(
     client: *mut RfbClient,
     x: c_int,
     y: c_int,
-);
+) -> i8;
 
 /// 日志回调类型
 pub type LogCallback = unsafe extern "C" fn(
@@ -241,6 +242,7 @@ extern "C" {
     pub fn RfbClientSetHandleCursorShape(client: *mut RfbClient, callback: HandleCursorShapeCallback);
     pub fn RfbClientSetGotXCutText(client: *mut RfbClient, callback: GotXCutTextCallback);
     pub fn RfbClientSetGotCursorPos(client: *mut RfbClient, callback: GotCursorPosCallback);
+    pub fn RfbClientDefaultMallocFrameBuffer(client: *mut RfbClient) -> i8;
 
     // 错误处理
     pub fn RfbClientSetLastError(client: *mut RfbClient, error: *const c_char);

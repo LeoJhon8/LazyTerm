@@ -1,9 +1,18 @@
-use crate::{rdp_target_label, AppState, NativeHostRect, NativeRdpTraceEventPayload, RdpConnectConfig};
-use std::io::Write;
-use std::process::{Command, Stdio};
+use crate::{AppState, NativeHostRect, RdpConnectConfig};
 use std::sync::mpsc as std_mpsc;
+use tauri::{AppHandle, Emitter, Runtime, State};
+
+#[cfg(windows)]
+use crate::{rdp_target_label, NativeRdpTraceEventPayload};
+#[cfg(windows)]
+use std::io::Write;
+#[cfg(windows)]
+use std::process::{Command, Stdio};
+#[cfg(windows)]
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+#[cfg(windows)]
+use tauri::Manager;
+#[cfg(windows)]
 use uuid::Uuid;
 
 #[cfg(windows)]
@@ -18,6 +27,7 @@ pub struct NativeRdpSession {
 
 #[derive(serde::Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(not(windows), allow(dead_code))]
 struct NativeRdpSidecarInitPayload {
     session_id: String,
     parent_hwnd: i64,
@@ -33,6 +43,7 @@ struct NativeRdpSidecarInitPayload {
 
 #[derive(serde::Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(not(windows), allow(dead_code))]
 struct NativeRdpSidecarInboundMessage {
     r#type: String,
     init: Option<NativeRdpSidecarInitPayload>,
@@ -41,6 +52,7 @@ struct NativeRdpSidecarInboundMessage {
 
 #[derive(serde::Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(not(windows), allow(dead_code))]
 struct NativeRdpSidecarOutboundMessage {
     r#type: String,
     detail: Option<String>,
@@ -48,6 +60,7 @@ struct NativeRdpSidecarOutboundMessage {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) enum NativeRdpSidecarCommand {
     Mount(NativeHostRect),
     Show,
@@ -85,6 +98,21 @@ fn emit_native_rdp_state<R: Runtime>(
             rect,
         },
     );
+}
+
+#[cfg(not(windows))]
+fn emit_native_rdp_state<R: Runtime>(
+    app: &AppHandle<R>,
+    session_id: &str,
+    state: &str,
+    detail: Option<String>,
+    rect: Option<NativeHostRect>,
+) {
+    let _ = app;
+    let _ = session_id;
+    let _ = state;
+    let _ = detail;
+    let _ = rect;
 }
 
 #[cfg(windows)]
@@ -128,6 +156,23 @@ fn emit_native_rdp_trace<R: Runtime>(
             extra,
         },
     );
+}
+
+#[cfg(not(windows))]
+fn emit_native_rdp_trace<R: Runtime>(
+    app: &AppHandle<R>,
+    session_id: &str,
+    level: &str,
+    stage: &str,
+    message: impl Into<String>,
+    extra: Option<String>,
+) {
+    let _ = app;
+    let _ = session_id;
+    let _ = level;
+    let _ = stage;
+    let _ = message.into();
+    let _ = extra;
 }
 
 #[cfg(windows)]

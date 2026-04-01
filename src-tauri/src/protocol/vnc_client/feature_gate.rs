@@ -4,6 +4,7 @@
 
 /// 当前使用的 VNC 后端类型
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum VncBackend {
     /// LibVNCClient C 库（推荐）
     LibVncClient,
@@ -13,6 +14,7 @@ pub enum VncBackend {
 
 impl VncBackend {
     /// 获取当前启用的后端
+    #[allow(dead_code)]
     pub fn current() -> Self {
         #[cfg(feature = "vnc-libvncclient")]
         return VncBackend::LibVncClient;
@@ -22,11 +24,13 @@ impl VncBackend {
     }
     
     /// 检查是否为 LibVNCClient
+    #[allow(dead_code)]
     pub fn is_libvncclient(&self) -> bool {
         matches!(self, VncBackend::LibVncClient)
     }
     
     /// 检查是否为 vnc-rs
+    #[allow(dead_code)]
     pub fn is_vnc_rs(&self) -> bool {
         matches!(self, VncBackend::VncRs)
     }
