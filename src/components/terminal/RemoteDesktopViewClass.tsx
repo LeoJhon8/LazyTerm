@@ -6,9 +6,7 @@ import { NativeRdpHostView } from "@/components/terminal/NativeRdpHostView";
 import type { INativeRdpConnector, IRdpConnector, RdpFramePayload } from "@/types/terminal";
 import {
   type BaseSessionViewProps,
-  useBaseSessionView,
   ConnectionStatusBadge,
-  DisconnectedBanner,
   LoadingPlaceholder,
   TransitionMask,
   VIEW_CONTAINER_CLASSNAME,
@@ -28,10 +26,7 @@ import { cn } from "@/lib/utils";
  * 继承 BaseGraphicSessionView 的图形化视图抽象子类
  */
 export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
-  const { paneId, sessionId, onVisualReady } = props;
-
-  // 基础会话状态
-  const { notifyVisualReady: baseNotifyVisualReady } = useBaseSessionView(props);
+  const { paneId, sessionId } = props;
 
   // 图形化会话状态
   const {
@@ -39,6 +34,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
     containerRef,
     frameSize,
     setFrameSize,
+    setConnected,
     notifyVisualReady,
     renderRgbaFrame,
     renderBlobFrame,
@@ -59,7 +55,6 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   const decodeInFlightRef = useRef(false);
   const drawTokenRef = useRef(0);
   const [transitionMaskVisible, setTransitionMaskVisible] = useState(true);
-  const { setConnected } = useBaseSessionView(props);
 
   const markVisualReady = useCallback(() => {
     if (!transitionMaskVisible) return;
@@ -355,7 +350,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
 
         <ConnectionStatusBadge
           title={activeSession.title}
-          connected={true}
+          connected={ironConnector.isConnected}
           extraInfo={frameSize ? <span>{frameSize.width} x {frameSize.height}</span> : null}
         />
 

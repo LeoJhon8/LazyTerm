@@ -115,14 +115,14 @@ export function PaneView({ paneId, showFocusBorder = true }: PaneViewProps) {
       )}
 
       {/* 会话类型标签 */}
-      <div className="absolute bottom-2 right-2 z-10 pointer-events-none">
+      {/* <div className="absolute bottom-2 right-2 z-10 pointer-events-none">
         <div className="px-2 py-0.5 rounded-full bg-background/80 text-[10px] text-muted-foreground border border-border/50">
           {session.type === "local" && "本地"}
           {session.type === "ssh" && "SSH"}
           {session.type === "rdp" && "RDP"}
           {session.type === "vnc" && "VNC"}
         </div>
-      </div>
+      </div> */}
     </div>
   );
 }

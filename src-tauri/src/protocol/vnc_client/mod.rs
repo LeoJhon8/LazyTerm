@@ -19,11 +19,11 @@
 mod client;
 mod callbacks;
 mod frame;
-mod event_loop;
 mod feature_gate;
 
 pub use client::{VncClient, VncClientConfig};
-pub use event_loop::{VncEventLoopHandle, ControlMessage};
+pub use callbacks::CallbackEvent as VncClientEvent;
+pub use frame::FrameUpdateRegion;
 
 use thiserror::Error;
 

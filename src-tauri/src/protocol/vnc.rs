@@ -35,7 +35,7 @@ pub async fn create_vnc_session<R: Runtime>(
     let client = VncClient::new(client_config);
 
     // 建立连接
-    let _event_receiver = client.connect().await.map_err(|e| {
+    let event_receiver = client.connect().await.map_err(|e| {
         let message = format!("VNC connection failed: {e}");
         log_vnc_error(&session_id, &target, "connect", &message);
         message
@@ -63,6 +63,7 @@ pub async fn create_vnc_session<R: Runtime>(
             session_id_clone.clone(),
             target_clone.clone(),
             client,
+            event_receiver,
             frame_channel,
             control_rx,
         ).await {

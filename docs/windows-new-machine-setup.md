@@ -230,6 +230,12 @@ winget install --id Microsoft.VisualStudioCode -e
 - `scripts/build-msrdpax-sidecar.ps1`
 - `src-tauri/native/msrdpax-host/msrdpax-host.csproj`
 
+注意：
+
+- 当前 `msrdpax-host` 目标框架是 `net9.0-windows`
+- 仓库已配置运行时主版本前滚，因此机器上只有 `.NET 10` 运行时也可以启动它
+- 如果你本地残留的是旧构建产物，修改项目后需要重新执行一次 `npm run build:msrdpax-sidecar:debug` 或 `npm run build:msrdpax-sidecar:release`，让新的 `runtimeconfig.json` 生效
+
 安装完成后验证：
 
 ```powershell
@@ -258,6 +264,44 @@ cd .\lazy-terminal
 ```
 
 然后安装前端依赖：
+
+```powershell
+npm install
+```
+
+---
+
+## 6. Windows 下的 LibVNCClient 额外说明
+
+当前项目的 VNC 后端在 Windows/MSVC 下依赖你手动编译安装的 `libvncserver/libvncclient`。
+
+推荐直接安装到下面这个默认目录：
+
+```text
+C:\dev\libvncserver\install
+```
+
+如果你使用这个默认目录，当前项目的 `src-tauri/build.rs` 会自动探测，不需要每次新开终端都手动设置环境变量。
+
+如果你安装到其他目录，再在当前 PowerShell 中设置：
+
+```powershell
+$env:LIBVNCSERVER_ROOT='你的安装目录'
+```
+
+推荐构建步骤：
+
+```powershell
+git clone https://github.com/LibVNC/libvncserver C:\dev\libvncserver
+cmake -S C:\dev\libvncserver -B C:\dev\libvncserver\build-msvc -G "Visual Studio 17 2022" -A x64 -DWITH_OPENSSL=ON -DWITH_GNUTLS=OFF -DWITH_SDL=OFF -DWITH_GTK=OFF -DWITH_EXAMPLES=OFF -DWITH_TESTS=OFF -DCMAKE_INSTALL_PREFIX=C:\dev\libvncserver\install
+cmake --build C:\dev\libvncserver\build-msvc --config Release
+cmake --install C:\dev\libvncserver\build-msvc --config Release
+```
+
+注意：
+
+- 不要使用 MSYS2 `pacman` 的 `mingw` 版本库给当前 Rust `x86_64-pc-windows-msvc` 目标链接
+- 如果 `npm run tauri dev` 在新终端里报找不到 `LibVNCClient`，优先检查你是否安装到了默认目录，或者是否设置了 `LIBVNCSERVER_ROOT`
 
 ```powershell
 npm ci

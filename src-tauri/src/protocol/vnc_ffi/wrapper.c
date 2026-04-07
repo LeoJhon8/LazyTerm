@@ -7,10 +7,52 @@
  * 编译命令（在构建脚本中使用）：
  *   gcc -c wrapper.c -o wrapper.o `pkg-config --cflags libvncclient`
  */
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#ifdef _MSC_VER
+#define strdup _strdup
+#endif
+#endif
 
 #include <rfb/rfbclient.h>
+#include <rfb/rfbproto.h>
 #include <stdlib.h>
 #include <string.h>
+
+static rfbBool HandleIgnoredQemuMessage(rfbClient* client, rfbServerToClientMsg* message) {
+    if (!client || !message || message->type != rfbQemuEvent) {
+        return FALSE;
+    }
+
+    char payload[sz_rfbQemuExtendedKeyEventMsg - 1] = {0};
+    if (!ReadFromRFBServer(client, payload, sizeof(payload))) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+void RfbClientRegisterIgnoreQemuExtension() {
+    static rfbClientProtocolExtension extension = {0};
+    static rfbBool registered = FALSE;
+
+    if (registered) {
+        return;
+    }
+
+    extension.encodings = NULL;
+    extension.handleEncoding = NULL;
+    extension.handleMessage = HandleIgnoredQemuMessage;
+    extension.next = NULL;
+    extension.securityTypes = NULL;
+    extension.handleAuthentication = NULL;
+
+    rfbClientRegisterExtension(&extension);
+    registered = TRUE;
+}
 
 // ============================================================================
 // 字段访问器
@@ -38,6 +80,57 @@ rfbPixelFormat RfbClientGetPixelFormat(rfbClient* client) {
 
 const char* RfbClientGetDesktopName(rfbClient* client) {
     return client ? client->desktopName : NULL;
+}
+
+void RfbClientSetEncodingsString(rfbClient* client, const char* encodings) {
+    if (!client) {
+        return;
+    }
+
+    if (!encodings) {
+        client->appData.encodingsString = NULL;
+        return;
+    }
+
+    client->appData.encodingsString = strdup(encodings);
+}
+
+char* RfbClientDupCString(const char* value) {
+    if (!value) {
+        return NULL;
+    }
+
+    return strdup(value);
+}
+
+void RfbClientSetEnableJpeg(rfbClient* client, rfbBool enable) {
+    if (client) {
+        client->appData.enableJPEG = enable;
+    }
+}
+
+void RfbClientSetUseRemoteCursor(rfbClient* client, rfbBool enable) {
+    if (client) {
+        client->appData.useRemoteCursor = enable;
+    }
+}
+
+void RfbClientSetHandleNewFBSize(rfbClient* client, rfbBool enable) {
+    if (client) {
+        client->canHandleNewFBSize = enable;
+    }
+}
+
+void RfbClientSetCompressLevel(rfbClient* client, int level) {
+    if (client) {
+        client->appData.compressLevel = level;
+    }
+}
+
+void RfbClientSetQualityLevel(rfbClient* client, int level) {
+    if (client) {
+        client->appData.qualityLevel = level;
+    }
 }
 
 // ============================================================================
@@ -73,6 +166,12 @@ void RfbClientSetGotXCutText(rfbClient* client, GotXCutTextProc callback) {
 void RfbClientSetGotCursorPos(rfbClient* client, HandleCursorPosProc callback) {
     if (client) {
         client->HandleCursorPos = callback;
+    }
+}
+
+void RfbClientSetGetPassword(rfbClient* client, GetPasswordProc callback) {
+    if (client) {
+        client->GetPassword = callback;
     }
 }
 

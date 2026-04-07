@@ -11,7 +11,7 @@
 //! - 回调函数在 LibVNCClient 内部线程中调用，需要注意 Send/Sync 约束
 //! - 使用 `std::sync::mpsc` 进行跨线程通信
 
-use std::ffi::{c_char, c_int, c_uint, CStr};
+use std::ffi::{c_char, c_int, c_uint, c_ushort, c_void, CStr};
 use std::os::raw::c_uchar;
 
 // ============================================================================
@@ -65,9 +65,9 @@ pub struct RfbPixelFormat {
     pub depth: c_uchar,
     pub big_endian: c_uchar,
     pub true_colour: c_uchar,
-    pub red_max: c_uint,
-    pub green_max: c_uint,
-    pub blue_max: c_uint,
+    pub red_max: c_ushort,
+    pub green_max: c_ushort,
+    pub blue_max: c_ushort,
     pub red_shift: c_uchar,
     pub green_shift: c_uchar,
     pub blue_shift: c_uchar,
@@ -102,6 +102,11 @@ pub struct RfbFramebufferUpdateMsg {
 pub type MallocFrameBufferCallback = unsafe extern "C" fn(
     client: *mut RfbClient,
 ) -> i8;
+
+/// VNC 密码回调类型
+pub type GetPasswordCallback = unsafe extern "C" fn(
+    client: *mut RfbClient,
+) -> *mut c_char;
 
 /// 帧缓冲区更新回调类型
 pub type FramebufferUpdateCallback = unsafe extern "C" fn(
@@ -235,6 +240,16 @@ extern "C" {
     pub fn RfbClientGetScreenHeight(client: *mut RfbClient) -> c_int;
     pub fn RfbClientGetFrameBuffer(client: *mut RfbClient) -> *mut c_uchar;
     pub fn RfbClientGetPixelFormat(client: *mut RfbClient) -> RfbPixelFormat;
+    pub fn RfbClientRegisterIgnoreQemuExtension();
+    pub fn RfbClientSetEncodingsString(client: *mut RfbClient, encodings: *const c_char);
+    pub fn RfbClientDupCString(value: *const c_char) -> *mut c_char;
+    pub fn RfbClientSetEnableJpeg(client: *mut RfbClient, enable: c_uchar);
+    pub fn RfbClientSetUseRemoteCursor(client: *mut RfbClient, enable: c_uchar);
+    pub fn RfbClientSetHandleNewFBSize(client: *mut RfbClient, enable: c_uchar);
+    pub fn RfbClientSetCompressLevel(client: *mut RfbClient, level: c_int);
+    pub fn RfbClientSetQualityLevel(client: *mut RfbClient, level: c_int);
+    pub fn RfbClientSetShared(client: *mut RfbClient, shared: c_uchar);
+    pub fn RfbClientSetViewOnly(client: *mut RfbClient, view_only: c_uchar);
     
     // 设置回调
     pub fn RfbClientSetMallocFrameBuffer(client: *mut RfbClient, callback: MallocFrameBufferCallback);
@@ -242,7 +257,12 @@ extern "C" {
     pub fn RfbClientSetHandleCursorShape(client: *mut RfbClient, callback: HandleCursorShapeCallback);
     pub fn RfbClientSetGotXCutText(client: *mut RfbClient, callback: GotXCutTextCallback);
     pub fn RfbClientSetGotCursorPos(client: *mut RfbClient, callback: GotCursorPosCallback);
+    pub fn RfbClientSetGetPassword(client: *mut RfbClient, callback: GetPasswordCallback);
     pub fn RfbClientDefaultMallocFrameBuffer(client: *mut RfbClient) -> i8;
+
+    // clientData 辅助函数
+    pub fn rfbClientSetClientData(client: *mut RfbClient, tag: *mut c_void, data: *mut c_void);
+    pub fn rfbClientGetClientData(client: *mut RfbClient, tag: *mut c_void) -> *mut c_void;
 
     // 错误处理
     pub fn RfbClientSetLastError(client: *mut RfbClient, error: *const c_char);

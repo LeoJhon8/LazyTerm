@@ -22,6 +22,7 @@ tauri-build = { version = "2.5.4", features = [] }
 # LibVNCClient FFI 构建依赖
 cc = "1.0"
 pkg-config = "0.3"
+vcpkg = "0.2"
 
 [dependencies]
 # Tauri 核心

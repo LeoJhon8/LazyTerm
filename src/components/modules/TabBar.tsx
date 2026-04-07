@@ -211,11 +211,8 @@ export function TabBar() {
   } = useTabsStore();
   
   const {
-    focusedPaneId,
     setPaneSession,
     focusPane,
-    canSplit,
-    splitPane,
   } = usePanesStore();
 
   const { defaultShell, confirmCloseNonDefaultTabs } = useSettingsStore();
@@ -457,29 +454,6 @@ export function TabBar() {
     requestAnimationFrame(() => {
       window.dispatchEvent(new Event("lazy-terminal-focus"));
     });
-  };
-  
-  // 处理在当前面板打开会话
-  const handleOpenInCurrentPane = (sessionId: string) => {
-    setFocusSession(sessionId);
-    activateSession(sessionId);
-  };
-  
-  // 处理在新面板打开会话
-  const handleOpenInNewPane = (sessionId: string) => {
-    if (!canSplit()) {
-      // 如果不能分屏，在当前面板打开
-      handleOpenInCurrentPane(sessionId);
-      return;
-    }
-    
-    if (focusedPaneId) {
-      // 拆分当前面板
-      const newPaneId = splitPane(focusedPaneId, "horizontal", sessionId);
-      if (newPaneId) {
-        setFocusSession(sessionId);
-      }
-    }
   };
   
   const requestCloseConfirmation = (targetIds: string[], onConfirm: () => void) => {

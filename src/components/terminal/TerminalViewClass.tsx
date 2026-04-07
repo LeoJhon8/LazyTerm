@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
@@ -12,7 +12,6 @@ import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
 import { getTerminalTheme, toXtermTheme } from "@/config/themes";
 import {
   type BaseSessionViewProps,
-  useBaseSessionView,
   LoadingPlaceholder,
   VIEW_CONTAINER_CLASSNAME,
 } from "./BaseSessionView";
@@ -130,10 +129,6 @@ function isTerminalConnector(connector: SessionConnector | undefined): connector
  */
 export function TerminalViewClass(props: BaseSessionViewProps) {
   const { paneId, sessionId } = props;
-  
-  // 调用基类 Hook 获取通用状态和逻辑
-  const baseResult = useBaseSessionView(props);
-  const { session } = baseResult;
   
   // Terminal 特有状态
   const { sessions } = useTabsStore();

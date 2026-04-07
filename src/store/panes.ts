@@ -22,7 +22,6 @@ import {
   findPaneBySession,
   canAddPane,
   canRemovePane,
-  getNextFocusablePane,
 } from "@/lib/pane-utils";
 
 // 重新导出类型
@@ -206,7 +205,7 @@ export const usePanesStore = create<PanesState>()(
     },
 
     addPane: (sessionId) => {
-      const { panes, focusedPaneId } = get();
+      const { panes } = get();
       
       const result = addPaneUtil(panes, sessionId);
       

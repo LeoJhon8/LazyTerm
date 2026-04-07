@@ -23,11 +23,9 @@ export function PaneContainer() {
     splitPane, 
     mergePane, 
     swapPanes,
-    focusPane,
   } = usePanesStore();
   
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
   
   // 处理分屏
   const handleSplit = useCallback((direction: "horizontal" | "vertical") => {
@@ -146,7 +144,6 @@ export function PaneContainer() {
         <ResizeHandle 
           direction={layoutDirection}
           pane1Id={panes[0].id}
-          pane2Id={panes[1].id}
         />
 
         {/* 第二个面板 */}
@@ -224,10 +221,9 @@ export function PaneContainer() {
 interface ResizeHandleProps {
   direction: "horizontal" | "vertical";
   pane1Id: string;
-  pane2Id: string;
 }
 
-function ResizeHandle({ direction, pane1Id, pane2Id }: ResizeHandleProps) {
+function ResizeHandle({ direction, pane1Id }: ResizeHandleProps) {
   const { panes, setPaneSize } = usePanesStore();
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -279,6 +275,7 @@ function ResizeHandle({ direction, pane1Id, pane2Id }: ResizeHandleProps) {
       className={cn(
         "relative z-10 flex items-center justify-center",
         "bg-border/50 hover:bg-primary/50 transition-colors",
+        isDragging && "bg-primary/50",
         isHorizontal 
           ? "w-1 cursor-col-resize" 
           : "h-1 cursor-row-resize"

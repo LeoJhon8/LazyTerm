@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
-import type { Session } from "@/types/terminal";
+import type { TerminalSession } from "@/store/tabs";
 
 /**
  * 视图基类 props
@@ -35,7 +35,7 @@ export interface ViewContainerRef {
  */
 export interface BaseSessionViewResult extends ConnectionState, ViewContainerRef {
   /** 当前会话 */
-  session: Session | undefined;
+  session: TerminalSession | undefined;
   /** 会话标题 */
   sessionTitle: string;
   /** 主动画帧请求 */
@@ -186,6 +186,10 @@ export function ConnectionStatusBadge({
 }) {
   return (
     <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full border border-white/10 bg-black/45 px-3 py-1.5 text-xs text-white/80 backdrop-blur-md">
+      <span
+        className={connected ? "h-2 w-2 rounded-full bg-emerald-300" : "h-2 w-2 rounded-full bg-amber-300"}
+        aria-hidden="true"
+      />
       <span>{title}</span>
       {extraInfo}
     </div>

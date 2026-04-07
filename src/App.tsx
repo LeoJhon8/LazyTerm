@@ -39,7 +39,7 @@ function App() {
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
   const { closeAllSessions, connectionError, clearConnectionError, focusSessionId, sessions } = useTabsStore();
-  const { initializePanes, panes, getFocusedPane } = usePanesStore();
+  const { initializePanes } = usePanesStore();
   const leftSlotCollapsed = slotConfig.left.collapsed;
   const rightSlotCollapsed = slotConfig.right.collapsed;
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
@@ -47,9 +47,7 @@ function App() {
   const shouldDisableUiBlur = hasBackgroundImage && backgroundImageUiMode === "clear";
 
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
-  
-  // 获取焦点面板的会话来决定是否隐藏快捷命令栏
-  const focusedPane = getFocusedPane();
+
   const focusSession = focusSessionId 
     ? sessions.find(s => s.id === focusSessionId)
     : null;
