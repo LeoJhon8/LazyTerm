@@ -168,7 +168,7 @@ export abstract class BaseSessionView {
    * 子类可覆盖以自定义样式
    */
   protected getContainerClassName(): string {
-    return "terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden border border-(--terminal-border) shadow-(--panel-shadow)";
+    return "terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden shadow-(--panel-shadow)";
   }
 }
 
@@ -257,7 +257,7 @@ export function clamp(value: number, min: number, max: number): number {
  * 通用容器样式类名
  */
 export const VIEW_CONTAINER_CLASSNAME = 
-  "terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden border border-(--terminal-border) shadow-(--panel-shadow)";
+  "terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden shadow-(--panel-shadow)";
 
 /**
  * Canvas 容器样式类名

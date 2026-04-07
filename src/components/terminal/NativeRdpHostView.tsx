@@ -400,7 +400,7 @@ export function NativeRdpHostView({
 
   return (
     <main
-      className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden border border-(--terminal-border) bg-(--terminal-shell) shadow-(--panel-shadow)"
+      className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden bg-(--terminal-shell) shadow-(--panel-shadow)"
       style={{
         backgroundColor: hasBackgroundImage ? "transparent" : undefined,
       }}
