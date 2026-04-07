@@ -4,6 +4,7 @@
 use async_trait::async_trait;
 use russh::client;
 use russh_keys::key;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,11 +12,178 @@ use crate::types::SshConnectConfig;
 
 /// SSH 客户端处理器
 #[derive(Clone)]
-pub struct SshClientHandler;
+pub struct SshClientHandler {
+    host: String,
+    port: u16,
+}
 
 impl SshClientHandler {
-    pub fn new() -> Self {
-        Self
+    pub fn new(host: String, port: u16) -> Self {
+        Self { host, port }
+    }
+
+    /// 验证并更新 known_hosts 文件
+    ///
+    /// 策略：
+    /// 1. 密钥匹配 → 接受
+    /// 2. 首次连接（未记录）→ 记录密钥并接受（Trust On First Use）
+    /// 3. 密钥变更 → 自动移除旧记录，写入新密钥，接受
+    fn verify_and_update_known_hosts(&self, server_key: &key::PublicKey) {
+        use crate::logging;
+
+        match russh_keys::check_known_hosts(&self.host, self.port, server_key) {
+            Ok(true) => {
+                logging::info(
+                    "SSH/hostkey",
+                    format!("主机密钥验证通过: {}:{}", self.host, self.port),
+                );
+            }
+            Ok(false) => {
+                // 未找到该主机的记录，首次连接 → 记录密钥
+                logging::info(
+                    "SSH/hostkey",
+                    format!(
+                        "首次连接主机 {}:{}，记录公钥到 known_hosts",
+                        self.host, self.port
+                    ),
+                );
+                if let Err(e) =
+                    russh_keys::learn_known_hosts(&self.host, self.port, server_key)
+                {
+                    logging::warn(
+                        "SSH/hostkey",
+                        format!("写入 known_hosts 失败: {}", e),
+                    );
+                }
+            }
+            Err(russh_keys::Error::KeyChanged { line }) => {
+                // 密钥已变更！自动移除旧记录并写入新密钥
+                logging::warn(
+                    "SSH/hostkey",
+                    format!(
+                        "主机 {}:{} 的公钥已变更（旧记录在第 {} 行），自动更新 known_hosts",
+                        self.host, self.port, line
+                    ),
+                );
+                self.remove_and_relearn(server_key);
+            }
+            Err(e) => {
+                // 其他错误（文件不存在、home 目录未知等）→ 尝试记录密钥
+                logging::warn(
+                    "SSH/hostkey",
+                    format!("known_hosts 检查出错: {}，尝试记录新密钥", e),
+                );
+                if let Err(e2) =
+                    russh_keys::learn_known_hosts(&self.host, self.port, server_key)
+                {
+                    logging::warn(
+                        "SSH/hostkey",
+                        format!("写入 known_hosts 失败: {}", e2),
+                    );
+                }
+            }
+        }
+    }
+
+    /// 从 known_hosts 中移除该主机的所有旧记录，然后写入新密钥
+    fn remove_and_relearn(&self, server_key: &key::PublicKey) {
+        use crate::logging;
+
+        // 利用 russh_keys::known_host_keys 获取该主机在 known_hosts 中所有匹配条目的行号
+        let lines_to_remove: HashSet<usize> =
+            match russh_keys::known_host_keys(&self.host, self.port) {
+                Ok(entries) => entries.into_iter().map(|(line, _)| line).collect(),
+                Err(e) => {
+                    logging::warn(
+                        "SSH/hostkey",
+                        format!("读取 known_hosts 条目失败: {}，跳过自动更新", e),
+                    );
+                    return;
+                }
+            };
+
+        if lines_to_remove.is_empty() {
+            // 没有匹配的行（理论上不应进入此分支，但防御性处理）
+            if let Err(e) =
+                russh_keys::learn_known_hosts(&self.host, self.port, server_key)
+            {
+                logging::warn(
+                    "SSH/hostkey",
+                    format!("写入新密钥到 known_hosts 失败: {}", e),
+                );
+            }
+            return;
+        }
+
+        // 获取 known_hosts 文件路径
+        let known_hosts_path = match get_known_hosts_path() {
+            Some(p) => p,
+            None => {
+                logging::warn("SSH/hostkey", "无法确定 known_hosts 路径，跳过自动更新");
+                return;
+            }
+        };
+
+        // 读取现有内容
+        let content = match std::fs::read_to_string(&known_hosts_path) {
+            Ok(c) => c,
+            Err(e) => {
+                logging::warn(
+                    "SSH/hostkey",
+                    format!("读取 known_hosts 失败: {}", e),
+                );
+                return;
+            }
+        };
+
+        // 按行号过滤（known_host_keys 返回的行号从 1 开始）
+        let new_lines: Vec<&str> = content
+            .lines()
+            .enumerate()
+            .filter(|(i, _)| !lines_to_remove.contains(&(i + 1)))
+            .map(|(_, line)| line)
+            .collect();
+
+        let mut new_content = new_lines.join("\n");
+        if !new_content.is_empty() && !new_content.ends_with('\n') {
+            new_content.push('\n');
+        }
+
+        if let Err(e) = std::fs::write(&known_hosts_path, &new_content) {
+            logging::warn(
+                "SSH/hostkey",
+                format!("重写 known_hosts 失败: {}", e),
+            );
+            return;
+        }
+
+        logging::info(
+            "SSH/hostkey",
+            format!("已移除 {} 条旧的主机密钥记录", lines_to_remove.len()),
+        );
+
+        // 写入新密钥
+        if let Err(e) = russh_keys::learn_known_hosts(&self.host, self.port, server_key) {
+            logging::warn(
+                "SSH/hostkey",
+                format!("写入新密钥到 known_hosts 失败: {}", e),
+            );
+        } else {
+            logging::info("SSH/hostkey", "已写入新的主机密钥");
+        }
+    }
+}
+
+/// 获取 known_hosts 文件路径（与 russh_keys 内部逻辑一致）
+fn get_known_hosts_path() -> Option<std::path::PathBuf> {
+    let home = home::home_dir()?;
+    #[cfg(target_os = "windows")]
+    {
+        Some(home.join("ssh").join("known_hosts"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Some(home.join(".ssh").join("known_hosts"))
     }
 }
 
@@ -25,9 +193,10 @@ impl client::Handler for SshClientHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &key::PublicKey,
+        server_public_key: &key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        // 接受所有服务器密钥（生产环境应实现密钥指纹验证）
+        // 验证并管理 known_hosts，始终接受密钥（自动信任策略）
+        self.verify_and_update_known_hosts(server_public_key);
         Ok(true)
     }
 
@@ -248,7 +417,7 @@ pub async fn connect_and_authenticate(
     config: &SshConnectConfig,
 ) -> Result<client::Handle<SshClientHandler>, String> {
     let client_config = create_ssh_client_config();
-    let client_handler = SshClientHandler::new();
+    let client_handler = SshClientHandler::new(config.host.clone(), config.port);
 
     let mut handle = client::connect(
         Arc::new(client_config),

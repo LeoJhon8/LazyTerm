@@ -40,6 +40,7 @@ russh-keys = { version = "0.45", features = ["openssl"] }
 openssl = { version = "0.10", features = ["vendored"] }
 russh-sftp = "2.1.1"
 async-trait = "0.1"
+home = "0.5"
 
 # 异步运行时与工具
 tokio = { version = "1.0", features = ["full"] } 
