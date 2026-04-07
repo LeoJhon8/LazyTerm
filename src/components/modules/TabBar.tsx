@@ -1,4 +1,4 @@
-import { useTabsStore, registerSessionLifecycleCallbacks, unregisterSessionLifecycleCallbacks } from "@/store/tabs";
+import { useTabsStore } from "@/store/tabs";
 import { usePanesStore } from "@/store/panes";
 import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
@@ -28,8 +28,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { X, Plus } from "lucide-react";
+import { X, Plus, Columns } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
+import { getAllLeaves } from "@/lib/pane-utils";
 import { useEffect, useRef, useState, useCallback, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
 import {
   DndContext,
@@ -39,6 +40,9 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
+  type Modifier,
+  DragOverlay,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -50,6 +54,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { ShellInfo } from "@/types/shell";
 import { getAvailableShells } from "@/services/shellService";
+import { startTabDrag, endTabDrag } from "@/lib/tab-drag-state";
+import { cn } from "@/lib/utils";
 
 interface CloseConfirmationState {
   open: boolean;
@@ -63,28 +69,16 @@ interface RenameState {
   value: string;
 }
 
-function normalizeShellValue(value: string) {
-  return value.trim().toLowerCase();
-}
+
 
 function isDefaultConnectionTab(
-  session: ReturnType<typeof useTabsStore.getState>["sessions"][number],
+  tabTitle: string,
   defaultShell: string,
 ) {
-  if (session.type !== "local") {
-    return false;
-  }
-
-  if (session.config?.sshConfig || session.config?.admin) {
-    return false;
-  }
-
-  const sessionShell = session.config?.shell;
-  if (!sessionShell) {
-    return true;
-  }
-
-  return normalizeShellValue(sessionShell) === normalizeShellValue(defaultShell);
+  // 简化的默认标签页判断，如果名字包含 shell 名称则认为是默认的（后续可优化）
+  const normalizedTitle = tabTitle.trim().toLowerCase();
+  const normalizedShell = defaultShell.trim().toLowerCase();
+  return normalizedTitle.includes(normalizedShell) || normalizedTitle === 'terminal';
 }
 
 function SortableTab({
@@ -93,6 +87,7 @@ function SortableTab({
   active,
   canCloseLeft,
   canCloseRight,
+  isSplit,
   onSwitch,
   onClose,
   onRename,
@@ -111,6 +106,7 @@ function SortableTab({
   onCloseOthers: (id: string) => void;
   onCloseLeft: (id: string) => void;
   onCloseRight: (id: string) => void;
+  isSplit?: boolean;
 }) {
   const {
     attributes,
@@ -157,8 +153,9 @@ function SortableTab({
             {...attributes}
             {...listeners}
           >
-            <span className="pointer-events-none max-w-32 flex-1 truncate text-[13px]">
-              {title}
+            <span className="pointer-events-none max-w-48 flex-1 truncate text-[13px] flex items-center justify-center gap-1.5 leading-none">
+              {isSplit && <Columns className="h-3.5 w-3.5 opacity-70 shrink-0" />}
+              <span className="truncate">{title}</span>
             </span>
 
             <Button
@@ -198,21 +195,21 @@ function SortableTab({
 
 export function TabBar() {
   const {
-    sessions: tabs,
-    focusSessionId: activeTabId,
-    setFocusSession,
-    removeSession,
+    tabs,
+    sessions,
+    activeTabId,
+    setActiveTabId,
+    addTab,
+    removeTab,
+    reorderTabs,
+    updateTab,
     addSession,
-    reorderSessions,
-    closeOtherSessions,
-    closeLeftSessions,
-    closeRightSessions,
-    updateSession,
+    removeSession,
   } = useTabsStore();
   
   const {
-    setPaneSession,
-    focusPane,
+    workspaces,
+    cleanupWorkspace,
   } = usePanesStore();
 
   const { defaultShell, confirmCloseNonDefaultTabs } = useSettingsStore();
@@ -227,6 +224,8 @@ export function TabBar() {
     sessionId: null,
     value: "",
   });
+  
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [isTabsOverflowing, setIsTabsOverflowing] = useState(false);
   const pendingCloseActionRef = useRef<(() => void) | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
@@ -238,123 +237,14 @@ export function TabBar() {
       .catch((err) => logger.error("FE/tab-bar", "Failed to get shells", {err}));
   }, []);
 
-  /**
-   * 激活会话（将 session 绑定到 pane）
-   * 当会话变为活动会话时调用（新建会话、切换会话）
-   * 
-   * 逻辑：
-   * - 如果没有 pane，新建 pane 并绑定
-   * - 如果有焦点 pane，绑定到焦点 pane
-   * - 如果有 pane 但没有焦点，绑定到第一个 pane
-   */
-  const activateSession = useCallback((sessionId: string) => {
-    const panesStore = usePanesStore.getState();
-    const { panes, focusedPaneId } = panesStore;
-    
-    logger.debug("FE/TabBar", "Activating session", { sessionId, panesCount: panes.length, focusedPaneId });
-    
-    if (panes.length === 0) {
-      // 没有 pane，创建新 pane 并关联
-      const newPaneId = panesStore.addPane(sessionId);
-      logger.debug("FE/TabBar", "Created new pane for session", { sessionId, newPaneId });
-    } else if (focusedPaneId) {
-      // 有焦点 pane，绑定到焦点 pane
-      panesStore.setPaneSession(focusedPaneId, sessionId);
-      logger.debug("FE/TabBar", "Bound session to focused pane", { focusedPaneId, sessionId });
-    } else {
-      // 有 pane 但没有焦点，绑定到第一个 pane
-      const firstPane = panes[0];
-      panesStore.setPaneSession(firstPane.id, sessionId);
-      panesStore.focusPane(firstPane.id);
-      logger.debug("FE/TabBar", "Bound session to first pane", { paneId: firstPane.id, sessionId });
-    }
-  }, []);
-
-  /**
-   * 将会话设为焦点
-   * 当会话变为 focus session 时调用（切换 tab、关闭其他 tab）
-   * 
-   * 逻辑：
-   * - 如果目标 session 已在某个 pane 中，将焦点设到该 pane
-   * - 如果只有 1 个 pane，直接替换 pane 中的 session
-   * - 如果多个 pane 且目标 session 未显示，在当前焦点 pane 中显示
-   */
-  const focusSession = useCallback((sessionId: string) => {
-    const panesStore = usePanesStore.getState();
-    const { panes, focusedPaneId } = panesStore;
-    
-    logger.debug("FE/TabBar", "Focusing session", { sessionId, panesCount: panes.length });
-    
-    // 查找目标 session 是否已经在某个 pane 中显示
-    const targetPane = panesStore.getPaneBySession(sessionId);
-    if (targetPane) {
-      // 目标 session 已经在某个 pane 中，将焦点设到该 pane
-      panesStore.focusPane(targetPane.id);
-      logger.debug("FE/TabBar", "Focused to pane with session", { paneId: targetPane.id, sessionId });
-    } else if (panes.length === 1) {
-      // 只有 1 个 pane，直接替换 session
-      panesStore.setPaneSession(panes[0].id, sessionId);
-      panesStore.focusPane(panes[0].id);
-      logger.debug("FE/TabBar", "Replaced single pane session", { paneId: panes[0].id, sessionId });
-    } else if (focusedPaneId) {
-      // 多个 pane，在当前焦点 pane 中显示
-      panesStore.setPaneSession(focusedPaneId, sessionId);
-      logger.debug("FE/TabBar", "Set session to focused pane", { paneId: focusedPaneId, sessionId });
-    }
-  }, []);
-
-  /**
-   * 移除会话（关闭 session 时调用）
-   * 直接删除对应的 pane
-   */
-  const removeSessionPane = useCallback((sessionId: string) => {
-    const panesStore = usePanesStore.getState();
-    
-    logger.debug("FE/TabBar", "Removing pane for session", { sessionId });
-    
-    const pane = panesStore.getPaneBySession(sessionId);
-    if (pane) {
-      panesStore.removePane(pane.id);
-      logger.debug("FE/TabBar", "Removed pane", { paneId: pane.id, sessionId });
-    }
-  }, []);
-
-  // 注册 session 生命周期回调
-  const handleSessionCreated = useCallback((sessionId: string) => {
-    activateSession(sessionId);
-  }, [activateSession]);
-
-  const handleSessionRemoved = useCallback((sessionId: string) => {
-    removeSessionPane(sessionId);
-  }, [removeSessionPane]);
-
-  const handleFocusSessionChanged = useCallback((sessionId: string) => {
-    // 关闭会话后焦点切换到其他会话，需要重新绑定 pane
-    logger.debug("FE/TabBar", "Focus session changed, activating", { sessionId });
-    activateSession(sessionId);
-  }, [activateSession]);
-
-  const handleAllSessionsClosed = useCallback(() => {
-    logger.debug("FE/TabBar", "All sessions closed, clearing panes");
-    usePanesStore.getState().clearPanes();
-  }, []);
-
+  // 不再需要自动化的 Session 生命周期绑定，新建标签时直接分发
+  // 仅在组件挂载时如果没有任何 Tab，创建一个默认 Tab
   useEffect(() => {
-    const callbacks = {
-      onSessionCreated: handleSessionCreated,
-      onSessionRemoved: handleSessionRemoved,
-      onFocusSessionChanged: handleFocusSessionChanged,
-      onAllSessionsClosed: handleAllSessionsClosed,
-    };
-
-    registerSessionLifecycleCallbacks(callbacks);
-    logger.debug("FE/TabBar", "Session lifecycle callbacks registered");
-
-    return () => {
-      unregisterSessionLifecycleCallbacks();
-      logger.debug("FE/TabBar", "Session lifecycle callbacks unregistered");
-    };
-  }, [handleSessionCreated, handleSessionRemoved, handleFocusSessionChanged, handleAllSessionsClosed]);
+    if (tabs.length === 0 && shells.length > 0) {
+      handleAddTab();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shells]);
 
   useEffect(() => {
     if (!renameState.open) {
@@ -415,6 +305,54 @@ export function TabBar() {
     })
   );
 
+  const restrictToHorizontalAxis: Modifier = ({ transform }) => {
+    return {
+      ...transform,
+      y: 0,
+    };
+  };
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const draggedId = String(event.active.id);
+    // 通知 PaneView：有标签页开始拖拽
+    startTabDrag(draggedId);
+    setActiveDragId(draggedId);
+
+    // 用户需求：如果拖拽的是当前激活的 Tab，自动将视图切换到相邻的 Tab，方便将被拖拽的 Tab 放到别的分屏里
+    const { activeTabId, tabs, setActiveTabId } = useTabsStore.getState();
+    if (draggedId === activeTabId && tabs.length > 1) {
+      const currentIndex = tabs.findIndex((t) => t.id === draggedId);
+      if (currentIndex > 0) {
+        setActiveTabId(tabs[currentIndex - 1].id);
+      } else {
+        setActiveTabId(tabs[currentIndex + 1].id);
+      }
+      
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event("lazy-terminal-focus"));
+      });
+    }
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    // 通知 PaneView：拖拽结束
+    endTabDrag();
+    setActiveDragId(null);
+
+    const { active, over } = event;
+    // 如果拖拽在排序区域内结束 → 重排列
+    if (over && active.id !== over.id) {
+      const currentOrder = tabs.map((tab) => tab.id);
+      const oldIndex = currentOrder.indexOf(String(active.id));
+      const newIndex = currentOrder.indexOf(String(over.id));
+      if (oldIndex !== -1 && newIndex !== -1) {
+        reorderTabs(arrayMove(currentOrder, oldIndex, newIndex));
+      }
+    }
+    // 如果 over === null，拖拽到了排序区域外
+    // PaneView 会通过 TAB_DRAG_END_EVENT 自行处理
+  }, [tabs, reorderTabs]);
+
   const handleAddTab = () => {
     const shellInfo = shells.find(
       (shell) => shell.path === defaultShell || shell.name.toLowerCase() === defaultShell.toLowerCase()
@@ -428,8 +366,14 @@ export function TabBar() {
           : "Terminal";
 
     // 创建新会话 - pane 的创建和关联由生命周期回调自动处理
-    logger.debug("FE/TabBar", "Creating new session", { title });
-    addSession({
+    logger.debug("FE/TabBar", "Creating new workspace and session", { title });
+    
+    // 1. 创建工作区 Tab
+    const tabId = addTab({ title });
+    setActiveTabId(tabId);
+
+    // 2. 创建主会话
+    const sessionId = addSession({
       title,
       type: "local",
       cwd: typeof process !== "undefined" ? process.cwd() : "/",
@@ -437,19 +381,13 @@ export function TabBar() {
         shell: defaultShell,
       },
     });
+
+    // 3. 将会话放入刚才选中的工作区
+    usePanesStore.getState().addPane(sessionId);
   };
 
-  const handleTabSwitch = (id: string, paneId?: string) => {
-    setFocusSession(id);
-    
-    // 使用 focusSession 处理 pane 绑定和焦点切换
-    if (paneId) {
-      // 指定了 paneId，直接切换到该 pane
-      setPaneSession(paneId, id);
-      focusPane(paneId);
-    } else {
-      focusSession(id);
-    }
+  const handleTabSwitch = (id: string) => {
+    setActiveTabId(id);
     
     requestAnimationFrame(() => {
       window.dispatchEvent(new Event("lazy-terminal-focus"));
@@ -462,21 +400,21 @@ export function TabBar() {
     }
 
     const targetIdSet = new Set(targetIds);
-    const targetSessions = tabs.filter((tab) => targetIdSet.has(tab.id));
-    const nonDefaultSessions = targetSessions.filter(
-      (session) => !isDefaultConnectionTab(session, defaultShell)
+    const targetTabs = tabs.filter((tab) => targetIdSet.has(tab.id));
+    const nonDefaultTabs = targetTabs.filter(
+      (tab) => !isDefaultConnectionTab(tab.title, defaultShell)
     );
 
-    if (!confirmCloseNonDefaultTabs || nonDefaultSessions.length === 0) {
+    if (!confirmCloseNonDefaultTabs || nonDefaultTabs.length === 0) {
       onConfirm();
       return;
     }
 
-    const targetCount = nonDefaultSessions.length;
-    const previewNames = nonDefaultSessions.slice(0, 3).map((session) => `“${session.title}”`);
+    const targetCount = nonDefaultTabs.length;
+    const previewNames = nonDefaultTabs.slice(0, 3).map((tab) => `“${tab.title}”`);
     const remainingCount = targetCount - previewNames.length;
     const sessionSummary = remainingCount > 0
-      ? `${previewNames.join("、")} 等 ${targetCount} 个标签页`
+      ? `${previewNames.join("、")} 等 ${targetCount} 个工作区`
       : previewNames.join("、");
 
     pendingCloseActionRef.current = onConfirm;
@@ -484,8 +422,8 @@ export function TabBar() {
       open: true,
       title: targetCount === 1
         ? `确认关闭 ${previewNames[0]}？`
-        : `确认关闭 ${targetCount} 个非默认连接标签页？`,
-      description: `即将关闭 ${sessionSummary}。这些标签页不是默认连接，关闭后当前会话会立即断开。`,
+        : `确认关闭 ${targetCount} 个非默认工作区？`,
+      description: `即将关闭 ${sessionSummary}。关闭后相关的连接会立即断开。`,
     });
   };
 
@@ -506,15 +444,29 @@ export function TabBar() {
     pendingAction?.();
   };
 
+  const _closeWorkspace = (tabId: string) => {
+    // 找出所有关联的 session，关闭它们
+    const leaves = usePanesStore.getState().getAllLeaves(tabId);
+    leaves.forEach(l => {
+      if (l.sessionId) removeSession(l.sessionId);
+    });
+    // 清理并在 TabBar 中移除
+    cleanupWorkspace(tabId);
+    removeTab(tabId);
+  }
+
   const handleCloseTab = (event: MouseEvent<HTMLButtonElement>, id: string) => {
     event.stopPropagation();
-    requestCloseConfirmation([id], () => removeSession(id));
+    requestCloseConfirmation([id], () => _closeWorkspace(id));
   };
 
   const handleCloseOthers = (id: string) => {
+    const targetIds = tabs.filter((tab) => tab.id !== id).map((tab) => tab.id);
     requestCloseConfirmation(
-      tabs.filter((tab) => tab.id !== id).map((tab) => tab.id),
-      () => closeOtherSessions(id)
+      targetIds,
+      () => {
+        targetIds.forEach(_closeWorkspace);
+      }
     );
   };
 
@@ -524,9 +476,12 @@ export function TabBar() {
       return;
     }
 
+    const targetIds = tabs.slice(0, targetIndex).map((tab) => tab.id);
     requestCloseConfirmation(
-      tabs.slice(0, targetIndex).map((tab) => tab.id),
-      () => closeLeftSessions(id)
+      targetIds,
+      () => {
+        targetIds.forEach(_closeWorkspace);
+      }
     );
   };
 
@@ -536,9 +491,12 @@ export function TabBar() {
       return;
     }
 
+    const targetIds = tabs.slice(targetIndex + 1).map((tab) => tab.id);
     requestCloseConfirmation(
-      tabs.slice(targetIndex + 1).map((tab) => tab.id),
-      () => closeRightSessions(id)
+      targetIds,
+      () => {
+        targetIds.forEach(_closeWorkspace);
+      }
     );
   };
 
@@ -568,7 +526,7 @@ export function TabBar() {
       return;
     }
 
-    updateSession(renameState.sessionId, { title: nextTitle });
+    updateTab(renameState.sessionId, { title: nextTitle });
     setRenameState({ open: false, sessionId: null, value: "" });
   };
 
@@ -579,23 +537,8 @@ export function TabBar() {
     }
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
 
-    if (!over || active.id === over.id) {
-      return;
-    }
 
-    const currentOrder = tabs.map((tab) => tab.id);
-    const oldIndex = currentOrder.indexOf(String(active.id));
-    const newIndex = currentOrder.indexOf(String(over.id));
-
-    if (oldIndex === -1 || newIndex === -1) {
-      return;
-    }
-
-    reorderSessions(arrayMove(currentOrder, oldIndex, newIndex));
-  };
 
   const handleTabsWheel = (event: WheelEvent<HTMLDivElement>) => {
     const container = tabsContainerRef.current;
@@ -633,6 +576,8 @@ export function TabBar() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
+          modifiers={[restrictToHorizontalAxis]}
+          onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
           <SortableContext
@@ -644,22 +589,35 @@ export function TabBar() {
               className="tabbar-scroll no-scrollbar"
               onWheel={handleTabsWheel}
             >
-              {tabs.map((tab) => (
-                <SortableTab
-                  key={tab.id}
-                  id={tab.id}
-                  title={tab.title}
-                  active={tab.id === activeTabId}
-                  canCloseLeft={tabs[0]?.id !== tab.id}
-                  canCloseRight={tabs[tabs.length - 1]?.id !== tab.id}
-                  onSwitch={handleTabSwitch}
-                  onClose={handleCloseTab}
-                  onRename={handleRenameOpen}
-                  onCloseOthers={handleCloseOthers}
-                  onCloseLeft={handleCloseLeft}
-                  onCloseRight={handleCloseRight}
-                />
-              ))}
+              {tabs.map((tab) => {
+                const ws = workspaces[tab.id];
+                const leaves = ws?.rootNode ? getAllLeaves(ws.rootNode) : [];
+                const isSplit = leaves.length > 1;
+
+                let displayTitle = tab.title;
+                if (isSplit) {
+                  const titles = leaves.map(l => sessions.find(s => s.id === l.sessionId)?.title || "新标签");
+                  displayTitle = titles.join(" | ");
+                }
+
+                return (
+                  <SortableTab
+                    key={tab.id}
+                    id={tab.id}
+                    title={displayTitle}
+                    isSplit={isSplit}
+                    active={activeTabId === tab.id}
+                    canCloseLeft={tabs[0]?.id !== tab.id}
+                    canCloseRight={tabs[tabs.length - 1]?.id !== tab.id}
+                    onSwitch={handleTabSwitch}
+                    onClose={handleCloseTab}
+                    onRename={handleRenameOpen}
+                    onCloseOthers={handleCloseOthers}
+                    onCloseLeft={handleCloseLeft}
+                    onCloseRight={handleCloseRight}
+                  />
+                );
+              })}
 
               {!isTabsOverflowing ? (
                 <div className="tabbar-action tabbar-action-inline relative z-10 shrink-0">
@@ -668,6 +626,29 @@ export function TabBar() {
               ) : null}
             </div>
           </SortableContext>
+          <DragOverlay>
+            {activeDragId ? (
+              <div
+                className={cn(
+                  "tab-item group relative cursor-pointer select-none",
+                  "bg-background/90 shadow-lg ring-1 ring-border/70 shrink-0",
+                  "tab-item-active z-50 opacity-90 backdrop-blur-md"
+                )}
+                style={{ width: "160px" }}
+              >
+                <span className="pointer-events-none max-w-32 flex-1 truncate text-[13px]">
+                  {tabs.find((t) => t.id === activeDragId)?.title || "标签页"}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="tab-close ml-1 text-muted-foreground opacity-100"
+                >
+                  <X className="h-2 w-2" />
+                </Button>
+              </div>
+            ) : null}
+          </DragOverlay>
         </DndContext>
       </div>
 

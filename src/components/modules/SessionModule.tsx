@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useSshProfilesStore, type SessionNode } from "@/store/ssh-profiles";
 import { useTabsStore } from "@/store/tabs";
+import { usePanesStore } from "@/store/panes";
 import { SshConnectDialog } from "@/components/dialogs/SshConnectDialog";
 import { RdpConnectDialog } from "@/components/dialogs/RdpConnectDialog";
 import { VncConnectDialog } from "@/components/dialogs/VncConnectDialog";
@@ -194,7 +195,14 @@ function DraggableDroppableRow({
 
 export function SessionModule() {
   const { nodes, addFolder, addProfile, removeNode, updateNode, moveNode, ensureRoot } = useSshProfilesStore();
-  const { addSession } = useTabsStore();
+  const { addTab, setActiveTabId, addSession } = useTabsStore();
+
+  const launchWorkspaceWithSession = (sessionData: Parameters<typeof addSession>[0]) => {
+    const tabId = addTab({ title: sessionData.title });
+    setActiveTabId(tabId);
+    const sessionId = addSession(sessionData);
+    usePanesStore.getState().addPane(sessionId);
+  };
 
   // 拖拽状态
   const [dragState, setDragState] = useState<{
@@ -265,16 +273,15 @@ export function SessionModule() {
 
   const handleAction = (type: string, node: SessionNode) => {
     if (type === 'connect' && node.config) {
-      // 创建会话 - pane 的创建和关联由 TabBar 的生命周期回调集中处理
       if (node.type === "ssh" && isSshConfig(node.config)) {
-        addSession({ title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } });
+        launchWorkspaceWithSession({ title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } });
       } else if (node.type === "rdp" && isRdpConfig(node.config)) {
         const rdpConfig = IS_WINDOWS
           ? { ...node.config, backend: "msrdpax" as const, width: undefined, height: undefined, autoResize: true }
           : node.config;
-        addSession({ title: node.name, type: "rdp", host: rdpConfig.host, config: { host: rdpConfig.host, port: rdpConfig.port, rdpConfig } });
+        launchWorkspaceWithSession({ title: node.name, type: "rdp", host: rdpConfig.host, config: { host: rdpConfig.host, port: rdpConfig.port, rdpConfig } });
       } else if (node.type === "vnc" && isVncConfig(node.config)) {
-        addSession({ title: node.name, type: "vnc", host: node.config.host, config: { host: node.config.host, port: node.config.port, vncConfig: node.config } });
+        launchWorkspaceWithSession({ title: node.name, type: "vnc", host: node.config.host, config: { host: node.config.host, port: node.config.port, vncConfig: node.config } });
       }
     } else if (type === 'new-ssh') { setEditNode(null); openDialog('ssh', node); }
     else if (type === 'new-rdp') { setEditNode(null); openDialog('rdp', node); }
@@ -290,26 +297,14 @@ export function SessionModule() {
     else if (type === 'sftp-upload' && node.type === 'ssh') { setSftpNode(node); dialog.open('sftp', node.id); }
   };
 
-  const handleDirectConnect = (name: string, path: string, admin = false) => {
-    const title = `${name}${admin ? ' (Admin)' : ''}`;
-    // 创建会话 - pane 的创建和关联由 TabBar 的生命周期回调集中处理
-    addSession({
-      title,
-      type: "local",
-      config: { 
-        shell: path,
-        admin,
-      }
-    });
-  };
+
 
   const handleDirectRdpConnect = (config: RDPConfig) => {
     const normalizedConfig = IS_WINDOWS
       ? { ...config, backend: "msrdpax" as const, width: undefined, height: undefined, autoResize: true }
       : config;
 
-    // 创建会话 - pane 的创建和关联由 TabBar 的生命周期回调集中处理
-    addSession({
+    launchWorkspaceWithSession({
       title: normalizedConfig.nickname || normalizedConfig.host,
       type: "rdp",
       host: normalizedConfig.host,
@@ -322,8 +317,7 @@ export function SessionModule() {
   };
 
   const handleDirectVncConnect = (config: VNCConfig) => {
-    // 创建会话 - pane 的创建和关联由 TabBar 的生命周期回调集中处理
-    addSession({
+    launchWorkspaceWithSession({
       title: config.nickname || config.host,
       type: "vnc",
       host: config.host,
@@ -367,13 +361,21 @@ export function SessionModule() {
           <DropdownMenuContent side="right" align="start" sideOffset={4} alignOffset={30} className="w-44 overflow-hidden">
             <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase py-2 bg-muted/30">快速连接</DropdownMenuLabel>
             
-            {availableShells.map((shell) => (
-              <React.Fragment key={shell.path}>
-                <DropdownMenuItem onClick={() => handleDirectConnect(shell.name, shell.path)}>
+            {availableShells.map((shell, index) => (
+              <React.Fragment key={`${shell.path}-${index}`}>
+                <DropdownMenuItem onClick={() => launchWorkspaceWithSession({
+                  title: shell.name,
+                  type: "local",
+                  config: { shell: shell.path, admin: false }
+                })}>
                   {getShellIcon(shell.icon_type)}
                   {shell.name}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleDirectConnect(shell.name, shell.path, true)}>
+                <DropdownMenuItem onClick={() => launchWorkspaceWithSession({
+                  title: `${shell.name} (Admin)`,
+                  type: "local",
+                  config: { shell: shell.path, admin: true }
+                })}>
                   <ShieldAlert className="mr-2 h-4 w-4 text-amber-500" />
                   {shell.name} 管理员
                 </DropdownMenuItem>

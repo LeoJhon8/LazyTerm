@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
-import { usePanesStore } from "@/store/panes";
 
 import { PaneContainer } from "@/components/layout/PaneContainer";
 import { SlotManager } from "@/components/layout/SlotManager";
@@ -38,8 +37,7 @@ function App() {
   } = useSettingsStore();
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
-  const { closeAllSessions, connectionError, clearConnectionError, focusSessionId, sessions } = useTabsStore();
-  const { initializePanes } = usePanesStore();
+  const { getAllConnectors, connectionError, clearConnectionError, focusSessionId, sessions } = useTabsStore();
   const leftSlotCollapsed = slotConfig.left.collapsed;
   const rightSlotCollapsed = slotConfig.right.collapsed;
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
@@ -57,20 +55,13 @@ function App() {
   // 应用关闭时清空所有会话
   useEffect(() => {
     const handleBeforeUnload = () => {
-      closeAllSessions();
+      getAllConnectors().forEach(c => c.close());
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [closeAllSessions]);
-
-  // 初始化分屏系统
-  useEffect(() => {
-    initializePanes();
-  }, [initializePanes]);
-
-
-
-  // 动态处理全局背景色和暗色模式跟班
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [getAllConnectors]);  // 动态处理全局背景色和暗色模式跟班
   useEffect(() => {
     const root = document.documentElement;
     const body = document.body;
