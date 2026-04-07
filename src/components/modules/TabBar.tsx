@@ -41,7 +41,6 @@ import {
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
-  type Modifier,
   DragOverlay,
 } from "@dnd-kit/core";
 import {
@@ -55,6 +54,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { ShellInfo } from "@/types/shell";
 import { getAvailableShells } from "@/services/shellService";
 import { startTabDrag, endTabDrag } from "@/lib/tab-drag-state";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 interface CloseConfirmationState {
@@ -147,6 +147,7 @@ function SortableTab({
                 ? "tab-item-active"
                 : ""
             } ${isDragging ? "bg-background/90 shadow-lg ring-1 ring-border/70" : ""}`}
+            title={title}
             aria-current={active ? "page" : undefined}
             onClick={() => onSwitch(id)}
             onKeyUp={handleKeyUp}
@@ -304,13 +305,6 @@ export function TabBar() {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
-
-  const restrictToHorizontalAxis: Modifier = ({ transform }) => {
-    return {
-      ...transform,
-      y: 0,
-    };
-  };
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const draggedId = String(event.active.id);
@@ -576,7 +570,6 @@ export function TabBar() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          modifiers={[restrictToHorizontalAxis]}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
@@ -626,29 +619,32 @@ export function TabBar() {
               ) : null}
             </div>
           </SortableContext>
-          <DragOverlay>
-            {activeDragId ? (
-              <div
-                className={cn(
-                  "tab-item group relative cursor-pointer select-none",
-                  "bg-background/90 shadow-lg ring-1 ring-border/70 shrink-0",
-                  "tab-item-active z-50 opacity-90 backdrop-blur-md"
-                )}
-                style={{ width: "160px" }}
-              >
-                <span className="pointer-events-none max-w-32 flex-1 truncate text-[13px]">
-                  {tabs.find((t) => t.id === activeDragId)?.title || "标签页"}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="tab-close ml-1 text-muted-foreground opacity-100"
+          {typeof document !== "undefined" && createPortal(
+            <DragOverlay zIndex={9999} dropAnimation={null}>
+              {activeDragId ? (
+                <div
+                  className={cn(
+                    "tab-item group relative cursor-pointer select-none",
+                    "bg-background/90 shadow-2xl ring-1 ring-border/70 shrink-0",
+                    "tab-item-active z-[9999] opacity-90 backdrop-blur-xl"
+                  )}
+                  style={{ width: "180px", cursor: "grabbing" }}
                 >
-                  <X className="h-2 w-2" />
-                </Button>
-              </div>
-            ) : null}
-          </DragOverlay>
+                  <span className="pointer-events-none max-w-32 flex-1 truncate text-[13px]">
+                    {tabs.find((t) => t.id === activeDragId)?.title || "标签页"}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="tab-close ml-1 text-muted-foreground opacity-100"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : null}
+            </DragOverlay>,
+            document.body
+          )}
         </DndContext>
       </div>
 

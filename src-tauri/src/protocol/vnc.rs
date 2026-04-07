@@ -56,6 +56,7 @@ pub async fn create_vnc_session<R: Runtime>(
     let target_clone = target.clone();
     let app_clone = app.clone();
     let vnc_sessions = Arc::clone(&state.vnc_sessions);
+    let jpeg_quality = config.quality.unwrap_or(super::vnc_core::VNC_JPEG_QUALITY);
     
     tokio::spawn(async move {
         match run_vnc_session(
@@ -66,6 +67,7 @@ pub async fn create_vnc_session<R: Runtime>(
             event_receiver,
             frame_channel,
             control_rx,
+            jpeg_quality,
         ).await {
             Ok(()) => log_vnc_info(&session_id_clone, &target_clone, "close", "session loop ended"),
             Err(error) => log_vnc_error(&session_id_clone, &target_clone, "runtime", &error),

@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
 import type { TerminalSession } from "@/store/tabs";
+import { Button } from "@/components/ui/button";
+import { LoaderCircle, RefreshCcw, Monitor } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 /**
  * 视图基类 props
@@ -196,35 +199,93 @@ export function ConnectionStatusBadge({
   );
 }
 
-/**
- * 断开连接提示组件
- */
-export function DisconnectedBanner({ message }: { message: string }) {
-  return (
-    <div className="absolute inset-x-0 bottom-6 mx-auto flex w-fit items-center gap-2 rounded-full border border-amber-300/25 bg-amber-500/15 px-4 py-2 text-sm text-amber-100 backdrop-blur-md">
-      <span>{message}</span>
-    </div>
-  );
-}
+
 
 /**
- * 加载中提示组件
+ * 图形化连接界面覆盖层
+ * 统一 VNC 和 Windows 远程连接的等待、错误、断开界面
  */
-export function LoadingPlaceholder({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  title: string;
+export interface GraphicalSessionOverlayProps {
+  mode: "connecting" | "failed" | "disconnected" | "none";
+  titleText: string;
   description: string;
-}) {
+  onReconnect?: () => void;
+  interactive?: boolean;
+  zIndexClass?: string;
+  protocol?: string;
+  sessionConfigDetails?: Array<{ label: string; value: string }>;
+}
+
+export function GraphicalSessionOverlay({
+  mode,
+  titleText,
+  description,
+  onReconnect,
+  interactive = false,
+  zIndexClass = "z-20",
+  protocol,
+  sessionConfigDetails,
+}: GraphicalSessionOverlayProps) {
+  if (mode === "none") return null;
+
+  const isFailed = mode === "failed";
+  const isDisconnected = mode === "disconnected";
+  const isConnecting = mode === "connecting";
+
   return (
-    <div className="flex max-w-md flex-col items-center gap-4 rounded-3xl border border-white/10 bg-white/6 px-8 py-10 text-center text-white/80">
-      {icon}
-      <div>
-        <div className="text-lg font-semibold text-white">{title}</div>
-        <div className="mt-2 text-sm leading-6 text-white/60">{description}</div>
+    <div className={`absolute inset-0 flex items-center justify-center ${zIndexClass} ${interactive ? "pointer-events-auto" : "pointer-events-none"}`}>
+      <div className="flex w-[460px] flex-col overflow-hidden rounded-2xl border border-border/50 bg-background/60 shadow-2xl backdrop-blur-3xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border/50 bg-muted/40 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Monitor className="h-5 w-5 text-sky-500" />
+            <span className="font-semibold text-foreground/90">{titleText}</span>
+          </div>
+          {protocol && (
+            <span className="rounded-md border border-border/50 bg-background/50 px-2.5 py-1 text-xs font-semibold text-muted-foreground shadow-sm">
+              {protocol}
+            </span>
+          )}
+        </div>
+
+        {/* Body */}
+        <div className="flex flex-col px-6 py-5">
+          <p className="mb-5 text-sm leading-relaxed text-muted-foreground">{description}</p>
+          
+          {sessionConfigDetails && sessionConfigDetails.length > 0 && (
+            <div className="mb-5 grid grid-cols-2 gap-y-4 rounded-xl border border-border/30 bg-muted/30 p-4 shadow-inner">
+              {sessionConfigDetails.map((d) => (
+                <div key={d.label} className="flex flex-col gap-1.5 overflow-hidden pr-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">{d.label}</span>
+                  <span className="truncate text-sm font-medium text-foreground/90" title={d.value}>
+                    {d.value || "-"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Footer / Actions */}
+          {(isConnecting || ((isFailed || isDisconnected) && onReconnect)) && (
+            <div className="mt-4 flex w-full items-center justify-center">
+              {isConnecting ? (
+                <div className="flex items-center gap-2.5">
+                  <LoaderCircle className="h-4 w-4 animate-spin text-sky-500" />
+                  <span className="text-sm font-medium text-sky-500/90">正在建立连接...</span>
+                </div>
+              ) : (
+                <Button 
+                  onClick={onReconnect} 
+                  size="sm"
+                  className="h-9 w-40 rounded-xl bg-sky-500 hover:bg-sky-400 text-white shadow-md active:scale-95 text-sm font-medium"
+                >
+                  <RefreshCcw className="mr-2 h-4 w-4" />
+                  重新连接
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -234,12 +295,15 @@ export function LoadingPlaceholder({
  * 过渡遮罩组件
  */
 export function TransitionMask({ visible, text }: { visible: boolean; text: string }) {
-  if (!visible) return null;
-  
   return (
-    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm">
-      <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-black/50 px-5 py-3 text-sm text-white/90 shadow-2xl">
-        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-300" />
+    <div
+      className={cn(
+        "pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/60 backdrop-blur-md transition-opacity duration-300",
+        visible ? "opacity-100" : "opacity-0"
+      )}
+    >
+      <div className="flex items-center gap-3 rounded-2xl border border-border bg-popover/80 px-5 py-3 text-sm text-foreground shadow-2xl backdrop-blur-md">
+        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-500" />
         <span>{text}</span>
       </div>
     </div>

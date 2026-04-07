@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Monitor } from "lucide-react";
+
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
 import type { IVncConnector, VncFramePayload } from "@/types/terminal";
 import {
   type BaseSessionViewProps,
-  ConnectionStatusBadge,
-  DisconnectedBanner,
-  LoadingPlaceholder,
+  TransitionMask,
+  GraphicalSessionOverlay,
   VIEW_CONTAINER_CLASSNAME,
   CANVAS_CLASSNAME,
   HIDDEN_CLASSNAME,
@@ -54,7 +53,45 @@ export function VncViewClass(props: BaseSessionViewProps) {
   const frameSeqRef = useRef(0);
   const inputSeqRef = useRef(0);
   const lastPointerMoveLogAtRef = useRef(0);
+  const everConnectedRef = useRef(false);
+  const [isClosed, setIsClosed] = useState(false);
   const [cursorStyle, setCursorStyle] = useState("default");
+  const [retrying, setRetrying] = useState(false);
+  const reconnectSession = useTabsStore((state) => state.reconnectSession);
+
+  const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
+  const resizeTimerRef = useRef<number | null>(null);
+
+  // ResizeObserver for mask timing
+  useEffect(() => {
+    if (!containerRef.current) return;
+    
+    // Skip initial mount
+    let initialMount = true;
+    
+    const resizeObserver = new ResizeObserver(() => {
+      if (initialMount) {
+        initialMount = false;
+        return;
+      }
+      setResizeMaskVisible(true);
+      if (resizeTimerRef.current !== null) {
+        window.clearTimeout(resizeTimerRef.current);
+      }
+      resizeTimerRef.current = window.setTimeout(() => {
+        setResizeMaskVisible(false);
+      }, 2000);
+    });
+
+    resizeObserver.observe(containerRef.current);
+    return () => {
+      resizeObserver.disconnect();
+      if (resizeTimerRef.current) {
+        window.clearTimeout(resizeTimerRef.current);
+        resizeTimerRef.current = null;
+      }
+    };
+  }, [containerRef]);
 
   const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
   const elapsedMs = () => Math.round(nowMs() - traceStartedAtRef.current);
@@ -174,6 +211,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
     };
 
     connector.onFrame((nextFrame) => {
+      everConnectedRef.current = true;
       const frameSeq = ++frameSeqRef.current;
       pendingFrameSeqRef.current = frameSeq;
       if (inStartupTraceWindow() || nextFrame.fullFrame || decodeInFlightRef.current) {
@@ -207,6 +245,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
     connector.requestFrame(true);
 
     const disposeClose = connector.onClose(() => {
+      setIsClosed(true);
       setConnected(false);
     });
 
@@ -368,7 +407,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
 
   return (
     <main
-      className={cn(VIEW_CONTAINER_CLASSNAME, "bg-black")}
+      className={cn(VIEW_CONTAINER_CLASSNAME, "bg-(--terminal-shell)")}
       data-view-type="vnc"
       data-session-id={sessionId}
       data-pane-id={paneId}
@@ -389,33 +428,38 @@ export function VncViewClass(props: BaseSessionViewProps) {
           pointerTargetRef.current = null;
         }}
       >
+        <TransitionMask 
+          visible={resizeMaskVisible} 
+          text="正在调整画面比例..." 
+        />
         <canvas
           ref={canvasRef}
           className={frameSize ? CANVAS_CLASSNAME : HIDDEN_CLASSNAME}
         />
 
-        {!frameSize ? (
-          <LoadingPlaceholder
-            icon={<Monitor className="h-10 w-10 text-emerald-300" />}
-            title="正在连接 VNC 桌面"
-            description="首次握手和首帧解码可能需要几秒。连接建立后，鼠标与键盘输入会直接发送到远端桌面。"
-          />
-        ) : null}
-
-        <ConnectionStatusBadge
-          title={activeSession.title}
-          connected={true}
-          extraInfo={
-            <>
-              {frameSize ? <span>{frameSize.width} x {frameSize.height}</span> : null}
-              {isViewOnly ? <span>只读</span> : null}
-            </>
-          }
+        <GraphicalSessionOverlay
+          mode={!connector.isConnected 
+            ? (isClosed ? (everConnectedRef.current ? "disconnected" : "failed") : "connecting") 
+            : (!frameSize ? "connecting" : "none")}
+          titleText={!connector.isConnected 
+            ? (isClosed ? (everConnectedRef.current ? "连接断开" : "连接失败") : "正在建立连接") 
+            : "正在建立连接"}
+          description={!connector.isConnected 
+            ? (isClosed ? (everConnectedRef.current ? "与远程主机的 VNC 连接已终止。" : "无法与 VNC 服务器建立连接，请检查配置。") : "正在初始化连接...")
+            : "正在尝试与目标主机建立 RFB 协议通信并解码首帧画面..."}
+          protocol="VNC"
+          sessionConfigDetails={[
+            { label: "目标地址", value: activeSession.config?.vncConfig?.host ? `${activeSession.config.vncConfig.host}:${activeSession.config.vncConfig.port || 5900}` : activeSession.title },
+            { label: "颜色深度", value: "真彩色 (24-bit)" }
+          ]}
+          onReconnect={() => {
+            if (retrying) return;
+            setRetrying(true);
+            reconnectSession(activeSession.id);
+          }}
+          interactive={!connector.isConnected}
+          zIndexClass="z-30"
         />
-
-        {!connector.isConnected ? (
-          <DisconnectedBanner message="VNC 连接已断开，关闭标签或重新发起连接以恢复。" />
-        ) : null}
       </div>
     </main>
   );

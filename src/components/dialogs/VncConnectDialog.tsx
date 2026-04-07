@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
+import { Slider } from "@/components/ui/slider";
 import type { VNCConfig } from "@/types/terminal";
 
 interface VncConnectDialogProps {
@@ -22,6 +23,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
   const [nickname, setNickname] = useState("");
   const [shared, setShared] = useState(true);
   const [allowJpeg, setAllowJpeg] = useState(true);
+  const [quality, setQuality] = useState(30);
   const [viewOnly, setViewOnly] = useState(false);
 
   useEffect(() => {
@@ -37,6 +39,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
         setNickname(initialConfig.nickname || "");
         setShared(initialConfig.shared ?? true);
         setAllowJpeg(initialConfig.allowJpeg ?? true);
+        setQuality(initialConfig.quality ?? 30);
         setViewOnly(initialConfig.viewOnly ?? false);
         return;
       }
@@ -47,6 +50,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       setNickname("");
       setShared(true);
       setAllowJpeg(true);
+      setQuality(30);
       setViewOnly(false);
     });
 
@@ -65,6 +69,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       nickname: nickname || undefined,
       shared,
       allowJpeg,
+      quality,
       viewOnly,
     });
     onOpenChange(false);
@@ -118,6 +123,23 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
                 <Label htmlFor="vnc-jpeg" className="text-sm text-muted-foreground">优先使用 JPEG 帧压缩以降低带宽占用</Label>
               </div>
             </div>
+
+            {allowJpeg && (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">渲染质量</Label>
+                <div className="col-span-3 flex items-center gap-4">
+                  <Slider
+                    min={10}
+                    max={100}
+                    step={10}
+                    value={[quality]}
+                    onValueChange={(val) => setQuality(val[0])}
+                    className="flex-1"
+                  />
+                  <span className="text-sm w-8 text-right">{quality}%</span>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">仅查看</Label>

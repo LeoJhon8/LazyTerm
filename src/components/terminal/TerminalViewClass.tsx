@@ -12,7 +12,6 @@ import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
 import { getTerminalTheme, toXtermTheme } from "@/config/themes";
 import {
   type BaseSessionViewProps,
-  LoadingPlaceholder,
   VIEW_CONTAINER_CLASSNAME,
 } from "./BaseSessionView";
 import { Terminal as TerminalIcon } from "lucide-react";
@@ -628,11 +627,13 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   if (!activeSession) {
     return (
       <div className="terminal-empty-state h-full w-full flex items-center justify-center">
-        <LoadingPlaceholder
-          icon={<TerminalIcon className="h-10 w-10 text-emerald-300" />}
-          title="今天，你想连接什么？"
-          description="轻松、快速建立ssh连接，windows远程桌面，VNC连接，本地终端。"
-        />
+        <div className="flex max-w-md flex-col items-center gap-4 rounded-3xl border border-white/10 bg-white/6 px-8 py-10 text-center text-white/80">
+          <TerminalIcon className="h-10 w-10 text-emerald-300" />
+          <div>
+            <div className="text-lg font-semibold text-white">今天，你想连接什么？</div>
+            <div className="mt-2 text-sm leading-6 text-white/60">轻松、快速建立ssh连接，windows远程桌面，VNC连接，本地终端。</div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -650,7 +651,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       data-session-id={sessionId}
       data-pane-id={paneId}
     >
-      <div className="terminal-host absolute inset-0 h-full w-full overflow-hidden p-2 pb-2">
+      <div className="terminal-host absolute inset-0 h-full w-full overflow-hidden pl-2 pt-2 pb-2 pr-0">
         <div
           ref={(el) => {
             if (!el) return;

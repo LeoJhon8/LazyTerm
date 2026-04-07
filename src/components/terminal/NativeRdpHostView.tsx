@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+
 import { logger } from "@/lib/logger";
 import { useSettingsStore } from "@/store/settings";
 import { useTabsStore } from "@/store/tabs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LoaderCircle, RefreshCcw } from "lucide-react";
+
 import type {
   INativeRdpConnector,
   NativeHostRect,
   NativeRdpStatePayload,
 } from "@/types/terminal";
+import {
+  TransitionMask,
+  GraphicalSessionOverlay,
+} from "./BaseSessionView";
 
 const NATIVE_RDP_OVERLAY_EVENT = "lazy-native-rdp-overlay";
 const READY_STATES: NativeRdpStatePayload["state"][] = ["connected"];
@@ -81,6 +85,8 @@ export function NativeRdpHostView({
   const [overlayMode, setOverlayMode] = useState<"connecting" | "failed" | "disconnected" | "none">(initialOverlayMode);
   const [state, setState] = useState<NativeRdpStatePayload>(initialState);
   const stateRef = useRef(state);
+  const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
+  const resizeMaskTimerRef = useRef<number | null>(null);
   const visualReadyNotifiedRef = useRef(false);
   const lastMountedRectRef = useRef<NativeHostRect | null>(null);
 
@@ -102,12 +108,11 @@ export function NativeRdpHostView({
 
         if (FAILED_STATES.includes(payload.state)) {
           disconnectedLockedRef.current = true;
-          setOverlayMode("failed");
+          setOverlayMode(hasReachedReadyStateRef.current ? "disconnected" : "failed");
           return;
         }
 
         if (DISCONNECTED_STATES.includes(payload.state)) {
-          disconnectedLockedRef.current = true;
           setOverlayMode(hasReachedReadyStateRef.current ? "disconnected" : "failed");
           if (!hasReachedReadyStateRef.current && payload.state !== "error") {
             setState({
@@ -126,6 +131,8 @@ export function NativeRdpHostView({
         }
 
         if (!hasReachedReadyStateRef.current) {
+          setOverlayMode("connecting");
+        } else if (payload.state === "connecting" || payload.state === "launching") {
           setOverlayMode("connecting");
         }
       }
@@ -179,7 +186,6 @@ export function NativeRdpHostView({
     // "flash" when switching tabs.
     let disposed = false;
     let initialMountDone = false;
-    let rafId: number | null = null;
     let resizeObserver: ResizeObserver | null = null;
 
     const pushRect = async (initial: boolean = false) => {
@@ -228,13 +234,26 @@ export function NativeRdpHostView({
     // Create ResizeObserver but do NOT observe yet; only observe after the
     // initial mount completes. This prevents the observer from firing while
     // CSS transitions (e.g., bottom bar collapsing) are in progress.
+    let resizeTimeoutId: ReturnType<typeof setTimeout> | null = null;
     resizeObserver = new ResizeObserver(() => {
-      if (!initialMountDone || rafId !== null) {
+      if (!initialMountDone) {
         return;
       }
-      rafId = requestAnimationFrame(() => {
+      if (resizeTimeoutId !== null) {
+        clearTimeout(resizeTimeoutId);
+      }
+      setResizeMaskVisible(true);
+      if (resizeMaskTimerRef.current !== null) {
+        window.clearTimeout(resizeMaskTimerRef.current);
+      }
+      resizeMaskTimerRef.current = window.setTimeout(() => {
+        setResizeMaskVisible(false);
+      }, 2000);
+
+      resizeTimeoutId = setTimeout(() => {
+        resizeTimeoutId = null;
         void pushRect(false);
-      });
+      }, 200);
     });
 
     // Also re-push on window move so the sidecar follows screen position.
@@ -253,9 +272,12 @@ export function NativeRdpHostView({
       if (initialPushTimer !== null) {
         clearTimeout(initialPushTimer);
       }
-      if (rafId !== null) cancelAnimationFrame(rafId);
+      if (resizeTimeoutId !== null) clearTimeout(resizeTimeoutId);
       if (resizeObserver) {
         resizeObserver.disconnect();
+      }
+      if (resizeMaskTimerRef.current !== null) {
+        window.clearTimeout(resizeMaskTimerRef.current);
       }
       moveUnlisten?.();
       void connector.setVisible(false);
@@ -289,6 +311,15 @@ export function NativeRdpHostView({
   }, [connector, initialOverlayMode]);
 
   useEffect(() => {
+    const hasOverlay = menuMaskVisible || resizeMaskVisible;
+    if (hasOverlay) {
+      void connector.setVisible(false);
+    } else {
+      void connector.setVisible(true);
+    }
+  }, [menuMaskVisible, resizeMaskVisible, connector]);
+
+  useEffect(() => {
     const applyMenuOverlay = (active: boolean) => {
       if (menuOverlayActiveRef.current === active) {
         return;
@@ -296,12 +327,6 @@ export function NativeRdpHostView({
 
       menuOverlayActiveRef.current = active;
       setMenuMaskVisible(active);
-
-      if (active) {
-        void connector.setVisible(false);
-      } else {
-        void connector.setVisible(true);
-      }
     };
 
     const handleOverlayState = (event: Event) => {
@@ -361,43 +386,6 @@ export function NativeRdpHostView({
     reconnectSession(sessionId);
   };
 
-  const renderOverlay = ({
-    chipLabel,
-    titleText,
-    description,
-    cards,
-    footer,
-    interactive = false,
-    zIndexClass = "z-20",
-  }: {
-    chipLabel: string;
-    titleText: string;
-    description: string;
-    cards: Array<{ title: string; detail: string }>;
-    footer?: React.ReactNode;
-    interactive?: boolean;
-    zIndexClass?: string;
-  }) => (
-    <div className={`${interactive ? "" : "pointer-events-none "}absolute inset-0 ${zIndexClass}`}>
-      <div className="terminal-empty-state h-full">
-        <div className="terminal-empty-card text-center">
-          <div className="chip-row mx-auto mb-4 w-fit text-[11px] text-muted-foreground">{chipLabel}</div>
-          <h2 className="mb-2 text-2xl font-semibold tracking-tight">{titleText}</h2>
-          <p className="mx-auto mb-6 max-w-md text-sm leading-6 text-muted-foreground">{description}</p>
-          <div className={`grid gap-3 text-left ${cards.length >= 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-            {cards.map((card) => (
-              <div key={card.title} className="rounded-2xl border border-border/70 bg-background/56 p-4">
-                <div className="mb-2 text-sm font-medium">{card.title}</div>
-                <div className="text-xs leading-5 text-muted-foreground">{card.detail}</div>
-              </div>
-            ))}
-          </div>
-          {footer ? <div className="mt-6 flex justify-center">{footer}</div> : null}
-        </div>
-      </div>
-    </div>
-  );
-
   return (
     <main
       className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden bg-(--terminal-shell) shadow-(--panel-shadow)"
@@ -405,6 +393,10 @@ export function NativeRdpHostView({
         backgroundColor: hasBackgroundImage ? "transparent" : undefined,
       }}
     >
+      <TransitionMask 
+        visible={resizeMaskVisible} 
+        text="正在调整会话尺寸..." 
+      />
       <div
         ref={containerRef}
         className="absolute inset-0 z-0 overflow-hidden outline-none"
@@ -413,61 +405,31 @@ export function NativeRdpHostView({
       />
 
       {showStatusOverlay ? (
-        renderOverlay({
-          chipLabel: "Windows Workspace",
-          titleText: isFailed ? "连接失败" : (isDisconnected ? "连接断开" : "连接中"),
-          description: state.detail ?? (isFailed
-            ? "Windows 远程桌面连接未能建立。"
-            : (isDisconnected ? "Windows 远程桌面会话已断开。" : "正在同步 Windows 原生远程桌面画面。")),
-          cards: [
-            {
-              title: "目标主机",
-              detail: hostLabel,
-            },
-            {
-              title: "连接状态",
-              detail: isFailed
-                ? "连接建立失败，请检查目标地址、凭据和网络后重试。"
-                : (isDisconnected ? "会话已终止，可在当前标签内直接发起重连。" : "原生宿主正在建立或恢复 Windows 桌面连接。"),
-            },
-          ],
-          footer: (isDisconnected || isFailed) ? (
-            <Button type="button" onClick={handleReconnect} className="pointer-events-auto min-w-32">
-              <RefreshCcw className="h-4 w-4" />
-              重连
-            </Button>
-          ) : (
-            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <LoaderCircle className="h-4 w-4 animate-spin text-sky-300" />
-              正在建立 Windows 连接
-            </div>
-          ),
-          interactive: isDisconnected || isFailed,
-          zIndexClass: "z-30",
-        })
+        <GraphicalSessionOverlay
+          mode={isFailed ? "failed" : (isDisconnected ? "disconnected" : "connecting")}
+          titleText={isFailed ? "连接失败" : (isDisconnected ? "连接断开" : "正在建立连接")}
+          description={(state.detail?.replace(/MsTscAx\s*/gi, "Windows ") ?? (isFailed
+            ? "无法与 Windows 远程桌面建立连接，请检查目标主机或网络设置。"
+            : (isDisconnected ? "与远程主机的连接已意外中止。" : "正在初始化连接...")))}
+          protocol="Windows"
+          sessionConfigDetails={[
+            { label: "目标地址", value: useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.host ? `${useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.host}:${useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.port || 3389}` : hostLabel },
+            { label: "身份凭据", value: useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.username || "交互式登录" }
+          ]}
+          onReconnect={handleReconnect}
+          interactive={isDisconnected || isFailed}
+          zIndexClass="z-30"
+        />
       ) : null}
 
       {showMenuMask ? (
-        renderOverlay({
-          chipLabel: "Lazy Terminal Workspace",
-          titleText: "所以暂时将你眼睛闭了起来",
-          description: "Web 菜单已打开，当前临时遮蔽 MsTscAx 原生宿主窗口，避免原生层覆盖右键菜单与下拉选项。菜单关闭后会自动恢复当前原生远程桌面画面。",
-          cards: [
-            {
-              title: "菜单交互",
-              detail: "优先保证 Web 右键菜单与下拉菜单完整显示。",
-            },
-            {
-              title: "原生会话",
-              detail: "仅临时遮蔽 native 宿主，不销毁当前 MsTscAx 会话。",
-            },
-            {
-              title: "自动恢复",
-              detail: "菜单关闭后自动恢复原生画面与交互焦点。",
-            },
-          ],
-          zIndexClass: "z-20",
-        })
+        <GraphicalSessionOverlay
+          mode="connecting"
+          titleText="系统菜单激活"
+          description="应用菜单已打开。为避免原生 ActiveX 组件抢占菜单焦点，当前临时屏蔽原生画面。关闭菜单后将自动恢复。"
+          protocol="Focus Mask"
+          zIndexClass="z-30"
+        />
       ) : null}
     </main>
   );

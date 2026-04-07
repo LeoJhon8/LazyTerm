@@ -8,8 +8,6 @@ export {
   type BaseSessionViewProps,
   type BaseSessionViewResult,
   ConnectionStatusBadge,
-  DisconnectedBanner,
-  LoadingPlaceholder,
   TransitionMask,
   clamp,
   VIEW_CONTAINER_CLASSNAME,

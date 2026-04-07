@@ -94,6 +94,7 @@ pub struct VncConnectConfig {
     pub password: Option<String>,
     pub shared: Option<bool>,
     pub allow_jpeg: Option<bool>,
+    pub quality: Option<u8>,
 }
 
 /// VNC 指针事件载荷

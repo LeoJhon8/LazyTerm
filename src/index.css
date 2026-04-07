@@ -857,27 +857,47 @@
   @apply h-full w-full overflow-hidden;
 }
 
-.terminal-host > .xterm {
+.terminal-xterm-wrapper .xterm {
   height: 100%;
   width: 100%;
 }
 
-.terminal-host > .xterm .xterm-scrollable-element {
+.terminal-xterm-wrapper .xterm .xterm-scrollable-element {
   height: 100%;
 }
 
-.terminal-host > .xterm .xterm-viewport {
+.terminal-xterm-wrapper .xterm .xterm-viewport {
   inset: 0;
   height: 100%;
   width: 100%;
   overflow-x: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
 }
 
-.terminal-host > .xterm .xterm-viewport::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+.terminal-xterm-wrapper .xterm .xterm-viewport::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.terminal-xterm-wrapper .xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-xterm-wrapper .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--muted-foreground) 30%, transparent);
+  border-radius: 5px;
+}
+
+.terminal-xterm-wrapper .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
+}
+
+/* 强制覆盖 xterm.js v6 内部生成的 custom scrollbar，调整至 8px */
+.terminal-xterm-wrapper .xterm .scrollbar.vertical {
+  width: 8px !important;
+}
+
+.terminal-xterm-wrapper .xterm .scrollbar.vertical .slider {
+  width: 8px !important;
 }
 
 /* Ensure terminal transparency can reveal background images */

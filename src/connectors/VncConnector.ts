@@ -110,6 +110,7 @@ export class VncConnector
         password: this.config.password,
         shared: this.config.shared ?? true,
         allowJpeg: this.config.allowJpeg ?? true,
+        quality: this.config.quality ?? 30,
       },
       frameChannel: this.frameChannel,
     };

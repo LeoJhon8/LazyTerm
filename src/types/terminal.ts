@@ -196,6 +196,7 @@ export interface VNCConfig {
   shared?: boolean;
   viewOnly?: boolean;
   allowJpeg?: boolean;
+  quality?: number;
 }
 
 export function isGraphicalProtocol(protocol: SessionProtocol): protocol is 'rdp' | 'vnc' {

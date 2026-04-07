@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { logger } from "@/lib/logger";
-import { Monitor } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
 import { NativeRdpHostView } from "@/components/terminal/NativeRdpHostView";
 import type { INativeRdpConnector, IRdpConnector, RdpFramePayload } from "@/types/terminal";
 import {
   type BaseSessionViewProps,
-  ConnectionStatusBadge,
-  LoadingPlaceholder,
+  GraphicalSessionOverlay,
   TransitionMask,
   VIEW_CONTAINER_CLASSNAME,
   CANVAS_CLASSNAME,
@@ -54,7 +52,12 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   const pendingFrameRef = useRef<RdpFramePayload | null>(null);
   const decodeInFlightRef = useRef(false);
   const drawTokenRef = useRef(0);
+  const everConnectedRef = useRef(false);
+  const [isClosed, setIsClosed] = useState(false);
   const [transitionMaskVisible, setTransitionMaskVisible] = useState(true);
+  const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const reconnectSession = useTabsStore((state) => state.reconnectSession);
 
   const markVisualReady = useCallback(() => {
     if (!transitionMaskVisible) return;
@@ -133,6 +136,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
     };
 
     ironConnector.onFrame((nextFrame) => {
+      everConnectedRef.current = true;
       pendingFrameRef.current = nextFrame;
       void drawFrame();
       setConnected(true);
@@ -143,6 +147,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
     });
 
     const disposeClose = ironConnector.onClose(() => {
+      setIsClosed(true);
       setConnected(false);
     });
 
@@ -216,6 +221,14 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
         window.clearTimeout(resizeTimerRef.current);
       }
 
+      setResizeMaskVisible(true);
+      if ((resizeObserver as any)._maskTimer) {
+        window.clearTimeout((resizeObserver as any)._maskTimer);
+      }
+      (resizeObserver as any)._maskTimer = window.setTimeout(() => {
+        setResizeMaskVisible(false);
+      }, 2000);
+
       resizeTimerRef.current = window.setTimeout(() => {
         ironConnector.resize(nextWidth, nextHeight);
       }, 250);
@@ -225,6 +238,9 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
 
     return () => {
       resizeObserver.disconnect();
+      if ((resizeObserver as any)._maskTimer) {
+        window.clearTimeout((resizeObserver as any)._maskTimer);
+      }
       if (resizeTimerRef.current) {
         window.clearTimeout(resizeTimerRef.current);
         resizeTimerRef.current = null;
@@ -317,7 +333,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   // 渲染内容
   return (
     <main
-      className={cn(VIEW_CONTAINER_CLASSNAME, "bg-black")}
+      className={cn(VIEW_CONTAINER_CLASSNAME, "bg-(--terminal-shell)")}
       data-view-type="rdp"
       data-session-id={sessionId}
       data-pane-id={paneId}
@@ -340,23 +356,33 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
           className={frameSize ? CANVAS_CLASSNAME : HIDDEN_CLASSNAME}
         />
 
-        {!frameSize ? (
-          <LoadingPlaceholder
-            icon={<Monitor className="h-10 w-10 text-sky-300" />}
-            title="正在连接远程桌面"
-            description="首次握手和首帧解码可能需要几秒。连接建立后，鼠标与键盘输入会直接发送到远端主机。"
-          />
-        ) : null}
-
-        <ConnectionStatusBadge
-          title={activeSession.title}
-          connected={ironConnector.isConnected}
-          extraInfo={frameSize ? <span>{frameSize.width} x {frameSize.height}</span> : null}
+        <GraphicalSessionOverlay
+          mode={!ironConnector.isConnected 
+            ? (isClosed ? (everConnectedRef.current ? "disconnected" : "failed") : "connecting") 
+            : (!frameSize ? "connecting" : "none")}
+          titleText={!ironConnector.isConnected 
+            ? (isClosed ? (everConnectedRef.current ? "连接断开" : "连接失败") : "正在建立连接") 
+            : "正在建立连接"}
+          description={!ironConnector.isConnected
+            ? (isClosed ? (everConnectedRef.current ? "与远程主机的连接已意外中止。" : "建立 RDP 连接失败，请检查配置信息或目标状态。") : "正在初始化连接...")
+            : "正在尝试建立 RDP 连接并进行首帧解码..."}
+          protocol="Windows"
+          sessionConfigDetails={[
+            { label: "目标地址", value: activeSession.config?.rdpConfig?.host ? `${activeSession.config.rdpConfig.host}:${activeSession.config.rdpConfig.port || 3389}` : activeSession.title },
+            { label: "验证凭据", value: activeSession.config?.rdpConfig?.username || "交互式登录" }
+          ]}
+          onReconnect={() => {
+            if (retrying) return;
+            setRetrying(true);
+            reconnectSession(activeSession.id);
+          }}
+          interactive={!ironConnector.isConnected}
+          zIndexClass="z-30"
         />
 
         <TransitionMask
-          visible={transitionMaskVisible}
-          text="正在同步 Windows 远程桌面画面..."
+          visible={transitionMaskVisible || resizeMaskVisible}
+          text={transitionMaskVisible ? "正在同步 Windows 远程桌面画面..." : "正在调整会话尺寸..."}
         />
       </div>
     </main>

@@ -24,7 +24,7 @@ const VNC_IDLE_REFRESH_INTERVAL: Duration = Duration::from_millis(150);
 const VNC_SNAPSHOT_COMMIT_DELAY: Duration = Duration::from_millis(16);
 const VNC_REFRESH_BOUNDS: u16 = 4096;
 const VNC_COMPRESSED_FULL_FRAME_THRESHOLD_PERCENT: u32 = 20;
-const VNC_JPEG_QUALITY: u8 = 30;
+pub const VNC_JPEG_QUALITY: u8 = 30;
 const VNC_COMPRESSED_FRAME_MIN_INTERVAL: Duration = Duration::from_millis(120);
 const VNC_ENABLE_DIAGNOSTIC_LOGS: bool = false;
 const VNC_TRACE_ONLY_FULL_REFRESH: bool = true;
@@ -75,7 +75,7 @@ fn emit_vnc_frame(
         .map_err(|e| format!("send VNC frame via channel failed: {e}"))
 }
 
-fn encode_snapshot_jpeg(desktop_width: u16, desktop_height: u16, snapshot_rgba: &[u8]) -> Result<Vec<u8>, String> {
+fn encode_snapshot_jpeg(desktop_width: u16, desktop_height: u16, snapshot_rgba: &[u8], quality: u8) -> Result<Vec<u8>, String> {
     use image::codecs::jpeg::JpegEncoder;
     use image::{ColorType, ImageBuffer, Rgb};
 
@@ -101,7 +101,7 @@ fn encode_snapshot_jpeg(desktop_width: u16, desktop_height: u16, snapshot_rgba: 
     };
 
     let mut jpeg_bytes = Vec::new();
-    let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_bytes, VNC_JPEG_QUALITY);
+    let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_bytes, quality);
     encoder
         .encode(
             image_buffer.as_raw(),
@@ -140,6 +140,7 @@ struct VncSessionRuntime<R: Runtime> {
     refresh_seq: u64,
     dirty_log_count: u32,
     commit_seq: u64,
+    jpeg_quality: u8,
 }
 
 #[derive(Clone, Copy)]
@@ -166,6 +167,7 @@ impl<R: Runtime> VncSessionRuntime<R> {
         event_receiver: Receiver<VncClientEvent>,
         frame_channel: tauri::ipc::Channel<Response>,
         control_rx: mpsc::UnboundedReceiver<VncControlMsg>,
+        jpeg_quality: u8,
     ) -> Self {
         Self {
             app,
@@ -191,6 +193,7 @@ impl<R: Runtime> VncSessionRuntime<R> {
             refresh_seq: 0,
             dirty_log_count: 0,
             commit_seq: 0,
+            jpeg_quality,
         }
     }
 
@@ -618,7 +621,7 @@ impl<R: Runtime> VncSessionRuntime<R> {
             let (_, _, rgba) = self.client.snapshot_rgba();
             let snapshot_elapsed = snapshot_started_at.elapsed();
             let encode_started_at = Instant::now();
-            let jpeg_bytes = encode_snapshot_jpeg(self.desktop_width, self.desktop_height, &rgba)?;
+            let jpeg_bytes = encode_snapshot_jpeg(self.desktop_width, self.desktop_height, &rgba, self.jpeg_quality)?;
             let encode_elapsed = encode_started_at.elapsed();
             let send_started_at = Instant::now();
             emit_vnc_frame(
@@ -865,16 +868,23 @@ pub async fn run_vnc_session<R: Runtime>(
     event_receiver: Receiver<VncClientEvent>,
     frame_channel: tauri::ipc::Channel<Response>,
     control_rx: mpsc::UnboundedReceiver<VncControlMsg>,
+    jpeg_quality: u8,
 ) -> Result<(), String> {
-    VncSessionRuntime::new(app, session_id, target, client, event_receiver, frame_channel, control_rx)
+    VncSessionRuntime::new(app, session_id, target, client, event_receiver, frame_channel, control_rx, jpeg_quality)
         .run()
         .await
 }
 
 pub fn convert_config(config: &crate::types::VncConnectConfig) -> VncClientConfig {
+    let port = if config.port < 5900 && config.port > 0 {
+        config.port + 5900
+    } else {
+        config.port
+    };
+
     VncClientConfig {
         host: config.host.clone(),
-        port: config.port,
+        port,
         password: config.password.clone(),
         shared: config.shared.unwrap_or(true),
         view_only: false,
