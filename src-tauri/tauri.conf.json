@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "LazyTerm",
   "version": "1.0.0",
-  "identifier": "com.lazy.terminal",
+  "identifier": "com.lazy.term",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "LazyTerm",
-        "width": 1540,
-        "height": 840,
-        "minWidth": 1540,
-        "minHeight": 840,
+        "width": 1280,
+        "height": 720,
+        "minWidth": 900,
+        "minHeight": 600,
         "decorations": false,
         "resizable": true,
         "fullscreen": false

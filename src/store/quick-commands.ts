@@ -67,7 +67,7 @@ export const useQuickCommandsStore = create<QuickCommandsState>()(
       },
     }),
     {
-      name: "lazy-terminal-quick-commands",
+      name: "lazy-term-quick-commands",
     }
   )
 );

@@ -75,7 +75,7 @@ export const useHistoryStore = create<HistoryState>()(
       },
     }),
     {
-      name: "lazy-terminal-history",
+      name: "lazy-term-history",
     }
   )
 );

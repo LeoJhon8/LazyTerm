@@ -2,7 +2,7 @@
 
 ## 概述
 
-本目录包含 Lazy Terminal 的所有会话视图组件，采用**模板方法模式（Template Method Pattern）**进行设计。
+本目录包含 Lazy Term 的所有会话视图组件，采用**模板方法模式（Template Method Pattern）**进行设计。
 
 ## 架构设计
 

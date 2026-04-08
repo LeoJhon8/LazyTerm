@@ -1,6 +1,6 @@
-# Lazy Terminal
+# Lazy Term
 
-Lazy Terminal 是一个基于 Tauri 2、React 19、TypeScript 和 Rust 的现代化桌面终端应用，提供本地终端、SSH 会话、RDP/VNC 远程桌面、会话树管理、SFTP 文件传输、可定制多面板布局和丰富的终端外观系统。
+Lazy Term 是一个基于 Tauri 2、React 19、TypeScript 和 Rust 的现代化桌面终端应用，提供本地终端、SSH 会话、RDP/VNC 远程桌面、会话树管理、SFTP 文件传输、可定制多面板布局和丰富的终端外观系统。
 
 ## 功能概览
 
@@ -34,7 +34,7 @@ Lazy Terminal 是一个基于 Tauri 2、React 19、TypeScript 和 Rust 的现代
 
 ## 技术架构
 
-Lazy Terminal 采用前后端分离架构：
+Lazy Term 采用前后端分离架构：
 
 - **前端**：React 19 + TypeScript，使用 Zustand 进行状态管理
 - **后端**：Rust + Tauri 2，实现各类协议的核心逻辑
@@ -166,18 +166,18 @@ npm run lint
 
 | 键名 | 说明 |
 |------|------|
-| `lazy-terminal-settings` | 终端和界面外观配置 |
-| `lazy-terminal-slot-config` | 布局插槽配置 |
-| `lazy-terminal-quick-commands` | 快捷命令列表 |
-| `lazy-terminal-tabs` | 标签页状态 |
-| `lazy-terminal-history` | 命令历史 |
+| `lazy-term-settings` | 终端和界面外观配置 |
+| `lazy-term-slot-config` | 布局插槽配置 |
+| `lazy-term-quick-commands` | 快捷命令列表 |
+| `lazy-term-tabs` | 标签页状态 |
+| `lazy-term-history` | 命令历史 |
 | `terminal-sessions-v10` | SSH/RDP/VNC 会话树配置 |
 
 ### 数据存储位置
 
-- **Windows**：`%APPDATA%/Lazy Terminal/`
-- **macOS**：`~/Library/Application Support/Lazy Terminal/`
-- **Linux**：`~/.config/Lazy Terminal/`
+- **Windows**：`%APPDATA%/Lazy Term/`
+- **macOS**：`~/Library/Application Support/Lazy Term/`
+- **Linux**：`~/.config/Lazy Term/`
 
 ## 常见问题
 

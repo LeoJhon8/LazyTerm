@@ -23,9 +23,9 @@ export const tabDragState: TabDragState = {
 
 // ========== 事件名常量 ==========
 
-export const TAB_DRAG_START_EVENT = "lazy-terminal-tab-drag-start";
-export const TAB_DRAG_MOVE_EVENT = "lazy-terminal-tab-drag-move";
-export const TAB_DRAG_END_EVENT = "lazy-terminal-tab-drag-end";
+export const TAB_DRAG_START_EVENT = "lazy-term-tab-drag-start";
+export const TAB_DRAG_MOVE_EVENT = "lazy-term-tab-drag-move";
+export const TAB_DRAG_END_EVENT = "lazy-term-tab-drag-end";
 
 // ========== TabBar 侧 API ==========
 

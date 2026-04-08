@@ -465,7 +465,7 @@ export const useTabsStore = create<TabsState>()(
       };
     },
     {
-      name: "lazy-terminal-sessions",
+      name: "lazy-term-sessions",
       storage: createJSONStorage(() => localStorage),
       // 持久化白名单处理
       partialize: (state) => ({

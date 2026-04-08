@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows.Forms;
 
-namespace LazyTerminal.MsRdpAxHost;
+namespace LazyTerm.MsRdpAxHost;
 
 internal static class Program
 {

@@ -14,7 +14,7 @@
 
 ## 架构总览
 
-Lazy Terminal 是一个基于 Tauri 2 的桌面终端应用，支持五种协议：本地 PTY、SSH、RDP（ironrdp / msrdpax sidecar / mstsc）和 VNC。代码库分为 React 前端 (`src/`) 和 Rust 后端 (`src-tauri/`)。
+Lazy Term 是一个基于 Tauri 2 的桌面终端应用，支持五种协议：本地 PTY、SSH、RDP（ironrdp / msrdpax sidecar / mstsc）和 VNC。代码库分为 React 前端 (`src/`) 和 Rust 后端 (`src-tauri/`)。
 
 详细架构说明请参考项目根目录的 `architecture.md`。
 
@@ -41,12 +41,12 @@ React UI (components/) → Zustand 状态 (store/) → 连接器 (connectors/) �
 连接器实例在 `useTabsStore.addSession()` 中通过 `createConnector()` 创建，仅存在于内存中（不持久化）。断线行为：本地终端自动重建，SSH 降级为本地终端。
 
 **Zustand 状态管理**（均使用 `persist` 中间件持久化到 localStorage）：
-- `tabs.ts` — 会话列表、活跃标签、连接错误、连接器生命周期（Key: `lazy-terminal-tabs`）
-- `settings.ts` — 终端字体/主题、面板尺寸、背景图片、透明度、自定义 CSS（Key: `lazy-terminal-settings`）
-- `slot-config.ts` — 插槽模块分配和折叠状态（Key: `lazy-terminal-slot-config`）
+- `tabs.ts` — 会话列表、活跃标签、连接错误、连接器生命周期（Key: `lazy-term-tabs`）
+- `settings.ts` — 终端字体/主题、面板尺寸、背景图片、透明度、自定义 CSS（Key: `lazy-term-settings`）
+- `slot-config.ts` — 插槽模块分配和折叠状态（Key: `lazy-term-slot-config`）
 - `ssh-profiles.ts` — 文件夹/连接配置树（folder/ssh/rdp/vnc 节点类型）（Key: `terminal-sessions-v10`）
-- `history.ts` — 命令历史（最多 30 条，自动去重）（Key: `lazy-terminal-history`）
-- `quick-commands.ts` — 用户自定义快捷命令列表（Key: `lazy-terminal-quick-commands`）
+- `history.ts` — 命令历史（最多 30 条，自动去重）（Key: `lazy-term-history`）
+- `quick-commands.ts` — 用户自定义快捷命令列表（Key: `lazy-term-quick-commands`）
 
 **终端渲染** (`TerminalView.tsx`)：在 `terminalMap` 中维护每个会话的 xterm.js 实例池。使用早期缓冲区捕获连接器建立前到达的数据。拦截远端 OSC 颜色序列以保持本地主题权威。背景图片或透明度激活时禁用 WebGL 渲染器。支持 Ctrl+滚轮调整字体、选中自动复制到剪贴板、右键粘贴。
 

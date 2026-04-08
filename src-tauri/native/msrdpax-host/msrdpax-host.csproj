@@ -7,6 +7,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>msrdpax-host</AssemblyName>
-    <RootNamespace>LazyTerminal.MsRdpAxHost</RootNamespace>
+    <RootNamespace>LazyTerm.MsRdpAxHost</RootNamespace>
   </PropertyGroup>
 </Project>

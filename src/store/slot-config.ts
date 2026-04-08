@@ -129,14 +129,14 @@ export const useSlotConfigStore = create<SlotConfigState>()(
       saveCustomConfig: (name) => {
         // 这里可以扩展为保存多个配置文件
         const config = get().currentConfig;
-        localStorage.setItem(`lazy-terminal-slot-config-${name}`, JSON.stringify(config));
+        localStorage.setItem(`lazy-term-slot-config-${name}`, JSON.stringify(config));
       },
 
       loadConfig: (config) => 
         set({ currentConfig: config })
     }),
     {
-      name: "lazy-terminal-slot-config",
+      name: "lazy-term-slot-config",
       partialize: (state) => ({ currentConfig: state.currentConfig })
     }
   )

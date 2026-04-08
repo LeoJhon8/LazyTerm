@@ -559,8 +559,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
   useEffect(() => {
     const handler = () => activateTerminal(sessionId);
-    window.addEventListener("lazy-terminal-focus", handler);
-    return () => window.removeEventListener("lazy-terminal-focus", handler);
+    window.addEventListener("lazy-term-focus", handler);
+    return () => window.removeEventListener("lazy-term-focus", handler);
   }, [sessionId, activateTerminal]);
 
   useEffect(() => {

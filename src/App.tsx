@@ -139,7 +139,7 @@ function App() {
   useEffect(() => {
     if (!customStyleRef.current) {
       const style = document.createElement("style");
-      style.id = "lazy-terminal-custom-css";
+      style.id = "lazy-term-custom-css";
       document.head.appendChild(style);
       customStyleRef.current = style;
     }
@@ -156,7 +156,7 @@ function App() {
     <div className="app-frame relative h-screen w-screen overflow-hidden bg-background text-foreground">
       <CustomTitleBar />
       <div 
-      id="lazy-terminal-root"
+      id="lazy-term-root"
       className="app-shell relative min-h-0 flex-1 overflow-hidden bg-background text-foreground"
       style={{
         display: "grid",

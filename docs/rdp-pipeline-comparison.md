@@ -2,7 +2,7 @@
 
 ```mermaid
 flowchart LR
-    subgraph LT["lazy-terminal RDP pipeline"]
+    subgraph LT["lazy-term RDP pipeline"]
         direction LR
         LT1["Server RDP updates"] --> LT2["IronRDP decode to DecodedImage"]
         LT2 --> LT3["App-level frame strategy\ninteraction policy / batching / refinement"]
@@ -29,7 +29,7 @@ flowchart LR
     LT6 -. major latency .-> H3
     LT7 -. major latency .-> H3
 
-    Gap1["Key gap:\nlazy-terminal adds an extra app-managed image pipeline"]
+    Gap1["Key gap:\nlazy-term adds an extra app-managed image pipeline"]
     Gap2["Key gap:\nmstsc stays closer to the native protocol and presentation stack"]
 
     LT7 --> Gap1
@@ -43,6 +43,6 @@ flowchart LR
 
 ## Notes
 
-- Hotspot 1 is where lazy-terminal still pays the largest CPU cost when frames are re-packed for the frontend.
+- Hotspot 1 is where lazy-term still pays the largest CPU cost when frames are re-packed for the frontend.
 - Hotspot 2 is the extra copy and transport layer between Rust and the WebView.
 - Hotspot 3 is the browser-side rendering path, which mstsc does not have.

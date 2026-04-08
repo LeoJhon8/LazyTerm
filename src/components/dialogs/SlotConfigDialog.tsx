@@ -29,7 +29,7 @@ import { useSshProfilesStore } from "@/store/ssh-profiles";
 import { useQuickCommandsStore } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
 import type { TerminalColorScheme } from "@/config/themes";
-import { TERMINAL_THEMES, getTerminalTheme } from "@/config/themes";
+import { TERMINAL_THEMES } from "@/config/themes";
 import { FileJson, Upload, Trash2, ImagePlus, X, Palette, LayoutPanelLeft, Database, Terminal, Plus } from "lucide-react";
 import { useEffect as useMountedEffect } from "react";
 
@@ -125,11 +125,6 @@ function ThemeSettings() {
   const uiOpacity = useSettingsStore((state) => state.uiOpacity);
   const customCSS = useSettingsStore((state) => state.customCSS);
   const setSettings = useSettingsStore((state) => state.setSettings);
-  const hasBackgroundImage = backgroundImageEnabled && !!backgroundImage;
-  const previewPanelBackdrop = hasBackgroundImage && backgroundImageUiMode === "frosted"
-    ? "blur(20px) saturate(140%)"
-    : "none";
-
   const handlePickBackgroundImage = async () => {
     try {
       const selected = await openDialog({
@@ -148,17 +143,6 @@ function ThemeSettings() {
     }
   };
 
-  const hexToRgba = (hex: string, alpha: number) => {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
-
-  const activeTheme = getTerminalTheme(terminalColorScheme, customThemeColors);
-  const termBgHex = activeTheme.background;
-  const termBgRgba = termBgHex === "transparent" ? "transparent" : (termBgHex.startsWith("#") ? hexToRgba(termBgHex, terminalOpacity / 100) : termBgHex);
-
   const isDarkApp = appBackgroundColor === 'system'
     ? window.matchMedia("(prefers-color-scheme: dark)").matches
     : appBackgroundColor === 'dark';
@@ -173,66 +157,6 @@ function ThemeSettings() {
 
   return (
     <div className="flex flex-col h-full relative">
-      {/* ======================= */}
-      {/* 1. 效果预览 (固定在上方) */}
-      {/* ======================= */}
-      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-md pb-6 pt-2 border-b mb-8">
-        <div className="flex items-center gap-2 mb-4">
-          <Palette className="h-5 w-5 text-primary" />
-          <Label className="text-lg font-bold">视觉预览</Label>
-        </div>
-        <div
-          className="rounded-xl border shadow-sm overflow-hidden relative group transition-all duration-300 hover:shadow-md hover:border-primary/20"
-          style={{
-            height: '180px',
-            backgroundColor: appBackgroundColor === 'system' ? 'var(--background)' : (appBackgroundColor === 'light' ? '#ffffff' : (appBackgroundColor === 'dark' ? '#0a0a0a' : appBackgroundColor)),
-            color: 'var(--foreground)'
-          }}
-        >
-          {/* 背景图层 */}
-          {hasBackgroundImage && (
-            <div className="absolute inset-0 pointer-events-none" style={{
-              zIndex: 0,
-              backgroundImage: `url(${backgroundImage})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              opacity: backgroundOpacity / 100,
-              filter: backgroundBlur > 0 ? `blur(${backgroundBlur}px)` : undefined,
-            }} />
-          )}
-
-          {/* UI 侧栏占位 */}
-          <div className="absolute inset-y-0 left-0 w-16 border-r flex flex-col items-center py-3 z-10" style={{
-            backgroundColor: hasBackgroundImage ? `color-mix(in srgb, var(--color-background) ${uiOpacity}%, transparent)` : undefined,
-            backdropFilter: previewPanelBackdrop,
-          }}>
-            <div className="w-10 h-10 rounded-lg mb-4 flex items-center justify-center text-white shadow-sm" style={{ backgroundColor: 'var(--color-primary)' }}>
-              M
-            </div>
-            <div className="w-8 h-8 rounded mb-2 bg-muted/50" />
-            <div className="w-8 h-8 rounded bg-muted/50" />
-          </div>
-
-          {/* 终端内容区 */}
-          <div className="absolute inset-y-0 left-16 right-0 p-4 z-10 truncate" style={{
-            backgroundColor: termBgRgba,
-            backdropFilter: previewPanelBackdrop,
-            color: activeTheme.foreground === "auto" ? "var(--foreground)" : activeTheme.foreground,
-            fontFamily,
-            fontSize: `${fontSize}px`
-          }}>
-            <div className="flex gap-2 mb-1">
-              <span style={{ color: activeTheme.green === "auto" ? "#22c55e" : activeTheme.green }}>➜</span>
-              <span style={{ color: activeTheme.cyan === "auto" ? "#06b6d4" : activeTheme.cyan }}>~/user/lazy-terminal</span>
-            </div>
-            <div className="mb-2">
-              <span style={{ color: activeTheme.magenta === "auto" ? "#d946ef" : activeTheme.magenta }}>❯</span> npm run dev
-            </div>
-            <div style={{ color: activeTheme.yellow === "auto" ? "#eab308" : activeTheme.yellow }}>Starting development server...</div>
-            <div style={{ color: activeTheme.brightGreen === "auto" ? "#4ade80" : activeTheme.brightGreen, marginTop: '8px' }}>VITE v7.3.1  ready in 250 ms</div>
-          </div>
-        </div>
-      </div>
 
       <div className="space-y-8 pb-10 px-1">
 
@@ -266,12 +190,12 @@ function ThemeSettings() {
               已根据{isDarkApp ? '深色' : '浅色'}模式自动过滤
             </span>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {filteredThemes.map((scheme) => (
               <button
                 key={scheme.name}
                 onClick={() => setSettings({ terminalColorScheme: scheme.name })}
-                className={`p-3 rounded-lg border-2 transition-all duration-200 text-left ${terminalColorScheme === scheme.name ? "border-primary shadow-md bg-active" : "border-muted hover:border-primary/50"
+                className={`p-3 rounded-lg border-2 transition-all duration-200 text-left min-w-0 overflow-hidden ${terminalColorScheme === scheme.name ? "border-primary shadow-md bg-active" : "border-muted hover:border-primary/50"
                   }`}
                 style={{
                   backgroundColor: resolvePreviewColor(scheme.background, 'var(--background)'),
@@ -315,7 +239,7 @@ function ThemeSettings() {
           {terminalColorScheme === "custom" && (
             <div className="p-4 bg-muted/20 border rounded-lg space-y-4">
               <Label className="text-sm font-semibold">自定义配色详情</Label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                 {EDITABLE_THEME_COLOR_ITEMS.map((item) => (
                   <div key={item.key} className="flex flex-col gap-1.5">
                     <Label className="text-xs text-muted-foreground">{item.label}</Label>
@@ -340,7 +264,7 @@ function ThemeSettings() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-8 pt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4">
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <Label className="text-sm text-muted-foreground">终端背景不透明度</Label>
@@ -390,8 +314,8 @@ function ThemeSettings() {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-8 pt-2">
-            <div className="space-y-2 col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-2">
+            <div className="space-y-2 sm:col-span-2">
               <Label className="text-sm text-muted-foreground">界面呈现 / UI Mode</Label>
               <Select
                 value={backgroundImageUiMode}
@@ -434,7 +358,7 @@ function ThemeSettings() {
         {/* ======================= */}
         <div className="space-y-4">
           <Label className="text-base font-semibold">字体设置</Label>
-          <div className="grid grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">字体族</Label>
               <Select value={fontFamily} onValueChange={(v) => setSettings({ fontFamily: v })}>
@@ -492,7 +416,7 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
 
   return (
     <div className="space-y-6 py-4">
-      <div className="grid grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {(["left", "right"] as const).map((side) => (
           <div key={side} className="space-y-4">
             <div className="flex items-center justify-between border-b pb-2">
@@ -593,7 +517,7 @@ function TerminalSettings() {
                   key={s.path}
                   onClick={() => setSettings({ defaultShell: s.path })}
                   className={cn(
-                    "flex items-center justify-between p-3 rounded-xl border transition-all text-left",
+                    "flex items-center justify-between p-3 rounded-xl border transition-all text-left min-w-0 overflow-hidden",
                     defaultShell === s.path
                       ? "border-primary bg-primary/5 shadow-sm"
                       : "border-border hover:bg-muted/50"
@@ -701,7 +625,7 @@ function DataImportExport() {
       };
 
       const jsonString = JSON.stringify(exportData, null, 2);
-      const defaultFileName = `lazy-terminal-backup-${new Date().toISOString().split('T')[0]}.json`;
+      const defaultFileName = `lazy-term-backup-${new Date().toISOString().split('T')[0]}.json`;
 
       // 1. 唤起系统原生的保存文件对话框
       const filePath = await save({
@@ -898,7 +822,7 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
   const handleOpenChange = (nextOpen: boolean) => {
     onOpenChange(nextOpen);
     if (!nextOpen) {
-      window.dispatchEvent(new Event("lazy-terminal-focus"));
+      window.dispatchEvent(new Event("lazy-term-focus"));
     }
   };
 
@@ -931,13 +855,13 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-4xl h-[80vh] flex flex-col p-0">
+      <DialogContent className="max-w-[1000px] w-[95vw] h-[85vh] md:h-[80vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>系统设置</DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="theme" className="flex-1 flex overflow-hidden">
-          <TabsList className="w-48 flex flex-col h-full bg-muted/10 rounded-none border-r p-3 gap-2 justify-start">
+        <Tabs defaultValue="theme" className="flex-1 flex overflow-hidden flex-col md:flex-row">
+          <TabsList className="w-full md:w-48 flex flex-row md:flex-col h-auto md:h-full bg-muted/10 md:rounded-none border-b md:border-b-0 md:border-r p-3 gap-2 justify-start overflow-x-auto justify-start shrink-0">
             <TabsTrigger
               value="theme"
               className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
@@ -968,28 +892,30 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
             </TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="flex-1 p-8">
-            <TabsContent value="theme" className="m-0 focus-visible:outline-none">
-              <ThemeSettings />
-            </TabsContent>
-            <TabsContent value="slots" className="m-0 focus-visible:outline-none">
-              <SlotSettings
-                currentConfig={currentConfig}
-                onToggle={toggleModule}
-                onActiveChange={(side: "left" | "right", val: string) => {
-                  const next = JSON.parse(JSON.stringify(useSlotConfigStore.getState().currentConfig));
-                  next[side].activeModule = val;
-                  useSlotConfigStore.getState().updateSlotConfig(next);
-                }}
-                resetToDefault={resetToDefault}
-              />
-            </TabsContent>
-            <TabsContent value="terminal" className="m-0 focus-visible:outline-none">
-              <TerminalSettings />
-            </TabsContent>
-            <TabsContent value="data" className="m-0 focus-visible:outline-none">
-              <DataImportExport />
-            </TabsContent>
+          <ScrollArea className="flex-1">
+            <div className="p-8">
+              <TabsContent value="theme" className="m-0 focus-visible:outline-none">
+                <ThemeSettings />
+              </TabsContent>
+              <TabsContent value="slots" className="m-0 focus-visible:outline-none">
+                <SlotSettings
+                  currentConfig={currentConfig}
+                  onToggle={toggleModule}
+                  onActiveChange={(side: "left" | "right", val: string) => {
+                    const next = JSON.parse(JSON.stringify(useSlotConfigStore.getState().currentConfig));
+                    next[side].activeModule = val;
+                    useSlotConfigStore.getState().updateSlotConfig(next);
+                  }}
+                  resetToDefault={resetToDefault}
+                />
+              </TabsContent>
+              <TabsContent value="terminal" className="m-0 focus-visible:outline-none">
+                <TerminalSettings />
+              </TabsContent>
+              <TabsContent value="data" className="m-0 focus-visible:outline-none">
+                <DataImportExport />
+              </TabsContent>
+            </div>
           </ScrollArea>
         </Tabs>
       </DialogContent>

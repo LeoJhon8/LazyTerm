@@ -20,7 +20,7 @@ export function PaneContainer() {
       <div className="flex h-full w-full items-center justify-center">
         <div className="text-center">
           <div className="text-2xl font-semibold text-muted-foreground mb-2">
-            欢迎使用 Lazy Terminal
+            欢迎使用 Lazy Term
           </div>
           <div className="text-sm text-muted-foreground">
             点击左侧会话列表开始连接

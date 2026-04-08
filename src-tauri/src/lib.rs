@@ -1,4 +1,4 @@
-//! Lazy Terminal 核心库
+//! Lazy Term 核心库
 //! 包含应用状态定义和 Tauri 入口
 //!
 //! # VNC 实现说明

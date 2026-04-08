@@ -323,7 +323,7 @@ export function TabBar() {
       }
       
       requestAnimationFrame(() => {
-        window.dispatchEvent(new Event("lazy-terminal-focus"));
+        window.dispatchEvent(new Event("lazy-term-focus"));
       });
     }
   }, []);
@@ -384,7 +384,7 @@ export function TabBar() {
     setActiveTabId(id);
     
     requestAnimationFrame(() => {
-      window.dispatchEvent(new Event("lazy-terminal-focus"));
+      window.dispatchEvent(new Event("lazy-term-focus"));
     });
   };
   

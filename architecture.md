@@ -1,8 +1,8 @@
-# Lazy Terminal 架构设计文档
+# Lazy Term 架构设计文档
 
 ## 1. 系统概述
 
-Lazy Terminal 是一款基于 Tauri 2 的跨平台桌面终端应用，支持多种远程连接协议。应用采用前后端分离架构，前端使用 React + TypeScript 构建用户界面，后端使用 Rust 实现核心协议逻辑。
+Lazy Term 是一款基于 Tauri 2 的跨平台桌面终端应用，支持多种远程连接协议。应用采用前后端分离架构，前端使用 React + TypeScript 构建用户界面，后端使用 Rust 实现核心协议逻辑。
 
 ### 1.1 核心特性
 
@@ -197,12 +197,12 @@ interface Pane {
 
 | Store | 功能 | 持久化 Key | 是否持久化 |
 |-------|------|-----------|-----------|
-| `tabs.ts` | 会话列表、活跃标签、连接错误 | `lazy-terminal-tabs` | ✅ |
-| `settings.ts` | 终端外观、布局尺寸、背景图片 | `lazy-terminal-settings` | ✅ |
-| `slot-config.ts` | 插槽模块分配与折叠状态 | `lazy-terminal-slot-config` | ✅ |
+| `tabs.ts` | 会话列表、活跃标签、连接错误 | `lazy-term-tabs` | ✅ |
+| `settings.ts` | 终端外观、布局尺寸、背景图片 | `lazy-term-settings` | ✅ |
+| `slot-config.ts` | 插槽模块分配与折叠状态 | `lazy-term-slot-config` | ✅ |
 | `ssh-profiles.ts` | 会话树配置（文件夹/连接节点） | `terminal-sessions-v10` | ✅ |
-| `history.ts` | 命令历史（最多 30 条） | `lazy-terminal-history` | ✅ |
-| `quick-commands.ts` | 快捷命令列表 | `lazy-terminal-quick-commands` | ✅ |
+| `history.ts` | 命令历史（最多 30 条） | `lazy-term-history` | ✅ |
+| `quick-commands.ts` | 快捷命令列表 | `lazy-term-quick-commands` | ✅ |
 | `panes.ts` | 面板列表、焦点面板、分屏状态 | - | ❌ |
 
 **Pane 状态不持久化的设计决策**：

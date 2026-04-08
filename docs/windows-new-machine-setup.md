@@ -1,6 +1,6 @@
 # 新 Windows 电脑开发环境搭建指南
 
-这份文档面向 `lazy-terminal` 项目，目标是让一台全新的 Windows 电脑从零开始，最终达到下面的状态：
+这份文档面向 `lazy-term` 项目，目标是让一台全新的 Windows 电脑从零开始，最终达到下面的状态：
 
 - 可以拉取代码
 - 可以启动前端开发环境
@@ -251,7 +251,7 @@ dotnet --version
 建议把代码放到一个稳定目录，比如：
 
 ```text
-C:\dev\lazy-terminal
+C:\dev\lazy-term
 ```
 
 操作：
@@ -259,8 +259,8 @@ C:\dev\lazy-terminal
 ```powershell
 mkdir C:\dev -ErrorAction SilentlyContinue
 cd C:\dev
-git clone <你的仓库地址> lazy-terminal
-cd .\lazy-terminal
+git clone <你的仓库地址> lazy-term
+cd .\lazy-term
 ```
 
 然后安装前端依赖：
@@ -476,7 +476,7 @@ npm -v
 每天开发前：
 
 ```powershell
-cd C:\dev\lazy-terminal
+cd C:\dev\lazy-term
 git pull
 npm ci
 npm run tauri:dev
@@ -524,7 +524,7 @@ rustc -V
 cargo -V
 rustup show
 dotnet --version
-cd C:\dev\lazy-terminal
+cd C:\dev\lazy-term
 npm ci
 npm run lint
 npm run build
@@ -758,7 +758,7 @@ npm install -g @anthropic-ai/claude-code
 
 ### 13.5 针对这个项目的推荐组合
 
-`lazy-terminal` 是一个 Windows 下的 `Tauri + Rust + React` 桌面项目，所以推荐不要把开发环境复杂化。
+`lazy-term` 是一个 Windows 下的 `Tauri + Rust + React` 桌面项目，所以推荐不要把开发环境复杂化。
 
 推荐组合 A：稳妥型
 
@@ -1124,7 +1124,7 @@ delta --version
 
 ## 16. 对这个项目最有价值的工具组合
 
-针对 `lazy-terminal` 这个仓库，我建议最少装这 5 个：
+针对 `lazy-term` 这个仓库，我建议最少装这 5 个：
 
 1. `rg`
 2. `jq`

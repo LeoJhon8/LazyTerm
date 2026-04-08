@@ -1,4 +1,4 @@
-# 项目技术栈记录 — lazy-terminal
+# 项目技术栈记录 — lazy-term
 记录时间: 2026-03-19
 
 ## Project Overview
