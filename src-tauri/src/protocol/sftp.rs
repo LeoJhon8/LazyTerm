@@ -1,12 +1,12 @@
 //! SFTP 文件传输命令模块（从 commands/sftp.rs 迁移）
 
+use crate::error::safe_lock;
+use crate::protocol::sftp_utils;
+use crate::protocol::ssh_auth;
+use crate::utils::map_sftp_error;
 use crate::{
     AppState, SftpUploadCancelGuard, SftpUploadItem, SftpUploadProgress, SshConnectConfig,
 };
-use crate::utils::map_sftp_error;
-use crate::protocol::ssh_auth;
-use crate::protocol::sftp_utils;
-use crate::error::safe_lock;
 use russh_sftp::client::SftpSession;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -20,9 +20,9 @@ pub async fn sftp_upload_file(
     remote_path: String,
 ) -> Result<(), String> {
     // 使用 protocol::ssh_auth 中的 connect_and_authenticate 一站式完成连接和认证
-    let handle = ssh_auth::connect_and_authenticate(&config).await.map_err(|e| {
-        format!("{}，请检查账号、私钥或密码。", e)
-    })?;
+    let handle = ssh_auth::connect_and_authenticate(&config)
+        .await
+        .map_err(|e| e)?;
 
     let channel = handle
         .channel_open_session()
@@ -47,9 +47,12 @@ pub async fn sftp_upload_file(
     let data = tokio::fs::read(&local_path)
         .await
         .map_err(|e| format!("读取本地文件失败：{} (path={})", e, local_path))?;
-    
+
     // 获取远程主目录并解析路径
-    let home_dir = sftp.canonicalize(".").await.unwrap_or_else(|_| "/".to_string());
+    let home_dir = sftp
+        .canonicalize(".")
+        .await
+        .unwrap_or_else(|_| "/".to_string());
     let remote_path_resolved = sftp_utils::resolve_remote_path(&remote_path, &home_dir);
 
     // 使用 sftp_utils 确保远程目录存在
@@ -63,9 +66,17 @@ pub async fn sftp_upload_file(
                 let _ = sftp.close().await;
                 Ok(())
             }
-            Err(e) => Err(map_sftp_error("写入远程文件失败", &e, Some(&remote_path_resolved))),
+            Err(e) => Err(map_sftp_error(
+                "写入远程文件失败",
+                &e,
+                Some(&remote_path_resolved),
+            )),
         },
-        Err(e) => Err(map_sftp_error("创建远程文件失败", &e, Some(&remote_path_resolved))),
+        Err(e) => Err(map_sftp_error(
+            "创建远程文件失败",
+            &e,
+            Some(&remote_path_resolved),
+        )),
     }
 }
 
@@ -86,17 +97,18 @@ pub async fn sftp_upload_files(
     // 使用 safe_lock 安全获取锁
     safe_lock(&state.sftp_upload_cancellations, |cancellations| {
         cancellations.insert(upload_id.clone(), false);
-    }).map_err(|e| e.to_string())?;
-    
+    })
+    .map_err(|e| e.to_string())?;
+
     let _cancel_guard = SftpUploadCancelGuard {
         upload_id: upload_id.clone(),
         cancellations: Arc::clone(&state.sftp_upload_cancellations),
     };
 
     // 使用 protocol::ssh_auth 中的 connect_and_authenticate 一站式完成连接和认证
-    let handle = ssh_auth::connect_and_authenticate(&config).await.map_err(|e| {
-        format!("{}，请检查账号、私钥或密码。", e)
-    })?;
+    let handle = ssh_auth::connect_and_authenticate(&config)
+        .await
+        .map_err(|e| e)?;
 
     let channel = handle
         .channel_open_session()
@@ -113,7 +125,10 @@ pub async fn sftp_upload_files(
         .map_err(|e| format!("SFTP 初始化失败: {}", e))?;
 
     // 获取远程主目录（用于解析 ~/ 路径）
-    let home_dir = sftp.canonicalize(".").await.unwrap_or_else(|_| "/".to_string());
+    let home_dir = sftp
+        .canonicalize(".")
+        .await
+        .unwrap_or_else(|_| "/".to_string());
 
     let mut file_infos: Vec<(usize, SftpUploadItem, u64, String)> = Vec::new();
     let mut overall_total = 0u64;
@@ -122,7 +137,10 @@ pub async fn sftp_upload_files(
             .await
             .map_err(|e| format!("读取本地文件失败: {} (path={})", e, item.local_path))?;
         if !meta.is_file() {
-            return Err(format!("读取本地文件失败: 不是文件 (path={})", item.local_path));
+            return Err(format!(
+                "读取本地文件失败: 不是文件 (path={})",
+                item.local_path
+            ));
         }
         let size = meta.len();
         overall_total += size;
@@ -136,7 +154,8 @@ pub async fn sftp_upload_files(
     for (index, item, file_size, file_name) in file_infos.into_iter() {
         let cancelled = safe_lock(&state.sftp_upload_cancellations, |cancellations| {
             cancellations.get(&upload_id).copied().unwrap_or(false)
-        }).unwrap_or(false);
+        })
+        .unwrap_or(false);
         if cancelled {
             return Err("上传已停止".to_string());
         }
@@ -159,7 +178,13 @@ pub async fn sftp_upload_files(
 
         let mut remote_file = match sftp.create(&remote_path_resolved).await {
             Ok(file) => file,
-            Err(e) => return Err(map_sftp_error("创建远程文件失败", &e, Some(&remote_path_resolved))),
+            Err(e) => {
+                return Err(map_sftp_error(
+                    "创建远程文件失败",
+                    &e,
+                    Some(&remote_path_resolved),
+                ))
+            }
         };
 
         let mut sent = 0u64;
@@ -167,7 +192,8 @@ pub async fn sftp_upload_files(
         loop {
             let cancelled = safe_lock(&state.sftp_upload_cancellations, |cancellations| {
                 cancellations.get(&upload_id).copied().unwrap_or(false)
-            }).unwrap_or(false);
+            })
+            .unwrap_or(false);
             if cancelled {
                 return Err("上传已停止".to_string());
             }
@@ -225,5 +251,6 @@ pub fn cancel_sftp_upload(state: State<'_, AppState>, upload_id: String) -> Resu
         } else {
             Err("上传任务不存在或已结束".to_string())
         }
-    }).map_err(|e| e.to_string())?
+    })
+    .map_err(|e| e.to_string())?
 }

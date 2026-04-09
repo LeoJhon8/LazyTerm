@@ -157,13 +157,15 @@ unsafe fn handle_cursor_shape_callback_impl(
             .saturating_mul(height.max(0) as usize)
             .saturating_mul(4);
 
-        let _ = ctx.event_sender.send(CallbackEvent::CursorShape(CursorInfo {
-            hotspot_x: xhot.max(0) as u16,
-            hotspot_y: yhot.max(0) as u16,
-            width: width.max(0) as u16,
-            height: height.max(0) as u16,
-            rgba_data: vec![0u8; cursor_size],
-        }));
+        let _ = ctx
+            .event_sender
+            .send(CallbackEvent::CursorShape(CursorInfo {
+                hotspot_x: xhot.max(0) as u16,
+                hotspot_y: yhot.max(0) as u16,
+                width: width.max(0) as u16,
+                height: height.max(0) as u16,
+                rgba_data: vec![0u8; cursor_size],
+            }));
     }
 }
 
@@ -180,11 +182,7 @@ pub unsafe extern "C" fn handle_cursor_shape_callback(
     }));
 }
 
-unsafe fn got_xcut_text_callback_impl(
-    client: *mut ffi::RfbClient,
-    text: *mut c_char,
-    len: c_int,
-) {
+unsafe fn got_xcut_text_callback_impl(client: *mut ffi::RfbClient, text: *mut c_char, len: c_int) {
     let ptr = client as usize;
 
     if let Some(ctx) = get_context(ptr) {
@@ -209,11 +207,7 @@ pub unsafe extern "C" fn got_xcut_text_callback(
     }));
 }
 
-unsafe fn got_cursor_pos_callback_impl(
-    client: *mut ffi::RfbClient,
-    x: c_int,
-    y: c_int,
-) -> i8 {
+unsafe fn got_cursor_pos_callback_impl(client: *mut ffi::RfbClient, x: c_int, y: c_int) -> i8 {
     let ptr = client as usize;
 
     if let Some(ctx) = get_context(ptr) {
@@ -231,7 +225,10 @@ pub unsafe extern "C" fn got_cursor_pos_callback(
     x: c_int,
     y: c_int,
 ) -> i8 {
-    catch_unwind(AssertUnwindSafe(|| got_cursor_pos_callback_impl(client, x, y))).unwrap_or(-1)
+    catch_unwind(AssertUnwindSafe(|| {
+        got_cursor_pos_callback_impl(client, x, y)
+    }))
+    .unwrap_or(-1)
 }
 
 unsafe fn malloc_framebuffer_callback_impl(client: *mut ffi::RfbClient) -> i8 {
@@ -252,5 +249,8 @@ unsafe fn malloc_framebuffer_callback_impl(client: *mut ffi::RfbClient) -> i8 {
 }
 
 pub unsafe extern "C" fn malloc_framebuffer_callback(client: *mut ffi::RfbClient) -> i8 {
-    catch_unwind(AssertUnwindSafe(|| malloc_framebuffer_callback_impl(client))).unwrap_or(0)
+    catch_unwind(AssertUnwindSafe(|| {
+        malloc_framebuffer_callback_impl(client)
+    }))
+    .unwrap_or(0)
 }

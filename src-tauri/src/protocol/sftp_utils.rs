@@ -5,17 +5,14 @@ use russh_sftp::client::SftpSession;
 use std::path::Path;
 
 /// 确保远程目录存在，不存在则逐级创建
-/// 
+///
 /// # 参数
 /// - `sftp`: SFTP 会话
 /// - `remote_path`: 远程文件完整路径
-/// 
+///
 /// # 返回
 /// 成功返回 Ok(()), 失败返回错误信息
-pub async fn ensure_remote_dirs(
-    sftp: &SftpSession,
-    remote_path: &str,
-) -> Result<(), String> {
+pub async fn ensure_remote_dirs(sftp: &SftpSession, remote_path: &str) -> Result<(), String> {
     if let Some(parent) = remote_path.rsplit_once('/') {
         let dir = parent.0;
         if !dir.is_empty() {
@@ -53,7 +50,7 @@ pub async fn ensure_remote_dirs(
 pub fn normalize_remote_path(path: &str) -> String {
     let parts: Vec<&str> = path.split('/').collect();
     let mut result = Vec::new();
-    
+
     for part in parts {
         match part {
             "" | "." => continue,
@@ -63,16 +60,16 @@ pub fn normalize_remote_path(path: &str) -> String {
             _ => result.push(part),
         }
     }
-    
+
     format!("/{}", result.join("/"))
 }
 
 /// 解析远程路径，处理 ~/ 前缀
-/// 
+///
 /// # 参数
 /// - `path`: 原始路径（可能以 ~/ 开头）
 /// - `home_dir`: 远程主目录路径（用于替换 ~）
-/// 
+///
 /// # 返回
 /// 解析后的绝对路径
 pub fn resolve_remote_path(path: &str, home_dir: &str) -> String {
@@ -86,7 +83,5 @@ pub fn resolve_remote_path(path: &str, home_dir: &str) -> String {
 
 /// 从完整路径中提取文件名
 pub fn extract_filename(path: &str) -> Option<&str> {
-    Path::new(path)
-        .file_name()
-        .and_then(|n| n.to_str())
+    Path::new(path).file_name().and_then(|n| n.to_str())
 }

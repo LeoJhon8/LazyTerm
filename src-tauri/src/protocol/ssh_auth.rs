@@ -47,13 +47,8 @@ impl SshClientHandler {
                         self.host, self.port
                     ),
                 );
-                if let Err(e) =
-                    russh_keys::learn_known_hosts(&self.host, self.port, server_key)
-                {
-                    logging::warn(
-                        "SSH/hostkey",
-                        format!("写入 known_hosts 失败: {}", e),
-                    );
+                if let Err(e) = russh_keys::learn_known_hosts(&self.host, self.port, server_key) {
+                    logging::warn("SSH/hostkey", format!("写入 known_hosts 失败: {}", e));
                 }
             }
             Err(russh_keys::Error::KeyChanged { line }) => {
@@ -73,13 +68,8 @@ impl SshClientHandler {
                     "SSH/hostkey",
                     format!("known_hosts 检查出错: {}，尝试记录新密钥", e),
                 );
-                if let Err(e2) =
-                    russh_keys::learn_known_hosts(&self.host, self.port, server_key)
-                {
-                    logging::warn(
-                        "SSH/hostkey",
-                        format!("写入 known_hosts 失败: {}", e2),
-                    );
+                if let Err(e2) = russh_keys::learn_known_hosts(&self.host, self.port, server_key) {
+                    logging::warn("SSH/hostkey", format!("写入 known_hosts 失败: {}", e2));
                 }
             }
         }
@@ -104,9 +94,7 @@ impl SshClientHandler {
 
         if lines_to_remove.is_empty() {
             // 没有匹配的行（理论上不应进入此分支，但防御性处理）
-            if let Err(e) =
-                russh_keys::learn_known_hosts(&self.host, self.port, server_key)
-            {
+            if let Err(e) = russh_keys::learn_known_hosts(&self.host, self.port, server_key) {
                 logging::warn(
                     "SSH/hostkey",
                     format!("写入新密钥到 known_hosts 失败: {}", e),
@@ -128,10 +116,7 @@ impl SshClientHandler {
         let content = match std::fs::read_to_string(&known_hosts_path) {
             Ok(c) => c,
             Err(e) => {
-                logging::warn(
-                    "SSH/hostkey",
-                    format!("读取 known_hosts 失败: {}", e),
-                );
+                logging::warn("SSH/hostkey", format!("读取 known_hosts 失败: {}", e));
                 return;
             }
         };
@@ -150,10 +135,7 @@ impl SshClientHandler {
         }
 
         if let Err(e) = std::fs::write(&known_hosts_path, &new_content) {
-            logging::warn(
-                "SSH/hostkey",
-                format!("重写 known_hosts 失败: {}", e),
-            );
+            logging::warn("SSH/hostkey", format!("重写 known_hosts 失败: {}", e));
             return;
         }
 
@@ -200,18 +182,21 @@ impl client::Handler for SshClientHandler {
         Ok(true)
     }
 
-    async fn disconnected(&mut self, _reason: client::DisconnectReason<Self::Error>) -> Result<(), Self::Error> {
+    async fn disconnected(
+        &mut self,
+        _reason: client::DisconnectReason<Self::Error>,
+    ) -> Result<(), Self::Error> {
         // 连接断开处理
         Ok(())
     }
 }
 
 /// 加载 SSH 私钥
-/// 
+///
 /// 注意：russh_keys 0.45+ 使用 decode_secret_key 而不是 from_openssh
 pub async fn load_ssh_key(path: &str, passphrase: Option<String>) -> Result<key::KeyPair, String> {
     let path = std::path::Path::new(path);
-    
+
     if !path.exists() {
         return Err(format!("私钥文件不存在: {}", path.display()));
     }
@@ -233,7 +218,7 @@ async fn authenticate_with_key(
     passphrase: Option<String>,
 ) -> Result<(), String> {
     let key_pair = load_ssh_key(key_path, passphrase).await?;
-    
+
     let auth_result = handle
         .authenticate_publickey(username.to_string(), Arc::new(key_pair))
         .await
@@ -267,32 +252,44 @@ async fn authenticate_with_password(
 }
 
 /// 执行完整的 SSH 认证（多策略）
-/// 
+///
 /// 认证策略优先级：
 /// 1. 如果提供了私钥路径，先尝试私钥认证
 /// 2. 如果私钥认证失败或没有私钥，尝试 keyboard-interactive（支持多轮交互）
 /// 3. 如果 keyboard-interactive 失败且有密码，尝试密码认证
-/// 
+///
 /// 注意：此函数会记录日志到应用日志系统
 pub async fn authenticate_ssh(
     handle: &mut client::Handle<SshClientHandler>,
     config: &SshConnectConfig,
 ) -> Result<(), String> {
     use crate::logging;
-    
+
     let username = &config.username;
     let mut authenticated = false;
+    let mut attempted_key = false;
+    let mut attempted_pwd = false;
 
     // 策略 1: 私钥认证
     if let Some(ref key_path) = config.private_key_path {
-        logging::info("SSH/auth", format!("尝试私钥认证: {key_path}"));
-        match authenticate_with_key(handle, username, key_path, config.private_key_passphrase.clone()).await {
-            Ok(()) => {
-                logging::info("SSH/auth", "私钥认证成功");
-                authenticated = true;
-            }
-            Err(e) => {
-                logging::warn("SSH/auth", format!("私钥认证失败: {e}"));
+        if !key_path.trim().is_empty() {
+            attempted_key = true;
+            logging::info("SSH/auth", format!("尝试私钥认证: {key_path}"));
+            match authenticate_with_key(
+                handle,
+                username,
+                key_path,
+                config.private_key_passphrase.clone(),
+            )
+            .await
+            {
+                Ok(()) => {
+                    logging::info("SSH/auth", "私钥认证成功");
+                    authenticated = true;
+                }
+                Err(e) => {
+                    logging::warn("SSH/auth", format!("私钥认证失败: {e}"));
+                }
             }
         }
     }
@@ -300,11 +297,11 @@ pub async fn authenticate_ssh(
     // 策略 2 & 3: keyboard-interactive -> 密码认证
     if !authenticated {
         if let Some(ref password) = config.password {
-            authenticated = authenticate_keyboard_interactive_then_password(
-                handle,
-                username,
-                password,
-            ).await?;
+            if !password.is_empty() {
+                attempted_pwd = true;
+                authenticated =
+                    authenticate_keyboard_interactive_then_password(handle, username, password).await?;
+            }
         }
     }
 
@@ -312,12 +309,20 @@ pub async fn authenticate_ssh(
         Ok(())
     } else {
         logging::warn("SSH/auth", "所有认证方式均已尝试，认证失败");
-        Err("SSH 认证失败：密钥或密码错误".to_string())
+        if attempted_key && attempted_pwd {
+            Err("SSH 认证失败：私钥验证失败，且密码错误".to_string())
+        } else if attempted_pwd {
+            Err("SSH 认证失败：密码错误或被服务器拒绝".to_string())
+        } else if attempted_key {
+            Err("SSH 认证失败：私钥无效或不匹配".to_string())
+        } else {
+            Err("SSH 认证失败：未提供有效的密码或私钥".to_string())
+        }
     }
 }
 
 /// Keyboard-interactive 认证，失败时回退到密码认证
-/// 
+///
 /// 这是 commands.rs 中的实际逻辑，支持多轮交互
 async fn authenticate_keyboard_interactive_then_password(
     handle: &mut client::Handle<SshClientHandler>,
@@ -325,7 +330,7 @@ async fn authenticate_keyboard_interactive_then_password(
     password: &str,
 ) -> Result<bool, String> {
     use crate::logging;
-    
+
     logging::info("SSH/auth", "开始 Keyboard-Interactive 认证");
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -353,16 +358,25 @@ async fn authenticate_keyboard_interactive_then_password(
                     kbd_authenticated = true;
                     break;
                 }
-                Ok(client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, name, .. }) => {
+                Ok(client::KeyboardInteractiveAuthResponse::InfoRequest {
+                    prompts, name, ..
+                }) => {
                     logging::info(
                         "SSH/auth",
-                        format!("收到交互请求: round={} name='{}' prompts={}", i + 1, name, prompts.len()),
+                        format!(
+                            "收到交互请求: round={} name='{}' prompts={}",
+                            i + 1,
+                            name,
+                            prompts.len()
+                        ),
                     );
                     let mut responses = Vec::new();
                     for _p in prompts.iter() {
                         responses.push(password.to_string());
                     }
-                    current_kbd_res = handle.authenticate_keyboard_interactive_respond(responses).await;
+                    current_kbd_res = handle
+                        .authenticate_keyboard_interactive_respond(responses)
+                        .await;
                 }
                 Ok(client::KeyboardInteractiveAuthResponse::Failure) => {
                     logging::warn("SSH/auth", "Keyboard-Interactive 被拒绝，切换密码认证");
@@ -377,7 +391,10 @@ async fn authenticate_keyboard_interactive_then_password(
             }
         }
     } else {
-        logging::warn("SSH/auth", "Keyboard-Interactive 启动失败或超时，尝试标准密码认证");
+        logging::warn(
+            "SSH/auth",
+            "Keyboard-Interactive 启动失败或超时，尝试标准密码认证",
+        );
         should_fallback_to_password = true;
     }
 
@@ -385,7 +402,10 @@ async fn authenticate_keyboard_interactive_then_password(
         Ok(true)
     } else if should_fallback_to_password {
         logging::info("SSH/auth", "开始标准密码认证");
-        match handle.authenticate_password(username.to_string(), password.to_string()).await {
+        match handle
+            .authenticate_password(username.to_string(), password.to_string())
+            .await
+        {
             Ok(true) => {
                 logging::info("SSH/auth", "标准密码认证成功");
                 Ok(true)

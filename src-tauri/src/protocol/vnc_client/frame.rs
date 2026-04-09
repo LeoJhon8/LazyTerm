@@ -192,7 +192,10 @@ impl FrameBuffer {
             for col in 0..clipped_width {
                 let source_idx = src_row + col * source_bpp;
                 let dest_idx = dest_row + col * 4;
-                let rgba = decode_pixel_to_rgba(server_format, &source[source_idx..source_idx + source_bpp]);
+                let rgba = decode_pixel_to_rgba(
+                    server_format,
+                    &source[source_idx..source_idx + source_bpp],
+                );
                 inner.data[dest_idx..dest_idx + 4].copy_from_slice(&rgba);
             }
         }
@@ -238,7 +241,8 @@ impl FrameBuffer {
             for row in 0..clipped_height {
                 let dest_y = region.y + row;
                 let dest_row = dest_y * framebuffer_stride + region.x * 4;
-                let src_row_ptr = framebuffer_ptr.add((region.y + row) * source_stride + region.x * source_bpp);
+                let src_row_ptr =
+                    framebuffer_ptr.add((region.y + row) * source_stride + region.x * source_bpp);
                 let source_slice = std::slice::from_raw_parts(src_row_ptr, source_row_size);
                 let dest_slice = &mut inner.data[dest_row..dest_row + clipped_width * 4];
 
@@ -264,13 +268,17 @@ impl FrameBuffer {
         for row in 0..clipped_height {
             let dest_y = region.y + row;
             let dest_row = dest_y * framebuffer_stride + region.x * 4;
-            let src_row_ptr = framebuffer_ptr.add((region.y + row) * source_stride + region.x * source_bpp);
+            let src_row_ptr =
+                framebuffer_ptr.add((region.y + row) * source_stride + region.x * source_bpp);
             let source_slice = std::slice::from_raw_parts(src_row_ptr, source_row_size);
 
             for col in 0..clipped_width {
                 let source_idx = col * source_bpp;
                 let dest_idx = dest_row + col * 4;
-                let rgba = decode_pixel_to_rgba(server_format, &source_slice[source_idx..source_idx + source_bpp]);
+                let rgba = decode_pixel_to_rgba(
+                    server_format,
+                    &source_slice[source_idx..source_idx + source_bpp],
+                );
                 inner.data[dest_idx..dest_idx + 4].copy_from_slice(&rgba);
             }
         }
@@ -315,18 +323,22 @@ fn decode_pixel_to_rgba(format: RfbPixelFormat, pixel: &[u8]) -> [u8; 4] {
     }
 
     let raw = if format.big_endian != 0 {
-        pixel.iter().take(bytes_per_pixel).fold(0u32, |acc, byte| {
-            (acc << 8) | u32::from(*byte)
-        })
+        pixel
+            .iter()
+            .take(bytes_per_pixel)
+            .fold(0u32, |acc, byte| (acc << 8) | u32::from(*byte))
     } else {
         pixel
             .iter()
             .take(bytes_per_pixel)
             .enumerate()
-            .fold(0u32, |acc, (index, byte)| acc | (u32::from(*byte) << (index * 8)))
+            .fold(0u32, |acc, (index, byte)| {
+                acc | (u32::from(*byte) << (index * 8))
+            })
     };
 
-    if format.true_colour != 0 && format.red_max > 0 && format.green_max > 0 && format.blue_max > 0 {
+    if format.true_colour != 0 && format.red_max > 0 && format.green_max > 0 && format.blue_max > 0
+    {
         let red_max = u32::from(format.red_max);
         let green_max = u32::from(format.green_max);
         let blue_max = u32::from(format.blue_max);

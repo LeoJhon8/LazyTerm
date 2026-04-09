@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -30,13 +31,16 @@ import { useQuickCommandsStore } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
 import type { TerminalColorScheme } from "@/config/themes";
 import { TERMINAL_THEMES } from "@/config/themes";
-import { FileJson, Upload, Trash2, ImagePlus, X, Palette, LayoutPanelLeft, Database, Terminal, Plus } from "lucide-react";
+import { FileJson, Upload, Trash2, ImagePlus, X, Palette, LayoutPanelLeft, Database, Terminal, Plus, Info, CloudDownload, RefreshCw } from "lucide-react";
 import { useEffect as useMountedEffect } from "react";
 
 // 引入 Tauri 原生 API
 import { save, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
+import { listen } from '@tauri-apps/api/event';
 
 // --- 类型定义 ---
 interface SlotConfigDialogProps {
@@ -816,6 +820,150 @@ function DataImportExport() {
   );
 }
 
+// --- 子组件 4：关于与更新 ---
+function AboutSettings() {
+  const [version, setVersion] = useState<string>("Loading...");
+  const [updateStatus, setUpdateStatus] = useState<string>("");
+  const [isChecking, setIsChecking] = useState(false);
+
+  const [latestUpdateUrl, setLatestUpdateUrl] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+
+  useMountedEffect(() => {
+    getVersion().then(setVersion).catch(() => setVersion("Unknown"));
+    
+    // 监听进度事件
+    const unlisten = listen("update-progress", (event: any) => {
+      setDownloadProgress(event.payload.progress);
+    });
+    
+    return () => {
+      unlisten.then(f => f());
+    };
+  }, []);
+
+  const checkUpdate = async () => {
+    setIsChecking(true);
+    setUpdateStatus("正在连接 172.50.0.243 检查更新...");
+    setLatestUpdateUrl(null);
+    setDownloadProgress(null);
+    try {
+      // 访问 nginx 服务器主页，通过解析挂载的文件名来判断（使用 Tauri原生 fetch 以绕过 CORS）
+      const res = await tauriFetch("http://172.50.0.243/", {
+        method: "GET",
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP 异常 ${res.status}`);
+      }
+      
+      const htmlText = await res.text();
+      
+      // 匹配 nginx autoindex 中的 href，提取包名和版本号
+      // 例如 <a href="LazyTerm_26.408.1620_x64-setup.exe">...
+      const regex = /href="([^"]*LazyTerm[_-]?v?(\d+\.\d+\.\d+)[^"]*\.(?:exe|msi|zip|dmg|AppImage))"/gi;
+      let match;
+      let maxVersion = "0.0.0";
+      let latestDownloadPath = "";
+
+      const compareVersions = (v1: string, v2: string) => {
+        const p1 = v1.split('.').map(Number);
+        const p2 = v2.split('.').map(Number);
+        for(let i=0; i<Math.max(p1.length, p2.length); i++) {
+            const num1 = p1[i] || 0;
+            const num2 = p2[i] || 0;
+            if(num1 > num2) return 1;
+            if(num1 < num2) return -1;
+        }
+        return 0;
+      };
+
+      while ((match = regex.exec(htmlText)) !== null) {
+        const fullHref = match[1];
+        const parsedVersion = match[2];
+        if (compareVersions(parsedVersion, maxVersion) > 0) {
+          maxVersion = parsedVersion;
+          latestDownloadPath = fullHref;
+        }
+      }
+
+      if (maxVersion === "0.0.0") {
+        throw new Error("未能在 172.50.0.243 上找到任何有效的 LazyTerm 安装包");
+      }
+      
+      // 如果我们发现的最大版本比当前版本大
+      if (compareVersions(maxVersion, version) > 0) {
+        setUpdateStatus(`🎉 发现新版本：${maxVersion}！`);
+        setLatestUpdateUrl(`http://172.50.0.243/${latestDownloadPath}`);
+      } else {
+        setUpdateStatus(`✅ 当前已是最新版本 (${version})`);
+      }
+    } catch (err: any) {
+      setUpdateStatus(`❌ 检查更新失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 py-4 px-1">
+      <div className="flex items-center gap-2">
+        <Info className="h-5 w-5 text-primary" />
+        <Label className="text-lg font-bold">关于 LazyTerm</Label>
+      </div>
+
+      <div className="p-6 border rounded-2xl bg-muted/5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-lg font-bold">LazyTerm</div>
+            <div className="text-sm text-muted-foreground mt-1">当前版本：{version}</div>
+          </div>
+          <Button onClick={checkUpdate} disabled={isChecking || downloadProgress !== null} variant="secondary">
+            {isChecking ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-2 h-4 w-4" />}
+            检查更新
+          </Button>
+        </div>
+
+        {updateStatus && (
+          <div className="p-4 mt-4 rounded-xl bg-primary/10 text-primary text-sm font-medium border border-primary/20 flex flex-col gap-4 shadow-sm">
+            <div className="leading-relaxed">{updateStatus}</div>
+            
+            {latestUpdateUrl && downloadProgress === null && (
+              <Button 
+                onClick={() => {
+                  setDownloadProgress(0);
+                  invoke("download_and_install_update", { url: latestUpdateUrl })
+                    .catch(err => {
+                      setUpdateStatus(`❌ 下载或安装失败：${err}`);
+                      setDownloadProgress(null);
+                    });
+                }}
+                className="w-full sm:w-auto self-start"
+              >
+                立即更新
+              </Button>
+            )}
+
+            {downloadProgress !== null && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span className="animate-pulse">正在下载更新包...</span>
+                  <span className="font-mono">{downloadProgress.toFixed(1)}%</span>
+                </div>
+                <div className="w-full bg-background/50 h-2.5 rounded-full overflow-hidden shadow-inner flex">
+                  <div 
+                    className="bg-primary h-full transition-all duration-300 ease-out" 
+                    style={{ width: `${downloadProgress}%` }} 
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // --- 主组件 ---
 export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) {
   const { currentConfig, resetToDefault } = useSlotConfigStore();
@@ -855,9 +1003,10 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-[1000px] w-[95vw] h-[85vh] md:h-[80vh] flex flex-col p-0">
+      <DialogContent aria-describedby={undefined} className="max-w-[1000px] w-[95vw] h-[85vh] md:h-[80vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>系统设置</DialogTitle>
+          <DialogDescription className="hidden">系统设置</DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="theme" className="flex-1 flex overflow-hidden flex-col md:flex-row">
@@ -890,6 +1039,13 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
               <Database className="h-4 w-4" />
               <span className="font-medium">数据备份</span>
             </TabsTrigger>
+            <TabsTrigger
+              value="about"
+              className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
+            >
+              <Info className="h-4 w-4" />
+              <span className="font-medium">关于与更新</span>
+            </TabsTrigger>
           </TabsList>
 
           <ScrollArea className="flex-1">
@@ -914,6 +1070,9 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
               </TabsContent>
               <TabsContent value="data" className="m-0 focus-visible:outline-none">
                 <DataImportExport />
+              </TabsContent>
+              <TabsContent value="about" className="m-0 focus-visible:outline-none">
+                <AboutSettings />
               </TabsContent>
             </div>
           </ScrollArea>

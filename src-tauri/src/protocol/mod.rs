@@ -6,37 +6,37 @@
 //! VNC 协议基于 LibVNCClient FFI 实现，提供完整的 VNC 客户端功能。
 
 // 共享模块
-pub mod ssh_auth;
 pub mod sftp_utils;
+pub mod ssh_auth;
 pub mod tls;
 
 // 终端协议
-pub mod terminal;
-pub mod ssh;
 pub mod sftp;
+pub mod ssh;
+pub mod terminal;
 
 // RDP 协议
-pub mod rdp;
-pub mod rdp_core;
 pub mod mstsc;
 pub mod native_rdp;
+pub mod rdp;
+pub mod rdp_core;
 
 // VNC 协议 - LibVNCClient FFI 实现
-pub mod vnc_ffi;
+pub mod vnc;
 pub mod vnc_client;
 pub mod vnc_core;
-pub mod vnc;
+pub mod vnc_ffi;
 
 // 导出常用命令
-pub use terminal::*;
-pub use ssh::*;
-pub use rdp::*;
-pub use sftp::*;
 pub use mstsc::*;
 pub use native_rdp::*;
+pub use rdp::*;
+pub use sftp::*;
+pub use ssh::*;
+pub use terminal::*;
 pub use vnc::*;
+pub mod updater;
+pub use updater::*;
 
 // 导出核心逻辑函数
-pub use rdp_core::{
-    build_rdp_config, connect_rdp, run_rdp_session,
-};
+pub use rdp_core::{build_rdp_config, connect_rdp, run_rdp_session};

@@ -78,7 +78,10 @@ fn probe_manual_windows_install() -> Result<bool, String> {
 
     for candidate in default_windows_vnc_roots() {
         if try_windows_root(&candidate, &lib_name)? {
-            println!("cargo:warning=Using auto-detected LIBVNCSERVER_ROOT={}", candidate.display());
+            println!(
+                "cargo:warning=Using auto-detected LIBVNCSERVER_ROOT={}",
+                candidate.display()
+            );
             return Ok(true);
         }
     }
@@ -119,7 +122,8 @@ fn main() {
     } else {
         match pkg_config::Config::new()
             .atleast_version("0.9")
-            .probe("libvncclient") {
+            .probe("libvncclient")
+        {
             Ok(library) => {
                 compile_wrapper(&library.include_paths);
                 true

@@ -1,7 +1,9 @@
 //! TLS 证书验证模块
 //! 提供自定义证书验证器以支持 RDP 连接
 
-use tokio_rustls::rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use tokio_rustls::rustls::client::danger::{
+    HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
+};
 use tokio_rustls::rustls::{pki_types, DigitallySignedStruct, Error, SignatureScheme};
 
 /// 不验证证书安全性的验证器（用于 RDP 连接）

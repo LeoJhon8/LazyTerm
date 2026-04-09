@@ -1,6 +1,6 @@
-use crate::RdpConnectConfig;
 #[cfg(windows)]
 use super::rdp_core::build_rdp_full_address;
+use crate::RdpConnectConfig;
 #[cfg(windows)]
 use std::process::Command;
 #[cfg(windows)]
@@ -30,7 +30,11 @@ fn build_mstsc_credential_targets(config: &RdpConnectConfig) -> Vec<String> {
 fn build_mstsc_rdp_file(config: &RdpConnectConfig) -> String {
     let width = config.width.unwrap_or(1280).clamp(200, 8192);
     let height = config.height.unwrap_or(720).clamp(200, 8192);
-    let prompt_for_credentials = if config.password.as_deref().is_some_and(|value| !value.trim().is_empty()) {
+    let prompt_for_credentials = if config
+        .password
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+    {
         0
     } else {
         1
@@ -52,7 +56,8 @@ fn build_mstsc_rdp_file(config: &RdpConnectConfig) -> String {
         "drivestoredirect:s:".to_string(),
         "audiomode:i:0".to_string(),
     ]
-    .join("\r\n") + "\r\n"
+    .join("\r\n")
+        + "\r\n"
 }
 
 #[cfg(windows)]
@@ -77,7 +82,11 @@ fn run_cmdkey(args: &[String], context: &str) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn store_mstsc_credentials(targets: &[String], username: &str, password: &str) -> Result<(), String> {
+fn store_mstsc_credentials(
+    targets: &[String],
+    username: &str,
+    password: &str,
+) -> Result<(), String> {
     for target in targets {
         run_cmdkey(
             &[
@@ -113,13 +122,17 @@ pub fn launch_mstsc_rdp(config: RdpConnectConfig) -> Result<(), String> {
     {
         let credential_targets = build_mstsc_credential_targets(&config);
         let username = build_mstsc_username(&config);
-        let password = config.password.clone().filter(|value| !value.trim().is_empty());
+        let password = config
+            .password
+            .clone()
+            .filter(|value| !value.trim().is_empty());
 
         if let Some(password_value) = password.as_deref() {
             store_mstsc_credentials(&credential_targets, &username, password_value)?;
         }
 
-        let rdp_file_path = std::env::temp_dir().join(format!("lazyterm-mstsc-{}.rdp", Uuid::new_v4()));
+        let rdp_file_path =
+            std::env::temp_dir().join(format!("lazyterm-mstsc-{}.rdp", Uuid::new_v4()));
         std::fs::write(&rdp_file_path, build_mstsc_rdp_file(&config)).map_err(|error| {
             if password.is_some() {
                 delete_mstsc_credentials(&credential_targets);
@@ -127,9 +140,7 @@ pub fn launch_mstsc_rdp(config: RdpConnectConfig) -> Result<(), String> {
             format!("写入 mstsc 临时配置失败: {error}")
         })?;
 
-        let spawn_result = Command::new("mstsc.exe")
-            .arg(&rdp_file_path)
-            .spawn();
+        let spawn_result = Command::new("mstsc.exe").arg(&rdp_file_path).spawn();
 
         let mut child = match spawn_result {
             Ok(child) => child,

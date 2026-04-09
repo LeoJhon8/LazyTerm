@@ -7,7 +7,7 @@ import { File, X, Upload, Folder, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { size as getFileSize } from "@tauri-apps/plugin-fs";
+import { stat } from "@tauri-apps/plugin-fs";
 import { invokeTauri } from "@/services/tauri";
 import { logger } from "@/lib/logger";
 import type { SessionNode } from "@/store/ssh-profiles";
@@ -116,11 +116,11 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
 
       for (const path of paths) {
         try {
-          const size = await getFileSize(path);
+          const fileInfo = await stat(path);
           fileList.push({
             path,
             name: getFileName(path),
-            size: Number(size),
+            size: Number(fileInfo.size),
           });
         } catch (e) {
           logger.warn("FE/sftp-dialog", "无法获取文件信息", { path, error: e });
@@ -200,8 +200,9 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
             password: config.password,
             private_key_path: config.privateKeyPath,
           },
-          items,
-          upload_id: uploadId,
+          files: items,
+          progressEvent: eventName,
+          uploadId: uploadId,
         },
         { scope: "FE/sftp-dialog/upload" }
       );
@@ -229,7 +230,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
       setStopping(true);
       await invokeTauri(
         "cancel_sftp_upload",
-        { upload_id: currentUploadIdRef.current },
+        { uploadId: currentUploadIdRef.current },
         { scope: "FE/sftp-dialog/cancel" }
       );
       setMessage({ text: "已取消上传", type: "info" });

@@ -5,8 +5,8 @@
 
 use std::future::{pending, Future};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::ipc::Response;
@@ -17,7 +17,9 @@ use tokio::time::{interval, Instant};
 use crate::types::{VncControlMsg, VncCursorEventPayload};
 use crate::utils::log_vnc_info;
 
-use super::vnc_client::{FrameUpdateRegion, MouseButton, VncClient, VncClientConfig, VncClientEvent, VncEncoding};
+use super::vnc_client::{
+    FrameUpdateRegion, MouseButton, VncClient, VncClientConfig, VncClientEvent, VncEncoding,
+};
 
 const VNC_INPUT_REFRESH_DELAY: Duration = Duration::from_millis(16);
 const VNC_IDLE_REFRESH_INTERVAL: Duration = Duration::from_millis(150);
@@ -75,7 +77,12 @@ fn emit_vnc_frame(
         .map_err(|e| format!("send VNC frame via channel failed: {e}"))
 }
 
-fn encode_snapshot_jpeg(desktop_width: u16, desktop_height: u16, snapshot_rgba: &[u8], quality: u8) -> Result<Vec<u8>, String> {
+fn encode_snapshot_jpeg(
+    desktop_width: u16,
+    desktop_height: u16,
+    snapshot_rgba: &[u8],
+    quality: u8,
+) -> Result<Vec<u8>, String> {
     use image::codecs::jpeg::JpegEncoder;
     use image::{ColorType, ImageBuffer, Rgb};
 
@@ -94,9 +101,11 @@ fn encode_snapshot_jpeg(desktop_width: u16, desktop_height: u16, snapshot_rgba: 
         rgb_bytes.extend_from_slice(&chunk[..3]);
     }
 
-    let Some(image_buffer) =
-        ImageBuffer::<Rgb<u8>, Vec<u8>>::from_raw(desktop_width as u32, desktop_height as u32, rgb_bytes)
-    else {
+    let Some(image_buffer) = ImageBuffer::<Rgb<u8>, Vec<u8>>::from_raw(
+        desktop_width as u32,
+        desktop_height as u32,
+        rgb_bytes,
+    ) else {
         return Err("failed to build RGB image buffer for VNC snapshot".to_string());
     };
 
@@ -213,7 +222,13 @@ impl<R: Runtime> VncSessionRuntime<R> {
             .map_err(|e| format!("send initial VNC refresh request failed: {e}"))?;
         self.pending_refresh = false;
         self.mark_startup_full_refresh_in_flight();
-        self.log_refresh_request("initial", true, false, VNC_REFRESH_BOUNDS, VNC_REFRESH_BOUNDS);
+        self.log_refresh_request(
+            "initial",
+            true,
+            false,
+            VNC_REFRESH_BOUNDS,
+            VNC_REFRESH_BOUNDS,
+        );
 
         let mut message_future: Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> =
             Box::pin(pending());
@@ -354,7 +369,12 @@ impl<R: Runtime> VncSessionRuntime<R> {
                 let y = payload.y;
                 tokio::spawn(async move {
                     if let Err(error) = client.send_pointer(x, y, &buttons).await {
-                        log::warn!("VNC pointer input failed for {} ({}): {}", session_id, target, error);
+                        log::warn!(
+                            "VNC pointer input failed for {} ({}): {}",
+                            session_id,
+                            target,
+                            error
+                        );
                     }
                 });
                 self.schedule_refresh(false, refresh_timer);
@@ -369,7 +389,12 @@ impl<R: Runtime> VncSessionRuntime<R> {
                 let down = payload.down;
                 tokio::spawn(async move {
                     if let Err(error) = client.send_key(key_sym, down).await {
-                        log::warn!("VNC keyboard input failed for {} ({}): {}", session_id, target, error);
+                        log::warn!(
+                            "VNC keyboard input failed for {} ({}): {}",
+                            session_id,
+                            target,
+                            error
+                        );
                     }
                 });
                 self.schedule_refresh(false, refresh_timer);
@@ -428,7 +453,9 @@ impl<R: Runtime> VncSessionRuntime<R> {
             VncControlMsg::Pointer(mut payload) => {
                 loop {
                     match self.control_rx.try_recv() {
-                        Ok(VncControlMsg::Pointer(next)) if next.button_mask == payload.button_mask => {
+                        Ok(VncControlMsg::Pointer(next))
+                            if next.button_mask == payload.button_mask =>
+                        {
                             payload = next;
                         }
                         Ok(other) => {
@@ -467,7 +494,12 @@ impl<R: Runtime> VncSessionRuntime<R> {
                 Ok(event) => match event {
                     VncClientEvent::FrameBufferUpdate(update) => {
                         if !self.has_received_frame {
-                            log_vnc_info(&self.session_id, &self.target, "frame", "received first framebuffer update");
+                            log_vnc_info(
+                                &self.session_id,
+                                &self.target,
+                                "frame",
+                                "received first framebuffer update",
+                            );
                         }
                         self.has_received_frame = true;
                         self.ever_received_frame = true;
@@ -507,7 +539,9 @@ impl<R: Runtime> VncSessionRuntime<R> {
                             height: cursor.height,
                             rgba_bytes: cursor.rgba_data,
                         };
-                        let _ = self.app.emit(&format!("vnc-cursor-{}", self.session_id), payload);
+                        let _ = self
+                            .app
+                            .emit(&format!("vnc-cursor-{}", self.session_id), payload);
                     }
                     VncClientEvent::Clipboard(_) | VncClientEvent::CursorPosition { .. } => {}
                 },
@@ -585,7 +619,8 @@ impl<R: Runtime> VncSessionRuntime<R> {
         };
         let prefer_full_compressed = full_frame
             || (desktop_area > 0
-                && region_area.saturating_mul(100) >= desktop_area.saturating_mul(VNC_COMPRESSED_FULL_FRAME_THRESHOLD_PERCENT));
+                && region_area.saturating_mul(100)
+                    >= desktop_area.saturating_mul(VNC_COMPRESSED_FULL_FRAME_THRESHOLD_PERCENT));
 
         if prefer_full_compressed {
             if let Some(last_sent_at) = self.last_compressed_frame_at {
@@ -621,7 +656,12 @@ impl<R: Runtime> VncSessionRuntime<R> {
             let (_, _, rgba) = self.client.snapshot_rgba();
             let snapshot_elapsed = snapshot_started_at.elapsed();
             let encode_started_at = Instant::now();
-            let jpeg_bytes = encode_snapshot_jpeg(self.desktop_width, self.desktop_height, &rgba, self.jpeg_quality)?;
+            let jpeg_bytes = encode_snapshot_jpeg(
+                self.desktop_width,
+                self.desktop_height,
+                &rgba,
+                self.jpeg_quality,
+            )?;
             let encode_elapsed = encode_started_at.elapsed();
             let send_started_at = Instant::now();
             emit_vnc_frame(
@@ -639,9 +679,8 @@ impl<R: Runtime> VncSessionRuntime<R> {
             let send_elapsed = send_started_at.elapsed();
             let total_elapsed = commit_started_at.elapsed();
             self.last_compressed_frame_at = Some(Instant::now());
-            let should_log =
-                VNC_ENABLE_DIAGNOSTIC_LOGS
-                    && (!VNC_TRACE_ONLY_FULL_REFRESH || total_elapsed >= VNC_SLOW_COMMIT_LOG_THRESHOLD);
+            let should_log = VNC_ENABLE_DIAGNOSTIC_LOGS
+                && (!VNC_TRACE_ONLY_FULL_REFRESH || total_elapsed >= VNC_SLOW_COMMIT_LOG_THRESHOLD);
             if should_log {
                 self.commit_seq += 1;
                 log_vnc_info(
@@ -667,7 +706,8 @@ impl<R: Runtime> VncSessionRuntime<R> {
             }
         } else {
             let snapshot_started_at = Instant::now();
-            let rgba_bytes = self.client
+            let rgba_bytes = self
+                .client
                 .snapshot_region_rgba(FrameUpdateRegion {
                     x: region.x as usize,
                     y: region.y as usize,
@@ -723,7 +763,12 @@ impl<R: Runtime> VncSessionRuntime<R> {
         }
         self.emitted_snapshot_count += 1;
         if self.emitted_snapshot_count == 1 {
-            log_vnc_info(&self.session_id, &self.target, "frame", "emitted first snapshot frame to frontend");
+            log_vnc_info(
+                &self.session_id,
+                &self.target,
+                "frame",
+                "emitted first snapshot frame to frontend",
+            );
         }
         self.snapshot_dirty = false;
         Ok(())
@@ -734,8 +779,14 @@ impl<R: Runtime> VncSessionRuntime<R> {
             Some(current) => {
                 let left = current.x.min(next.x);
                 let top = current.y.min(next.y);
-                let right = current.x.saturating_add(current.width).max(next.x.saturating_add(next.width));
-                let bottom = current.y.saturating_add(current.height).max(next.y.saturating_add(next.height));
+                let right = current
+                    .x
+                    .saturating_add(current.width)
+                    .max(next.x.saturating_add(next.width));
+                let bottom = current
+                    .y
+                    .saturating_add(current.height)
+                    .max(next.y.saturating_add(next.height));
                 DirtyRegion {
                     x: left,
                     y: top,
@@ -757,8 +808,12 @@ impl<R: Runtime> VncSessionRuntime<R> {
         self.dirty_region.take().map(|region| DirtyRegion {
             x: region.x.min(self.desktop_width),
             y: region.y.min(self.desktop_height),
-            width: region.width.min(self.desktop_width.saturating_sub(region.x)),
-            height: region.height.min(self.desktop_height.saturating_sub(region.y)),
+            width: region
+                .width
+                .min(self.desktop_width.saturating_sub(region.x)),
+            height: region
+                .height
+                .min(self.desktop_height.saturating_sub(region.y)),
         })
     }
 
@@ -870,9 +925,18 @@ pub async fn run_vnc_session<R: Runtime>(
     control_rx: mpsc::UnboundedReceiver<VncControlMsg>,
     jpeg_quality: u8,
 ) -> Result<(), String> {
-    VncSessionRuntime::new(app, session_id, target, client, event_receiver, frame_channel, control_rx, jpeg_quality)
-        .run()
-        .await
+    VncSessionRuntime::new(
+        app,
+        session_id,
+        target,
+        client,
+        event_receiver,
+        frame_channel,
+        control_rx,
+        jpeg_quality,
+    )
+    .run()
+    .await
 }
 
 pub fn convert_config(config: &crate::types::VncConnectConfig) -> VncClientConfig {

@@ -17,6 +17,11 @@
     "fs:read-all",
     "fs:allow-stat",
     "fs:allow-read-text-file",
-    "fs:allow-write-text-file"
+    "fs:allow-write-text-file",
+    "http:default",
+    {
+      "identifier": "http:default",
+      "allow": [{ "url": "http://172.50.0.243/*" }]
+    }
   ]
 }

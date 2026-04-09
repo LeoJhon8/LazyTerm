@@ -82,7 +82,10 @@ impl AppError {
     }
 
     /// 创建会话未找到错误
-    pub fn session_not_found(session_type: impl Into<String>, session_id: impl Into<String>) -> Self {
+    pub fn session_not_found(
+        session_type: impl Into<String>,
+        session_id: impl Into<String>,
+    ) -> Self {
         Self::SessionNotFound {
             session_type: session_type.into(),
             session_id: session_id.into(),
@@ -104,7 +107,10 @@ impl AppError {
         match self {
             Self::Connection(msg) => format!("无法建立连接: {}", msg),
             Self::Auth(msg) => format!("认证失败: {}", msg),
-            Self::SessionNotFound { session_type, session_id } => {
+            Self::SessionNotFound {
+                session_type,
+                session_id,
+            } => {
                 format!("{} 会话 '{}' 不存在或已关闭", session_type, session_id)
             }
             Self::Ssh(msg) => format!("SSH 错误: {}", msg),
@@ -153,13 +159,10 @@ pub fn into_tauri_result<T>(result: AppResult<T>) -> std::result::Result<T, Stri
 ///
 /// 处理 poisoned lock，返回错误而不是 panic
 #[allow(dead_code)]
-pub fn safe_lock<T, R>(
-    lock: &std::sync::Mutex<T>,
-    f: impl FnOnce(&mut T) -> R,
-) -> AppResult<R> {
-    let mut guard = lock.lock().map_err(|e| {
-        AppError::Other(format!("锁被污染: {}", e))
-    })?;
+pub fn safe_lock<T, R>(lock: &std::sync::Mutex<T>, f: impl FnOnce(&mut T) -> R) -> AppResult<R> {
+    let mut guard = lock
+        .lock()
+        .map_err(|e| AppError::Other(format!("锁被污染: {}", e)))?;
     Ok(f(&mut guard))
 }
 

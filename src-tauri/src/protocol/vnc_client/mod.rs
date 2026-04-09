@@ -16,13 +16,13 @@
 //! - `vnc-libvncclient`: 使用 LibVNCClient C 库（默认，推荐）
 //! - `vnc-rust`: 使用纯 Rust vnc-rs 实现（回退）
 
-mod client;
 mod callbacks;
-mod frame;
+mod client;
 mod feature_gate;
+mod frame;
 
-pub use client::{VncClient, VncClientConfig};
 pub use callbacks::CallbackEvent as VncClientEvent;
+pub use client::{VncClient, VncClientConfig};
 pub use frame::FrameUpdateRegion;
 
 use thiserror::Error;
@@ -33,31 +33,28 @@ use thiserror::Error;
 pub enum VncError {
     #[error("连接失败: {0}")]
     ConnectionFailed(String),
-    
+
     #[error("认证失败: {0}")]
     AuthenticationFailed(String),
-    
+
     #[error("协议错误: {0}")]
     ProtocolError(String),
-    
+
     #[error("网络错误: {0}")]
     NetworkError(String),
-    
+
     #[error("内存分配失败")]
     MemoryAllocationFailed,
-    
+
     #[error("无效的状态转换: 当前状态 {current}, 目标状态 {target}")]
-    InvalidStateTransition {
-        current: String,
-        target: String,
-    },
-    
+    InvalidStateTransition { current: String, target: String },
+
     #[error("会话已关闭")]
     SessionClosed,
-    
+
     #[error("操作超时")]
     Timeout,
-    
+
     #[error("FFI 错误: {0}")]
     FfiError(String),
 }

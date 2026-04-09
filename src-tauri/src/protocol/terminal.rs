@@ -1,8 +1,6 @@
 //! 本地终端命令模块（从 commands/terminal.rs 迁移）
 
-use crate::{
-    AppState, LocalTerminalSession, ShellInfo,
-};
+use crate::{AppState, LocalTerminalSession, ShellInfo};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read as _, Write};
 use tauri::{AppHandle, Emitter, Runtime, State};
@@ -37,13 +35,21 @@ pub async fn create_terminal<R: Runtime>(
         }
     });
 
-    if cfg!(target_os = "windows") && (shell_cmd == "bash.exe" || shell_cmd == "git-bash" || shell_cmd == "bash") {
+    if cfg!(target_os = "windows")
+        && (shell_cmd == "bash.exe" || shell_cmd == "git-bash" || shell_cmd == "bash")
+    {
         let user_profile = std::env::var("USERPROFILE").unwrap_or_default();
         let common_paths = [
             "C:\\Program Files\\Git\\bin\\bash.exe".to_string(),
             "C:\\Program Files\\Git\\usr\\bin\\bash.exe".to_string(),
-            format!("{}\\AppData\\Local\\Programs\\Git\\bin\\bash.exe", user_profile),
-            format!("{}\\AppData\\Local\\Programs\\Git\\usr\\bin\\bash.exe", user_profile),
+            format!(
+                "{}\\AppData\\Local\\Programs\\Git\\bin\\bash.exe",
+                user_profile
+            ),
+            format!(
+                "{}\\AppData\\Local\\Programs\\Git\\usr\\bin\\bash.exe",
+                user_profile
+            ),
         ];
         for path in common_paths {
             if std::path::Path::new(&path).exists() {
@@ -87,16 +93,21 @@ pub async fn create_terminal<R: Runtime>(
             let _ = app.emit(&event_name, data);
         }
 
-        let should_emit_close = local_sessions.lock().unwrap().remove(&session_id_clone).is_some();
+        let should_emit_close = local_sessions
+            .lock()
+            .unwrap()
+            .remove(&session_id_clone)
+            .is_some();
         if should_emit_close {
             let _ = app.emit(&close_event_name, ());
         }
     });
 
-    state.local_sessions.lock().unwrap().insert(
-        session_id.clone(),
-        LocalTerminalSession { master, writer },
-    );
+    state
+        .local_sessions
+        .lock()
+        .unwrap()
+        .insert(session_id.clone(), LocalTerminalSession { master, writer });
 
     Ok(session_id)
 }
@@ -107,22 +118,41 @@ pub async fn get_available_shells() -> Result<Vec<ShellInfo>, String> {
     let mut shells = Vec::new();
 
     if cfg!(target_os = "windows") {
-        shells.push(ShellInfo { name: "CMD".into(), path: "cmd.exe".into(), icon_type: "cmd".into() });
-        shells.push(ShellInfo { name: "PowerShell".into(), path: "powershell.exe".into(), icon_type: "powershell".into() });
+        shells.push(ShellInfo {
+            name: "CMD".into(),
+            path: "cmd.exe".into(),
+            icon_type: "cmd".into(),
+        });
+        shells.push(ShellInfo {
+            name: "PowerShell".into(),
+            path: "powershell.exe".into(),
+            icon_type: "powershell".into(),
+        });
 
         if std::path::Path::new("C:\\Program Files\\PowerShell\\7\\pwsh.exe").exists() {
-            shells.push(ShellInfo { name: "PowerShell 7".into(), path: "pwsh.exe".into(), icon_type: "powershell".into() });
+            shells.push(ShellInfo {
+                name: "PowerShell 7".into(),
+                path: "pwsh.exe".into(),
+                icon_type: "powershell".into(),
+            });
         }
 
         let user_profile = std::env::var("USERPROFILE").unwrap_or_default();
         let git_bash_paths = [
             "C:\\Program Files\\Git\\bin\\bash.exe".to_string(),
-            format!("{}\\AppData\\Local\\Programs\\Git\\bin\\bash.exe", user_profile),
+            format!(
+                "{}\\AppData\\Local\\Programs\\Git\\bin\\bash.exe",
+                user_profile
+            ),
         ];
 
         for path in git_bash_paths {
             if std::path::Path::new(&path).exists() {
-                shells.push(ShellInfo { name: "Git Bash".into(), path: path.into(), icon_type: "bash".into() });
+                shells.push(ShellInfo {
+                    name: "Git Bash".into(),
+                    path: path.into(),
+                    icon_type: "bash".into(),
+                });
                 break;
             }
         }
@@ -132,9 +162,17 @@ pub async fn get_available_shells() -> Result<Vec<ShellInfo>, String> {
             let path = format!("/bin/{}", s);
             let usr_path = format!("/usr/bin/{}", s);
             if std::path::Path::new(&path).exists() {
-                shells.push(ShellInfo { name: s.to_uppercase(), path, icon_type: "bash".into() });
+                shells.push(ShellInfo {
+                    name: s.to_uppercase(),
+                    path,
+                    icon_type: "bash".into(),
+                });
             } else if std::path::Path::new(&usr_path).exists() {
-                shells.push(ShellInfo { name: s.to_uppercase(), path: usr_path, icon_type: "bash".into() });
+                shells.push(ShellInfo {
+                    name: s.to_uppercase(),
+                    path: usr_path,
+                    icon_type: "bash".into(),
+                });
             }
         }
     }
@@ -144,10 +182,17 @@ pub async fn get_available_shells() -> Result<Vec<ShellInfo>, String> {
 
 /// 向终端写入数据
 #[tauri::command]
-pub fn write_to_terminal(state: State<'_, AppState>, session_id: String, data: String) -> Result<(), String> {
+pub fn write_to_terminal(
+    state: State<'_, AppState>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
     let mut sessions = state.local_sessions.lock().unwrap();
     if let Some(session) = sessions.get_mut(&session_id) {
-        session.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+        session
+            .writer
+            .write_all(data.as_bytes())
+            .map_err(|e| e.to_string())?;
         session.writer.flush().map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -157,7 +202,12 @@ pub fn write_to_terminal(state: State<'_, AppState>, session_id: String, data: S
 
 /// 调整终端大小
 #[tauri::command]
-pub fn resize_terminal(state: State<'_, AppState>, session_id: String, cols: u16, rows: u16) -> Result<(), String> {
+pub fn resize_terminal(
+    state: State<'_, AppState>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
     let sessions = state.local_sessions.lock().unwrap();
     if let Some(session) = sessions.get(&session_id) {
         session

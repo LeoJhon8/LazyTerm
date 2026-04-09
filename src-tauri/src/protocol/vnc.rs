@@ -2,13 +2,13 @@
 //!
 //! 本模块基于 LibVNCClient FFI 实现 VNC 协议支持。
 
-use crate::{
-    AppState, VncConnectConfig, VncControlMsg, VncSession,
-    VncPointerEventPayload, VncKeyboardEventPayload,
-};
-use crate::utils::{log_vnc_error, log_vnc_info, vnc_target_label};
-use super::vnc_core::{run_vnc_session, convert_config};
 use super::vnc_client::VncClient;
+use super::vnc_core::{convert_config, run_vnc_session};
+use crate::utils::{log_vnc_error, log_vnc_info, vnc_target_label};
+use crate::{
+    AppState, VncConnectConfig, VncControlMsg, VncKeyboardEventPayload, VncPointerEventPayload,
+    VncSession,
+};
 
 use std::sync::Arc;
 use tauri::ipc::{Channel, Response};
@@ -26,7 +26,12 @@ pub async fn create_vnc_session<R: Runtime>(
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let target = vnc_target_label(&config);
-    log_vnc_info(&session_id, &target, "connect", "received open request from frontend");
+    log_vnc_info(
+        &session_id,
+        &target,
+        "connect",
+        "received open request from frontend",
+    );
 
     // 转换为 LibVNCClient 配置
     let client_config = convert_config(&config);
@@ -43,7 +48,7 @@ pub async fn create_vnc_session<R: Runtime>(
 
     // 创建控制通道
     let (control_tx, control_rx) = mpsc::unbounded_channel::<VncControlMsg>();
-    
+
     // 存储会话
     state
         .vnc_sessions
@@ -57,7 +62,7 @@ pub async fn create_vnc_session<R: Runtime>(
     let app_clone = app.clone();
     let vnc_sessions = Arc::clone(&state.vnc_sessions);
     let jpeg_quality = config.quality.unwrap_or(super::vnc_core::VNC_JPEG_QUALITY);
-    
+
     tokio::spawn(async move {
         match run_vnc_session(
             app_clone.clone(),
@@ -68,11 +73,18 @@ pub async fn create_vnc_session<R: Runtime>(
             frame_channel,
             control_rx,
             jpeg_quality,
-        ).await {
-            Ok(()) => log_vnc_info(&session_id_clone, &target_clone, "close", "session loop ended"),
+        )
+        .await
+        {
+            Ok(()) => log_vnc_info(
+                &session_id_clone,
+                &target_clone,
+                "close",
+                "session loop ended",
+            ),
             Err(error) => log_vnc_error(&session_id_clone, &target_clone, "runtime", &error),
         }
-        
+
         // 清理会话
         vnc_sessions.lock().unwrap().remove(&session_id_clone);
         let _ = app_clone.emit(&format!("vnc-close-{}", session_id_clone), ());
@@ -140,10 +152,7 @@ pub fn request_vnc_refresh(
 
 /// 关闭 VNC 会话
 #[tauri::command]
-pub fn close_vnc_session(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<(), String> {
+pub fn close_vnc_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
     if let Some(session) = state.vnc_sessions.lock().unwrap().remove(&session_id) {
         let _ = session.control_tx.send(VncControlMsg::Close);
     }

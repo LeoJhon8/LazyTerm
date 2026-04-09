@@ -187,7 +187,9 @@ fn main_window_hwnd<R: Runtime>(app: &AppHandle<R>) -> Result<i64, String> {
 
     match raw_handle {
         RawWindowHandle::Win32(handle) => Ok(handle.hwnd.get() as i64),
-        other => Err(format!("主窗口不是 Win32 句柄，无法挂载 MsTscAx sidecar: {other:?}")),
+        other => Err(format!(
+            "主窗口不是 Win32 句柄，无法挂载 MsTscAx sidecar: {other:?}"
+        )),
     }
 }
 
@@ -196,7 +198,8 @@ fn send_native_rdp_sidecar_message(
     writer: &mut std::io::BufWriter<std::process::ChildStdin>,
     message: &NativeRdpSidecarInboundMessage,
 ) -> Result<(), String> {
-    let line = serde_json::to_string(message).map_err(|e| format!("序列化 native RDP sidecar 消息失败: {e}"))?;
+    let line = serde_json::to_string(message)
+        .map_err(|e| format!("序列化 native RDP sidecar 消息失败: {e}"))?;
     writer
         .write_all(line.as_bytes())
         .and_then(|_| writer.write_all(b"\n"))
@@ -218,7 +221,10 @@ fn spawn_native_rdp_sidecar<R: Runtime>(
         "info",
         "rust.spawn.start",
         "开始创建 msrdpax sidecar 进程",
-        Some(format!("target={}:{} user={}", config.host, config.port, config.username)),
+        Some(format!(
+            "target={}:{} user={}",
+            config.host, config.port, config.username
+        )),
     );
 
     let sidecar_path = native_rdp_sidecar_path().ok_or_else(|| {
@@ -261,9 +267,18 @@ fn spawn_native_rdp_sidecar<R: Runtime>(
         Some(format!("pid={}", child.id())),
     );
 
-    let child_stdin = child.stdin.take().ok_or_else(|| "无法获取 msrdpax sidecar stdin。".to_string())?;
-    let child_stdout = child.stdout.take().ok_or_else(|| "无法获取 msrdpax sidecar stdout。".to_string())?;
-    let child_stderr = child.stderr.take().ok_or_else(|| "无法获取 msrdpax sidecar stderr。".to_string())?;
+    let child_stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "无法获取 msrdpax sidecar stdin。".to_string())?;
+    let child_stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "无法获取 msrdpax sidecar stdout。".to_string())?;
+    let child_stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "无法获取 msrdpax sidecar stderr。".to_string())?;
 
     let app_for_stdout = app.clone();
     let session_for_stdout = session_id.clone();
@@ -335,7 +350,9 @@ fn spawn_native_rdp_sidecar<R: Runtime>(
                         &app_for_stdout,
                         &session_for_stdout,
                         "error",
-                        Some(format!("解析 msrdpax sidecar 输出失败: {error}; raw={line}")),
+                        Some(format!(
+                            "解析 msrdpax sidecar 输出失败: {error}; raw={line}"
+                        )),
                         None,
                     )
                 }
@@ -439,7 +456,13 @@ fn spawn_native_rdp_sidecar<R: Runtime>(
                 "发送 init 消息失败",
                 Some(error.clone()),
             );
-            emit_native_rdp_state(&app_for_control, &session_for_control, "error", Some(error), None);
+            emit_native_rdp_state(
+                &app_for_control,
+                &session_for_control,
+                "error",
+                Some(error),
+                None,
+            );
             return;
         }
         emit_native_rdp_trace(
@@ -521,12 +544,7 @@ fn spawn_native_rdp_sidecar<R: Runtime>(
                     "准备发送控制消息",
                     Some(format!(
                         "type={} x={} y={} w={} h={} scale={}",
-                        message.r#type,
-                        rect.x,
-                        rect.y,
-                        rect.width,
-                        rect.height,
-                        rect.scale_factor
+                        message.r#type, rect.x, rect.y, rect.width, rect.height, rect.scale_factor
                     )),
                 );
             } else {
@@ -549,7 +567,13 @@ fn spawn_native_rdp_sidecar<R: Runtime>(
                     "发送控制消息失败",
                     Some(error.clone()),
                 );
-                emit_native_rdp_state(&app_for_control, &session_for_control, "error", Some(error), message.rect);
+                emit_native_rdp_state(
+                    &app_for_control,
+                    &session_for_control,
+                    "error",
+                    Some(error),
+                    message.rect,
+                );
                 break;
             }
 
@@ -599,10 +623,19 @@ pub fn create_native_rdp_session<R: Runtime>(
             "info",
             "rust.command.create_native_rdp_session",
             "收到 create_native_rdp_session 命令",
-            Some(format!("target={}:{} user={}", config.host, config.port, config.username)),
+            Some(format!(
+                "target={}:{} user={}",
+                config.host, config.port, config.username
+            )),
         );
         let (control_tx, control_rx) = std_mpsc::channel::<NativeRdpSidecarCommand>();
-        spawn_native_rdp_sidecar(app.clone(), session_id.clone(), &config, rdp_target_label(&config), control_rx)?;
+        spawn_native_rdp_sidecar(
+            app.clone(),
+            session_id.clone(),
+            &config,
+            rdp_target_label(&config),
+            control_rx,
+        )?;
 
         state.native_rdp_sessions.lock().unwrap().insert(
             session_id.clone(),
@@ -633,9 +666,15 @@ pub fn mount_native_rdp_session<R: Runtime>(
             "info",
             "rust.command.mount_native_rdp_session",
             "收到 mount 请求，准备转发给 sidecar",
-            Some(format!("x={} y={} w={} h={} scale={}", rect.x, rect.y, rect.width, rect.height, rect.scale_factor)),
+            Some(format!(
+                "x={} y={} w={} h={} scale={}",
+                rect.x, rect.y, rect.width, rect.height, rect.scale_factor
+            )),
         );
-        session.control_tx.send(NativeRdpSidecarCommand::Mount(rect)).map_err(|e| e.to_string())?;
+        session
+            .control_tx
+            .send(NativeRdpSidecarCommand::Mount(rect))
+            .map_err(|e| e.to_string())?;
         Ok(())
     } else {
         emit_native_rdp_trace(
@@ -665,10 +704,21 @@ pub fn set_native_rdp_session_visible<R: Runtime>(
             &session_id,
             "info",
             "rust.command.set_native_rdp_session_visible",
-            if visible { "收到 visible=true 请求" } else { "收到 visible=false 请求" },
+            if visible {
+                "收到 visible=true 请求"
+            } else {
+                "收到 visible=false 请求"
+            },
             None,
         );
-        session.control_tx.send(if visible { NativeRdpSidecarCommand::Show } else { NativeRdpSidecarCommand::Hide }).map_err(|e| e.to_string())?;
+        session
+            .control_tx
+            .send(if visible {
+                NativeRdpSidecarCommand::Show
+            } else {
+                NativeRdpSidecarCommand::Hide
+            })
+            .map_err(|e| e.to_string())?;
         Ok(())
     } else {
         emit_native_rdp_trace(
@@ -699,7 +749,10 @@ pub fn focus_native_rdp_session<R: Runtime>(
             "收到 focus 请求",
             None,
         );
-        session.control_tx.send(NativeRdpSidecarCommand::Focus).map_err(|e| e.to_string())?;
+        session
+            .control_tx
+            .send(NativeRdpSidecarCommand::Focus)
+            .map_err(|e| e.to_string())?;
         Ok(())
     } else {
         emit_native_rdp_trace(
@@ -720,7 +773,11 @@ pub fn close_native_rdp_session<R: Runtime>(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<(), String> {
-    let removed = state.native_rdp_sessions.lock().unwrap().remove(&session_id);
+    let removed = state
+        .native_rdp_sessions
+        .lock()
+        .unwrap()
+        .remove(&session_id);
     if let Some(session) = removed {
         emit_native_rdp_trace(
             &app,

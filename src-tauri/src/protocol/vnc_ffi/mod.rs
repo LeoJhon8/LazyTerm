@@ -6,7 +6,7 @@
 //! 所有函数均为 `unsafe`，需要在上层包装器中安全使用。
 //!
 //! # 线程安全注意事项
-//! 
+//!
 //! - `rfbClient` 结构体不是线程安全的，必须在单线程中访问
 //! - 回调函数在 LibVNCClient 内部线程中调用，需要注意 Send/Sync 约束
 //! - 使用 `std::sync::mpsc` 进行跨线程通信
@@ -99,23 +99,14 @@ pub struct RfbFramebufferUpdateMsg {
 // ============================================================================
 
 /// MallocFrameBuffer 回调类型
-pub type MallocFrameBufferCallback = unsafe extern "C" fn(
-    client: *mut RfbClient,
-) -> i8;
+pub type MallocFrameBufferCallback = unsafe extern "C" fn(client: *mut RfbClient) -> i8;
 
 /// VNC 密码回调类型
-pub type GetPasswordCallback = unsafe extern "C" fn(
-    client: *mut RfbClient,
-) -> *mut c_char;
+pub type GetPasswordCallback = unsafe extern "C" fn(client: *mut RfbClient) -> *mut c_char;
 
 /// 帧缓冲区更新回调类型
-pub type FramebufferUpdateCallback = unsafe extern "C" fn(
-    client: *mut RfbClient,
-    x: c_int,
-    y: c_int,
-    w: c_int,
-    h: c_int,
-);
+pub type FramebufferUpdateCallback =
+    unsafe extern "C" fn(client: *mut RfbClient, x: c_int, y: c_int, w: c_int, h: c_int);
 
 /// 光标形状处理回调类型
 pub type HandleCursorShapeCallback = unsafe extern "C" fn(
@@ -128,18 +119,12 @@ pub type HandleCursorShapeCallback = unsafe extern "C" fn(
 );
 
 /// 剪贴板文本回调类型
-pub type GotXCutTextCallback = unsafe extern "C" fn(
-    client: *mut RfbClient,
-    text: *mut c_char,
-    len: c_int,
-);
+pub type GotXCutTextCallback =
+    unsafe extern "C" fn(client: *mut RfbClient, text: *mut c_char, len: c_int);
 
 /// 鼠标回调类型
-pub type GotCursorPosCallback = unsafe extern "C" fn(
-    client: *mut RfbClient,
-    x: c_int,
-    y: c_int,
-) -> i8;
+pub type GotCursorPosCallback =
+    unsafe extern "C" fn(client: *mut RfbClient, x: c_int, y: c_int) -> i8;
 
 /// 日志回调类型
 pub type LogCallback = unsafe extern "C" fn(
@@ -156,56 +141,69 @@ pub type LogCallback = unsafe extern "C" fn(
 
 extern "C" {
     /// 创建新的 RFB 客户端实例
-    /// 
+    ///
     /// # Safety
     /// 返回的指针必须在使用后通过 `rfbClientCleanup` 释放
-    pub fn rfbGetClient(bits_per_sample: c_int, samples_per_pixel: c_int, bytes_per_pixel: c_int) -> *mut RfbClient;
+    pub fn rfbGetClient(
+        bits_per_sample: c_int,
+        samples_per_pixel: c_int,
+        bytes_per_pixel: c_int,
+    ) -> *mut RfbClient;
 
     /// 初始化客户端连接
-    /// 
+    ///
     /// # Safety
     /// client 必须是有效的 `rfbGetClient` 返回值
     /// argc/argv 遵循 C 标准 main 函数参数约定
-    pub fn rfbInitClient(client: *mut RfbClient, argc: *mut c_int, argv: *mut *mut c_char) -> c_uchar;
+    pub fn rfbInitClient(
+        client: *mut RfbClient,
+        argc: *mut c_int,
+        argv: *mut *mut c_char,
+    ) -> c_uchar;
 
     /// 清理并释放客户端资源
-    /// 
+    ///
     /// # Safety
     /// client 必须是有效的 `rfbGetClient` 返回值，且只能调用一次
     pub fn rfbClientCleanup(client: *mut RfbClient);
 
     /// 处理服务器消息（阻塞）
-    /// 
+    ///
     /// # Safety
     /// client 必须是有效且已连接的客户端
     pub fn WaitForMessage(client: *mut RfbClient, usecs: c_uint) -> c_int;
 
     /// 处理单个消息
-    /// 
+    ///
     /// # Safety
     /// client 必须是有效且已连接的客户端
     pub fn HandleRFBServerMessage(client: *mut RfbClient) -> c_uchar;
 
     /// 发送指针事件
-    /// 
+    ///
     /// # Safety
     /// client 必须是有效且已连接的客户端
-    pub fn SendPointerEvent(client: *mut RfbClient, x: c_int, y: c_int, button_mask: c_int) -> c_uchar;
+    pub fn SendPointerEvent(
+        client: *mut RfbClient,
+        x: c_int,
+        y: c_int,
+        button_mask: c_int,
+    ) -> c_uchar;
 
     /// 发送键盘事件
-    /// 
+    ///
     /// # Safety
     /// client 必须是有效且已连接的客户端
     pub fn SendKeyEvent(client: *mut RfbClient, key: c_uint, down: c_uchar) -> c_uchar;
 
     /// 发送剪贴板文本
-    /// 
+    ///
     /// # Safety
     /// client 必须是有效且已连接的客户端，text 必须是有效的 C 字符串
     pub fn SendClientCutText(client: *mut RfbClient, text: *const c_char, len: c_int) -> c_uchar;
 
     /// 请求帧缓冲区更新
-    /// 
+    ///
     /// # Safety
     /// client 必须是有效且已连接的客户端
     pub fn SendFramebufferUpdateRequest(
@@ -218,13 +216,13 @@ extern "C" {
     ) -> c_uchar;
 
     /// 设置像素格式
-    /// 
+    ///
     /// # Safety
     /// client 必须是有效且已连接的客户端
     pub fn SetFormatAndEncodings(client: *mut RfbClient) -> c_uchar;
 
     /// 启用/禁用 JPEG 压缩（Tight 编码）
-    /// 
+    ///
     /// # Safety
     /// client 必须是有效且已连接的客户端
     pub fn SetClientColorDepth(client: *mut RfbClient, depth: c_int);
@@ -250,11 +248,20 @@ extern "C" {
     pub fn RfbClientSetQualityLevel(client: *mut RfbClient, level: c_int);
     pub fn RfbClientSetShared(client: *mut RfbClient, shared: c_uchar);
     pub fn RfbClientSetViewOnly(client: *mut RfbClient, view_only: c_uchar);
-    
+
     // 设置回调
-    pub fn RfbClientSetMallocFrameBuffer(client: *mut RfbClient, callback: MallocFrameBufferCallback);
-    pub fn RfbClientSetGotFrameBufferUpdate(client: *mut RfbClient, callback: FramebufferUpdateCallback);
-    pub fn RfbClientSetHandleCursorShape(client: *mut RfbClient, callback: HandleCursorShapeCallback);
+    pub fn RfbClientSetMallocFrameBuffer(
+        client: *mut RfbClient,
+        callback: MallocFrameBufferCallback,
+    );
+    pub fn RfbClientSetGotFrameBufferUpdate(
+        client: *mut RfbClient,
+        callback: FramebufferUpdateCallback,
+    );
+    pub fn RfbClientSetHandleCursorShape(
+        client: *mut RfbClient,
+        callback: HandleCursorShapeCallback,
+    );
     pub fn RfbClientSetGotXCutText(client: *mut RfbClient, callback: GotXCutTextCallback);
     pub fn RfbClientSetGotCursorPos(client: *mut RfbClient, callback: GotCursorPosCallback);
     pub fn RfbClientSetGetPassword(client: *mut RfbClient, callback: GetPasswordCallback);
@@ -279,7 +286,7 @@ extern "C" {
 // ============================================================================
 
 /// 将 Rust 字符串转换为 C 字符串指针
-/// 
+///
 /// # Safety
 /// 返回的指针指向的内存由调用者管理，必须在使用后释放
 pub unsafe fn str_to_cstring(s: &str) -> *mut c_char {
@@ -288,7 +295,7 @@ pub unsafe fn str_to_cstring(s: &str) -> *mut c_char {
 }
 
 /// 释放 C 字符串指针
-/// 
+///
 /// # Safety
 /// ptr 必须是由 `str_to_cstring` 返回的有效指针
 pub unsafe fn free_cstring(ptr: *mut c_char) {
@@ -298,7 +305,7 @@ pub unsafe fn free_cstring(ptr: *mut c_char) {
 }
 
 /// 从 C 字符串安全地创建 Rust 字符串
-/// 
+///
 /// # Safety
 /// ptr 必须是有效的以 null 结尾的 C 字符串
 pub unsafe fn cstring_to_str(ptr: *const c_char) -> Option<String> {
@@ -309,7 +316,7 @@ pub unsafe fn cstring_to_str(ptr: *const c_char) -> Option<String> {
 }
 
 /// 检查客户端是否已连接
-/// 
+///
 /// # Safety
 /// client 必须是有效的客户端指针
 pub unsafe fn is_connected(client: *mut RfbClient) -> bool {
@@ -317,7 +324,7 @@ pub unsafe fn is_connected(client: *mut RfbClient) -> bool {
 }
 
 /// 获取帧缓冲区大小（字节数）
-/// 
+///
 /// # Safety
 /// client 必须是有效的客户端指针
 pub unsafe fn get_framebuffer_size(client: *mut RfbClient) -> usize {

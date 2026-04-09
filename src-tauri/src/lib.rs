@@ -6,51 +6,33 @@
 //! VNC 协议基于 LibVNCClient C 库实现，通过 FFI 与 Rust 集成。
 //! 需要系统安装 libvncclient 开发库才能构建。
 
-mod logging;
 mod error;
-mod types;
+mod logging;
 mod protocol;
 mod state;
+mod types;
 mod utils;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as TokioMutex;
 
-pub use error::AppError;
 pub use error::into_tauri_result;
+pub use error::AppError;
 pub use error::AppResult;
 pub use state::AppState;
 pub use utils::{
-    log_rdp_error, log_rdp_info, log_vnc_error, log_vnc_info,
-    map_sftp_error, rdp_target_label, vnc_target_label,
+    log_rdp_error, log_rdp_info, log_vnc_error, log_vnc_info, map_sftp_error, rdp_target_label,
+    vnc_target_label,
 };
 
 // 从 types 模块导入并重新导出纯数据类型
 pub use crate::types::{
-    LocalTerminalSession,
-    SshTerminalSession,
-    SshControlMsg,
-    SshConnectConfig,
-    RdpSession,
-    RdpControlMsg,
-    RdpConnectConfig,
-    RdpPointerEventPayload,
-    RdpKeyboardEventPayload,
-    VncSession,
-    VncControlMsg,
-    VncControlOutcome,
-    VncConnectConfig,
-    VncPointerEventPayload,
-    VncKeyboardEventPayload,
-    SftpUploadProgress,
-    SftpUploadItem,
-    SftpUploadCancelGuard,
-    ShellInfo,
-    VncCursorEventPayload,
-    NativeHostRect,
-    NativeRdpStateEventPayload,
-    NativeRdpTraceEventPayload,
+    LocalTerminalSession, NativeHostRect, NativeRdpStateEventPayload, NativeRdpTraceEventPayload,
+    RdpConnectConfig, RdpControlMsg, RdpKeyboardEventPayload, RdpPointerEventPayload, RdpSession,
+    SftpUploadCancelGuard, SftpUploadItem, SftpUploadProgress, ShellInfo, SshConnectConfig,
+    SshControlMsg, SshTerminalSession, VncConnectConfig, VncControlMsg, VncControlOutcome,
+    VncCursorEventPayload, VncKeyboardEventPayload, VncPointerEventPayload, VncSession,
 };
 
 // --- 程序入口 ---
@@ -58,6 +40,7 @@ pub use crate::types::{
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -98,7 +81,8 @@ pub fn run() {
             protocol::close_terminal,
             protocol::close_ssh_session,
             protocol::close_rdp_session,
-            protocol::close_vnc_session
+            protocol::close_vnc_session,
+            protocol::download_and_install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

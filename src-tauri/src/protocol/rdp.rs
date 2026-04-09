@@ -1,11 +1,11 @@
 //! RDP 命令模块（从 commands/rdp.rs 迁移）
 
-use crate::{
-    AppState, RdpConnectConfig, RdpControlMsg, RdpSession,
-    RdpPointerEventPayload, RdpKeyboardEventPayload,
-};
-use crate::utils::{log_rdp_error, log_rdp_info, rdp_target_label};
 use super::{build_rdp_config, connect_rdp, run_rdp_session};
+use crate::utils::{log_rdp_error, log_rdp_info, rdp_target_label};
+use crate::{
+    AppState, RdpConnectConfig, RdpControlMsg, RdpKeyboardEventPayload, RdpPointerEventPayload,
+    RdpSession,
+};
 use std::sync::{mpsc as std_mpsc, Arc};
 use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, Emitter, Runtime, State};
@@ -21,17 +21,28 @@ pub async fn create_rdp_session<R: Runtime>(
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let target = rdp_target_label(&config);
-    log_rdp_info(&session_id, &target, "connect", "received open request from frontend");
+    log_rdp_info(
+        &session_id,
+        &target,
+        "connect",
+        "received open request from frontend",
+    );
 
     let connector_config = build_rdp_config(&config).map_err(|error| {
         log_rdp_error(&session_id, &target, "config", &error);
         error
     })?;
-    let (connection_context, framed) =
-        connect_rdp(&session_id, &target, connector_config, config.host.clone(), config.port).map_err(|error| {
-            log_rdp_error(&session_id, &target, "connect", &error);
-            error
-        })?;
+    let (connection_context, framed) = connect_rdp(
+        &session_id,
+        &target,
+        connector_config,
+        config.host.clone(),
+        config.port,
+    )
+    .map_err(|error| {
+        log_rdp_error(&session_id, &target, "connect", &error);
+        error
+    })?;
 
     let (control_tx, control_rx) = std_mpsc::channel::<RdpControlMsg>();
     state
@@ -40,7 +51,12 @@ pub async fn create_rdp_session<R: Runtime>(
         .unwrap()
         .insert(session_id.clone(), RdpSession { control_tx });
 
-    log_rdp_info(&session_id, &target, "connect", "session registered in backend state");
+    log_rdp_info(
+        &session_id,
+        &target,
+        "connect",
+        "session registered in backend state",
+    );
 
     let session_id_clone = session_id.clone();
     let target_clone = target.clone();
@@ -56,7 +72,12 @@ pub async fn create_rdp_session<R: Runtime>(
             frame_channel,
             control_rx,
         ) {
-            Ok(()) => log_rdp_info(&session_id_clone, &target_clone, "close", "session loop ended"),
+            Ok(()) => log_rdp_info(
+                &session_id_clone,
+                &target_clone,
+                "close",
+                "session loop ended",
+            ),
             Err(error) => log_rdp_error(&session_id_clone, &target_clone, "runtime", &error),
         }
         rdp_sessions.lock().unwrap().remove(&session_id_clone);
@@ -68,7 +89,11 @@ pub async fn create_rdp_session<R: Runtime>(
 
 /// 发送 RDP 鼠标事件
 #[tauri::command]
-pub fn send_rdp_pointer(state: State<'_, AppState>, session_id: String, payload: RdpPointerEventPayload) -> Result<(), String> {
+pub fn send_rdp_pointer(
+    state: State<'_, AppState>,
+    session_id: String,
+    payload: RdpPointerEventPayload,
+) -> Result<(), String> {
     let sessions = state.rdp_sessions.lock().unwrap();
     if let Some(session) = sessions.get(&session_id) {
         session
@@ -83,7 +108,11 @@ pub fn send_rdp_pointer(state: State<'_, AppState>, session_id: String, payload:
 
 /// 发送 RDP 键盘事件
 #[tauri::command]
-pub fn send_rdp_key(state: State<'_, AppState>, session_id: String, payload: RdpKeyboardEventPayload) -> Result<(), String> {
+pub fn send_rdp_key(
+    state: State<'_, AppState>,
+    session_id: String,
+    payload: RdpKeyboardEventPayload,
+) -> Result<(), String> {
     let sessions = state.rdp_sessions.lock().unwrap();
     if let Some(session) = sessions.get(&session_id) {
         session
@@ -113,7 +142,12 @@ pub fn release_rdp_inputs(state: State<'_, AppState>, session_id: String) -> Res
 
 /// 调整 RDP 会话分辨率
 #[tauri::command]
-pub fn resize_rdp_session(state: State<'_, AppState>, session_id: String, width: u16, height: u16) -> Result<(), String> {
+pub fn resize_rdp_session(
+    state: State<'_, AppState>,
+    session_id: String,
+    width: u16,
+    height: u16,
+) -> Result<(), String> {
     let sessions = state.rdp_sessions.lock().unwrap();
     if let Some(session) = sessions.get(&session_id) {
         session

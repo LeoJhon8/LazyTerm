@@ -1,14 +1,14 @@
 //! 应用状态模块
 //! 包含全局状态 AppState 的定义
 
-use crate::types::{LocalTerminalSession, SshTerminalSession, RdpSession, VncSession};
 use crate::protocol::NativeRdpSession;
+use crate::types::{LocalTerminalSession, RdpSession, SshTerminalSession, VncSession};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as TokioMutex;
 
 /// 应用全局状态
-/// 
+///
 /// 存储所有活跃会话的管理句柄
 #[derive(Default)]
 pub struct AppState {
