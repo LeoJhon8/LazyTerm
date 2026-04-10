@@ -189,7 +189,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const resolveRemotePath = (basePath: string, fileName: string, isBatch: boolean) => {
+  const resolveRemotePath = (basePath: string, fileName: string) => {
     let trimmed = basePath.trim();
     if (!trimmed) trimmed = "/"; // 默认根目录
     
@@ -228,7 +228,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
 
       const items = files.map((file) => ({
         local_path: file.path,
-        remote_path: resolveRemotePath(remotePath, file.name, files.length > 1),
+        remote_path: resolveRemotePath(remotePath, file.name),
       }));
 
       await invokeTauri(
