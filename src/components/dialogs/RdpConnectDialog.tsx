@@ -86,7 +86,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       <DialogContent className="sm:max-w-125">
         <DialogHeader>
           <DialogTitle>
-            {isDirect ? "发起临时 RDP 连接" : initialConfig ? "编辑 RDP 配置" : "新建 RDP 配置"}
+            {isDirect ? "发起临时 Windows 连接" : initialConfig ? "编辑 Windows 配置" : "新建 Windows 配置"}
           </DialogTitle>
         </DialogHeader>
 

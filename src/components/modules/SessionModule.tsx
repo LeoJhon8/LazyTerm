@@ -5,7 +5,7 @@ import {
 } from "@dnd-kit/core";
 import { 
   Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, 
-  Pencil, Trash2, Terminal, Upload, Monitor
+  Pencil, Trash2, Terminal, Upload, Monitor, AppWindow, ScreenShare
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -105,8 +105,10 @@ function NodeRowContent({
             <Folder className={cn("h-4 w-4", node.isRoot ? "text-amber-500 fill-amber-500/10" : "text-blue-500 fill-blue-500/10")} />
           </div>
         ) : (
-          node.type === "rdp" || node.type === "vnc"
-            ? <Monitor className="h-4 w-4 text-sky-600/80" />
+          node.type === "rdp"
+            ? <AppWindow className="h-4 w-4 text-sky-600/80" />
+            : node.type === "vnc"
+            ? <ScreenShare className="h-4 w-4 text-emerald-600/80" />
             : <Server className={cn("h-4 w-4 text-emerald-600/80", isUploading && "text-amber-700 dark:text-cyan-300 animate-pulse")} />
         )}
         <span
@@ -171,8 +173,8 @@ function DraggableDroppableRow({
         {node.type === 'folder' ? (
           <>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-ssh', node)}><Server className="mr-2 h-4 w-4" /> 新建 SSH 连接</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-rdp', node)}><Monitor className="mr-2 h-4 w-4" /> 新建 RDP 连接</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-vnc', node)}><Monitor className="mr-2 h-4 w-4" /> 新建 VNC 连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-rdp', node)}><AppWindow className="mr-2 h-4 w-4" /> 新建 Windows 连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-vnc', node)}><ScreenShare className="mr-2 h-4 w-4" /> 新建 VNC 连接</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> 新建子文件夹</ContextMenuItem>
           </>
         ) : node.type === 'ssh' ? (
@@ -180,9 +182,13 @@ function DraggableDroppableRow({
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> 连接会话</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('sftp-upload', node)}><Upload className="mr-2 h-4 w-4" /> SFTP 上传文件</ContextMenuItem>
           </>
+        ) : node.type === 'rdp' ? (
+          <>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><AppWindow className="mr-2 h-4 w-4" /> 连接</ContextMenuItem>
+          </>
         ) : (
           <>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Monitor className="mr-2 h-4 w-4" /> 连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><ScreenShare className="mr-2 h-4 w-4" /> 连接</ContextMenuItem>
           </>
         )}
         <ContextMenuSeparator />
@@ -387,10 +393,10 @@ export function SessionModule() {
               <Server className="mr-2 h-4 w-4 text-emerald-500" /> SSH 连接
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => dialog.open('directRdp')}>
-              <Monitor className="mr-2 h-4 w-4 text-sky-500" /> windows 远程连接
+              <AppWindow className="mr-2 h-4 w-4 text-sky-500" /> Windows 远程连接
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => dialog.open('directVnc')}>
-              <Monitor className="mr-2 h-4 w-4 text-emerald-500" /> VNC 连接
+              <ScreenShare className="mr-2 h-4 w-4 text-emerald-500" /> VNC 连接
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
