@@ -29,7 +29,8 @@ interface SettingsData {
   customThemeColors: TerminalColorScheme; // 自定义终端配色数据
   terminalOpacity: number;            // 终端背景透明度 0~100
   backgroundImageEnabled: boolean;    // 是否开启图片背景
-  backgroundImage: string;            // 背景图片路径/URL
+  backgroundImagePath: string;        // 背景图片的真实路径(用于展示)
+  backgroundImage: string;            // 背景图片路径/URL(用于渲染)
   backgroundImageUiMode: BackgroundImageUiMode; // 图片背景下 UI 呈现方式
   backgroundBlur: number;             // 背景模糊度 0~20 (px)
   backgroundOpacity: number;          // 背景图片不透明度 0~100
@@ -72,6 +73,7 @@ const defaultSettings: SettingsData = {
   },
   terminalOpacity: 100,
   backgroundImageEnabled: false,
+  backgroundImagePath: "",
   backgroundImage: "",
   backgroundImageUiMode: "frosted",
   backgroundBlur: 0,

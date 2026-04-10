@@ -380,8 +380,20 @@ export function TabBar() {
     usePanesStore.getState().addPane(sessionId);
   };
 
+  const syncFocusSession = (tabId: string) => {
+    const ws = workspaces[tabId];
+    if (ws && ws.focusedPaneId) {
+      const leaves = ws.rootNode ? getAllLeaves(ws.rootNode) : [];
+      const focusedLeaf = leaves.find(l => l.id === ws.focusedPaneId) || leaves[0];
+      if (focusedLeaf?.sessionId) {
+        useTabsStore.getState().setFocusSession(focusedLeaf.sessionId);
+      }
+    }
+  };
+
   const handleTabSwitch = (id: string) => {
     setActiveTabId(id);
+    syncFocusSession(id);
     
     requestAnimationFrame(() => {
       window.dispatchEvent(new Event("lazy-term-focus"));

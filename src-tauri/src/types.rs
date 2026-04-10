@@ -155,6 +155,15 @@ pub struct SftpUploadProgress {
     pub overall_sent: u64,
 }
 
+/// SFTP 文件项
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpFileEntry {
+    pub name: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: u64,
+}
+
 /// SFTP 上传项
 #[derive(Debug, Clone, Deserialize)]
 pub struct SftpUploadItem {

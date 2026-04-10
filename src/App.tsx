@@ -202,7 +202,7 @@ function App() {
           className="fixed inset-0 pointer-events-none"
           style={{
             zIndex: -1,
-            backgroundImage: `url(${backgroundImage})`,
+            backgroundImage: backgroundImage ? `url("${backgroundImage}")` : "none",
             backgroundSize: "cover",
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat",

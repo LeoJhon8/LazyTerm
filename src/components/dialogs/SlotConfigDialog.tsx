@@ -123,6 +123,7 @@ function ThemeSettings() {
   const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
   const backgroundImageEnabled = useSettingsStore((state) => state.backgroundImageEnabled);
   const backgroundImage = useSettingsStore((state) => state.backgroundImage);
+  const backgroundImagePath = useSettingsStore((state) => state.backgroundImagePath);
   const backgroundImageUiMode = useSettingsStore((state) => state.backgroundImageUiMode);
   const backgroundBlur = useSettingsStore((state) => state.backgroundBlur);
   const backgroundOpacity = useSettingsStore((state) => state.backgroundOpacity);
@@ -140,7 +141,7 @@ function ThemeSettings() {
       });
       if (selected) {
         const assetUrl = convertFileSrc(selected as string);
-        setSettings({ backgroundImage: assetUrl });
+        setSettings({ backgroundImage: assetUrl, backgroundImagePath: selected as string });
       }
     } catch (e) {
       logger.error("FE/dialog/slot-config", "Failed to select background image", {e});
@@ -309,12 +310,15 @@ function ThemeSettings() {
               <ImagePlus className="h-4 w-4 mr-2" />选择图片
             </Button>
             {backgroundImageEnabled && backgroundImage && (
-              <Button variant="ghost" size="sm" onClick={() => setSettings({ backgroundImage: "" })}>
+              <Button variant="ghost" size="sm" onClick={() => setSettings({ backgroundImage: "", backgroundImagePath: "" })}>
                 <X className="h-4 w-4 mr-1" />清除
               </Button>
             )}
-            <span className="text-xs text-muted-foreground truncate flex-1">
-              {!backgroundImageEnabled ? "图片背景未开启" : (backgroundImage ? backgroundImage : "未选择图片")}
+            <span 
+              className="text-xs text-muted-foreground truncate flex-1 min-w-0"
+              title={backgroundImageEnabled ? (backgroundImagePath || backgroundImage || "未选择图片") : "图片背景未开启"}
+            >
+              {!backgroundImageEnabled ? "图片背景未开启" : (backgroundImagePath || backgroundImage || "未选择图片")}
             </span>
           </div>
 

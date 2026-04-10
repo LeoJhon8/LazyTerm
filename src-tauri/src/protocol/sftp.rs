@@ -11,6 +11,7 @@ use russh_sftp::client::SftpSession;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use crate::SftpFileEntry;
 
 /// 单文件 SFTP 上传
 #[tauri::command]
@@ -253,4 +254,70 @@ pub fn cancel_sftp_upload(state: State<'_, AppState>, upload_id: String) -> Resu
         }
     })
     .map_err(|e| e.to_string())?
+}
+
+/// 列出远程目录
+#[tauri::command]
+pub async fn sftp_list_dir(
+    config: SshConnectConfig,
+    path: String,
+) -> Result<Vec<SftpFileEntry>, String> {
+    let handle = ssh_auth::connect_and_authenticate(&config)
+        .await
+        .map_err(|e| e)?;
+
+    let channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|e| format!("打开会话失败: {}", e))?;
+    channel
+        .request_subsystem(true, "sftp")
+        .await
+        .map_err(|e| format!("请求 SFTP 子系统失败: {}", e))?;
+
+    let stream = channel.into_stream();
+    let sftp = SftpSession::new(stream)
+        .await
+        .map_err(|e| format!("SFTP 初始化失败: {}", e))?;
+
+    // 获取工作目录
+    let actual_path = if path.is_empty() || path == "~" || path == "~/" {
+        sftp.canonicalize(".")
+            .await
+            .unwrap_or_else(|_| "/".to_string())
+    } else if path.starts_with("~/") {
+        let home = sftp
+            .canonicalize(".")
+            .await
+            .unwrap_or_else(|_| "/".to_string());
+        format!("{}/{}", home.trim_end_matches('/'), &path[2..])
+    } else {
+        path
+    };
+
+    let mut dir_stream = sftp
+        .read_dir(&actual_path)
+        .await
+        .map_err(|e| format!("获取目录失败: {}", e))?;
+
+    let mut entries = Vec::new();
+    while let Some(entry) = dir_stream.next() {
+        let name = entry.file_name();
+        
+        let stat = entry.metadata();
+        entries.push(SftpFileEntry {
+            name,
+            is_dir: stat.is_dir(),
+            size: stat.size.unwrap_or(0),
+            modified: stat.mtime.unwrap_or(0) as u64,
+        });
+    }
+
+    entries.sort_by(|a, b| match (b.is_dir, a.is_dir) {
+        (true, false) => std::cmp::Ordering::Greater,
+        (false, true) => std::cmp::Ordering::Less,
+        _ => a.name.cmp(&b.name),
+    });
+
+    Ok(entries)
 }

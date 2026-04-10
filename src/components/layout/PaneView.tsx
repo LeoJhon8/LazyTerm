@@ -141,10 +141,10 @@ export function PaneView({ paneId }: PaneViewProps) {
 
   // 点击面板时设置焦点
   const handlePaneClick = useCallback(() => {
-    if (!isFocused) {
-      focusPane(paneId);
-    }
-  }, [isFocused, paneId, focusPane]);
+    // 即使在当前 tab 是焦点 pane，全局的 focusSessionId 也可能不对（例如刚切换 tab）
+    // 所以我们需要确保每次点击都同步
+    focusPane(paneId);
+  }, [paneId, focusPane]);
 
   // 关闭面板
   const handleClose = useCallback((e: React.MouseEvent) => {

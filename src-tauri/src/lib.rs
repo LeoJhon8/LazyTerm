@@ -33,6 +33,7 @@ pub use crate::types::{
     SftpUploadCancelGuard, SftpUploadItem, SftpUploadProgress, ShellInfo, SshConnectConfig,
     SshControlMsg, SshTerminalSession, VncConnectConfig, VncControlMsg, VncControlOutcome,
     VncCursorEventPayload, VncKeyboardEventPayload, VncPointerEventPayload, VncSession,
+    SftpFileEntry,
 };
 
 // --- 程序入口 ---
@@ -67,6 +68,7 @@ pub fn run() {
             protocol::sftp_upload_file,
             protocol::sftp_upload_files,
             protocol::cancel_sftp_upload,
+            protocol::sftp_list_dir,
             protocol::write_to_terminal,
             protocol::write_to_ssh_session,
             protocol::send_rdp_pointer,
