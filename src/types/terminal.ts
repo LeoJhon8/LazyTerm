@@ -147,6 +147,7 @@ export type SessionConnector = ITerminalConnector | IRdpConnector | INativeRdpCo
 // SSH 认证方式
 export type SSHAuthType = 'password' | 'privateKey';
 
+
 // SSH 连接配置
 export interface SSHConfig {
   host: string;
@@ -165,6 +166,7 @@ export interface SSHConfig {
   keepAlive?: boolean;
   keepAliveInterval?: number;
   readyTimeout?: number;
+
 }
 
 // 本地终端配置

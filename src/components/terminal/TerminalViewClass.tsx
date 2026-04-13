@@ -17,6 +17,8 @@ import {
 import { Terminal as TerminalIcon } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
+import { TerminalAutocompleteUI } from "./TerminalAutocompleteUI";
+import { AutocompleteTerminalAddon } from "./AutocompleteTerminalAddon";
 
 // 全局 Terminal 实例缓存，确保切换 tab 时输出历史不丢失
 const globalTerminalCache = new Map<string, TerminalInstance>();
@@ -37,6 +39,7 @@ interface TerminalInstance {
   dataUnsubscribe?: () => void;
   dispose: () => void;
   webglAddon?: WebglAddon | null;
+  acAddon?: AutocompleteTerminalAddon | null;
   termState: {
     isTransitioning: boolean;
     timeoutId?: number;
@@ -128,7 +131,8 @@ function isTerminalConnector(connector: SessionConnector | undefined): connector
  */
 export function TerminalViewClass(props: BaseSessionViewProps) {
   const { paneId, sessionId } = props;
-  
+  const acAddonRef = useRef<AutocompleteTerminalAddon | null>(null);
+
   // Terminal 特有状态
   const { sessions } = useTabsStore();
   const { addCommand: addHistoryCommand } = useHistoryStore();
@@ -361,6 +365,17 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
 
+      const acAddon = new AutocompleteTerminalAddon(
+         sessionId,
+         (text) => {
+            if (currentTermInstance?.connector) {
+               currentTermInstance.connector.write(text);
+            }
+         }
+      );
+      term.loadAddon(acAddon);
+      acAddonRef.current = acAddon;
+
       let webglAddon: WebglAddon | null = null;
       const shouldUseWebgl = !nextHasBackgroundImage && nextTerminalOpacity >= 100;
       if (shouldUseWebgl) {
@@ -463,6 +478,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           if (termState.timeoutId) clearTimeout(termState.timeoutId);
           if (termState.resizeTimeoutId) clearTimeout(termState.resizeTimeoutId);
           if (webglAddon) webglAddon.dispose();
+          if (acAddon) acAddon.dispose();
           term.dispose();
         },
       };
@@ -651,6 +667,14 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       data-session-id={sessionId}
       data-pane-id={paneId}
     >
+      <TerminalAutocompleteUI
+        sessionId={sessionId}
+        onAccept={(text) => {
+           if (acAddonRef.current) {
+               acAddonRef.current.insertCompletion(text);
+           }
+        }}
+      />
       <div className="terminal-host absolute inset-0 h-full w-full overflow-hidden pl-2 pt-2 pb-2 pr-0">
         <div
           ref={(el) => {

@@ -160,7 +160,9 @@ export class SshConnector implements ITerminalConnector {
     // 直接将数据传递给 handler，不要使用 setTimeout 或者合并数组，xterm 底层具备极好的缓冲机制
     this.unlistenFn = await listen<string>(eventName, (event) => {
       const data = event.payload;
-      if (data) handler(data);
+      if (data) {
+        handler(data);
+      }
     });
     
     logger.debug("FE/connector/ssh/listen", "Event listener registered");
@@ -177,6 +179,8 @@ export class SshConnector implements ITerminalConnector {
       closeUnlisten();
     };
   }
+
+
 
   private handleDisconnect(): void {
     logger.info("FE/connector/ssh/disconnect", "Handling disconnection");

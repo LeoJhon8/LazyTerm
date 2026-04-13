@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+
 import type { SSHConfig } from "@/types/terminal";
 // 修复命名冲突：使用别名 openFileDialog
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
@@ -25,6 +26,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [nickname, setNickname] = useState("");
 
+
   // 提取重置逻辑
   const resetForm = () => {
     setHost("");
@@ -33,6 +35,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
     setPassword("");
     setPrivateKeyPath("");
     setNickname("");
+
   };
 
   // 优化同步逻辑，解决 "cascading renders" 警告
@@ -47,6 +50,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
           setPassword(initialConfig.password || "");
           setPrivateKeyPath(initialConfig.privateKeyPath || "");
           setNickname(initialConfig.nickname || "");
+
         } else {
           resetForm();
         }
@@ -70,6 +74,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       keepAlive: true,
       keepAliveInterval: 60,
       readyTimeout: 30000,
+
     };
 
     onSave(cfg);
@@ -187,6 +192,9 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
                 </Button>
               </div>
             </div>
+
+
+
           </div>
 
           <DialogFooter>
