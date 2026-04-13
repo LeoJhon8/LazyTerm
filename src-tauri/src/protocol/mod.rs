@@ -14,6 +14,8 @@ pub mod tls;
 pub mod sftp;
 pub mod ssh;
 pub mod terminal;
+pub mod serial;
+pub mod telnet;
 
 // RDP 协议
 pub mod mstsc;
@@ -34,6 +36,8 @@ pub use rdp::*;
 pub use sftp::*;
 pub use ssh::*;
 pub use terminal::*;
+pub use serial::*;
+pub use telnet::*;
 pub use vnc::*;
 pub mod updater;
 pub use updater::*;

@@ -1,15 +1,15 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { RDPConfig, SSHConfig, VNCConfig } from "@/types/terminal";
+import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig } from "@/types/terminal";
 
-export type NodeType = "folder" | "ssh" | "rdp" | "vnc";
+export type NodeType = "folder" | "ssh" | "rdp" | "vnc" | "serial" | "telnet";
 
 export interface SessionNode {
   id: string;
   type: NodeType;
   name: string;
   parentId: string | null;
-  config?: SSHConfig | RDPConfig | VNCConfig;
+  config?: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig;
   isExpanded?: boolean;
   isRoot?: boolean;
   order: number;
@@ -47,7 +47,7 @@ interface SSHProfilesState {
   nodes: SessionNode[];
   ensureRoot: () => void;
   addFolder: (name: string, parentId: string) => void;
-  addProfile: (type: "ssh" | "rdp" | "vnc", cfg: SSHConfig | RDPConfig | VNCConfig, parentId: string) => void;
+  addProfile: (type: "ssh" | "rdp" | "vnc" | "serial" | "telnet", cfg: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig, parentId: string) => void;
   updateNode: (id: string, updates: Partial<SessionNode>) => void;
   removeNode: (id: string) => void;
   toggleFolder: (id: string) => void;
@@ -92,9 +92,10 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
         const normalizedConfig = type === "rdp"
           ? normalizeRdpConfig(cfg as RDPConfig)
           : cfg;
+        const defaultName = (normalizedConfig as any).nickname || (normalizedConfig as any).host || (normalizedConfig as any).port || "Serial";
         return {
           nodes: state.nodes.map(n => n.id === parentId ? { ...n, isExpanded: true } : n)
-            .concat([{ id: `s_${Math.random().toString(36).slice(2, 9)}`, type, name: normalizedConfig.nickname || normalizedConfig.host, parentId, config: normalizedConfig, order: maxOrder + 1 }]),
+            .concat([{ id: `s_${Math.random().toString(36).slice(2, 9)}`, type, name: defaultName, parentId, config: normalizedConfig, order: maxOrder + 1 }]),
         };
       }),
 

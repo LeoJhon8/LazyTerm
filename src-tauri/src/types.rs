@@ -141,6 +141,21 @@ pub struct LocalTerminalSession {
     pub writer: Box<dyn std::io::Write + Send>,
 }
 
+// ==================== Telnet 相关类型 ====================
+
+/// Telnet 连接配置
+#[derive(Debug, Clone, Deserialize)]
+pub struct TelnetConnectConfig {
+    pub host: String,
+    pub port: u16,
+    pub nickname: Option<String>,
+}
+
+/// Telnet 终端会话
+pub struct TelnetSession {
+    pub control_tx: mpsc::UnboundedSender<String>,
+}
+
 // ==================== SFTP 相关类型 ====================
 
 /// SFTP 上传进度

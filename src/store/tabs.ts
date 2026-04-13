@@ -59,7 +59,7 @@ export type SessionConfig = NonNullable<SessionCreationData["config"]>;
 export interface TerminalSession {
   id: string;
   title: string;
-  type: "local" | "ssh" | "rdp" | "vnc";
+  type: "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet";
   /** 连接器实例（仅存在于内存中，不持久化） */
   connector?: SessionConnector;
   cwd?: string;
@@ -163,7 +163,7 @@ export const useTabsStore = create<TabsState>()(
           const connector = createConnector(
             sessionData as SessionCreationData,
             id,
-            sessionData.type === "local" ? handleLocalDisconnect : handleSshDisconnect,
+            sessionData.type === "local" ? handleLocalDisconnect : sessionData.type === "ssh" ? handleSshDisconnect : undefined,
           );
 
           const newSession: TerminalSession = {
@@ -399,7 +399,7 @@ export const useTabsStore = create<TabsState>()(
             const nextConnector = createConnector(
               nextSession as SessionCreationData,
               sessionId,
-              nextSession.type === "local" ? handleLocalDisconnect : handleSshDisconnect,
+              nextSession.type === "local" ? handleLocalDisconnect : nextSession.type === "ssh" ? handleSshDisconnect : undefined,
             );
             if (nextConnector.protocol === "rdp" || nextConnector.protocol === "vnc") {
               throw new Error(`不支持的连接类型：${newType}`);
@@ -440,7 +440,7 @@ export const useTabsStore = create<TabsState>()(
             const newConnector = createConnector(
               currentSession as SessionCreationData,
               sessionId,
-              currentSession.type === "local" ? handleLocalDisconnect : handleSshDisconnect,
+              currentSession.type === "local" ? handleLocalDisconnect : currentSession.type === "ssh" ? handleSshDisconnect : undefined,
             );
             const newSessions = [...state.sessions];
             newSessions[sessionIndex] = {

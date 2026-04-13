@@ -33,7 +33,7 @@ pub use crate::types::{
     SftpUploadCancelGuard, SftpUploadItem, SftpUploadProgress, ShellInfo, SshConnectConfig,
     SshControlMsg, SshTerminalSession, VncConnectConfig, VncControlMsg, VncControlOutcome,
     VncCursorEventPayload, VncKeyboardEventPayload, VncPointerEventPayload, VncSession,
-    SftpFileEntry,
+    SftpFileEntry, TelnetConnectConfig, TelnetSession,
 };
 
 // --- 程序入口 ---
@@ -51,11 +51,21 @@ pub fn run() {
             rdp_sessions: Arc::new(StdMutex::new(HashMap::new())),
             vnc_sessions: Arc::new(StdMutex::new(HashMap::new())),
             native_rdp_sessions: Arc::new(StdMutex::new(HashMap::new())),
+            telnet_sessions: Arc::new(TokioMutex::new(HashMap::new())),
             sftp_upload_cancellations: Arc::new(StdMutex::new(HashMap::new())),
         })
         .invoke_handler(tauri::generate_handler![
             protocol::create_terminal,
             protocol::get_available_shells,
+            protocol::list_serial_ports,
+            protocol::open_serial_session,
+            protocol::write_serial,
+            protocol::resize_serial,
+            protocol::close_serial,
+            protocol::open_telnet_session,
+            protocol::write_telnet,
+            protocol::resize_telnet,
+            protocol::close_telnet,
             protocol::create_ssh_session,
             protocol::create_rdp_session,
             protocol::create_vnc_session,

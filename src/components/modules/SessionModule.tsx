@@ -5,7 +5,7 @@ import {
 } from "@dnd-kit/core";
 import { 
   Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, 
-  Pencil, Trash2, Terminal, Upload, Monitor, AppWindow, ScreenShare
+  Pencil, Trash2, Terminal, Upload, AppWindow, ScreenShare, Usb
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ import { usePanesStore } from "@/store/panes";
 import { SshConnectDialog } from "@/components/dialogs/SshConnectDialog";
 import { RdpConnectDialog } from "@/components/dialogs/RdpConnectDialog";
 import { VncConnectDialog } from "@/components/dialogs/VncConnectDialog";
+import { SerialConnectDialog } from "@/components/dialogs/SerialConnectDialog";
+import { TelnetConnectDialog } from "@/components/dialogs/TelnetConnectDialog";
 import { SftpUploadDialog } from "@/components/dialogs/SftpUploadDialog";
 import { 
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator 
@@ -27,7 +29,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck } from "lucide-react";
-import type { RDPConfig, SSHConfig, VNCConfig } from "@/types/terminal";
+import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig } from "@/types/terminal";
 import type { ShellInfo } from "@/types/shell";
 import { getAvailableShells } from "@/services/shellService";
 import { logger } from "@/lib/logger";
@@ -109,6 +111,10 @@ function NodeRowContent({
             ? <AppWindow className="h-4 w-4 text-sky-600/80" />
             : node.type === "vnc"
             ? <ScreenShare className="h-4 w-4 text-emerald-600/80" />
+            : node.type === "serial"
+            ? <Usb className="h-4 w-4 text-purple-600/80" />
+            : node.type === "telnet"
+            ? <Terminal className="h-4 w-4 text-emerald-500/80" />
             : <Server className={cn("h-4 w-4 text-emerald-600/80", isUploading && "text-amber-700 dark:text-cyan-300 animate-pulse")} />
         )}
         <span
@@ -175,6 +181,8 @@ function DraggableDroppableRow({
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-ssh', node)}><Server className="mr-2 h-4 w-4" /> 新建 SSH 连接</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-rdp', node)}><AppWindow className="mr-2 h-4 w-4" /> 新建 Windows 连接</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-vnc', node)}><ScreenShare className="mr-2 h-4 w-4" /> 新建 VNC 连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-serial', node)}><Usb className="mr-2 h-4 w-4" /> 新建串口连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-telnet', node)}><Terminal className="mr-2 h-4 w-4" /> 新建 Telnet 连接</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> 新建子文件夹</ContextMenuItem>
           </>
         ) : node.type === 'ssh' ? (
@@ -185,6 +193,14 @@ function DraggableDroppableRow({
         ) : node.type === 'rdp' ? (
           <>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><AppWindow className="mr-2 h-4 w-4" /> 连接</ContextMenuItem>
+          </>
+        ) : node.type === 'serial' ? (
+          <>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Usb className="mr-2 h-4 w-4" /> 连接</ContextMenuItem>
+          </>
+        ) : node.type === 'telnet' ? (
+          <>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> 连接</ContextMenuItem>
           </>
         ) : (
           <>
@@ -251,7 +267,15 @@ export function SessionModule() {
   };
 
   const isVncConfig = (config: SessionNode["config"]): config is VNCConfig => {
-    return !!config && !("username" in config) && !("authType" in config);
+    return !!config && !("username" in config) && !("authType" in config) && !("baudRate" in config);
+  };
+
+  const isSerialConfig = (config: SessionNode["config"]): config is SerialConfig => {
+    return !!config && "baudRate" in config;
+  };
+
+  const isTelnetConfig = (config: SessionNode["config"]): config is TelnetConfig => {
+    return !!config && !("baudRate" in config) && !("authType" in config) && !("username" in config) && "host" in config && "port" in config;
   };
 
   const updateDragState = (
@@ -288,16 +312,24 @@ export function SessionModule() {
         launchWorkspaceWithSession({ title: node.name, type: "rdp", host: rdpConfig.host, config: { host: rdpConfig.host, port: rdpConfig.port, rdpConfig } });
       } else if (node.type === "vnc" && isVncConfig(node.config)) {
         launchWorkspaceWithSession({ title: node.name, type: "vnc", host: node.config.host, config: { host: node.config.host, port: node.config.port, vncConfig: node.config } });
+      } else if (node.type === "serial" && isSerialConfig(node.config)) {
+        launchWorkspaceWithSession({ title: node.name, type: "serial", host: node.config.port, config: { serialConfig: node.config } });
+      } else if (node.type === "telnet" && isTelnetConfig(node.config)) {
+        launchWorkspaceWithSession({ title: node.name, type: "telnet", host: node.config.host, config: { telnetConfig: node.config } });
       }
     } else if (type === 'new-ssh') { setEditNode(null); openDialog('ssh', node); }
     else if (type === 'new-rdp') { setEditNode(null); openDialog('rdp', node); }
     else if (type === 'new-vnc') { setEditNode(null); openDialog('vnc', node); }
+    else if (type === 'new-serial') { setEditNode(null); openDialog('serial', node); }
+    else if (type === 'new-telnet') { setEditNode(null); openDialog('telnet', node); }
     else if (type === 'new-folder') { setEditNode(null); openDialog('folder', node); }
     else if (type === 'edit') { 
       setEditNode(node); 
       if (node.type === 'folder') openDialog('folder', node);
       else if (node.type === 'ssh') openDialog('ssh', node);
       else if (node.type === 'rdp') openDialog('rdp', node);
+      else if (node.type === 'serial') openDialog('serial', node);
+      else if (node.type === 'telnet') openDialog('telnet', node);
       else openDialog('vnc', node);
     } else if (type === 'delete') { setTargetNode(node); dialog.open('delete', node.id); }
     else if (type === 'sftp-upload' && node.type === 'ssh') { setSftpNode(node); dialog.open('sftp', node.id); }
@@ -397,6 +429,12 @@ export function SessionModule() {
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => dialog.open('directVnc')}>
               <ScreenShare className="mr-2 h-4 w-4 text-emerald-500" /> VNC 连接
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => dialog.open('directSerial')}>
+              <Usb className="mr-2 h-4 w-4 text-purple-500" /> 串口连接
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => dialog.open('directTelnet')}>
+              <Terminal className="mr-2 h-4 w-4 text-emerald-500" /> Telnet 连接
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -511,6 +549,30 @@ export function SessionModule() {
         }} 
       />
 
+      {/* 串口 弹窗 */}
+      <SerialConnectDialog 
+        open={dialog.isOpen('serial')} 
+        onOpenChange={() => dialog.close()} 
+        initialConfig={editNode?.type === "serial" ? editNode.config as SerialConfig : undefined} 
+        onSave={(cfg) => {
+          if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.port });
+          else if (targetNode) addProfile("serial", cfg, targetNode.id);
+          dialog.close();
+        }} 
+      />
+
+      {/* Telnet 弹窗 */}
+      <TelnetConnectDialog 
+        open={dialog.isOpen('telnet')} 
+        onOpenChange={() => dialog.close()} 
+        initialConfig={editNode?.type === "telnet" ? editNode.config as TelnetConfig : undefined} 
+        onSave={(cfg) => {
+          if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
+          else if (targetNode) addProfile("telnet", cfg, targetNode.id);
+          dialog.close();
+        }} 
+      />
+
       {/* 直接连接弹窗 */}
       <SshConnectDialog
         open={dialog.isOpen('directSsh')}
@@ -542,6 +604,34 @@ export function SessionModule() {
         isDirect={true} 
         onSave={(cfg) => {
           handleDirectVncConnect(cfg);
+          dialog.close();
+        }} 
+      />
+      <SerialConnectDialog 
+        open={dialog.isOpen('directSerial')} 
+        onOpenChange={() => dialog.close()} 
+        isDirect={true} 
+        onSave={(cfg) => {
+          launchWorkspaceWithSession({
+            title: cfg.nickname || cfg.port,
+            type: "serial",
+            host: cfg.port,
+            config: { serialConfig: cfg }
+          });
+          dialog.close();
+        }} 
+      />
+      <TelnetConnectDialog 
+        open={dialog.isOpen('directTelnet')} 
+        onOpenChange={() => dialog.close()} 
+        isDirect={true} 
+        onSave={(cfg) => {
+          launchWorkspaceWithSession({
+            title: cfg.nickname || cfg.host,
+            type: "telnet",
+            host: cfg.host,
+            config: { telnetConfig: cfg }
+          });
           dialog.close();
         }} 
       />

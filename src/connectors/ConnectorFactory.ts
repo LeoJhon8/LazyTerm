@@ -3,6 +3,8 @@ import type {
   SessionConnector,
   SSHConfig,
   VNCConfig,
+  SerialConfig,
+  TelnetConfig,
 } from "@/types/terminal";
 import { useSettingsStore } from "@/store/settings";
 import { LocalConnector } from "@/connectors/LocalConnector";
@@ -10,9 +12,11 @@ import { SshConnector, type PtyFontConfig } from "@/connectors/SshConnector";
 import { RdpConnector } from "@/connectors/RdpConnector";
 import { NativeRdpConnector } from "@/connectors/NativeRdpConnector";
 import { VncConnector } from "@/connectors/VncConnector";
+import { SerialConnector } from "@/connectors/SerialConnector";
+import { TelnetConnector } from "@/connectors/TelnetConnector";
 
 export interface SessionCreationData {
-  type: "local" | "ssh" | "rdp" | "vnc";
+  type: "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet";
   cwd?: string;
   title?: string;
   host?: string;
@@ -24,6 +28,8 @@ export interface SessionCreationData {
     sshConfig?: SSHConfig;
     rdpConfig?: RDPConfig;
     vncConfig?: VNCConfig;
+    serialConfig?: SerialConfig;
+    telnetConfig?: TelnetConfig;
     admin?: boolean;
   };
 }
@@ -84,6 +90,30 @@ export function createConnector(
       }
 
       return new VncConnector(sessionData.config.vncConfig);
+    case "serial":
+      if (!sessionData.config?.serialConfig) {
+        throw new Error("Serial 配置不能为空");
+      }
+      return new SerialConnector(
+        sessionData.config.serialConfig,
+        () => {
+          if (onDisconnect) {
+            onDisconnect(sessionId);
+          }
+        }
+      );
+    case "telnet":
+      if (!sessionData.config?.telnetConfig) {
+        throw new Error("Telnet 配置不能为空");
+      }
+      return new TelnetConnector(
+        sessionData.config.telnetConfig,
+        () => {
+          if (onDisconnect) {
+            onDisconnect(sessionId);
+          }
+        }
+      );
     default:
       throw new Error(`不支持的连接类型：${sessionData.type}`);
   }
