@@ -21,7 +21,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Textarea } from "@/components/ui/textarea";
 import { AVAILABLE_MODULES, LOCKED_MODULES } from "@/config/default-slot-config";
 import type { SlotConfig } from "@/config/default-slot-config";
 import { useSlotConfigStore } from "@/store/slot-config";
@@ -128,7 +127,6 @@ function ThemeSettings() {
   const backgroundBlur = useSettingsStore((state) => state.backgroundBlur);
   const backgroundOpacity = useSettingsStore((state) => state.backgroundOpacity);
   const uiOpacity = useSettingsStore((state) => state.uiOpacity);
-  const customCSS = useSettingsStore((state) => state.customCSS);
   const setSettings = useSettingsStore((state) => state.setSettings);
   const handlePickBackgroundImage = async () => {
     try {
@@ -166,24 +164,82 @@ function ThemeSettings() {
       <div className="space-y-8 pb-10 px-1">
 
         {/* ======================= */}
-        {/* 1.5. 应用背景色 */}
+        {/* 1. 配色方案 */}
         {/* ======================= */}
-        <div className="space-y-3">
-          <Label className="text-base font-semibold">配色方案</Label>
-          <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex flex-col gap-3.5">
+          <Label className="text-base font-semibold">整体配色方案</Label>
+          <div className="flex flex-wrap gap-3 items-center">
             {APP_BACKGROUND_OPTIONS.map(opt => (
               <Button
                 key={opt.value}
-                variant={appBackgroundColor === opt.value ? "default" : "outline"}
+                variant="outline"
                 size="sm"
-                className={appBackgroundColor === opt.value ? "ring-2 ring-primary ring-offset-1" : ""}
-                onClick={() => setSettings({ appBackgroundColor: opt.value })}
+                className={cn(
+                  "px-6 rounded-full transition-all duration-200 border",
+                  appBackgroundColor === opt.value 
+                    ? "border-primary/50 bg-primary/10 text-primary shadow-sm font-semibold ring-1 ring-primary/20"
+                    : "border-border/60 hover:bg-muted/60 text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => {
+                  const newAppBg = opt.value as "system" | "light" | "dark";
+                  const willBeDark = newAppBg === 'system'
+                    ? window.matchMedia("(prefers-color-scheme: dark)").matches
+                    : newAppBg === 'dark';
+                  
+                  const updates: any = { appBackgroundColor: newAppBg };
+                  
+                  if (isDarkApp !== willBeDark || newAppBg === 'system') {
+                    if (newAppBg === 'system') {
+                      updates.terminalColorScheme = 'system-auto';
+                    } else if (willBeDark) {
+                      updates.terminalColorScheme = 'default-dark';
+                    } else {
+                      updates.terminalColorScheme = 'default-light';
+                    }
+                  }
+                  
+                  setSettings(updates);
+                }}
               >{opt.label}</Button>
             ))}
           </div>
         </div>
 
-        <Separator className="bg-muted" />
+        <Separator className="bg-muted/60" />
+
+        {/* ======================= */}
+        {/* 2. 字体设置 */}
+        {/* ======================= */}
+        <div className="space-y-4">
+          <Label className="text-base font-semibold">字体设置</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">字体族</Label>
+              <Select value={fontFamily} onValueChange={(v) => setSettings({ fontFamily: v })}>
+                <SelectTrigger className="h-9 bg-background focus:ring-primary/50 transition-shadow">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FONT_OPTIONS.map((f) => (
+                    <SelectItem key={f.value} value={f.value} className="cursor-pointer">
+                      <span style={{ fontFamily: f.value }}>{f.label}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label className="text-sm text-muted-foreground">字体大小</Label>
+                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-mono font-medium">{fontSize}px</span>
+              </div>
+              <input type="range" min="10" max="24" step="1" value={fontSize} onChange={(e) => setSettings({ fontSize: parseInt(e.target.value) })} className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary" />
+            </div>
+          </div>
+        </div>
+
+        <Separator className="bg-muted/60" />
 
         {/* ======================= */}
         {/* 1.6. 终端主题 (联动配色方案) */}
@@ -200,8 +256,12 @@ function ThemeSettings() {
               <button
                 key={scheme.name}
                 onClick={() => setSettings({ terminalColorScheme: scheme.name })}
-                className={`p-3 rounded-lg border-2 transition-all duration-200 text-left min-w-0 overflow-hidden ${terminalColorScheme === scheme.name ? "border-primary shadow-md bg-active" : "border-muted hover:border-primary/50"
-                  }`}
+                className={cn(
+                  "p-3 rounded-xl border-2 transition-all duration-300 text-left min-w-0 overflow-hidden relative group",
+                  terminalColorScheme === scheme.name 
+                    ? "border-primary shadow-lg shadow-primary/10 ring-1 ring-primary/20 transform scale-[1.02]" 
+                    : "border-border/50 hover:border-primary/40 hover:shadow-md bg-card/40"
+                )}
                 style={{
                   backgroundColor: resolvePreviewColor(scheme.background, 'var(--background)'),
                   color: resolvePreviewColor(scheme.foreground, 'var(--foreground)'),
@@ -287,7 +347,7 @@ function ThemeSettings() {
           </div>
         </div>
 
-        <Separator className="bg-muted" />
+        <Separator className="bg-muted/60" />
 
         {/* ======================= */}
         {/* 2. 背景图片 */}
@@ -359,56 +419,6 @@ function ThemeSettings() {
           </div>
         </div>
 
-        <Separator className="bg-muted" />
-
-        {/* ======================= */}
-        {/* 3. 字体设置 */}
-        {/* ======================= */}
-        <div className="space-y-4">
-          <Label className="text-base font-semibold">字体设置</Label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">字体族</Label>
-              <Select value={fontFamily} onValueChange={(v) => setSettings({ fontFamily: v })}>
-                <SelectTrigger className="h-9 bg-background">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {FONT_OPTIONS.map((f) => (
-                    <SelectItem key={f.value} value={f.value}>
-                      <span style={{ fontFamily: f.value }}>{f.label}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label className="text-sm text-muted-foreground">字体大小</Label>
-                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-mono">{fontSize}px</span>
-              </div>
-              <input type="range" min="10" max="24" step="1" value={fontSize} onChange={(e) => setSettings({ fontSize: parseInt(e.target.value) })} className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary" />
-            </div>
-          </div>
-        </div>
-
-        <Separator className="bg-muted" />
-
-        {/* ======================= */}
-        {/* 5. 自定义 CSS */}
-        {/* ======================= */}
-        <div className="space-y-3">
-          <Label className="text-base font-semibold">自定义 CSS</Label>
-          <Textarea
-            value={customCSS}
-            onChange={(e) => setSettings({ customCSS: e.target.value })}
-            placeholder={`/* 在此输入自定义 CSS */\n.xterm-viewport {\n  border-radius: 8px;\n}`}
-            rows={5}
-            className="font-mono text-sm"
-          />
-        </div>
-
       </div>
     </div>
   );
@@ -418,7 +428,7 @@ function ThemeSettings() {
 function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault }: SlotSettingsProps) {
   const displayModules = AVAILABLE_MODULES.filter(mod =>
     !LOCKED_MODULES.includes(mod.id) &&
-    mod.id !== "SettingModule" &&
+    mod.id !== "SettingsModule" &&
     mod.id !== "settings"
   );
 
@@ -456,21 +466,23 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
               })}
             </div>
 
-            {currentConfig[side].modules.length > 0 && (
+            {currentConfig[side].modules.filter((id: string) => id !== "SettingsModule" && id !== "settings").length > 0 && (
               <div className="space-y-2 pt-2">
                 <Label className="text-[11px] text-muted-foreground ml-1">默认展示模块</Label>
                 <Select
-                  value={currentConfig[side].activeModule}
+                  value={currentConfig[side].activeModule === "SettingsModule" || currentConfig[side].activeModule === "settings" ? "" : currentConfig[side].activeModule}
                   onValueChange={(v) => onActiveChange(side, v)}
                 >
                   <SelectTrigger className="h-9 bg-background">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {currentConfig[side].modules.map((id: string) => (
-                      <SelectItem key={id} value={id}>
-                        {AVAILABLE_MODULES.find((m) => m.id === id)?.name}
-                      </SelectItem>
+                    {currentConfig[side].modules
+                      .filter((id: string) => id !== "SettingsModule" && id !== "settings")
+                      .map((id: string) => (
+                        <SelectItem key={id} value={id}>
+                          {AVAILABLE_MODULES.find((m) => m.id === id)?.name}
+                        </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -498,7 +510,7 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
 
 // --- 子组件 4：终端设置 ---
 function TerminalSettings() {
-  const { defaultShell, confirmCloseNonDefaultTabs, setSettings } = useSettingsStore();
+  const { defaultShell, confirmCloseNonDefaultTabs, terminalAutocomplete, setSettings } = useSettingsStore();
   const [shells, setShells] = useState<ShellInfo[]>([]);
 
   useMountedEffect(() => {
@@ -566,6 +578,22 @@ function TerminalSettings() {
               id="confirm-close-non-default-tabs"
               checked={confirmCloseNonDefaultTabs}
               onCheckedChange={(checked) => setSettings({ confirmCloseNonDefaultTabs: !!checked })}
+            />
+          </div>
+
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-border/70 bg-background/60 px-4 py-3">
+            <div className="space-y-1">
+              <Label htmlFor="terminal-autocomplete" className="text-sm font-semibold cursor-pointer">
+                终端智能自动补全
+              </Label>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                开启后，终端输入时会智能提示历史命令与快捷命令组合，并支持 Tab / Enter 快速补全。
+              </p>
+            </div>
+            <Checkbox
+              id="terminal-autocomplete"
+              checked={terminalAutocomplete}
+              onCheckedChange={(checked) => setSettings({ terminalAutocomplete: !!checked })}
             />
           </div>
         </div>
@@ -985,13 +1013,15 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
     if (isAlreadyInThisSide) {
       next[side].modules = next[side].modules.filter((id: string) => id !== moduleId);
       if (next[side].activeModule === moduleId) {
-        next[side].activeModule = next[side].modules[0] || "";
+        const validModules = next[side].modules.filter((id: string) => id !== "SettingsModule" && id !== "settings");
+        next[side].activeModule = validModules[0] || "";
       }
     } else {
       const otherSide = side === "left" ? "right" : "left";
       next[otherSide].modules = next[otherSide].modules.filter((id: string) => id !== moduleId);
       if (next[otherSide].activeModule === moduleId) {
-        next[otherSide].activeModule = next[otherSide].modules[0] || "";
+        const validModules = next[otherSide].modules.filter((id: string) => id !== "SettingsModule" && id !== "settings");
+        next[otherSide].activeModule = validModules[0] || "";
       }
 
       // 如果目标侧原本为空，添加模块时自动展开

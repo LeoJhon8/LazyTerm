@@ -46,7 +46,7 @@ Lazy Term 采用前后端分离架构：
 React UI → Zustand stores → Connector → Tauri IPC → Rust backend
 ```
 
-详细架构说明请参考 [architecture.md](./architecture.md)。
+详细说明请参考 [架构文档 (architecture.md)](./docs/architecture.md) 以及 [终端双屏设计文档 (overview.md)](./docs/overview.md)。
 
 ## 目录结构
 

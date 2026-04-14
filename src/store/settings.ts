@@ -21,8 +21,7 @@ interface SettingsData {
   tabStopWidth: number;
   defaultShell: string;
   confirmCloseNonDefaultTabs: boolean;
-
-
+  terminalAutocomplete: boolean;
   // 外观自定义
   appBackgroundColor: "system" | "light" | "dark"; // 全局背景色 (终端外)
   terminalColorScheme: string;        // 终端配色方案名称
@@ -35,7 +34,6 @@ interface SettingsData {
   backgroundBlur: number;             // 背景模糊度 0~20 (px)
   backgroundOpacity: number;          // 背景图片不透明度 0~100
   uiOpacity: number;                  // UI 面板不透明度 30~100
-  customCSS: string;                  // 自定义 CSS
 }
 
 interface SettingsActions {
@@ -61,8 +59,7 @@ const defaultSettings: SettingsData = {
   tabStopWidth: 4,
   defaultShell: "powershell.exe",
   confirmCloseNonDefaultTabs: false,
-
-
+  terminalAutocomplete: true,
   // 外观自定义默认值
   appBackgroundColor: "system",
   terminalColorScheme: "system-auto",
@@ -79,7 +76,6 @@ const defaultSettings: SettingsData = {
   backgroundBlur: 0,
   backgroundOpacity: 100,
   uiOpacity: 100,
-  customCSS: "",
 };
 
 export const useSettingsStore = create<SettingsState>()(

@@ -143,6 +143,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
   const backgroundImageEnabled = useSettingsStore((state) => state.backgroundImageEnabled);
   const backgroundImage = useSettingsStore((state) => state.backgroundImage);
+  const terminalAutocomplete = useSettingsStore((state) => state.terminalAutocomplete);
   const setSettings = useSettingsStore((state) => state.setSettings);
 
   // 使用全局缓存替代组件级别的 ref，确保切换 tab 时输出历史不丢失
@@ -365,16 +366,19 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
 
-      const acAddon = new AutocompleteTerminalAddon(
-         sessionId,
-         (text) => {
-            if (currentTermInstance?.connector) {
-               currentTermInstance.connector.write(text);
-            }
-         }
-      );
-      term.loadAddon(acAddon);
-      acAddonRef.current = acAddon;
+      let acAddon: AutocompleteTerminalAddon | null = null;
+      if (useSettingsStore.getState().terminalAutocomplete) {
+        acAddon = new AutocompleteTerminalAddon(
+           sessionId,
+           (text) => {
+              if (currentTermInstance?.connector) {
+                 currentTermInstance.connector.write(text);
+              }
+           }
+        );
+        term.loadAddon(acAddon);
+        acAddonRef.current = acAddon;
+      }
 
       let webglAddon: WebglAddon | null = null;
       const shouldUseWebgl = !nextHasBackgroundImage && nextTerminalOpacity >= 100;
@@ -465,6 +469,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         dataUnsubscribe,
         termState,
         webglAddon,
+        acAddon,
 
         dispose: () => {
           dataUnsubscribe();
@@ -478,7 +483,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           if (termState.timeoutId) clearTimeout(termState.timeoutId);
           if (termState.resizeTimeoutId) clearTimeout(termState.resizeTimeoutId);
           if (webglAddon) webglAddon.dispose();
-          if (acAddon) acAddon.dispose();
+          if (instance.acAddon) instance.acAddon.dispose();
           term.dispose();
         },
       };
@@ -530,6 +535,28 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         instance.webglAddon = null;
       }
 
+      if (terminalAutocomplete && !instance.acAddon) {
+        const acAddon = new AutocompleteTerminalAddon(
+           id,
+           (text) => {
+              if (instance.connector) {
+                 instance.connector.write(text);
+              }
+           }
+        );
+        terminal.loadAddon(acAddon);
+        instance.acAddon = acAddon;
+        if (id === sessionId) {
+          acAddonRef.current = acAddon;
+        }
+      } else if (!terminalAutocomplete && instance.acAddon) {
+        instance.acAddon.dispose();
+        instance.acAddon = null;
+        if (id === sessionId) {
+          acAddonRef.current = null;
+        }
+      }
+
       if (id === sessionId) {
         requestAnimationFrame(() => {
           try {
@@ -554,7 +581,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
       }
     });
-  }, [fontSize, fontFamily, terminalColorScheme, customThemeColors, terminalOpacity, sessionId, hasBackgroundImage]);
+  }, [fontSize, fontFamily, terminalColorScheme, customThemeColors, terminalOpacity, sessionId, hasBackgroundImage, terminalAutocomplete]);
 
   // 清理已被关闭的会话
   useEffect(() => {
@@ -667,14 +694,16 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       data-session-id={sessionId}
       data-pane-id={paneId}
     >
-      <TerminalAutocompleteUI
-        sessionId={sessionId}
-        onAccept={(text) => {
-           if (acAddonRef.current) {
-               acAddonRef.current.insertCompletion(text);
-           }
-        }}
-      />
+      {terminalAutocomplete && (
+        <TerminalAutocompleteUI
+          sessionId={sessionId}
+          onAccept={(text) => {
+             if (acAddonRef.current) {
+                 acAddonRef.current.insertCompletion(text);
+             }
+          }}
+        />
+      )}
       <div className="terminal-host absolute inset-0 h-full w-full overflow-hidden pl-2 pt-2 pb-2 pr-0">
         <div
           ref={(el) => {

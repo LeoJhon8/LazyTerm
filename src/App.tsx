@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
@@ -33,7 +33,6 @@ function App() {
     backgroundBlur,
     backgroundOpacity,
     uiOpacity,
-    customCSS,
   } = useSettingsStore();
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
@@ -43,8 +42,6 @@ function App() {
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
   const hasBackgroundImage = backgroundImageEnabled && !!backgroundImage;
   const shouldDisableUiBlur = hasBackgroundImage && backgroundImageUiMode === "clear";
-
-  const customStyleRef = useRef<HTMLStyleElement | null>(null);
 
   const focusSession = focusSessionId 
     ? sessions.find(s => s.id === focusSessionId)
@@ -134,23 +131,6 @@ function App() {
       shouldDisableUiBlur ? "none" : "blur(24px) saturate(150%)"
     );
   }, [uiOpacity, shouldDisableUiBlur]);
-
-  // 动态注入自定义 CSS
-  useEffect(() => {
-    if (!customStyleRef.current) {
-      const style = document.createElement("style");
-      style.id = "lazy-term-custom-css";
-      document.head.appendChild(style);
-      customStyleRef.current = style;
-    }
-    customStyleRef.current.textContent = customCSS;
-
-    return () => {
-      if (customStyleRef.current) {
-        customStyleRef.current.textContent = "";
-      }
-    };
-  }, [customCSS]);
 
   return (
     <div className="app-frame relative h-screen w-screen overflow-hidden bg-background text-foreground">

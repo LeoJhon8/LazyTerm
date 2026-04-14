@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useHistoryStore } from "@/store/history";
 import { useQuickCommandsStore } from "@/store/quick-commands";
 import { cn } from "@/lib/utils";
@@ -23,19 +23,15 @@ export function TerminalAutocompleteUI({
   const { commands: historyCommands } = useHistoryStore();
   const { commands: quickCommands } = useQuickCommandsStore();
 
-  const [suggestions, setSuggestions] = useState<Array<{ id: string, label: string, command: string, type: 'quick' | 'history' }>>([]);
-
   useEffect(() => {
     const handler = (e: CustomEvent) => setPos(e.detail);
     window.addEventListener(`autocomplete-suggest-${sessionId}`, handler as EventListener);
     return () => window.removeEventListener(`autocomplete-suggest-${sessionId}`, handler as EventListener);
   }, [sessionId]);
 
-  useEffect(() => {
-    if (!pos.active || !pos.buffer) {
-      setSuggestions([]);
-      return;
-    }
+  // 使用 useMemo 缓存建议列表，只在 buffer/active/数据源变化时重新计算
+  const suggestions = useMemo(() => {
+    if (!pos.active || !pos.buffer) return [];
 
     const lowerBuffer = pos.buffer.toLowerCase();
     
@@ -43,21 +39,29 @@ export function TerminalAutocompleteUI({
       .filter(c => c.label.toLowerCase().includes(lowerBuffer) || c.command.toLowerCase().includes(lowerBuffer))
       .map(c => ({ id: "q_" + c.id, label: c.label, command: c.command, type: 'quick' as const }));
 
+    const quickCommandSet = new Set(quickMatches.map(q => q.command));
     const historyMatches = historyCommands
-      .filter(c => c.command.toLowerCase().startsWith(lowerBuffer) || c.command.toLowerCase().includes(lowerBuffer))
-      .filter(c => !quickMatches.some(q => q.command === c.command)) // dedupe
-      .slice(0, 10) // Limit display
+      .filter(c => c.command.toLowerCase().includes(lowerBuffer))
+      .filter(c => !quickCommandSet.has(c.command))
+      .slice(0, 10)
       .map(c => ({ id: "h_" + c.id, label: c.command, command: c.command, type: 'history' as const }));
 
-    const combined = [...quickMatches, ...historyMatches].slice(0, 8); // MAX 8
-    setSuggestions(combined);
-    setSelectedIndex(0);
-
+    return [...quickMatches, ...historyMatches].slice(0, 8);
   }, [pos.active, pos.buffer, quickCommands, historyCommands]);
 
+  // 建议列表变化时重置选中索引
   useEffect(() => {
+    setSelectedIndex(0);
+  }, [suggestions]);
+
+  const handleAccept = useCallback((command: string) => {
+    onAccept(command);
+  }, [onAccept]);
+
+  useEffect(() => {
+    if (!pos.active || suggestions.length === 0) return;
+
     const handleKey = (e: CustomEvent) => {
-       if (!pos.active || suggestions.length === 0) return;
        const { key } = e.detail;
        
        if (key === "ArrowDown") {
@@ -67,7 +71,7 @@ export function TerminalAutocompleteUI({
        } else if (key === "Enter" || key === "Tab") {
          const selected = suggestions[selectedIndex];
          if (selected) {
-            onAccept(selected.command);
+            handleAccept(selected.command);
          }
        }
     };
@@ -76,7 +80,7 @@ export function TerminalAutocompleteUI({
     window.addEventListener("lazy-term-autocomplete-key", handleKey as any);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return () => window.removeEventListener("lazy-term-autocomplete-key", handleKey as any);
-  }, [pos.active, suggestions, selectedIndex, onAccept]);
+  }, [pos.active, suggestions, selectedIndex, handleAccept]);
 
   if (!pos.active || suggestions.length === 0) return null;
 
@@ -91,7 +95,7 @@ export function TerminalAutocompleteUI({
 
   return (
     <div 
-      className="absolute z-[100] flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[#1e1e24]/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
+      className="absolute z-[100] flex flex-col overflow-hidden rounded-xl border border-border bg-popover/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
       style={{
         left: leftPos,
         top: pos.y,
@@ -100,7 +104,7 @@ export function TerminalAutocompleteUI({
         maxWidth: '400px'
       }}
     >
-      <div className="px-3 py-1.5 text-[11px] font-semibold text-slate-400 uppercase tracking-widest bg-black/20 border-b border-white/5 flex items-center justify-between">
+      <div className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-widest bg-muted/40 border-b border-border flex items-center justify-between">
         <span>智能提示</span>
         <span className="text-[9px] opacity-40 font-mono lowercase">Tab / Enter</span>
       </div>
@@ -111,16 +115,16 @@ export function TerminalAutocompleteUI({
           return (
             <div
               key={item.id}
-              onClick={() => onAccept(item.command)}
+              onClick={() => handleAccept(item.command)}
               onMouseEnter={() => setSelectedIndex(index)}
               className={cn(
                 "flex items-center gap-3 px-3 py-2 text-[13px] cursor-pointer transition-all duration-100",
-                isSelected ? "bg-emerald-500/15 text-emerald-400" : "text-zinc-300 hover:bg-white/5"
+                isSelected ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
               )}
             >
               <div className={cn(
                 "flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] transition-colors",
-                isSelected ? "bg-emerald-500/20 text-emerald-300" : "bg-black/30 text-zinc-500"
+                isSelected ? "bg-primary/20 text-primary" : "bg-muted/60 text-muted-foreground"
               )}>
                 {isHistory ? <Terminal className="h-[12px] w-[12px]" /> : <span className="font-mono text-[11px]">⚡</span>}
               </div>

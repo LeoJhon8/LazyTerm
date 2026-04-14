@@ -12,17 +12,27 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
   private _disposables: { dispose: () => void }[] = [];
   
   public inputBuffer: string = "";
-  private _onSuggest?: (evt: AutocompleteSuggestEvent) => void;
   private _onInsert?: (text: string) => void;
   public isActive: boolean = false;
   private _ignoreNextKey: boolean = false;
   private _lastX: number = 0;
   private _lastY: number = 0;
+  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // 缓存 DOM 测量值，避免每次按键都查询 DOM
+  private _cachedCellWidth: number = 0;
+  private _cachedCellHeight: number = 0;
+  private _cachedParentRect: DOMRect | null = null;
+  private _cachedTermRect: DOMRect | null = null;
+  private _cacheTick: number = 0;
+
+  private sessionId: string;
 
   constructor(
-    private sessionId: string,
+    sessionId: string,
     onInsert?: (text: string) => void
   ) {
+    this.sessionId = sessionId;
     this._onInsert = onInsert;
   }
 
@@ -93,45 +103,65 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
       return;
     }
 
-    // 利用 setTimetout 留给 PTY Echo 以及底层 xterm 游标刷新的时间
-    setTimeout(() => {
+    // 使用 debounce 避免每次按键都触发建议更新
+    this._scheduleSuggest();
+  }
+
+  private _scheduleSuggest() {
+    if (this._debounceTimer !== null) {
+      clearTimeout(this._debounceTimer);
+    }
+    this._debounceTimer = setTimeout(() => {
+      this._debounceTimer = null;
       if (this.inputBuffer.length > 0) {
         this._triggerSuggest(true);
       } else {
         this._cancel();
       }
-    }, 20);
+    }, 80);
+  }
+
+  /**
+   * 刷新 DOM 缓存。每次调用最多每 200ms 重新测量一次，其间使用缓存值。
+   */
+  private _refreshDomCache() {
+    const now = performance.now();
+    if (now - this._cacheTick < 200 && this._cachedParentRect) return;
+    this._cacheTick = now;
+
+    if (!this._terminal) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const core = (this._terminal as any)._core;
+    if (core) {
+      this._cachedCellWidth = core._renderService?.dimensions?.css?.cell?.width || 9;
+      this._cachedCellHeight = core._renderService?.dimensions?.css?.cell?.height || 18;
+    }
+
+    const screenElement = this._terminal.element?.querySelector('.xterm-screen') || this._terminal.element;
+    this._cachedTermRect = screenElement?.getBoundingClientRect() ?? null;
+
+    const offsetParent = this._terminal.element?.closest('main') || document.body;
+    this._cachedParentRect = offsetParent.getBoundingClientRect();
   }
 
   private _getCursorPixelRect() {
     if (!this._terminal) return { x: this._lastX, y: this._lastY };
-    
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const core = (this._terminal as any)._core;
-    if (!core) return { x: this._lastX, y: this._lastY };
 
-    // 获取渲染引擎里的方块字符实际尺寸
-    const cellWidth = core._renderService?.dimensions?.css?.cell?.width || 9;
-    const cellHeight = core._renderService?.dimensions?.css?.cell?.height || 18;
+    this._refreshDomCache();
+
+    if (!this._cachedTermRect || !this._cachedParentRect) {
+      return { x: this._lastX, y: this._lastY };
+    }
 
     const cursorX = this._terminal.buffer.active.cursorX;
     const cursorY = this._terminal.buffer.active.cursorY;
-    
-    // 更精准的获取渲染区域
-    const screenElement = this._terminal.element?.querySelector('.xterm-screen') || this._terminal.element;
-    const termRect = screenElement?.getBoundingClientRect();
-    if (!termRect) return { x: this._lastX, y: this._lastY };
 
-    // 获取离他最近的定位父级（即 TerminalViewClass 的 main 容器）
-    const offsetParent = this._terminal.element?.closest('main') || document.body;
-    const parentRect = offsetParent.getBoundingClientRect();
+    const relativeLeft = this._cachedTermRect.left - this._cachedParentRect.left;
+    const relativeTop = this._cachedTermRect.top - this._cachedParentRect.top;
 
-    // 计算实际位置，因为我们的 UI 组件是 absolute 渲染在 main 里面的，所以扣除 parent 的偏移
-    const relativeLeft = termRect.left - parentRect.left;
-    const relativeTop = termRect.top - parentRect.top;
-
-    const x = relativeLeft + (cursorX * cellWidth);
-    const y = relativeTop + (cursorY * cellHeight) + cellHeight + 4;
+    const x = relativeLeft + (cursorX * this._cachedCellWidth);
+    const y = relativeTop + (cursorY * this._cachedCellHeight) + this._cachedCellHeight + 4;
 
     this._lastX = x;
     this._lastY = y;
@@ -163,11 +193,22 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
   }
 
   private _cancel() {
-    this.inputBuffer = "";
-    this._triggerSuggest(false);
+    if (this._debounceTimer !== null) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
+    // 只在状态确实改变时发送事件，避免无谓的 React 重渲染
+    if (this.isActive || this.inputBuffer.length > 0) {
+      this.inputBuffer = "";
+      this._triggerSuggest(false);
+    }
   }
 
   public dispose(): void {
+    if (this._debounceTimer !== null) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
     this._disposables.forEach(d => d.dispose());
     this.isActive = false;
   }
