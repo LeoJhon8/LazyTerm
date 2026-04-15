@@ -9,6 +9,8 @@ export interface AutocompletePos {
   buffer: string;
   x: number;
   y: number;
+  parentHeight?: number;
+  cellHeight?: number;
 }
 
 export function TerminalAutocompleteUI({ 
@@ -82,26 +84,43 @@ export function TerminalAutocompleteUI({
     return () => window.removeEventListener("lazy-term-autocomplete-key", handleKey as any);
   }, [pos.active, suggestions, selectedIndex, handleAccept]);
 
+  // 同步建议状态给 Addon
+  useEffect(() => {
+    const hasSuggestions = pos.active && suggestions.length > 0;
+    window.dispatchEvent(new CustomEvent(`autocomplete-status-${sessionId}`, { 
+      detail: { hasSuggestions } 
+    }));
+  }, [sessionId, pos.active, suggestions.length]);
+
   if (!pos.active || suggestions.length === 0) return null;
 
   // 保证弹窗在视口内（简单的防溢出）
   const popupWidth = 300;
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1000;
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 1000;
   
   let leftPos = pos.x;
   if (leftPos + popupWidth > viewportWidth - 20) {
       leftPos = viewportWidth - popupWidth - 20;
   }
 
+  // 估算弹窗最大高度 (8个item + header + padding)
+  const popupMaxHeight = Math.min(suggestions.length * 36 + 40, 350); 
+  // 使用传入的 containerHeight，如果没有则使用 viewportHeight
+  const containerHeight = pos.parentHeight || viewportHeight;
+  const isOverflowingBottom = pos.y + popupMaxHeight > containerHeight - 20;
+
   return (
     <div 
       className="absolute z-[100] flex flex-col overflow-hidden rounded-xl border border-border bg-popover/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
       style={{
         left: leftPos,
-        top: pos.y,
+        top: isOverflowingBottom ? 'auto' : pos.y + 4,
+        bottom: isOverflowingBottom ? containerHeight - pos.y + (pos.cellHeight || 20) + 4 : 'auto',
         minWidth: '240px',
         width: popupWidth,
-        maxWidth: '400px'
+        maxWidth: '400px',
+        maxHeight: '350px'
       }}
     >
       <div className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-widest bg-muted/40 border-b border-border flex items-center justify-between">

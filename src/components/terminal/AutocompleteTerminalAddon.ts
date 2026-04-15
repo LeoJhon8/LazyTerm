@@ -27,6 +27,12 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
   private _cacheTick: number = 0;
 
   private sessionId: string;
+  private _hasSuggestions: boolean = false;
+
+  private _onStatusChange = (e: Event) => {
+    const customEvent = e as CustomEvent;
+    this._hasSuggestions = customEvent.detail.hasSuggestions;
+  };
 
   constructor(
     sessionId: string,
@@ -44,9 +50,16 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
       terminal.onKey((e) => this._handleKey(e.key, e.domEvent))
     );
 
+    window.addEventListener(`autocomplete-status-${this.sessionId}`, this._onStatusChange);
+    this._disposables.push({
+      dispose: () => {
+        window.removeEventListener(`autocomplete-status-${this.sessionId}`, this._onStatusChange);
+      }
+    });
+
     // 拦截特定按键，当 Autocomplete 处于激活状态时阻止 Xterm 通过 PTY 传递给服务器
     terminal.attachCustomKeyEventHandler((e) => {
-      if (this.isActive) {
+      if (this.isActive && this._hasSuggestions) {
         if (e.key === "Tab" || e.key === "ArrowUp" || e.key === "ArrowDown") {
           if (e.type === "keydown") {
             const event = new CustomEvent("lazy-term-autocomplete-key", { 
@@ -166,14 +179,26 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
     this._lastX = x;
     this._lastY = y;
 
-    return { x, y };
+    return { 
+      x, 
+      y, 
+      parentHeight: this._cachedParentRect.height,
+      cellHeight: this._cachedCellHeight 
+    };
   }
 
   private _triggerSuggest(active: boolean) {
     this.isActive = active;
-    const rect = active ? this._getCursorPixelRect() : { x: 0, y: 0 };
+    const rect = active ? this._getCursorPixelRect() : { x: 0, y: 0, parentHeight: 0, cellHeight: 0 };
     window.dispatchEvent(new CustomEvent(`autocomplete-suggest-${this.sessionId}`, {
-      detail: { active, buffer: this.inputBuffer, x: rect.x, y: rect.y }
+      detail: { 
+        active, 
+        buffer: this.inputBuffer, 
+        x: rect.x, 
+        y: rect.y,
+        parentHeight: rect.parentHeight,
+        cellHeight: rect.cellHeight
+      }
     }));
   }
 

@@ -1,13 +1,15 @@
-# Lazy Term
+# LazyTerm
 
-Lazy Term 是一个基于 Tauri 2、React 19、TypeScript 和 Rust 的现代化桌面终端应用，提供本地终端、SSH 会话、RDP/VNC 远程桌面、会话树管理、SFTP 文件传输、可定制多面板布局和丰富的终端外观系统。
+LazyTerm 是一个基于 Tauri 2、React 19、TypeScript 和 Rust 的现代化桌面终端应用，提供本地终端、SSH 会话、RDP/VNC 远程桌面、串口连接、Telnet 连接、会话树管理、SFTP 文件传输、可定制多面板布局和丰富的终端外观系统。
 
 ## 功能概览
 
 ### 终端功能
 - **本地终端会话**：支持自定义工作目录、Shell 选择，以及 Windows 管理员模式启动
 - **SSH 会话**：支持密码和私钥认证，连接失败会给出明确错误提示，支持 SFTP 文件上传
-- **多标签页**：支持多会话标签、标签重排、批量关闭、异常断连后的恢复策略
+- **串口连接**：支持自定义波特率、数据位、校验位、停止位和流控方式
+- **Telnet 连接**：支持标准 Telnet 协议连接远程主机
+- **终端自动补全**：基于历史命令的智能补全提示，可在设置中开关
 
 ### 远程桌面
 - **RDP 会话**：支持内嵌 IronRDP 远程桌面渲染，以及通过 MsTscAx sidecar 实现原生 RDP 体验
@@ -21,20 +23,16 @@ Lazy Term 是一个基于 Tauri 2、React 19、TypeScript 和 Rust 的现代化�
 
 ### 界面定制
 - **多区域布局**：左侧、右侧、顶部、底部和中心终端区域均可配置，布局状态持久化到本地
-- **外观定制**：支持终端主题、字体、透明度、背景图片、背景模糊、UI 透明度和自定义 CSS
+- **外观定制**：支持终端主题（13 种预设 + 自定义配色）、字体、透明度、背景图片、背景模糊、UI 透明度和自定义 CSS
 - **无边框窗口**：现代化无边框设计，自定义标题栏支持拖拽和窗口控制
 
 ### 效率工具
 - **历史命令**：自动记录已执行的命令（最多 30 条），支持快速重用
 - **快捷命令**：支持自定义快捷命令列表，一键发送常用命令
 
-## 截图展示
-
-> 应用界面采用现代化设计，支持深色/浅色主题，可自由定制布局和外观。
-
 ## 技术架构
 
-Lazy Term 采用前后端分离架构：
+LazyTerm 采用前后端分离架构：
 
 - **前端**：React 19 + TypeScript，使用 Zustand 进行状态管理
 - **后端**：Rust + Tauri 2，实现各类协议的核心逻辑
@@ -46,7 +44,7 @@ Lazy Term 采用前后端分离架构：
 React UI → Zustand stores → Connector → Tauri IPC → Rust backend
 ```
 
-详细说明请参考 [架构文档 (architecture.md)](./docs/architecture.md) 以及 [终端双屏设计文档 (overview.md)](./docs/overview.md)。
+详细说明请参考 [架构文档 (architecture.md)](./docs/architecture.md)、[RDP Pipeline 对比](./docs/rdp-pipeline-comparison.md) 以及 [MsTscAx 原生宿主设计](./docs/msrdpax-native-host-design.md)。
 
 ## 目录结构
 
@@ -56,21 +54,40 @@ src/
     dialogs/       # 连接与布局相关弹窗
     layout/        # 左右顶部底部插槽与拖拽布局
     modules/       # 会话树、历史命令、快捷命令、标签栏等模块
-    terminal/      # xterm.js 终端视图
+    terminal/      # xterm.js 终端视图、RDP/VNC 视图
     ui/            # shadcn/ui 基础组件
-  config/          # 默认插槽配置、终端主题
-  connectors/      # 本地终端、SSH、RDP、VNC 连接器
+  config/          # 默认插槽配置、终端主题（13 种预设）
+  connectors/      # 本地终端、SSH、RDP、VNC、串口、Telnet 连接器
   hooks/           # 终端初始化与绑定逻辑
   services/        # Tauri IPC 服务封装
   store/           # Zustand 持久化状态
   types/           # TypeScript 类型定义
-  workers/         # Web Workers
+  lib/             # 工具函数（面板树操作、日志、拖拽状态等）
 
 src-tauri/
   src/
     protocol/      # 协议核心实现与 Tauri 命令
-    lib.rs         # 库入口
-    state.rs       # 全局状态
+      ssh.rs / ssh_auth.rs   # SSH 客户端与认证
+      rdp.rs / rdp_core.rs   # IronRDP 实现
+      native_rdp.rs          # MsTscAx 原生 RDP sidecar 管理
+      vnc.rs / vnc_core.rs   # VNC 客户端（LibVNCClient FFI）
+      vnc_client/            # VNC 客户端模块（回调、帧处理等）
+      vnc_ffi/               # LibVNCClient C FFI 绑定
+      serial.rs              # 串口连接
+      telnet.rs              # Telnet 连接
+      sftp.rs / sftp_utils.rs # SFTP 文件传输
+      terminal.rs            # 本地 PTY
+      mstsc.rs               # mstsc 外部启动
+      tls.rs                 # TLS 工具
+      updater.rs             # 自动更新
+    lib.rs         # 库入口、Tauri Builder（39+ 命令注册）
+    state.rs       # 全局状态（6 类会话 Map）
+    types.rs       # 共享数据结构
+    error.rs       # 错误定义
+    logging.rs     # 轻量日志器
+    utils.rs       # 工具函数
+  native/
+    msrdpax-host/  # Windows 原生 RDP sidecar（.NET WinForms）
   tauri.conf.json  # 桌面应用构建配置
 ```
 
@@ -79,15 +96,17 @@ src-tauri/
 ### 前置要求
 
 - Node.js 20+
-- npm 或 pnpm
-- Rust stable toolchain
+- npm
+- Rust stable toolchain (MSVC)
 - Tauri 2 构建依赖
 
 ### 平台依赖
 
 **Windows**：
 - WebView2
-- Visual Studio C++ Build Tools
+- Visual Studio 2022 C++ Build Tools
+- .NET SDK 8+（仅构建 msrdpax sidecar 时需要）
+- LibVNCClient（VNC 功能需要，参见 `scripts/setup-libvncserver-msvc.ps1`）
 
 **macOS**：
 - Xcode Command Line Tools
@@ -98,7 +117,7 @@ sudo apt update
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
-首次配置 Tauri 请参考 [官方文档](https://tauri.app/start/prerequisites/)。
+首次配置 Tauri 请参考 [官方文档](https://tauri.app/start/prerequisites/)。Windows 新机完整搭建流程参见 [环境搭建指南](./docs/windows-new-machine-setup.md)。
 
 ## 快速开始
 
@@ -124,7 +143,7 @@ npm run tauri:dev
 # 前端构建
 npm run build
 
-# 桌面应用打包
+# 桌面应用打包（自动更新版本号时间戳）
 npm run tauri:build
 ```
 
@@ -134,13 +153,20 @@ npm run tauri:build
 npm run lint
 ```
 
+### 可选：构建 msrdpax sidecar
+
+```bash
+npm run build:msrdpax-sidecar:debug
+npm run build:msrdpax-sidecar:release
+```
+
 ## 使用指南
 
 ### 首次使用
 
 1. 启动应用后，点击左侧会话树中的「本地终端」快速开始
 2. 在设置中调整终端外观、字体、主题等偏好
-3. 在会话树中右键添加 SSH/RDP/VNC 连接配置
+3. 在会话树中右键添加 SSH/RDP/VNC/串口/Telnet 连接配置
 
 ### 快捷键
 
@@ -169,15 +195,15 @@ npm run lint
 | `lazy-term-settings` | 终端和界面外观配置 |
 | `lazy-term-slot-config` | 布局插槽配置 |
 | `lazy-term-quick-commands` | 快捷命令列表 |
-| `lazy-term-tabs` | 标签页状态 |
+| `lazy-term-sessions` | 标签页与会话状态 |
 | `lazy-term-history` | 命令历史 |
-| `terminal-sessions-v10` | SSH/RDP/VNC 会话树配置 |
+| `terminal-sessions-v10` | SSH/RDP/VNC/串口/Telnet 会话树配置 |
 
 ### 数据存储位置
 
-- **Windows**：`%APPDATA%/Lazy Term/`
-- **macOS**：`~/Library/Application Support/Lazy Term/`
-- **Linux**：`~/.config/Lazy Term/`
+- **Windows**：`%APPDATA%/LazyTerm/`
+- **macOS**：`~/Library/Application Support/LazyTerm/`
+- **Linux**：`~/.config/LazyTerm/`
 
 ## 常见问题
 
@@ -192,8 +218,19 @@ npm run lint
 ### RDP 连接问题
 
 - **IronRDP 模式**：适用于标准 RDP 服务器，支持内嵌渲染
-- **Sidecar 模式**：需要 Windows 系统，调用 MsTscAx ActiveX 控件
+- **Sidecar 模式**（msrdpax）：需要 Windows 系统和 .NET 运行时，调用 MsTscAx ActiveX 控件
 - **mstsc 模式**：启动系统自带的远程桌面客户端
+
+### VNC 连接问题
+
+- Windows 下需要预先编译安装 LibVNCClient，可使用 `scripts/setup-libvncserver-msvc.ps1` 自动构建
+- 默认安装路径 `C:\dev\libvncserver\install` 可被自动检测
+
+### 串口连接失败
+
+- 确认设备已正确连接并被系统识别
+- 检查波特率、数据位等参数是否与设备匹配
+- 在连接对话框中可浏览可用串口列表
 
 ### 背景图发糊
 
@@ -216,30 +253,34 @@ npm run lint
 ## 开发约定
 
 - 前端状态统一放在 Zustand store 中，并使用 persist 中间件持久化
-- 终端连接统一走 `ITerminalConnector` 抽象，不要在 UI 层直接调用后端命令
+- 终端连接统一走 `ITerminalConnector` / `IRdpConnector` / `IVncConnector` 等抽象，不要在 UI 层直接调用后端命令
 - 修改终端尺寸、焦点和容器布局时，优先检查 `TerminalView`、`useTerminal` 以及 App 中的 CSS 变量同步逻辑
 - 增加新的 Tauri 命令后，别忘了同步检查权限配置与前端调用点
+- 新增协议的标准流程：`types/terminal.ts` 定义接口 → `connectors/` 实现连接器 → Rust 端 `protocol/` 添加命令 → `lib.rs` 注册
 
 ## 技术栈
 
 | 类别 | 技术 |
 |------|------|
 | 前端框架 | React 19 |
-| 开发语言 | TypeScript |
-| 构建工具 | Vite 6 |
+| 开发语言 | TypeScript 5.9 |
+| 构建工具 | Vite 7 |
 | 桌面框架 | Tauri 2 |
 | 后端语言 | Rust |
-| 状态管理 | Zustand |
-| 终端渲染 | xterm.js |
+| 状态管理 | Zustand 5 |
+| 终端渲染 | xterm.js 6 |
 | UI 组件 | shadcn/ui |
 | 样式方案 | Tailwind CSS v4 |
 | 图标库 | lucide-react |
 | 动画库 | framer-motion |
 | 拖拽库 | @dnd-kit |
+| React 优化 | React Compiler |
 
 ## 路线图
 
-- [ ] Telnet 协议支持
+- [x] Telnet 协议支持
+- [x] 串口连接支持
+- [x] 终端自动补全
 - [ ] 多套布局预设管理
 - [ ] 会话树云端同步
 - [ ] 会话录制与回放
@@ -267,3 +308,4 @@ npm run lint
 - [shadcn/ui](https://ui.shadcn.com/) - 高质量的 React 组件库
 - [russh](https://github.com/warp-tech/russh) - Rust SSH 客户端库
 - [ironrdp](https://github.com/Devolutions/IronRDP) - Rust RDP 实现
+- [LibVNCClient](https://github.com/LibVNC/libvncserver) - VNC 客户端 C 库
