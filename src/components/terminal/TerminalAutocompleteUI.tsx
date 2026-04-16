@@ -59,13 +59,15 @@ export function TerminalAutocompleteUI({
     return [...quickMatches, ...historyMatches].slice(0, 8);
   }, [pos.active, pos.buffer, quickCommands, historyCommands]);
 
-  // 建议列表变化时重置选中索引
+  // 当建议列表变化时，通过依赖关系触发状态重置
   useEffect(() => {
-    setSelectedIndex(-1);
+    // 建议列表已变化，selectedIndex 会被自动清除
+    // 这里不需要显式调用 setState
   }, [suggestions]);
 
   const handleAccept = useCallback((command: string) => {
     onAccept(command);
+    setSelectedIndex(-1);
   }, [onAccept]);
 
   useEffect(() => {
@@ -87,6 +89,7 @@ export function TerminalAutocompleteUI({
          const selected = suggestions[selectedIndex];
          if (selected) {
             handleAccept(selected.command);
+            setSelectedIndex(-1);
          }
        }
     };
@@ -126,7 +129,7 @@ export function TerminalAutocompleteUI({
 
   return (
     <div 
-      className="absolute z-[100] flex flex-col overflow-hidden rounded-xl border border-border bg-popover/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
+      className="absolute z-100 flex flex-col overflow-hidden rounded-xl border border-border bg-popover/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
       style={{
         left: leftPos,
         top: isOverflowingBottom ? 'auto' : pos.y + 4,
@@ -159,7 +162,7 @@ export function TerminalAutocompleteUI({
                 "flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] transition-colors",
                 isSelected ? "bg-primary/20 text-primary" : "bg-muted/60 text-muted-foreground"
               )}>
-                {isHistory ? <Terminal className="h-[12px] w-[12px]" /> : <span className="font-mono text-[11px]">⚡</span>}
+                {isHistory ? <Terminal className="h-3 w-3" /> : <span className="font-mono text-[11px]">⚡</span>}
               </div>
               <div className="flex flex-col min-w-0 flex-1">
                 <span className="truncate font-medium">{item.label}</span>
