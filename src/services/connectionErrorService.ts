@@ -1,5 +1,6 @@
 import type { SessionCreationData } from "@/connectors/ConnectorFactory";
 import { getErrorMessage } from "@/lib/errorUtils";
+import { tCurrent } from "@/i18n";
 
 /**
  * 连接错误展示信息
@@ -82,15 +83,15 @@ export function getConnectionErrorPresentation(
 export function getOpenFailureLogLabel(sessionType: SessionCreationData["type"]): string {
   switch (sessionType) {
     case "ssh":
-      return "[Tauri] SSH 会话创建失败:";
+      return tCurrent("[Tauri] SSH 会话创建失败:");
     case "rdp":
-      return "[Tauri] RDP 会话创建失败:";
+      return tCurrent("[Tauri] RDP 会话创建失败:");
     case "vnc":
-      return "[Tauri] VNC 会话创建失败:";
+      return tCurrent("[Tauri] VNC 会话创建失败:");
     case "local":
-      return "[Tauri] 终端进程创建失败:";
+      return tCurrent("[Tauri] 终端进程创建失败:");
     default:
-      return "[Tauri] 会话创建失败:";
+      return tCurrent("[Tauri] 会话创建失败:");
   }
 }
 
@@ -99,10 +100,10 @@ function buildRdpErrorPresentation(technicalDetails: string): ConnectionErrorPre
 
   if (normalized.includes("仅支持密码认证")) {
     return {
-      summary: "当前 RDP 连接只支持密码认证。",
+      summary: tCurrent("当前 RDP 连接只支持密码认证。"),
       guidance: [
-        "请填写密码后重新连接。",
-        "如果目标环境依赖其它认证方式，需要继续扩展后端认证支持。",
+        tCurrent("请填写密码后重新连接。"),
+        tCurrent("如果目标环境依赖其它认证方式，需要继续扩展后端认证支持。"),
       ],
       technicalDetails,
     };
@@ -110,10 +111,10 @@ function buildRdpErrorPresentation(technicalDetails: string): ConnectionErrorPre
 
   if (normalized.includes("lookup addr failed") || normalized.includes("socket address not found") || normalized.includes("invalid server name")) {
     return {
-      summary: "目标主机地址无法解析。",
+      summary: tCurrent("目标主机地址无法解析。"),
       guidance: [
-        "检查主机名或 IP 是否填写正确。",
-        "如果使用域名，确认本机 DNS 可以解析该地址。",
+        tCurrent("检查主机名或 IP 是否填写正确。"),
+        tCurrent("如果使用域名，确认本机 DNS 可以解析该地址。"),
       ],
       technicalDetails,
     };
@@ -122,22 +123,22 @@ function buildRdpErrorPresentation(technicalDetails: string): ConnectionErrorPre
   if (normalized.includes("tcp connect failed")) {
     if (normalized.includes("10061") || normalized.includes("actively refused")) {
       return {
-        summary: "目标主机拒绝了远程桌面连接。",
+        summary: tCurrent("目标主机拒绝了远程桌面连接。"),
         guidance: [
-          "确认目标主机已启用远程桌面服务。",
-          "确认端口填写正确，默认通常为 3389。",
-          "检查目标主机防火墙是否允许该端口。",
+          tCurrent("确认目标主机已启用远程桌面服务。"),
+          tCurrent("确认端口填写正确，默认通常为 3389。"),
+          tCurrent("检查目标主机防火墙是否允许该端口。"),
         ],
         technicalDetails,
       };
     }
 
     return {
-      summary: "无法连接到远程桌面主机。",
+      summary: tCurrent("无法连接到远程桌面主机。"),
       guidance: [
-        "确认目标主机在线且网络可达。",
-        "确认端口填写正确，默认通常为 3389。",
-        "检查防火墙、安全组或 NAT 转发是否放通该端口。",
+        tCurrent("确认目标主机在线且网络可达。"),
+        tCurrent("确认端口填写正确，默认通常为 3389。"),
+        tCurrent("检查防火墙、安全组或 NAT 转发是否放通该端口。"),
       ],
       technicalDetails,
     };
@@ -145,11 +146,11 @@ function buildRdpErrorPresentation(technicalDetails: string): ConnectionErrorPre
 
   if (normalized.includes("tls handshake") || normalized.includes("begin connection failed")) {
     return {
-      summary: "已连到目标端口，但远端没有完成远程桌面握手。",
+      summary: tCurrent("已连到目标端口，但远端没有完成远程桌面握手。"),
       guidance: [
-        "确认该端口对应的是 RDP 服务，而不是其它协议。",
-        "确认 Windows 远程桌面服务已启用。",
-        "如果经过代理或端口映射，确认它没有截断 TLS 或 RDP 协商。",
+        tCurrent("确认该端口对应的是 RDP 服务，而不是其它协议。"),
+        tCurrent("确认目标主机已启用远程桌面服务。"),
+        tCurrent("如果经过代理或端口映射，确认它没有截断 TLS 或 RDP 协商。"),
       ],
       technicalDetails,
     };
@@ -157,21 +158,21 @@ function buildRdpErrorPresentation(technicalDetails: string): ConnectionErrorPre
 
   if (normalized.includes("credssp") || normalized.includes("logon") || normalized.includes("authentication") || normalized.includes("finalize connection failed")) {
     return {
-      summary: "远程桌面握手已进入认证阶段，但认证或会话初始化没有通过。",
+      summary: tCurrent("远程桌面握手已进入认证阶段，但认证或会话初始化没有通过。"),
       guidance: [
-        "检查用户名、密码和域是否正确。",
-        "确认服务器允许该账号使用远程桌面登录。",
-        "如果服务器策略限制了 NLA 或加密方式，需要核对目标端配置。",
+        tCurrent("检查用户名、密码和域是否正确。"),
+        tCurrent("确认服务器允许该账号使用远程桌面登录。"),
+        tCurrent("如果服务器策略限制了 NLA 或加密方式，需要核对目标端配置。"),
       ],
       technicalDetails,
     };
   }
 
   return {
-    summary: "远程桌面连接未能建立。",
+    summary: tCurrent("远程桌面连接未能建立。"),
     guidance: [
-      "先确认地址、端口和账号配置正确。",
-      "再检查目标主机远程桌面服务和网络连通性。",
+      tCurrent("先确认地址、端口和账号配置正确。"),
+      tCurrent("再检查目标主机远程桌面服务和网络连通性。"),
     ],
     technicalDetails,
   };
@@ -179,10 +180,10 @@ function buildRdpErrorPresentation(technicalDetails: string): ConnectionErrorPre
 
 function buildSshErrorPresentation(technicalDetails: string): ConnectionErrorPresentation {
   return {
-    summary: "SSH 连接未能建立。",
+    summary: tCurrent("SSH 连接未能建立。"),
     guidance: [
-      "检查主机、端口和认证信息是否正确。",
-      "确认服务器 SSH 服务已启动且网络可达。",
+      tCurrent("检查主机、端口和认证信息是否正确。"),
+      tCurrent("确认服务器 SSH 服务已启动且网络可达。"),
     ],
     technicalDetails,
   };
@@ -193,10 +194,10 @@ function buildVncErrorPresentation(technicalDetails: string): ConnectionErrorPre
 
   if (normalized.includes("authentication") || normalized.includes("password") || normalized.includes("auth")) {
     return {
-      summary: "VNC 认证未通过。",
+      summary: tCurrent("VNC 认证未通过。"),
       guidance: [
-        "检查连接密码是否正确。",
-        "确认目标 VNC 服务端允许当前认证方式。",
+        tCurrent("检查连接密码是否正确。"),
+        tCurrent("确认目标 VNC 服务端允许当前认证方式。"),
       ],
       technicalDetails,
     };
@@ -204,21 +205,21 @@ function buildVncErrorPresentation(technicalDetails: string): ConnectionErrorPre
 
   if (normalized.includes("refused") || normalized.includes("10061")) {
     return {
-      summary: "目标主机拒绝了 VNC 连接。",
+      summary: tCurrent("目标主机拒绝了 VNC 连接。"),
       guidance: [
-        "确认目标主机已启动 VNC 服务。",
-        "确认端口填写正确，默认通常为 5900。",
-        "检查目标主机防火墙是否允许该端口。",
+        tCurrent("确认目标主机已启动 VNC 服务。"),
+        tCurrent("确认端口填写正确，默认通常为 5900。"),
+        tCurrent("检查目标主机防火墙是否允许该端口。"),
       ],
       technicalDetails,
     };
   }
 
   return {
-    summary: "VNC 连接未能建立。",
+    summary: tCurrent("VNC 连接未能建立。"),
     guidance: [
-      "检查目标主机、端口和密码是否正确。",
-      "确认网络可达，且目标 VNC 服务已启动。",
+      tCurrent("检查目标主机、端口和密码是否正确。"),
+      tCurrent("确认网络可达，且目标 VNC 服务已启动。"),
     ],
     technicalDetails,
   };
@@ -226,10 +227,10 @@ function buildVncErrorPresentation(technicalDetails: string): ConnectionErrorPre
 
 function buildLocalErrorPresentation(technicalDetails: string): ConnectionErrorPresentation {
   return {
-    summary: "本地终端启动失败。",
+    summary: tCurrent("本地终端启动失败。"),
     guidance: [
-      "检查默认 Shell 路径是否存在。",
-      "如果启用了管理员模式，确认当前系统允许内联提升。",
+      tCurrent("检查默认 Shell 路径是否存在。"),
+      tCurrent("如果启用了管理员模式，确认当前系统允许内联提升。"),
     ],
     technicalDetails,
   };

@@ -14,6 +14,7 @@ import { logger } from "@/lib/logger";
 import { RemoteDirSelector } from "./RemoteDirSelector";
 import type { SessionNode } from "@/store/ssh-profiles";
 import type { SSHConfig } from "@/types/terminal";
+import { useI18n } from "@/i18n";
 
 interface SftpLocalFile {
   path: string;
@@ -63,6 +64,7 @@ function Progress({ value, className }: { value: number; className?: string }) {
 }
 
 export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadDialogProps) {
+  const { t } = useI18n();
   const [remotePath, setRemotePath] = useState("");
   const [files, setFiles] = useState<SftpLocalFile[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -125,7 +127,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
       const toAdd = fileList.filter(f => !existing.has(f.path));
       const next = [...prev, ...toAdd];
       if (toAdd.length > 0) {
-        setMessage({ text: `已添加 ${toAdd.length} 个文件`, type: "info" });
+        setMessage({ text: t("已添加 {count} 个文件", { count: toAdd.length }), type: "info" });
       }
       return next;
     });
@@ -170,7 +172,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
     try {
       const selected = await openFileDialog({
         multiple: true,
-        title: "选择要上传的文件",
+        title: t("选择要上传的文件"),
       });
       
       if (!selected || (Array.isArray(selected) && selected.length === 0)) {
@@ -181,7 +183,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
       await addFilesFromPaths(paths);
     } catch (error) {
       logger.error("FE/sftp-dialog", "选择文件失败", error);
-      setMessage({ text: "选择文件失败", type: "error" });
+      setMessage({ text: t("选择文件失败"), type: "error" });
     }
   };
 
@@ -206,7 +208,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
 
     try {
       setUploading(true);
-      setMessage({ text: "正在准备上传...", type: "info" });
+      setMessage({ text: t("正在准备上传..."), type: "info" });
       setOverallSent(0);
       setOverallTotal(selectedTotal);
       setFileProgress({});
@@ -248,13 +250,13 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
         { scope: "FE/sftp-dialog/upload" }
       );
 
-      setMessage({ text: "上传完成", type: "success" });
+      setMessage({ text: t("上传完成"), type: "success" });
       setTimeout(() => {
         onOpenChange(false);
       }, 1000);
     } catch (error) {
       logger.error("FE/sftp-dialog", "上传失败", error);
-      setMessage({ text: `上传失败: ${error}`, type: "error" });
+      setMessage({ text: t("上传失败: {error}", { error: String(error) }), type: "error" });
     } finally {
       setUploading(false);
       if (progressUnlistenRef.current) {
@@ -274,7 +276,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
         { uploadId: currentUploadIdRef.current },
         { scope: "FE/sftp-dialog/cancel" }
       );
-      setMessage({ text: "已取消上传", type: "info" });
+      setMessage({ text: t("已取消上传"), type: "info" });
     } catch (error) {
       logger.error("FE/sftp-dialog", "取消上传失败", error);
     } finally {
@@ -291,7 +293,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
-            SFTP 文件上传
+            {t("SFTP 文件上传")}
             {targetNode && (
               <span className="text-sm font-normal text-muted-foreground">
                 - {targetNode.name}
@@ -304,16 +306,16 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
           {!isSshNode ? (
             <div className="flex items-center gap-2 text-amber-600 bg-amber-50 p-3 rounded-md">
               <AlertCircle className="h-4 w-4" />
-              <span className="text-sm">请选择一个 SSH 连接节点进行上传</span>
+              <span className="text-sm">{t("请选择一个 SSH 连接节点进行上传")}</span>
             </div>
           ) : (
             <>
               <div className="space-y-2">
-                <Label htmlFor="remote-path">远程路径</Label>
+                <Label htmlFor="remote-path">{t("远程路径")}</Label>
                 <div className="flex items-center gap-2">
                   <Input
                     id="remote-path"
-                    placeholder="例如: /home/user/uploads/"
+                    placeholder={t("例如: /home/user/uploads/")}
                     value={remotePath}
                     onChange={(e) => setRemotePath(e.target.value)}
                     disabled={uploading}
@@ -324,17 +326,17 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
                     onClick={() => setShowDirSelector(true)}
                     disabled={uploading}
                   >
-                    选择
+                    {t("选择")}
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  此路径将作为目标目录进行上传
+                  {t("此路径将作为目标目录进行上传")}
                 </p>
               </div>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>本地文件</Label>
+                  <Label>{t("本地文件")}</Label>
                   <Button
                     variant="outline"
                     size="sm"
@@ -342,7 +344,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
                     disabled={uploading}
                   >
                     <Folder className="h-4 w-4 mr-1" />
-                    选择文件
+                    {t("选择文件")}
                   </Button>
                 </div>
 
@@ -395,20 +397,20 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
                       "h-8 w-8 mx-auto mb-2 transition-all", 
                       isDragOver ? "text-primary opacity-100 scale-110" : "opacity-50"
                     )} />
-                    <p className="text-sm">{isDragOver ? "松开鼠标添加文件" : "点击\"选择文件\"或拖拽文件到这里"}</p>
+                    <p className="text-sm">{isDragOver ? t("松开鼠标添加文件") : t("点击“选择文件”或拖拽文件到这里")}</p>
                   </div>
                 )}
                 
                 {isDragOver && files.length > 0 && (
                   <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center border-primary border-2 border-dashed rounded-md z-10 pointer-events-none">
-                    <p className="text-sm font-medium text-primary">松开鼠标添加文件</p>
+                    <p className="text-sm font-medium text-primary">{t("松开鼠标添加文件")}</p>
                   </div>
                 )}
               </div>
 
               {files.length > 0 && (
                   <p className="text-xs text-muted-foreground text-right">
-                    共 {files.length} 个文件，总计 {formatBytes(selectedTotal)}
+                    {t("共 {count} 个文件，总计 {size}", { count: files.length, size: formatBytes(selectedTotal) })}
                   </p>
                 )}
               </div>
@@ -416,7 +418,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
               {uploading && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span>总体进度</span>
+                    <span>{t("总体进度")}</span>
                     <span>{formatBytes(overallSent)} / {formatBytes(overallTotal)}</span>
                   </div>
                   <Progress value={overallTotal > 0 ? (overallSent / overallTotal) * 100 : 0} />
@@ -442,19 +444,19 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
         <DialogFooter>
           {uploading ? (
             <Button variant="destructive" onClick={handleStop} disabled={stopping}>
-              {stopping ? "停止中..." : "停止上传"}
+              {stopping ? t("停止中...") : t("停止上传")}
             </Button>
           ) : (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
-                取消
+                {t("取消")}
               </Button>
               <Button
                 onClick={handleUpload}
                 disabled={!isSshNode || files.length === 0}
               >
                 <Upload className="h-4 w-4 mr-1" />
-                开始上传
+                {t("开始上传")}
               </Button>
             </>
           )}

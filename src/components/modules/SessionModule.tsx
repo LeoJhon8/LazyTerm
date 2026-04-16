@@ -34,6 +34,7 @@ import type { ShellInfo } from "@/types/shell";
 import { getAvailableShells } from "@/services/shellService";
 import { logger } from "@/lib/logger";
 import { useDialogState } from "@/hooks/useDialogState";
+import { useI18n } from "@/i18n";
 
 const IS_WINDOWS = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
 
@@ -145,6 +146,7 @@ function DraggableDroppableRow({
   overId: string | null;
   dropPos: DropPosition | null;
 }) {
+  const { t } = useI18n();
   const { toggleFolder } = useSshProfilesStore();
 
   const { attributes, listeners, setNodeRef: setDraggableRef, isDragging } = useDraggable({ 
@@ -178,45 +180,46 @@ function DraggableDroppableRow({
       <ContextMenuContent className="w-52 text-xs">
         {node.type === 'folder' ? (
           <>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-ssh', node)}><Server className="mr-2 h-4 w-4" /> 新建 SSH 连接</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-rdp', node)}><AppWindow className="mr-2 h-4 w-4" /> 新建 Windows 连接</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-vnc', node)}><ScreenShare className="mr-2 h-4 w-4" /> 新建 VNC 连接</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-serial', node)}><Usb className="mr-2 h-4 w-4" /> 新建串口连接</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-telnet', node)}><Terminal className="mr-2 h-4 w-4" /> 新建 Telnet 连接</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> 新建子文件夹</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-ssh', node)}><Server className="mr-2 h-4 w-4" /> {t("新建 SSH 连接")}</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-rdp', node)}><AppWindow className="mr-2 h-4 w-4" /> {t("新建 Windows 连接")}</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-vnc', node)}><ScreenShare className="mr-2 h-4 w-4" /> {t("新建 VNC 连接")}</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-serial', node)}><Usb className="mr-2 h-4 w-4" /> {t("新建串口连接（菜单）")}</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-telnet', node)}><Terminal className="mr-2 h-4 w-4" /> {t("新建 Telnet 连接（菜单）")}</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> {t("新建子文件夹")}</ContextMenuItem>
           </>
         ) : node.type === 'ssh' ? (
           <>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> 连接会话</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('sftp-upload', node)}><Upload className="mr-2 h-4 w-4" /> SFTP 上传文件</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> {t("连接会话")}</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('sftp-upload', node)}><Upload className="mr-2 h-4 w-4" /> {t("SFTP 上传文件")}</ContextMenuItem>
           </>
         ) : node.type === 'rdp' ? (
           <>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><AppWindow className="mr-2 h-4 w-4" /> 连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><AppWindow className="mr-2 h-4 w-4" /> {t("连接")}</ContextMenuItem>
           </>
         ) : node.type === 'serial' ? (
           <>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Usb className="mr-2 h-4 w-4" /> 连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Usb className="mr-2 h-4 w-4" /> {t("连接")}</ContextMenuItem>
           </>
         ) : node.type === 'telnet' ? (
           <>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> 连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> {t("连接")}</ContextMenuItem>
           </>
         ) : (
           <>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><ScreenShare className="mr-2 h-4 w-4" /> 连接</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><ScreenShare className="mr-2 h-4 w-4" /> {t("连接")}</ContextMenuItem>
           </>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" /> 编辑</ContextMenuItem>
-        {!node.isRoot && <ContextMenuItem onClick={() => onAction('delete', node)} className="py-1 text-xs text-destructive"><Trash2 className="mr-2 h-4 w-4" /> 删除</ContextMenuItem>}
+        <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" /> {t("编辑")}</ContextMenuItem>
+        {!node.isRoot && <ContextMenuItem onClick={() => onAction('delete', node)} className="py-1 text-xs text-destructive"><Trash2 className="mr-2 h-4 w-4" /> {t("删除")}</ContextMenuItem>}
       </ContextMenuContent>
     </ContextMenu>
   );
 }
 
 export function SessionModule() {
-  const { nodes, addFolder, addProfile, removeNode, updateNode, moveNode, ensureRoot } = useSshProfilesStore();
+  const { locale, t } = useI18n();
+  const { nodes, addFolder, addProfile, removeNode, updateNode, moveNode, ensureRoot, syncRootFolderName } = useSshProfilesStore();
   const { addTab, setActiveTabId, addSession } = useTabsStore();
 
   const launchWorkspaceWithSession = (sessionData: Parameters<typeof addSession>[0]) => {
@@ -245,10 +248,14 @@ export function SessionModule() {
 
   useEffect(() => { 
     ensureRoot(); 
+    syncRootFolderName();
+  }, [ensureRoot, syncRootFolderName, locale]);
+
+  useEffect(() => {
     getAvailableShells()
       .then(setAvailableShells)
       .catch(err => logger.error("FE/session-module/shells", "Failed to get available shells", {err}));
-  }, [ensureRoot]);
+  }, []);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
@@ -380,7 +387,7 @@ export function SessionModule() {
     <div className="module-shell">
       <div className="module-header group shrink-0 border-b-0">
         <div className="module-title min-w-0">
-          <span className="module-heading truncate text-[15px]">会话</span>
+          <span className="module-heading truncate text-[15px]">{t("会话")}</span>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -397,7 +404,7 @@ export function SessionModule() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="start" sideOffset={4} alignOffset={30} className="w-44 overflow-hidden">
-            <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase py-2 bg-muted/30">快速连接</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase py-2 bg-muted/30">{t("快速连接")}</DropdownMenuLabel>
             
             {availableShells.map((shell, index) => (
               <React.Fragment key={`${shell.path}-${index}`}>
@@ -410,31 +417,31 @@ export function SessionModule() {
                   {shell.name}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => launchWorkspaceWithSession({
-                  title: `${shell.name} (Admin)`,
+                  title: t("{name} (管理员)", { name: shell.name }),
                   type: "local",
                   config: { shell: shell.path, admin: true }
                 })}>
                   <ShieldAlert className="mr-2 h-4 w-4 text-amber-500" />
-                  {shell.name} 管理员
+                  {t("{name} 管理员", { name: shell.name })}
                 </DropdownMenuItem>
               </React.Fragment>
             ))}
 
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => dialog.open('directSsh')}>
-              <Server className="mr-2 h-4 w-4 text-emerald-500" /> SSH 连接
+              <Server className="mr-2 h-4 w-4 text-emerald-500" /> {t("SSH 连接")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => dialog.open('directRdp')}>
-              <AppWindow className="mr-2 h-4 w-4 text-sky-500" /> Windows 远程连接
+              <AppWindow className="mr-2 h-4 w-4 text-sky-500" /> {t("Windows 远程连接")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => dialog.open('directVnc')}>
-              <ScreenShare className="mr-2 h-4 w-4 text-emerald-500" /> VNC 连接
+              <ScreenShare className="mr-2 h-4 w-4 text-emerald-500" /> {t("VNC 连接")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => dialog.open('directSerial')}>
-              <Usb className="mr-2 h-4 w-4 text-purple-500" /> 串口连接
+              <Usb className="mr-2 h-4 w-4 text-purple-500" /> {t("串口连接")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => dialog.open('directTelnet')}>
-              <Terminal className="mr-2 h-4 w-4 text-emerald-500" /> Telnet 连接
+              <Terminal className="mr-2 h-4 w-4 text-emerald-500" /> {t("Telnet 连接")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -494,21 +501,21 @@ export function SessionModule() {
       {/* 文件夹弹窗 */}
       <Dialog open={dialog.isOpen('folder')} onOpenChange={() => dialog.close()}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{editNode ? "重命名" : "新建文件夹"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editNode ? t("重命名") : t("新建文件夹")}</DialogTitle></DialogHeader>
           <Input 
             value={tempName} 
             onChange={(e) => setTempName(e.target.value)} 
-            placeholder="请输入名称" 
+            placeholder={t("请输入名称")}
             autoFocus 
             onKeyDown={e => e.key === 'Enter' && (editNode ? updateNode(editNode.id, { name: tempName }) : targetNode && addFolder(tempName, targetNode.id), dialog.close(), setTempName(""))}
           />
           <DialogFooter>
-            <Button variant="ghost" onClick={() => dialog.close()}>取消</Button>
+            <Button variant="ghost" onClick={() => dialog.close()}>{t("取消")}</Button>
             <Button onClick={() => {
               if (editNode) updateNode(editNode.id, { name: tempName });
               else if (targetNode) addFolder(tempName, targetNode.id);
               dialog.close(); setTempName("");
-            }}>确定</Button>
+            }}>{t("确定")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -647,17 +654,17 @@ export function SessionModule() {
       <AlertDialog open={dialog.isOpen('delete')} onOpenChange={() => dialog.close()}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认删除 "{targetNode?.name}"？</AlertDialogTitle>
+            <AlertDialogTitle>{t("确认删除 “{name}”？", { name: targetNode?.name ?? "" })}</AlertDialogTitle>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => dialog.close()}>取消</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => dialog.close()}>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive" onClick={() => { 
               if (targetNode) {
                 removeNode(targetNode.id);
               }
               dialog.close(); 
             }}>
-              删除
+              {t("删除")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

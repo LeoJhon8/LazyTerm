@@ -3,6 +3,7 @@ import { useHistoryStore } from "@/store/history";
 import { useQuickCommandsStore } from "@/store/quick-commands";
 import { cn } from "@/lib/utils";
 import { Terminal } from "lucide-react";
+import { useI18n } from "@/i18n";
 
 export interface AutocompletePos {
   active: boolean;
@@ -20,6 +21,7 @@ export function TerminalAutocompleteUI({
   sessionId: string, 
   onAccept: (text: string) => void 
 }) {
+  const { t } = useI18n();
   const [pos, setPos] = useState<AutocompletePos>({ active: false, buffer: "", x: 0, y: 0 });
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { commands: historyCommands } = useHistoryStore();
@@ -124,7 +126,7 @@ export function TerminalAutocompleteUI({
       }}
     >
       <div className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-widest bg-muted/40 border-b border-border flex items-center justify-between">
-        <span>智能提示</span>
+        <span>{t("智能提示")}</span>
         <span className="text-[9px] opacity-40 font-mono lowercase">Tab / Enter</span>
       </div>
       <div className="flex flex-col py-1">

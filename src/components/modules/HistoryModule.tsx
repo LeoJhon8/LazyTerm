@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Trash2, Search, X } from "lucide-react";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
+import { useI18n } from "@/i18n";
 
 function isTerminalConnector(connector: SessionConnector | undefined): connector is ITerminalConnector {
   return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
 }
 
 export function HistoryModule() {
+  const { t } = useI18n();
   const { focusSessionId } = useTabsStore();
   const commands = useHistoryStore((state) => state.commands);
   const clearCommands = useHistoryStore((state) => state.clearCommands);
@@ -42,7 +44,7 @@ export function HistoryModule() {
       <div className="module-header shrink-0 border-b-0">
         <div className="module-title overflow-hidden">
           <div className="module-title-text overflow-hidden">
-            <span className="module-heading truncate text-[15px]">历史命令</span>
+            <span className="module-heading truncate text-[15px]">{t("历史命令")}</span>
           </div>
         </div>
         {commands.length > 0 && (
@@ -51,7 +53,7 @@ export function HistoryModule() {
             size="sm"
             className="h-8 w-8 rounded-xl p-0 text-muted-foreground transition-colors hover:text-destructive"
             onClick={() => clearCommands()}
-            title="清空所有历史"
+            title={t("清空所有历史")}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
@@ -63,7 +65,7 @@ export function HistoryModule() {
         <div className="relative group">
             <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors" />
           <Input
-            placeholder="搜索历史记录..."
+            placeholder={t("搜索历史记录...")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
               className="h-7 rounded-none border-border/70 bg-background/72 pl-8 text-[10px]"
@@ -80,9 +82,9 @@ export function HistoryModule() {
                 <div className="module-empty-card">
                   <Search className="h-5 w-5" />
                   <p className="text-sm font-medium text-foreground">
-                    {searchQuery ? "未找到匹配命令" : "暂无历史记录"}
+                    {searchQuery ? t("未找到匹配命令") : t("暂无历史记录")}
                   </p>
-                  <p className="text-xs">按回车执行的命令会自动记录到这里。</p>
+                  <p className="text-xs">{t("按回车执行的命令会自动记录到这里。")}</p>
                 </div>
               </div>
             ) : (
@@ -91,7 +93,7 @@ export function HistoryModule() {
                   key={cmd.id}
                   className="group relative flex h-7 w-full items-center gap-1 overflow-hidden border-y border-transparent bg-transparent px-3 py-0.5 transition-colors hover:border-border/60 hover:bg-background/40"
                   onClick={() => sendCommand(cmd.command)}
-                  title={`点击执行: ${cmd.command}`}
+                  title={t("点击执行: {command}", { command: cmd.command })}
                 >
                   {/* 命令文本：w-0 flex-1 配合 truncate 确保不撑开容器 */}
                   <div className="w-0 flex-1">
@@ -110,7 +112,7 @@ export function HistoryModule() {
                         e.stopPropagation(); // 阻止触发整行的 sendCommand
                         removeCommand(cmd.id);
                       }}
-                      title="删除此条"
+                      title={t("删除此条")}
                     >
                       <X className="h-3 w-3" />
                     </Button>

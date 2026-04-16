@@ -19,6 +19,7 @@ import {
 import type { SerialConfig } from "@/types/terminal";
 import { invokeTauri } from "@/services/tauri";
 import { logger } from "@/lib/logger";
+import { useI18n } from "@/i18n";
 
 interface SerialConnectDialogProps {
   open: boolean;
@@ -45,6 +46,7 @@ export function SerialConnectDialog({
   initialConfig,
   isDirect,
 }: SerialConnectDialogProps) {
+  const { t } = useI18n();
   const [config, setConfig] = useState<SerialConfig>(initialConfig || DEFAULT_CONFIG);
   const [availablePorts, setAvailablePorts] = useState<string[]>([]);
   const [loadingPorts, setLoadingPorts] = useState(false);
@@ -90,25 +92,25 @@ export function SerialConnectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>{isDirect ? "串口连接" : initialConfig ? "编辑串口配置" : "新建串口连接"}</DialogTitle>
+          <DialogTitle>{isDirect ? t("串口连接") : initialConfig ? t("编辑串口配置") : t("新建串口连接")}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="nickname" className="text-right text-[13px]">
-              名称
+              {t("名称")}
             </Label>
             <Input
               id="nickname"
               value={config.nickname || ""}
               onChange={(e) => setConfig({ ...config, nickname: e.target.value })}
               className="col-span-3 text-[13px]"
-              placeholder="可选的备注名称"
+              placeholder={t("可选的备注名称")}
             />
           </div>
 
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="port" className="text-right text-[13px]">
-              端口
+              {t("端口")}
             </Label>
             <div className="col-span-3 flex gap-2">
                 <Input
@@ -117,7 +119,7 @@ export function SerialConnectDialog({
                   value={config.port}
                   onChange={(e) => setConfig({...config, port: e.target.value})}
                   className="w-full text-[13px]"
-                  placeholder={loadingPorts ? "加载中..." : "选择或输入串口 (例: COM10)"}
+                  placeholder={loadingPorts ? t("加载中...") : t("选择或输入串口 (例: COM10)")}
                 />
                 <datalist id="serial-ports-list">
                   {availablePorts.map((p) => (
@@ -127,7 +129,7 @@ export function SerialConnectDialog({
                     <option value={config.port} />
                   )}
                 </datalist>
-                <Button type="button" variant="outline" size="icon" onClick={(e) => { e.preventDefault(); e.stopPropagation(); loadPorts(); }} title="刷新端口列表" className="shrink-0 h-9 w-9">
+                <Button type="button" variant="outline" size="icon" onClick={(e) => { e.preventDefault(); e.stopPropagation(); loadPorts(); }} title={t("刷新端口列表")} className="shrink-0 h-9 w-9">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-rotate-cw cursor-pointer"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
                 </Button>
             </div>
@@ -135,7 +137,7 @@ export function SerialConnectDialog({
 
           <div className="grid grid-cols-4 items-center gap-4">
              <Label htmlFor="baudRate" className="text-right text-[13px]">
-               波特率
+               {t("波特率")}
              </Label>
              <Select
                 value={config.baudRate.toString()}
@@ -154,7 +156,7 @@ export function SerialConnectDialog({
 
           <div className="grid grid-cols-4 items-center gap-4">
              <Label htmlFor="dataBits" className="text-right text-[13px]">
-               数据位
+               {t("数据位")}
              </Label>
              <Select
                 value={config.dataBits.toString()}
@@ -173,7 +175,7 @@ export function SerialConnectDialog({
           
           <div className="grid grid-cols-4 items-center gap-4">
              <Label htmlFor="stopBits" className="text-right text-[13px]">
-               停止位
+               {t("停止位")}
              </Label>
              <Select
                 value={config.stopBits.toString()}
@@ -192,7 +194,7 @@ export function SerialConnectDialog({
 
           <div className="grid grid-cols-4 items-center gap-4">
              <Label htmlFor="parity" className="text-right text-[13px]">
-               校验位
+               {t("校验位")}
              </Label>
              <Select
                 value={config.parity}
@@ -211,7 +213,7 @@ export function SerialConnectDialog({
           
           <div className="grid grid-cols-4 items-center gap-4">
              <Label htmlFor="flowControl" className="text-right text-[13px]">
-               流控
+               {t("流控")}
              </Label>
              <Select
                 value={config.flowControl}
@@ -231,10 +233,10 @@ export function SerialConnectDialog({
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            取消
+            {t("取消")}
           </Button>
           <Button onClick={handleSave} disabled={!config.port}>
-            {isDirect ? "连接" : "保存"}
+            {isDirect ? t("连接") : t("保存")}
           </Button>
         </DialogFooter>
       </DialogContent>

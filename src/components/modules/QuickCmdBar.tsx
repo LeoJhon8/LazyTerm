@@ -36,6 +36,7 @@ import {
   horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useI18n } from "@/i18n";
 
 // 可排序的快捷命令按钮组件
 function SortableQuickCommand({
@@ -51,6 +52,7 @@ function SortableQuickCommand({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useI18n();
   const {
     attributes,
     listeners,
@@ -75,7 +77,9 @@ function SortableQuickCommand({
             size="sm"
             className="command-card h-full rounded-none px-3 text-xs shadow-none"
             onClick={onClick}
-            title={`命令：${cmd.command.split('\n')[0].substring(0, 30)}${cmd.command.length > 30 ? '...' : ''}`}
+            title={t("命令：{command}", {
+              command: `${cmd.command.split("\n")[0].substring(0, 30)}${cmd.command.length > 30 ? "..." : ""}`,
+            })}
             disabled={isDragging}
             {...attributes}
             {...listeners}
@@ -88,14 +92,14 @@ function SortableQuickCommand({
         <ContextMenuContent className="min-w-28 text-xs">
           <ContextMenuItem className="py-1 text-xs" onClick={onEdit}>
             <Pencil className="mr-2 h-4 w-4" />
-            编辑
+            {t("编辑")}
           </ContextMenuItem>
           <ContextMenuItem className="py-1 text-xs" onClick={onDelete}>
             <Trash2 className="mr-2 h-4 w-4" />
-            删除
+            {t("删除")}
           </ContextMenuItem>
           <ContextMenuItem className="py-1 text-xs" onClick={onContextMenu}>
-            发送到所有标签页
+            {t("发送到所有标签页")}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -104,6 +108,7 @@ function SortableQuickCommand({
 }
 
 export function QuickCmdBar() {
+  const { t } = useI18n();
   const { commands, addCommand, removeCommand, updateCommand, reorderCommands } = useQuickCommandsStore();
   const { focusSessionId, sessions, getAllConnectors } = useTabsStore();
   const [configOpen, setConfigOpen] = useState(false);
@@ -214,7 +219,7 @@ export function QuickCmdBar() {
 
   return (
     <div className="quickcmd-surface">
-      <div className="quickcmd-leading-icon" aria-label="快捷命令栏" title="快捷命令栏">
+      <div className="quickcmd-leading-icon" aria-label={t("快捷命令栏")} title={t("快捷命令栏")}>
         <Play className="h-3 w-3 fill-current" />
       </div>
 
@@ -234,7 +239,7 @@ export function QuickCmdBar() {
           >
             {sortedCommands.length === 0 ? (
               <div className="flex h-full items-center border border-dashed border-border/70 px-4 text-xs text-muted-foreground">
-                暂无快捷命令，点击右侧加号创建常用操作。
+                {t("暂无快捷命令，点击右侧加号创建常用操作。")}
               </div>
             ) : (
               sortedCommands.map((cmd) => (
@@ -262,7 +267,7 @@ export function QuickCmdBar() {
         
         <DialogContent className="sm:max-w-150">
           <DialogHeader>
-            <DialogTitle>{editingCmd ? '编辑快捷命令' : '添加快捷命令'}</DialogTitle>
+            <DialogTitle>{editingCmd ? t("编辑快捷命令") : t("添加快捷命令")}</DialogTitle>
           </DialogHeader>
           
           <QuickCommandForm 
@@ -292,6 +297,7 @@ function QuickCommandForm({
   onClose: () => void;
   editingCmd?: QuickCommand | null;
 }) {
+  const { t } = useI18n();
   const [label, setLabel] = useState(editingCmd?.label || "");
   const [command, setCommand] = useState(editingCmd?.command || "");
   const [editingId, setEditingId] = useState<string | null>(editingCmd?.id || null);
@@ -332,22 +338,22 @@ function QuickCommandForm({
       {/* 添加/编辑命令表单 */}
       <form onSubmit={handleSubmit} className="space-y-3">
         <div className="space-y-2">
-          <Label htmlFor="label">名称</Label>
+          <Label htmlFor="label">{t("名称")}</Label>
           <Input
             id="label"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="如：清屏"
+            placeholder={t("如：清屏")}
           />
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="command">命令</Label>
+          <Label htmlFor="command">{t("命令")}</Label>
           <Textarea
             id="command"
             value={command}
             onChange={(e) => setCommand(e.target.value)}
-            placeholder={`输入命令，支持换行&#10;例如：&#10;cd project&#10;npm install&#10;&#10;提示：有几个换行，就会触发几次执行；最后一行没有换行时，只会输入不会执行`}
+            placeholder={t("输入命令，支持换行\n例如：\ncd project\nnpm install\n\n提示：有几个换行，就会触发几次执行；最后一行没有换行时，只会输入不会执行")}
             rows={6}
           />
         </div>
@@ -355,7 +361,7 @@ function QuickCommandForm({
         <div className="flex gap-2">
           <Button type="submit" size="sm" className="flex-1">
             <Plus className="h-4 w-4 mr-1" />
-            {editingId ? "更新命令" : "添加命令"}
+            {editingId ? t("更新命令") : t("添加命令")}
           </Button>
           {editingId && (
             <Button 
@@ -367,7 +373,7 @@ function QuickCommandForm({
                 onClose();
               }}
             >
-              取消
+              {t("取消")}
             </Button>
           )}
         </div>
@@ -375,7 +381,7 @@ function QuickCommandForm({
 
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={onClose}>
-          关闭
+          {t("关闭")}
         </Button>
       </div>
     </div>

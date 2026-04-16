@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig } from "@/types/terminal";
+import { getSystemLanguage, resolveAppLocale, type AppLocale } from "@/i18n/config";
+import { useSettingsStore } from "@/store/settings";
 
 export type NodeType = "folder" | "ssh" | "rdp" | "vnc" | "serial" | "telnet";
 
@@ -46,6 +48,7 @@ function normalizeNodes(nodes: SessionNode[]): SessionNode[] {
 interface SSHProfilesState {
   nodes: SessionNode[];
   ensureRoot: () => void;
+  syncRootFolderName: () => void;
   addFolder: (name: string, parentId: string) => void;
   addProfile: (type: "ssh" | "rdp" | "vnc" | "serial" | "telnet", cfg: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig, parentId: string) => void;
   updateNode: (id: string, updates: Partial<SessionNode>) => void;
@@ -65,6 +68,20 @@ const isDescendant = (nodes: SessionNode[], parentId: string, targetId: string):
   return false;
 };
 
+const DEFAULT_ROOT_FOLDER_NAMES: Record<AppLocale, string> = {
+  "zh-CN": "我的会话",
+  "en-US": "My sessions",
+};
+
+const DEFAULT_ROOT_FOLDER_NAME_ALIASES = new Set(Object.values(DEFAULT_ROOT_FOLDER_NAMES));
+
+function getDefaultRootFolderName(locale?: AppLocale): string {
+  const resolvedLocale = locale
+    ?? resolveAppLocale(useSettingsStore.getState().language, getSystemLanguage());
+
+  return DEFAULT_ROOT_FOLDER_NAMES[resolvedLocale];
+}
+
 export const useSshProfilesStore = create<SSHProfilesState>()(
   persist(
     (set, get) => ({
@@ -73,9 +90,31 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
       ensureRoot: () => {
         const { nodes } = get();
         if (nodes.length === 0) {
-          set({ nodes: [{ id: "root-folder", type: "folder", name: "我的会话", parentId: null, isExpanded: true, isRoot: true, order: 0 }] });
+          set({ nodes: [{ id: "root-folder", type: "folder", name: getDefaultRootFolderName(), parentId: null, isExpanded: true, isRoot: true, order: 0 }] });
         }
       },
+
+      syncRootFolderName: () => set((state) => {
+        const rootNode = state.nodes.find((node) => node.isRoot || node.parentId === null);
+        if (!rootNode) {
+          return state;
+        }
+
+        if (!DEFAULT_ROOT_FOLDER_NAME_ALIASES.has(rootNode.name)) {
+          return state;
+        }
+
+        const nextName = getDefaultRootFolderName();
+        if (rootNode.name === nextName) {
+          return state;
+        }
+
+        return {
+          nodes: state.nodes.map((node) =>
+            node.id === rootNode.id ? { ...node, name: nextName } : node
+          ),
+        };
+      }),
 
       addFolder: (name, parentId) => set((state) => {
         const siblings = state.nodes.filter(n => n.parentId === parentId);
@@ -171,7 +210,7 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
         
         if (!root) {
           root = { 
-            id: "root-folder", type: "folder", name: "我的会话", 
+            id: "root-folder", type: "folder", name: getDefaultRootFolderName(),
             parentId: null, isExpanded: true, isRoot: true, order: 0 
           };
           validProfiles.unshift(root);

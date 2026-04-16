@@ -32,6 +32,7 @@ import type { TerminalColorScheme } from "@/config/themes";
 import { TERMINAL_THEMES } from "@/config/themes";
 import { FileJson, Upload, Trash2, ImagePlus, X, Palette, LayoutPanelLeft, Database, Terminal, Plus, Info, CloudDownload, RefreshCw } from "lucide-react";
 import { useEffect as useMountedEffect } from "react";
+import { APP_LANGUAGE_OPTIONS, getModuleDisplayName, getTerminalThemeDisplayName, useI18n, type TranslationKey } from "@/i18n";
 
 // 引入 Tauri 原生 API
 import { save, open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -87,19 +88,19 @@ type EditableThemeColorKey = keyof Pick<
   | "white"
 >;
 
-const EDITABLE_THEME_COLOR_ITEMS: Array<{ key: EditableThemeColorKey; label: string }> = [
+const EDITABLE_THEME_COLOR_ITEMS: Array<{ key: EditableThemeColorKey; label: TranslationKey }> = [
   { key: "background", label: "背景色" },
   { key: "foreground", label: "前景色" },
   { key: "cursor", label: "光标颜色" },
   { key: "selectionBackground", label: "选区背景" },
-  { key: "black", label: "Black" },
-  { key: "red", label: "Red" },
-  { key: "green", label: "Green" },
-  { key: "yellow", label: "Yellow" },
-  { key: "blue", label: "Blue" },
-  { key: "magenta", label: "Magenta" },
-  { key: "cyan", label: "Cyan" },
-  { key: "white", label: "White" },
+  { key: "black", label: "黑色" },
+  { key: "red", label: "红色" },
+  { key: "green", label: "绿色" },
+  { key: "yellow", label: "黄色" },
+  { key: "blue", label: "蓝色" },
+  { key: "magenta", label: "洋红" },
+  { key: "cyan", label: "青色" },
+  { key: "white", label: "白色" },
 ];
 
 interface SlotSettingsProps {
@@ -114,6 +115,7 @@ import { getAvailableShells } from "@/services/shellService";
 
 // --- 子组件 1：主题与外观设置 ---
 function ThemeSettings() {
+  const { language, locale, setLanguage, t } = useI18n();
   const appBackgroundColor = useSettingsStore((state) => state.appBackgroundColor);
   const fontSize = useSettingsStore((state) => state.fontSize);
   const fontFamily = useSettingsStore((state) => state.fontFamily);
@@ -131,10 +133,10 @@ function ThemeSettings() {
   const handlePickBackgroundImage = async () => {
     try {
       const selected = await openDialog({
-        title: "选择背景图片",
+        title: t("选择背景图片"),
         multiple: false,
         filters: [
-          { name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"] },
+          { name: t("图片"), extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"] },
         ],
       });
       if (selected) {
@@ -164,10 +166,34 @@ function ThemeSettings() {
       <div className="space-y-8 pb-10 px-1">
 
         {/* ======================= */}
+        {/* 0. 语言 */}
+        {/* ======================= */}
+        <div className="space-y-4">
+          <Label className="text-base font-semibold">{t("界面语言")}</Label>
+          <Select value={language} onValueChange={(value) => setLanguage(value as typeof language)}>
+            <SelectTrigger className="h-9 bg-background focus:ring-primary/50 transition-shadow">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {APP_LANGUAGE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {t(option.labelKey)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {t("初步提供中文和英文界面，默认跟随系统语言。")}
+          </p>
+        </div>
+
+        <Separator className="bg-muted/60" />
+
+        {/* ======================= */}
         {/* 1. 配色方案 */}
         {/* ======================= */}
         <div className="flex flex-col gap-3.5">
-          <Label className="text-base font-semibold">整体配色方案</Label>
+          <Label className="text-base font-semibold">{t("整体配色方案")}</Label>
           <div className="flex flex-wrap gap-3 items-center">
             {APP_BACKGROUND_OPTIONS.map(opt => (
               <Button
@@ -200,7 +226,7 @@ function ThemeSettings() {
                   
                   setSettings(updates);
                 }}
-              >{opt.label}</Button>
+              >{opt.value === "system" ? t("跟随系统") : opt.value === "light" ? t("浅色") : t("深色")}</Button>
             ))}
           </div>
         </div>
@@ -211,10 +237,10 @@ function ThemeSettings() {
         {/* 2. 字体设置 */}
         {/* ======================= */}
         <div className="space-y-4">
-          <Label className="text-base font-semibold">字体设置</Label>
+          <Label className="text-base font-semibold">{t("字体设置")}</Label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
             <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">字体族</Label>
+              <Label className="text-sm text-muted-foreground">{t("字体族")}</Label>
               <Select value={fontFamily} onValueChange={(v) => setSettings({ fontFamily: v })}>
                 <SelectTrigger className="h-9 bg-background focus:ring-primary/50 transition-shadow">
                   <SelectValue />
@@ -222,7 +248,9 @@ function ThemeSettings() {
                 <SelectContent>
                   {FONT_OPTIONS.map((f) => (
                     <SelectItem key={f.value} value={f.value} className="cursor-pointer">
-                      <span style={{ fontFamily: f.value }}>{f.label}</span>
+                      <span style={{ fontFamily: f.value }}>
+                        {f.value === "monospace" ? t("系统等宽字体") : f.label}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -231,7 +259,7 @@ function ThemeSettings() {
 
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label className="text-sm text-muted-foreground">字体大小</Label>
+                <Label className="text-sm text-muted-foreground">{t("字体大小")}</Label>
                 <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-mono font-medium">{fontSize}px</span>
               </div>
               <input type="range" min="10" max="24" step="1" value={fontSize} onChange={(e) => setSettings({ fontSize: parseInt(e.target.value) })} className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary" />
@@ -246,9 +274,9 @@ function ThemeSettings() {
         {/* ======================= */}
         <div className="space-y-5">
           <div className="flex justify-between items-center">
-            <Label className="text-base font-semibold">终端主题</Label>
+            <Label className="text-base font-semibold">{t("终端主题")}</Label>
             <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-              已根据{isDarkApp ? '深色' : '浅色'}模式自动过滤
+              {t("已根据{mode}模式自动过滤", { mode: isDarkApp ? t("深色") : t("浅色") })}
             </span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -267,8 +295,8 @@ function ThemeSettings() {
                   color: resolvePreviewColor(scheme.foreground, 'var(--foreground)'),
                 }}
               >
-                <div className="text-sm font-medium mb-1 truncate">{scheme.label}</div>
-                <div className="text-[11px] opacity-80 mb-2 truncate">Aa 文本预览</div>
+                <div className="text-sm font-medium mb-1 truncate">{getTerminalThemeDisplayName(scheme.name, scheme.label, locale)}</div>
+                <div className="text-[11px] opacity-80 mb-2 truncate">{t("Aa 文本预览")}</div>
                 <div
                   className="rounded p-1.5 flex flex-wrap items-center gap-1 border"
                   style={{
@@ -303,11 +331,11 @@ function ThemeSettings() {
           {/* 自定义颜色配置区域 */}
           {terminalColorScheme === "custom" && (
             <div className="p-4 bg-muted/20 border rounded-lg space-y-4">
-              <Label className="text-sm font-semibold">自定义配色详情</Label>
+              <Label className="text-sm font-semibold">{t("自定义配色详情")}</Label>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                 {EDITABLE_THEME_COLOR_ITEMS.map((item) => (
                   <div key={item.key} className="flex flex-col gap-1.5">
-                    <Label className="text-xs text-muted-foreground">{item.label}</Label>
+                    <Label className="text-xs text-muted-foreground">{t(item.label)}</Label>
                     <div className="flex items-center gap-2">
                       <input
                         type="color"
@@ -332,14 +360,14 @@ function ThemeSettings() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4">
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label className="text-sm text-muted-foreground">终端背景不透明度</Label>
+                <Label className="text-sm text-muted-foreground">{t("终端背景不透明度")}</Label>
                 <span className="text-xs font-mono text-muted-foreground">{terminalOpacity}%</span>
               </div>
               <input type="range" min="0" max="100" step="5" value={terminalOpacity} onChange={(e) => setSettings({ terminalOpacity: parseInt(e.target.value) })} className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary" />
             </div>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label className="text-sm text-muted-foreground">UI 侧栏不透明度</Label>
+                <Label className="text-sm text-muted-foreground">{t("UI 侧栏不透明度")}</Label>
                 <span className="text-xs font-mono text-muted-foreground">{uiOpacity}%</span>
               </div>
               <input type="range" min="30" max="100" step="5" value={uiOpacity} onChange={(e) => setSettings({ uiOpacity: parseInt(e.target.value) })} className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary" />
@@ -354,64 +382,64 @@ function ThemeSettings() {
         {/* ======================= */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <Label className="text-base font-semibold">背景图片</Label>
+            <Label className="text-base font-semibold">{t("背景图片")}</Label>
             <div className="flex items-center gap-2">
               <Checkbox
                 id="enable-bg-img"
                 checked={backgroundImageEnabled}
                 onCheckedChange={(c) => setSettings({ backgroundImageEnabled: !!c })}
               />
-              <Label htmlFor="enable-bg-img" className="text-sm font-medium cursor-pointer">开启图片背景</Label>
+              <Label htmlFor="enable-bg-img" className="text-sm font-medium cursor-pointer">{t("开启图片背景")}</Label>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" onClick={handlePickBackgroundImage} disabled={!backgroundImageEnabled}>
-              <ImagePlus className="h-4 w-4 mr-2" />选择图片
+              <ImagePlus className="h-4 w-4 mr-2" />{t("选择")}
             </Button>
             {backgroundImageEnabled && backgroundImage && (
               <Button variant="ghost" size="sm" onClick={() => setSettings({ backgroundImage: "", backgroundImagePath: "" })}>
-                <X className="h-4 w-4 mr-1" />清除
+                <X className="h-4 w-4 mr-1" />{t("清除")}
               </Button>
             )}
             <span 
               className="text-xs text-muted-foreground truncate flex-1 min-w-0"
-              title={backgroundImageEnabled ? (backgroundImagePath || backgroundImage || "未选择图片") : "图片背景未开启"}
+              title={backgroundImageEnabled ? (backgroundImagePath || backgroundImage || t("未选择图片")) : t("图片背景未开启")}
             >
-              {!backgroundImageEnabled ? "图片背景未开启" : (backgroundImagePath || backgroundImage || "未选择图片")}
+              {!backgroundImageEnabled ? t("图片背景未开启") : (backgroundImagePath || backgroundImage || t("未选择图片"))}
             </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-2">
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-sm text-muted-foreground">界面呈现 / UI Mode</Label>
+              <Label className="text-sm text-muted-foreground">{t("界面呈现 / UI Mode")}</Label>
               <Select
                 value={backgroundImageUiMode}
                 onValueChange={(value) => setSettings({ backgroundImageUiMode: value as "frosted" | "clear" })}
                 disabled={!backgroundImageEnabled}
               >
-                <SelectTrigger className="h-9 bg-background" aria-label="选择图片背景模式">
+                <SelectTrigger className="h-9 bg-background" aria-label={t("选择图片背景模式")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="frosted">保留面板毛玻璃</SelectItem>
-                  <SelectItem value="clear">完全清晰</SelectItem>
+                  <SelectItem value="frosted">{t("保留面板毛玻璃")}</SelectItem>
+                  <SelectItem value="clear">{t("完全清晰")}</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                保留面板毛玻璃会继续使用侧栏和终端的毛玻璃层；完全清晰会关闭这些额外模糊。
+                {t("保留面板毛玻璃会继续使用侧栏和终端的毛玻璃层；完全清晰会关闭这些额外模糊。")}
               </p>
             </div>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label className="text-sm text-muted-foreground">模糊度 / Blur</Label>
+                <Label className="text-sm text-muted-foreground">{t("模糊度 / Blur")}</Label>
                 <span className="text-xs font-mono text-muted-foreground">{backgroundBlur}px</span>
               </div>
               <input type="range" min="0" max="20" step="1" value={backgroundBlur} disabled={!backgroundImageEnabled} onChange={(e) => setSettings({ backgroundBlur: parseInt(e.target.value) })} className={`w-full h-2 bg-secondary rounded-lg appearance-none accent-primary ${!backgroundImageEnabled ? 'opacity-50' : 'cursor-pointer'}`} />
             </div>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label className="text-sm text-muted-foreground">不透明度 / Opacity</Label>
+                <Label className="text-sm text-muted-foreground">{t("不透明度 / Opacity")}</Label>
                 <span className="text-xs font-mono text-muted-foreground">{backgroundOpacity}%</span>
               </div>
               <input type="range" min="0" max="100" step="5" value={backgroundOpacity} disabled={!backgroundImageEnabled} onChange={(e) => setSettings({ backgroundOpacity: parseInt(e.target.value) })} className={`w-full h-2 bg-secondary rounded-lg appearance-none accent-primary ${!backgroundImageEnabled ? 'opacity-50' : 'cursor-pointer'}`} />
@@ -426,6 +454,7 @@ function ThemeSettings() {
 
 // --- 子组件 2：布局设置 ---
 function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault }: SlotSettingsProps) {
+  const { locale, t } = useI18n();
   const displayModules = AVAILABLE_MODULES.filter(mod =>
     !LOCKED_MODULES.includes(mod.id) &&
     mod.id !== "SettingsModule" &&
@@ -439,7 +468,7 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
           <div key={side} className="space-y-4">
             <div className="flex items-center justify-between border-b pb-2">
               <Label className="text-sm font-bold uppercase">
-                {side === "left" ? "← 左侧栏模块" : "右侧栏模块 →"}
+                {side === "left" ? t("← 左侧栏模块") : t("右侧栏模块 →")}
               </Label>
             </div>
 
@@ -460,7 +489,7 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
                       checked={isChecked}
                       className="pointer-events-none"
                     />
-                    <span className="text-sm font-medium">{mod.name}</span>
+                    <span className="text-sm font-medium">{getModuleDisplayName(mod.id, locale)}</span>
                   </div>
                 );
               })}
@@ -468,7 +497,7 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
 
             {currentConfig[side].modules.filter((id: string) => id !== "SettingsModule" && id !== "settings").length > 0 && (
               <div className="space-y-2 pt-2">
-                <Label className="text-[11px] text-muted-foreground ml-1">默认展示模块</Label>
+                <Label className="text-[11px] text-muted-foreground ml-1">{t("默认展示模块")}</Label>
                 <Select
                   value={currentConfig[side].activeModule === "SettingsModule" || currentConfig[side].activeModule === "settings" ? "" : currentConfig[side].activeModule}
                   onValueChange={(v) => onActiveChange(side, v)}
@@ -481,7 +510,7 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
                       .filter((id: string) => id !== "SettingsModule" && id !== "settings")
                       .map((id: string) => (
                         <SelectItem key={id} value={id}>
-                          {AVAILABLE_MODULES.find((m) => m.id === id)?.name}
+                          {getModuleDisplayName(id, locale)}
                         </SelectItem>
                     ))}
                   </SelectContent>
@@ -497,11 +526,11 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
       {/* 恢复默认按钮作为列表一栏 */}
       <div className="flex items-center justify-between p-6 border rounded-2xl bg-muted/5 space-x-4">
         <div>
-          <Label className="text-base font-bold">恢复默认布局</Label>
-          <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">如果您对当前的布局不满意，可以一键将左右侧栏的所有面板及状态恢复至初始默认设置。</p>
+          <Label className="text-base font-bold">{t("恢复默认布局")}</Label>
+          <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">{t("如果您对当前的布局不满意，可以一键将左右侧栏的所有面板及状态恢复至初始默认设置。")}</p>
         </div>
         <Button variant="outline" size="default" className="shrink-0 font-medium px-6" onClick={() => resetToDefault()}>
-          恢复默认
+          {t("恢复默认")}
         </Button>
       </div>
     </div>
@@ -510,6 +539,7 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
 
 // --- 子组件 4：终端设置 ---
 function TerminalSettings() {
+  const { t } = useI18n();
   const { defaultShell, confirmCloseNonDefaultTabs, terminalAutocomplete, setSettings } = useSettingsStore();
   const [shells, setShells] = useState<ShellInfo[]>([]);
 
@@ -524,13 +554,13 @@ function TerminalSettings() {
       <div className="space-y-4">
         <div className="flex items-center gap-2">
           <Terminal className="h-5 w-5 text-primary" />
-          <Label className="text-lg font-bold">终端行为</Label>
+          <Label className="text-lg font-bold">{t("终端行为")}</Label>
         </div>
 
         <div className="space-y-4 p-6 border rounded-2xl bg-muted/5">
           <div className="space-y-2">
-            <Label className="text-sm font-semibold">默认新建终端类型 / Default Shell</Label>
-            <p className="text-xs text-muted-foreground mb-3">点击标签栏 "+" 号时默认创建的终端类型</p>
+            <Label className="text-sm font-semibold">{t("默认新建终端类型 / Default Shell")}</Label>
+            <p className="text-xs text-muted-foreground mb-3">{t("点击标签栏 \"+\" 号时默认创建的终端类型")}</p>
             <div className="grid grid-cols-1 gap-2">
               {shells.map((s) => (
                 <button
@@ -568,10 +598,10 @@ function TerminalSettings() {
           <div className="flex items-start justify-between gap-4 rounded-xl border border-border/70 bg-background/60 px-4 py-3">
             <div className="space-y-1">
               <Label htmlFor="confirm-close-non-default-tabs" className="text-sm font-semibold cursor-pointer">
-                关闭非默认连接标签页前二次确认
+                {t("关闭非默认连接标签页前二次确认")}
               </Label>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                开启后，关闭 SSH、自定义 Shell、管理员终端等非默认连接时会先弹出确认框；通过 "+" 创建的默认终端不受影响。
+                {t("开启后，关闭 SSH、自定义 Shell、管理员终端等非默认连接时会先弹出确认框；通过 \"+\" 创建的默认终端不受影响。")}
               </p>
             </div>
             <Checkbox
@@ -584,10 +614,10 @@ function TerminalSettings() {
           <div className="flex items-start justify-between gap-4 rounded-xl border border-border/70 bg-background/60 px-4 py-3">
             <div className="space-y-1">
               <Label htmlFor="terminal-autocomplete" className="text-sm font-semibold cursor-pointer">
-                终端智能自动补全
+                {t("终端智能自动补全")}
               </Label>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                开启后，终端输入时会智能提示历史命令与快捷命令组合，并支持 Tab / Enter 快速补全。
+                {t("开启后，终端输入时会智能提示历史命令与快捷命令组合，并支持 Tab / Enter 快速补全。")}
               </p>
             </div>
             <Checkbox
@@ -604,15 +634,15 @@ function TerminalSettings() {
       <div className="space-y-4">
         <div className="flex items-center gap-2">
           <LayoutPanelLeft className="h-5 w-5 text-primary" />
-          <Label className="text-lg font-bold">标签页预览</Label>
+          <Label className="text-lg font-bold">{t("标签页预览")}</Label>
         </div>
         <div className="p-6 border rounded-2xl bg-muted/5 flex items-center justify-center">
           <div className="flex items-center gap-1 bg-background p-2 rounded-xl border shadow-sm w-full max-w-md">
             <div className="h-8 px-4 bg-secondary text-secondary-foreground rounded-lg flex items-center text-xs font-bold">
-              {shells.find(s => s.path === defaultShell)?.name || '终端'}
+              {shells.find(s => s.path === defaultShell)?.name || t("终端")}
             </div>
             <div className="h-8 px-4 text-muted-foreground flex items-center text-xs">
-              另一标签页
+              {t("另一标签页")}
             </div>
             <div className="h-8 w-8 flex items-center justify-center border border-dashed rounded-lg ml-auto">
               <Plus className="h-3 w-3 text-muted-foreground" />
@@ -627,6 +657,7 @@ function TerminalSettings() {
 
 // --- 子组件 3：数据导入导出 ---
 function DataImportExport() {
+  const { t } = useI18n();
   const { importProfiles, exportProfiles } = useSshProfilesStore();
   const { commands } = useQuickCommandsStore();
   const { sessions } = useTabsStore();
@@ -665,11 +696,11 @@ function DataImportExport() {
 
       // 1. 唤起系统原生的保存文件对话框
       const filePath = await save({
-        title: "保存备份文件",
+        title: t("保存备份文件"),
         defaultPath: defaultFileName,
         filters: [
-          { name: "JSON 配置文件", extensions: ["json"] },
-          { name: "所有文件", extensions: ["*"] }
+          { name: t("JSON 配置文件"), extensions: ["json"] },
+          { name: t("所有文件"), extensions: ["*"] }
         ]
       });
 
@@ -681,11 +712,11 @@ function DataImportExport() {
       // 2. 将数据写入用户选择的本地文件路径
       await writeTextFile(filePath, jsonString);
 
-      setImportMessage(`备份成功！文件已保存至：${filePath}`);
+      setImportMessage(t("备份成功！文件已保存至：{path}", { path: filePath }));
       setMessageType('success');
     } catch (error: unknown) {
       logger.error("FE/dialog/slot-config", "Failed to export backup", {error});
-      setImportMessage(`备份失败：${getErrorMessage(error)}`);
+      setImportMessage(t("备份失败：{error}", { error: getErrorMessage(error) }));
       setMessageType('error');
     }
   };
@@ -695,10 +726,10 @@ function DataImportExport() {
       const data = JSON.parse(rawJson);
 
       if (!data.version) {
-        throw new Error("无效的导入文件格式");
+        throw new Error(t("无效的导入文件格式"));
       }
 
-      if (!confirm("恢复将覆盖当前的 SSH 配置与快捷命令，确定要继续吗？")) {
+      if (!confirm(t("恢复将覆盖当前的 SSH 配置与快捷命令，确定要继续吗？"))) {
         return;
       }
 
@@ -716,10 +747,10 @@ function DataImportExport() {
         importedCount += data.quickCommands.length;
       }
 
-      setImportMessage(`成功恢复 ${importedCount} 条配置数据！`);
+      setImportMessage(t("成功恢复 {count} 条配置数据！", { count: importedCount }));
       setMessageType('success');
     } catch (error: unknown) {
-      setImportMessage(`恢复失败：${getErrorMessage(error)}`);
+      setImportMessage(t("恢复失败：{error}", { error: getErrorMessage(error) }));
       setMessageType('error');
     }
   };
@@ -727,11 +758,11 @@ function DataImportExport() {
   const handleImportFromFile = async () => {
     try {
       const selected = await openDialog({
-        title: "选择备份文件",
+        title: t("选择备份文件"),
         multiple: false,
         filters: [
-          { name: "JSON 配置文件", extensions: ["json"] },
-          { name: "所有文件", extensions: ["*"] },
+          { name: t("JSON 配置文件"), extensions: ["json"] },
+          { name: t("所有文件"), extensions: ["*"] },
         ],
       });
 
@@ -743,20 +774,20 @@ function DataImportExport() {
       const rawJson = await readTextFile(selected);
       restoreFromBackup(rawJson);
     } catch (error: unknown) {
-      setImportMessage(`读取备份文件失败：${getErrorMessage(error)}`);
+      setImportMessage(t("读取备份文件失败：{error}", { error: getErrorMessage(error) }));
       setMessageType('error');
     }
   };
 
   // 清空所有数据
   const handleClearAll = () => {
-    if (confirm("确定要清空所有会话配置和快捷命令吗？此操作不可恢复！")) {
+    if (confirm(t("确定要清空所有会话配置和快捷命令吗？此操作不可恢复！"))) {
       useSshProfilesStore.setState({
-        nodes: [{ id: "root-folder", type: "folder", name: "我的会话", parentId: null, isExpanded: true, isRoot: true, order: 0 }]
+        nodes: [{ id: "root-folder", type: "folder", name: t("我的会话"), parentId: null, isExpanded: true, isRoot: true, order: 0 }]
       });
       useQuickCommandsStore.setState({ commands: [] });
       setSelectedImportFile(null);
-      setImportMessage("所有配置数据已清空！");
+      setImportMessage(t("所有配置数据已清空！"));
       setMessageType('success');
     }
   };
@@ -771,7 +802,7 @@ function DataImportExport() {
             <div className="rounded-lg border border-border bg-muted/30 p-2 text-foreground/80">
               <Database className="h-4.5 w-4.5" />
             </div>
-            <Label className="text-sm font-semibold">备份数据</Label>
+            <Label className="text-sm font-semibold">{t("备份数据")}</Label>
           </div>
 
           <Button
@@ -784,7 +815,7 @@ function DataImportExport() {
                 <FileJson className="h-4.5 w-4.5" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-foreground">导出 JSON 备份</div>
+                <div className="text-sm font-medium text-foreground">{t("导出 JSON 备份")}</div>
               </div>
             </div>
           </Button>
@@ -796,12 +827,12 @@ function DataImportExport() {
               <div className="rounded-lg border border-border bg-muted/30 p-2 text-foreground/80">
                 <Upload className="h-4.5 w-4.5" />
               </div>
-              <Label className="text-sm font-semibold">恢复数据</Label>
+              <Label className="text-sm font-semibold">{t("恢复数据")}</Label>
             </div>
 
             <Button onClick={handleClearAll} variant="outline" size="sm" className="h-7 rounded-md border-border px-2.5 text-[11px] text-muted-foreground hover:text-destructive">
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-              清空所有数据
+              {t("清空所有数据")}
             </Button>
           </div>
 
@@ -815,7 +846,7 @@ function DataImportExport() {
                 <Upload className="h-4.5 w-4.5" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-foreground">选择 JSON 文件恢复</div>
+                <div className="text-sm font-medium text-foreground">{t("选择 JSON 文件恢复")}</div>
               </div>
             </div>
           </Button>
@@ -824,7 +855,7 @@ function DataImportExport() {
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium text-foreground">
-                  {selectedFileName ?? "尚未选择文件"}
+                  {selectedFileName ?? t("尚未选择文件")}
                 </div>
                 {selectedImportFile && <div className="truncate text-[11px] text-muted-foreground">{selectedImportFile}</div>}
               </div>
@@ -854,7 +885,8 @@ function DataImportExport() {
 
 // --- 子组件 4：关于与更新 ---
 function AboutSettings() {
-  const [version, setVersion] = useState<string>("Loading...");
+  const { t } = useI18n();
+  const [version, setVersion] = useState<string | null | undefined>(undefined);
   const [updateStatus, setUpdateStatus] = useState<string>("");
   const [isChecking, setIsChecking] = useState(false);
 
@@ -862,7 +894,7 @@ function AboutSettings() {
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
 
   useMountedEffect(() => {
-    getVersion().then(setVersion).catch(() => setVersion("Unknown"));
+    getVersion().then(setVersion).catch(() => setVersion(null));
     
     // 监听进度事件
     const unlisten = listen("update-progress", (event: any) => {
@@ -874,9 +906,12 @@ function AboutSettings() {
     };
   }, []);
 
+  const displayedVersion = version === undefined ? t("加载中...") : (version ?? t("未知"));
+  const currentVersion = version ?? "0.0.0";
+
   const checkUpdate = async () => {
     setIsChecking(true);
-    setUpdateStatus("正在连接 172.50.0.243 检查更新...");
+    setUpdateStatus(t("正在连接 172.50.0.243 检查更新..."));
     setLatestUpdateUrl(null);
     setDownloadProgress(null);
     try {
@@ -885,7 +920,7 @@ function AboutSettings() {
         method: "GET",
       });
       if (!res.ok) {
-        throw new Error(`HTTP 异常 ${res.status}`);
+        throw new Error(t("HTTP 错误 {status}", { status: res.status }));
       }
       
       const htmlText = await res.text();
@@ -919,18 +954,18 @@ function AboutSettings() {
       }
 
       if (maxVersion === "0.0.0") {
-        throw new Error("未能在 172.50.0.243 上找到任何有效的 LazyTerm 安装包");
+        throw new Error(t("未能在 172.50.0.243 上找到任何有效的 LazyTerm 安装包"));
       }
       
       // 如果我们发现的最大版本比当前版本大
-      if (compareVersions(maxVersion, version) > 0) {
-        setUpdateStatus(`🎉 发现新版本：${maxVersion}！`);
+      if (compareVersions(maxVersion, currentVersion) > 0) {
+        setUpdateStatus(t("发现新版本：{version}！", { version: maxVersion }));
         setLatestUpdateUrl(`http://172.50.0.243/${latestDownloadPath}`);
       } else {
-        setUpdateStatus(`✅ 当前已是最新版本 (${version})`);
+        setUpdateStatus(t("当前已是最新版本 ({version})", { version: displayedVersion }));
       }
     } catch (err: any) {
-      setUpdateStatus(`❌ 检查更新失败：${err instanceof Error ? err.message : String(err)}`);
+      setUpdateStatus(t("检查更新失败：{error}", { error: err instanceof Error ? err.message : String(err) }));
     } finally {
       setIsChecking(false);
     }
@@ -940,18 +975,18 @@ function AboutSettings() {
     <div className="space-y-6 py-4 px-1">
       <div className="flex items-center gap-2">
         <Info className="h-5 w-5 text-primary" />
-        <Label className="text-lg font-bold">关于 LazyTerm</Label>
+        <Label className="text-lg font-bold">{t("关于 LazyTerm")}</Label>
       </div>
 
       <div className="p-6 border rounded-2xl bg-muted/5 space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-lg font-bold">LazyTerm</div>
-            <div className="text-sm text-muted-foreground mt-1">当前版本：{version}</div>
+            <div className="text-sm text-muted-foreground mt-1">{t("当前版本：{version}", { version: displayedVersion })}</div>
           </div>
           <Button onClick={checkUpdate} disabled={isChecking || downloadProgress !== null} variant="secondary">
             {isChecking ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-2 h-4 w-4" />}
-            检查更新
+            {t("检查更新")}
           </Button>
         </div>
 
@@ -965,20 +1000,20 @@ function AboutSettings() {
                   setDownloadProgress(0);
                   invoke("download_and_install_update", { url: latestUpdateUrl })
                     .catch(err => {
-                      setUpdateStatus(`❌ 下载或安装失败：${err}`);
+                      setUpdateStatus(t("下载或安装失败：{error}", { error: String(err) }));
                       setDownloadProgress(null);
                     });
                 }}
                 className="w-full sm:w-auto self-start"
               >
-                立即更新
+                {t("立即更新")}
               </Button>
             )}
 
             {downloadProgress !== null && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs font-semibold">
-                  <span className="animate-pulse">正在下载更新包...</span>
+                  <span className="animate-pulse">{t("正在下载更新包...")}</span>
                   <span className="font-mono">{downloadProgress.toFixed(1)}%</span>
                 </div>
                 <div className="w-full bg-background/50 h-2.5 rounded-full overflow-hidden shadow-inner flex">
@@ -998,6 +1033,7 @@ function AboutSettings() {
 
 // --- 主组件 ---
 export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) {
+  const { t } = useI18n();
   const { currentConfig, resetToDefault } = useSlotConfigStore();
   const handleOpenChange = (nextOpen: boolean) => {
     onOpenChange(nextOpen);
@@ -1039,8 +1075,8 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent aria-describedby={undefined} className="max-w-[1000px] w-[95vw] h-[85vh] md:h-[80vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
-          <DialogTitle>系统设置</DialogTitle>
-          <DialogDescription className="hidden">系统设置</DialogDescription>
+          <DialogTitle>{t("系统设置")}</DialogTitle>
+          <DialogDescription className="hidden">{t("系统设置")}</DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="theme" className="flex-1 flex overflow-hidden flex-col md:flex-row">
@@ -1050,35 +1086,35 @@ export function SlotConfigDialog({ open, onOpenChange }: SlotConfigDialogProps) 
               className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
             >
               <Palette className="h-4 w-4" />
-              <span className="font-medium">主题设置</span>
+              <span className="font-medium">{t("主题设置")}</span>
             </TabsTrigger>
             <TabsTrigger
               value="slots"
               className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
             >
               <LayoutPanelLeft className="h-4 w-4" />
-              <span className="font-medium">布局管理</span>
+              <span className="font-medium">{t("布局管理")}</span>
             </TabsTrigger>
             <TabsTrigger
               value="terminal"
               className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
             >
               <Terminal className="h-4 w-4" />
-              <span className="font-medium">终端设置</span>
+              <span className="font-medium">{t("终端设置")}</span>
             </TabsTrigger>
             <TabsTrigger
               value="data"
               className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
             >
               <Database className="h-4 w-4" />
-              <span className="font-medium">数据备份</span>
+              <span className="font-medium">{t("数据备份")}</span>
             </TabsTrigger>
             <TabsTrigger
               value="about"
               className="w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200"
             >
               <Info className="h-4 w-4" />
-              <span className="font-medium">关于与更新</span>
+              <span className="font-medium">{t("关于与更新")}</span>
             </TabsTrigger>
           </TabsList>
 

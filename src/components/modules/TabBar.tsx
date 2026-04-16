@@ -56,6 +56,7 @@ import { getAvailableShells } from "@/services/shellService";
 import { startTabDrag, endTabDrag } from "@/lib/tab-drag-state";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 interface CloseConfirmationState {
   open: boolean;
@@ -78,7 +79,7 @@ function isDefaultConnectionTab(
   // 简化的默认标签页判断，如果名字包含 shell 名称则认为是默认的（后续可优化）
   const normalizedTitle = tabTitle.trim().toLowerCase();
   const normalizedShell = defaultShell.trim().toLowerCase();
-  return normalizedTitle.includes(normalizedShell) || normalizedTitle === 'terminal';
+  return normalizedTitle.includes(normalizedShell) || normalizedTitle === "terminal" || normalizedTitle === "终端";
 }
 
 function SortableTab({
@@ -108,6 +109,7 @@ function SortableTab({
   onCloseRight: (id: string) => void;
   isSplit?: boolean;
 }) {
+  const { t } = useI18n();
   const {
     attributes,
     listeners,
@@ -167,7 +169,7 @@ function SortableTab({
               }`}
               onPointerDown={handleClosePointerDown}
               onClick={(event) => onClose(event, id)}
-              aria-label={`关闭 ${title}`}
+              aria-label={t("关闭 {title}", { title })}
             >
               <X className="h-2 w-2" />
             </Button>
@@ -175,18 +177,18 @@ function SortableTab({
         </ContextMenuTrigger>
         <ContextMenuContent className="min-w-32 text-xs">
           <ContextMenuItem className="py-1 text-xs" onClick={() => onRename(id)}>
-            重命名标签页
+            {t("重命名标签页")}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem className="py-1 text-xs" onClick={() => onCloseOthers(id)}>
-            关闭其他标签页
+            {t("关闭其他标签页")}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem className="py-1 text-xs" disabled={!canCloseLeft} onClick={() => onCloseLeft(id)}>
-            关闭左侧标签页
+            {t("关闭左侧标签页")}
           </ContextMenuItem>
           <ContextMenuItem className="py-1 text-xs" disabled={!canCloseRight} onClick={() => onCloseRight(id)}>
-            关闭右侧标签页
+            {t("关闭右侧标签页")}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -195,6 +197,7 @@ function SortableTab({
 }
 
 export function TabBar() {
+  const { locale, t } = useI18n();
   const {
     tabs,
     sessions,
@@ -355,9 +358,9 @@ export function TabBar() {
       ? shellInfo.name
       : defaultShell.includes("powershell")
         ? "PowerShell"
-        : defaultShell.includes("cmd")
-          ? "CMD"
-          : "Terminal";
+          : defaultShell.includes("cmd")
+            ? "CMD"
+            : t("终端");
 
     // 创建新会话 - pane 的创建和关联由生命周期回调自动处理
     logger.debug("FE/TabBar", "Creating new workspace and session", { title });
@@ -417,19 +420,21 @@ export function TabBar() {
     }
 
     const targetCount = nonDefaultTabs.length;
-    const previewNames = nonDefaultTabs.slice(0, 3).map((tab) => `“${tab.title}”`);
+    const previewNames = nonDefaultTabs.slice(0, 3).map((tab) =>
+      locale === "zh-CN" ? `“${tab.title}”` : `"${tab.title}"`,
+    );
     const remainingCount = targetCount - previewNames.length;
     const sessionSummary = remainingCount > 0
-      ? `${previewNames.join("、")} 等 ${targetCount} 个工作区`
-      : previewNames.join("、");
+      ? `${previewNames.join(locale === "zh-CN" ? "、" : ", ")} ${t("等 {count} 个工作区", { count: targetCount })}`
+      : previewNames.join(locale === "zh-CN" ? "、" : ", ");
 
     pendingCloseActionRef.current = onConfirm;
     setCloseConfirmation({
       open: true,
       title: targetCount === 1
-        ? `确认关闭 ${previewNames[0]}？`
-        : `确认关闭 ${targetCount} 个非默认工作区？`,
-      description: `即将关闭 ${sessionSummary}。关闭后相关的连接会立即断开。`,
+        ? t("确认关闭 {name}？", { name: previewNames[0] })
+        : t("确认关闭 {count} 个非默认工作区？", { count: targetCount }),
+      description: t("即将关闭 {summary}。关闭后相关的连接会立即断开。", { summary: sessionSummary }),
     });
   };
 
@@ -570,7 +575,7 @@ export function TabBar() {
       size="icon"
       className="tabbar-add-button h-11! w-11! rounded-none! hover:bg-transparent! [&_svg]:size-5!"
       onClick={handleAddTab}
-      aria-label="新增标签页"
+      aria-label={t("新增标签页")}
     >
       <Plus />
     </Button>
@@ -601,7 +606,7 @@ export function TabBar() {
 
                 let displayTitle = tab.title;
                 if (isSplit) {
-                  const titles = leaves.map(l => sessions.find(s => s.id === l.sessionId)?.title || "新标签");
+                  const titles = leaves.map(l => sessions.find(s => s.id === l.sessionId)?.title || t("新标签"));
                   displayTitle = titles.join(" | ");
                 }
 
@@ -643,7 +648,7 @@ export function TabBar() {
                   style={{ width: "180px", cursor: "grabbing" }}
                 >
                   <span className="pointer-events-none max-w-32 flex-1 truncate text-[13px]">
-                    {tabs.find((t) => t.id === activeDragId)?.title || "标签页"}
+                    {tabs.find((t) => t.id === activeDragId)?.title || t("标签页（单数）")}
                   </span>
                   <Button
                     variant="ghost"
@@ -673,8 +678,8 @@ export function TabBar() {
             <AlertDialogDescription>{closeConfirmation.description}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmClose}>确认关闭</AlertDialogAction>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmClose}>{t("确认关闭")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -682,8 +687,8 @@ export function TabBar() {
       <Dialog open={renameState.open} onOpenChange={handleRenameDialogChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>重命名标签页</DialogTitle>
-            <DialogDescription>修改当前标签页显示名称。</DialogDescription>
+            <DialogTitle>{t("重命名标签页")}</DialogTitle>
+            <DialogDescription>{t("修改当前标签页显示名称。")}</DialogDescription>
           </DialogHeader>
           <Input
             ref={renameInputRef}
@@ -691,14 +696,14 @@ export function TabBar() {
             onChange={(event) => setRenameState((state) => ({ ...state, value: event.target.value }))}
             onKeyDown={handleRenameKeyDown}
             maxLength={80}
-            placeholder="输入标签页名称"
+            placeholder={t("输入标签页名称")}
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => handleRenameDialogChange(false)}>
-              取消
+              {t("取消")}
             </Button>
             <Button onClick={handleRenameSubmit} disabled={!renameState.value.trim()}>
-              保存
+              {t("保存")}
             </Button>
           </DialogFooter>
         </DialogContent>

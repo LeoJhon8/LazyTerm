@@ -7,6 +7,7 @@ import { invokeTauri } from "@/services/tauri";
 import { logger } from "@/lib/logger";
 import type { SessionNode } from "@/store/ssh-profiles";
 import type { SSHConfig } from "@/types/terminal";
+import { useI18n } from "@/i18n";
 
 interface SftpFileEntry {
   name: string;
@@ -24,6 +25,7 @@ interface RemoteDirSelectorProps {
 }
 
 export function RemoteDirSelector({ open, onOpenChange, targetNode, initialPath, onSelect }: RemoteDirSelectorProps) {
+  const { t } = useI18n();
   const [currentPath, setCurrentPath] = useState(initialPath || "~/");
   const [entries, setEntries] = useState<SftpFileEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -53,7 +55,7 @@ export function RemoteDirSelector({ open, onOpenChange, targetNode, initialPath,
       setCurrentPath(path);
     } catch (err) {
       logger.error("FE/sftp-selector", "Failed to list directory", err);
-      setError(`获取目录失败: ${err}`);
+      setError(t("获取目录失败: {error}", { error: String(err) }));
     } finally {
       setLoading(false);
     }
@@ -94,7 +96,7 @@ export function RemoteDirSelector({ open, onOpenChange, targetNode, initialPath,
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 truncate">
-            选择远程目录
+            {t("选择远程目录")}
           </DialogTitle>
         </DialogHeader>
 
@@ -119,7 +121,7 @@ export function RemoteDirSelector({ open, onOpenChange, targetNode, initialPath,
               </div>
             ) : entries.length === 0 ? (
               <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-                没有文件或目录
+                {t("没有文件或目录")}
               </div>
             ) : (
               <div className="divide-y w-full min-w-0">
@@ -142,17 +144,17 @@ export function RemoteDirSelector({ open, onOpenChange, targetNode, initialPath,
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            双击文件夹进入目录
+            {t("双击文件夹进入目录")}
           </p>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t("取消")}
           </Button>
           <Button onClick={handleSelect} disabled={loading}>
             <Check className="h-4 w-4 mr-1" />
-            选择当前目录
+            {t("选择当前目录")}
           </Button>
         </DialogFooter>
       </DialogContent>

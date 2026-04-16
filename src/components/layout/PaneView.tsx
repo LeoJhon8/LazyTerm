@@ -15,6 +15,7 @@ import {
   TAB_DRAG_MOVE_EVENT,
   TAB_DRAG_END_EVENT,
 } from "@/lib/tab-drag-state";
+import { useI18n } from "@/i18n";
 
 interface PaneViewProps {
   paneId: string;
@@ -25,6 +26,7 @@ interface PaneViewProps {
  * 支持从标签栏拖拽分屏 + 关闭/最大化按钮
  */
 export function PaneView({ paneId }: PaneViewProps) {
+  const { t } = useI18n();
   const activeTabId = useTabsStore(state => state.activeTabId);
   const focusedPaneId = usePanesStore(state => activeTabId ? state.workspaces[activeTabId]?.focusedPaneId : null);
   const { focusPane, removePane, maximizePane, splitPane } = usePanesStore();
@@ -163,7 +165,7 @@ export function PaneView({ paneId }: PaneViewProps) {
   if (!leaf) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-background/50">
-        <div className="text-sm text-muted-foreground">面板不存在</div>
+        <div className="text-sm text-muted-foreground">{t("面板不存在")}</div>
       </div>
     );
   }
@@ -182,9 +184,9 @@ export function PaneView({ paneId }: PaneViewProps) {
         onClick={handlePaneClick}
       >
         <div className="text-center">
-          <div className="text-sm text-muted-foreground mb-2">此面板未关联会话</div>
+          <div className="text-sm text-muted-foreground mb-2">{t("此面板未关联会话")}</div>
           <div className="text-xs text-muted-foreground/60">
-            从标签栏拖拽标签页到此处
+            {t("从标签栏拖拽标签页到此处")}
           </div>
         </div>
 
@@ -253,6 +255,7 @@ export function PaneView({ paneId }: PaneViewProps) {
  * 拖拽放置区域指示器
  */
 function DropZoneOverlay({ zone }: { zone: DropZone }) {
+  const { t } = useI18n();
   const overlayStyle: Record<DropZone, string> = {
     left: "left-0 top-0 w-1/2 h-full",
     right: "right-0 top-0 w-1/2 h-full",
@@ -271,10 +274,10 @@ function DropZoneOverlay({ zone }: { zone: DropZone }) {
       >
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="px-3 py-1.5 rounded-md bg-sky-500/80 text-white text-xs font-medium shadow-lg">
-            {zone === "left" && "← 左侧分屏"}
-            {zone === "right" && "右侧分屏 →"}
-            {zone === "top" && "↑ 上方分屏"}
-            {zone === "bottom" && "下方分屏 ↓"}
+            {zone === "left" && t("← 左侧分屏")}
+            {zone === "right" && t("右侧分屏 →")}
+            {zone === "top" && t("↑ 上方分屏")}
+            {zone === "bottom" && t("下方分屏 ↓")}
           </div>
         </div>
       </div>
@@ -294,6 +297,7 @@ function PaneControls({
   onMaximize: (e: React.MouseEvent) => void;
   showMaximize: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <div
       className={cn(
@@ -309,7 +313,7 @@ function PaneControls({
           <button
             className="p-0.5 rounded-sm hover:bg-accent/80 text-muted-foreground/70 hover:text-foreground transition-colors"
             onClick={onMaximize}
-            title="最大化面板"
+            title={t("最大化面板")}
           >
             <Maximize2 className="h-3 w-3" />
           </button>
@@ -317,7 +321,7 @@ function PaneControls({
         <button
           className="p-0.5 rounded-sm hover:bg-destructive/20 text-muted-foreground/70 hover:text-destructive transition-colors"
           onClick={onClose}
-          title="关闭面板"
+          title={t("关闭面板")}
         >
           <X className="h-3 w-3" />
         </button>

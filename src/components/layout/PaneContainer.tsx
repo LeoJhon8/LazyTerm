@@ -5,12 +5,14 @@ import { cn } from "@/lib/utils";
 import { isLeaf } from "@/lib/pane-utils";
 
 import { useTabsStore } from "@/store/tabs";
+import { useI18n } from "@/i18n";
 
 /**
  * 面板容器组件
  * 递归渲染面板树
  */
 export function PaneContainer() {
+  const { t } = useI18n();
   const activeTabId = useTabsStore(state => state.activeTabId);
   const rootNode = usePanesStore(state => activeTabId ? state.workspaces[activeTabId]?.rootNode : null);
 
@@ -20,10 +22,10 @@ export function PaneContainer() {
       <div className="flex h-full w-full items-center justify-center">
         <div className="text-center">
           <div className="text-2xl font-semibold text-muted-foreground mb-2">
-            欢迎使用 Lazy Term
+            {t("欢迎使用 Lazy Term")}
           </div>
           <div className="text-sm text-muted-foreground">
-            点击左侧会话列表开始连接
+            {t("点击左侧会话列表开始连接")}
           </div>
         </div>
       </div>

@@ -19,6 +19,7 @@ import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
 import { TerminalAutocompleteUI } from "./TerminalAutocompleteUI";
 import { AutocompleteTerminalAddon } from "./AutocompleteTerminalAddon";
+import { useI18n } from "@/i18n";
 
 // 全局 Terminal 实例缓存，确保切换 tab 时输出历史不丢失
 const globalTerminalCache = new Map<string, TerminalInstance>();
@@ -130,6 +131,7 @@ function isTerminalConnector(connector: SessionConnector | undefined): connector
  * 实现 BaseSessionView 定义的 renderContent 抽象方法
  */
 export function TerminalViewClass(props: BaseSessionViewProps) {
+  const { t } = useI18n();
   const { paneId, sessionId } = props;
   const acAddonRef = useRef<AutocompleteTerminalAddon | null>(null);
 
@@ -296,7 +298,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         }
 
         existingInstance.terminal.write(
-          "\r\n\x1b[33m 警告: 会话连接已更改，输出保留。 \x1b[0m" + spacer
+          `\r\n\x1b[33m ${t("警告: 会话连接已更改，输出保留。")} \x1b[0m` + spacer
         );
 
         currentTermInstance = existingInstance;
@@ -673,8 +675,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         <div className="flex max-w-md flex-col items-center gap-4 rounded-3xl border border-white/10 bg-white/6 px-8 py-10 text-center text-white/80">
           <TerminalIcon className="h-10 w-10 text-emerald-300" />
           <div>
-            <div className="text-lg font-semibold text-white">今天，你想连接什么？</div>
-            <div className="mt-2 text-sm leading-6 text-white/60">轻松、快速建立ssh连接，windows远程桌面，VNC连接，本地终端。</div>
+            <div className="text-lg font-semibold text-white">{t("今天，你想连接什么？")}</div>
+            <div className="mt-2 text-sm leading-6 text-white/60">{t("轻松、快速建立ssh连接，windows远程桌面，VNC连接，本地终端。")}</div>
           </div>
         </div>
       </div>

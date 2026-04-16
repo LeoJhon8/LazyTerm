@@ -2,10 +2,12 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { TerminalColorScheme } from "@/config/themes";
 import { TERMINAL_THEMES } from "@/config/themes";
+import { DEFAULT_LANGUAGE_SETTING, type AppLanguageSetting } from "@/i18n/config";
 
 export type BackgroundImageUiMode = "frosted" | "clear";
 
 interface SettingsData {
+  language: AppLanguageSetting;
   fontSize: number;
   fontFamily: string;
   leftPanelWidth: number;
@@ -44,6 +46,7 @@ interface SettingsActions {
 export type SettingsState = SettingsData & SettingsActions;
 
 const defaultSettings: SettingsData = {
+  language: DEFAULT_LANGUAGE_SETTING,
   fontSize: 14,
   fontFamily: "Menlo, Monaco, 'Courier New', monospace",
   leftPanelWidth: 200,

@@ -18,12 +18,14 @@ import {
   getRdpScancode,
 } from "./BaseGraphicSessionView";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 /**
  * RemoteDesktopView 组件
  * 继承 BaseGraphicSessionView 的图形化视图抽象子类
  */
 export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
+  const { t } = useI18n();
   const { paneId, sessionId } = props;
 
   // 图形化会话状态
@@ -361,15 +363,15 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
             ? (isClosed ? (everConnectedRef.current ? "disconnected" : "failed") : "connecting") 
             : (!frameSize ? "connecting" : "none")}
           titleText={!ironConnector.isConnected 
-            ? (isClosed ? (everConnectedRef.current ? "连接断开" : "连接失败") : "正在建立连接") 
-            : "正在建立连接"}
+            ? (isClosed ? (everConnectedRef.current ? t("连接断开") : t("连接失败")) : t("正在建立连接")) 
+            : t("正在建立连接")}
           description={!ironConnector.isConnected
-            ? (isClosed ? (everConnectedRef.current ? "与远程主机的连接已意外中止。" : "建立 RDP 连接失败，请检查配置信息或目标状态。") : "正在初始化连接...")
-            : "正在尝试建立 RDP 连接并进行首帧解码..."}
+            ? (isClosed ? (everConnectedRef.current ? t("与远程主机的连接已意外中止。") : t("建立 RDP 连接失败，请检查配置信息或目标状态。")) : t("正在初始化连接..."))
+            : t("正在尝试建立 RDP 连接并进行首帧解码...")}
           protocol="Windows"
           sessionConfigDetails={[
-            { label: "目标地址", value: activeSession.config?.rdpConfig?.host ? `${activeSession.config.rdpConfig.host}:${activeSession.config.rdpConfig.port || 3389}` : activeSession.title },
-            { label: "验证凭据", value: activeSession.config?.rdpConfig?.username || "交互式登录" }
+            { label: t("目标地址"), value: activeSession.config?.rdpConfig?.host ? `${activeSession.config.rdpConfig.host}:${activeSession.config.rdpConfig.port || 3389}` : activeSession.title },
+            { label: t("验证凭据"), value: activeSession.config?.rdpConfig?.username || t("交互式登录") }
           ]}
           onReconnect={() => {
             if (retrying) return;
@@ -382,7 +384,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
 
         <TransitionMask
           visible={transitionMaskVisible || resizeMaskVisible}
-          text={transitionMaskVisible ? "正在同步 Windows 远程桌面画面..." : "正在调整会话尺寸..."}
+          text={transitionMaskVisible ? t("正在同步 Windows 远程桌面画面...") : t("正在调整会话尺寸...")}
         />
       </div>
     </main>

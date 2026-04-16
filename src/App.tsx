@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
+import { getConnectionErrorPresentation } from "@/services/connectionErrorService";
+import { useI18n } from "@/i18n";
 
 import { PaneContainer } from "@/components/layout/PaneContainer";
 import { SlotManager } from "@/components/layout/SlotManager";
@@ -17,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 function App() {
+  const { locale, t } = useI18n();
   const { 
     leftPanelWidth,
     rightPanelWidth,
@@ -48,6 +51,13 @@ function App() {
     : null;
   const shouldHideQuickCmdBar = focusSession?.type === "rdp" || focusSession?.type === "vnc";
   const effectiveBottomRowHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight;
+  const localizedConnectionError = connectionError
+    ? getConnectionErrorPresentation(connectionError.sessionType, connectionError.technicalDetails)
+    : null;
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   // 应用关闭时清空所有会话
   useEffect(() => {
@@ -209,38 +219,41 @@ function App() {
           <AlertDialogHeader>
             <AlertDialogTitle>
               {connectionError?.sessionType === "ssh"
-                ? "SSH 连接失败"
+                ? t("SSH 连接失败")
                 : connectionError?.sessionType === "rdp"
-                  ? "远程桌面连接失败"
+                  ? t("远程桌面连接失败")
                   : connectionError?.sessionType === "vnc"
-                    ? "VNC 连接失败"
-                  : "终端连接失败"}
+                    ? t("VNC 连接失败")
+                  : t("终端连接失败")}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {connectionError
-                ? `${connectionError.sessionTarget || `会话“${connectionError.sessionTitle}”`} 未能建立连接。${connectionError.summary}`
+                ? t("{target} 未能建立连接。{summary}", {
+                    target: connectionError.sessionTarget || t("会话“{title}”", { title: connectionError.sessionTitle }),
+                    summary: localizedConnectionError?.summary ?? connectionError.summary,
+                  })
                 : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {connectionError ? (
             <div className="space-y-3 text-sm">
               <div className="rounded-2xl border border-border/60 bg-background/45 px-4 py-3 text-muted-foreground">
-                <div className="font-medium text-foreground">建议排查</div>
+                <div className="font-medium text-foreground">{t("建议排查")}</div>
                 <ul className="mt-2 space-y-1.5 pl-5">
-                  {connectionError.guidance.map((item) => (
+                  {(localizedConnectionError?.guidance ?? connectionError.guidance).map((item) => (
                     <li key={item} className="list-disc">{item}</li>
                   ))}
                 </ul>
               </div>
 
               <div className="rounded-2xl border border-border/60 bg-black/25 px-4 py-3 text-xs leading-6 text-muted-foreground">
-                <div className="font-medium text-foreground">技术详情</div>
+                <div className="font-medium text-foreground">{t("技术详情")}</div>
                 <div className="mt-1 break-all">{connectionError.technicalDetails}</div>
               </div>
             </div>
           ) : null}
           <AlertDialogFooter>
-            <AlertDialogAction onClick={clearConnectionError}>知道了</AlertDialogAction>
+            <AlertDialogAction onClick={clearConnectionError}>{t("知道了")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

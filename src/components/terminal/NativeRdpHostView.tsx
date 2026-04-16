@@ -14,6 +14,7 @@ import {
   TransitionMask,
   GraphicalSessionOverlay,
 } from "./BaseSessionView";
+import { useI18n } from "@/i18n";
 
 const NATIVE_RDP_OVERLAY_EVENT = "lazy-native-rdp-overlay";
 const READY_STATES: NativeRdpStatePayload["state"][] = ["connected"];
@@ -72,6 +73,7 @@ export function NativeRdpHostView({
   connector: INativeRdpConnector;
   onVisualReady?: () => void;
 }) {
+  const { t } = useI18n();
   const initialState = connector.getLatestState();
   const initialOverlayMode = resolveOverlayMode(initialState);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
@@ -118,7 +120,7 @@ export function NativeRdpHostView({
             setState({
               ...payload,
               state: "error",
-              detail: payload.detail ?? "Windows 远程桌面连接未能建立。",
+              detail: payload.detail ?? t("Windows 远程桌面连接未能建立。"),
             });
           }
           return;
@@ -162,8 +164,8 @@ export function NativeRdpHostView({
         setState({
           state: stateRef.current.state === "connected" ? "closed" : "error",
           detail: stateRef.current.state === "connected"
-            ? "Native RDP 原生宿主会话已断开。"
-            : (stateRef.current.detail ?? "Windows 远程桌面连接未能建立。"),
+            ? t("Native RDP 原生宿主会话已断开。")
+            : (stateRef.current.detail ?? t("Windows 远程桌面连接未能建立。")),
         });
       }
     });
@@ -381,7 +383,7 @@ export function NativeRdpHostView({
     setOverlayMode("connecting");
     setState({
       state: "launching",
-      detail: "正在重新连接 Windows 远程桌面。",
+      detail: t("正在重新连接 Windows 远程桌面。"),
     });
     reconnectSession(sessionId);
   };
@@ -395,7 +397,7 @@ export function NativeRdpHostView({
     >
       <TransitionMask 
         visible={resizeMaskVisible} 
-        text="正在调整会话尺寸..." 
+        text={t("正在调整会话尺寸...")}
       />
       <div
         ref={containerRef}
@@ -407,14 +409,14 @@ export function NativeRdpHostView({
       {showStatusOverlay ? (
         <GraphicalSessionOverlay
           mode={isFailed ? "failed" : (isDisconnected ? "disconnected" : "connecting")}
-          titleText={isFailed ? "连接失败" : (isDisconnected ? "连接断开" : "正在建立连接")}
+          titleText={isFailed ? t("连接失败") : (isDisconnected ? t("连接断开") : t("正在建立连接"))}
           description={(state.detail?.replace(/MsTscAx\s*/gi, "Windows ") ?? (isFailed
-            ? "无法与 Windows 远程桌面建立连接，请检查目标主机或网络设置。"
-            : (isDisconnected ? "与远程主机的连接已意外中止。" : "正在初始化连接...")))}
+            ? t("无法与 Windows 远程桌面建立连接，请检查目标主机或网络设置。")
+            : (isDisconnected ? t("与远程主机的连接已意外中止。") : t("正在初始化连接..."))))}
           protocol="Windows"
           sessionConfigDetails={[
-            { label: "目标地址", value: useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.host ? `${useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.host}:${useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.port || 3389}` : hostLabel },
-            { label: "身份凭据", value: useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.username || "交互式登录" }
+            { label: t("目标地址"), value: useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.host ? `${useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.host}:${useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.port || 3389}` : hostLabel },
+            { label: t("身份凭据"), value: useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.username || t("交互式登录") }
           ]}
           onReconnect={handleReconnect}
           interactive={isDisconnected || isFailed}
@@ -425,8 +427,8 @@ export function NativeRdpHostView({
       {showMenuMask ? (
         <GraphicalSessionOverlay
           mode="connecting"
-          titleText="系统菜单激活"
-          description="应用菜单已打开。为避免原生 ActiveX 组件抢占菜单焦点，当前临时屏蔽原生画面。关闭菜单后将自动恢复。"
+          titleText={t("系统菜单激活")}
+          description={t("应用菜单已打开。为避免原生 ActiveX 组件抢占菜单焦点，当前临时屏蔽原生画面。关闭菜单后将自动恢复。")}
           protocol="Focus Mask"
           zIndexClass="z-30"
         />

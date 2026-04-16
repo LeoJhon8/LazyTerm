@@ -6,6 +6,7 @@ import { SessionModule } from "@/components/modules/SessionModule";
 import { HistoryModule } from "@/components/modules/HistoryModule";
 import { History, Folder } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 const MODULE_COMPONENTS: Record<string, React.ComponentType> = {
   SessionModule: SessionModule,
@@ -18,6 +19,7 @@ const MODULE_ICONS: Record<string, React.ReactNode> = {
 };
 
 export function RightSlot() {
+  const { t } = useI18n();
   const { currentConfig, setActiveModule, toggleSlotCollapse, setActiveAndExpand, setSlotCollapsed } = useSlotConfigStore();
   const { focusSessionId, sessions } = useTabsStore();
   const { modules, activeModule, collapsed } = currentConfig.right;
@@ -35,8 +37,8 @@ export function RightSlot() {
       <div className="module-empty">
         <div className="module-empty-card">
           <History className="h-5 w-5" />
-          <p className="text-sm font-medium text-foreground">右侧面板为空</p>
-          <p className="text-xs">可以将历史或会话模块放到右侧，分担主视图信息。</p>
+          <p className="text-sm font-medium text-foreground">{t("右侧面板为空")}</p>
+          <p className="text-xs">{t("可以将历史或会话模块放到右侧，分担主视图信息。")}</p>
         </div>
       </div>
     );

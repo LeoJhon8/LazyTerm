@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import type { RDPConfig } from "@/types/terminal";
+import { useI18n } from "@/i18n";
 
 interface RdpConnectDialogProps {
   open: boolean;
@@ -16,6 +17,7 @@ interface RdpConnectDialogProps {
 }
 
 export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, isDirect }: RdpConnectDialogProps) {
+  const { t } = useI18n();
   const isWindows = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
   const fixedBackend = isWindows ? "msrdpax" : "ironrdp";
   const [host, setHost] = useState("");
@@ -86,38 +88,38 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       <DialogContent className="sm:max-w-125">
         <DialogHeader>
           <DialogTitle>
-            {isDirect ? "发起临时 Windows 连接" : initialConfig ? "编辑 Windows 配置" : "新建 Windows 配置"}
+            {isDirect ? t("发起临时 Windows 连接") : initialConfig ? t("编辑 Windows 配置") : t("新建 Windows 配置")}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-nickname" className="text-right">别名</Label>
+              <Label htmlFor="rdp-nickname" className="text-right">{t("别名")}</Label>
               <Input id="rdp-nickname" value={nickname} onChange={(event) => setNickname(event.target.value)} className="col-span-3" />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-host" className="text-right">主机地址</Label>
+              <Label htmlFor="rdp-host" className="text-right">{t("主机地址")}</Label>
               <Input id="rdp-host" value={host} onChange={(event) => setHost(event.target.value)} className="col-span-3" required />
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-port" className="text-right">端口</Label>
+              <Label htmlFor="rdp-port" className="text-right">{t("端口")}</Label>
               <Input id="rdp-port" type="number" value={port} onChange={(event) => setPort(event.target.value)} className="col-span-3" required />
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-username" className="text-right">用户名</Label>
+              <Label htmlFor="rdp-username" className="text-right">{t("用户名")}</Label>
               <Input id="rdp-username" value={username} onChange={(event) => setUsername(event.target.value)} className="col-span-3" required />
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-domain" className="text-right">域</Label>
-              <Input id="rdp-domain" value={domain} onChange={(event) => setDomain(event.target.value)} className="col-span-3" placeholder="可选" />
+              <Label htmlFor="rdp-domain" className="text-right">{t("域")}</Label>
+              <Input id="rdp-domain" value={domain} onChange={(event) => setDomain(event.target.value)} className="col-span-3" placeholder={t("可选")} />
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-password" className="text-right">密码</Label>
+              <Label htmlFor="rdp-password" className="text-right">{t("密码")}</Label>
               <Input id="rdp-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="col-span-3" autoComplete="off" />
             </div>
 
@@ -126,20 +128,20 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
             {!isWindows ? (
               <>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="rdp-width" className="text-right">初始宽度</Label>
+                  <Label htmlFor="rdp-width" className="text-right">{t("初始宽度")}</Label>
                   <Input id="rdp-width" type="number" min="200" value={width} onChange={(event) => setWidth(event.target.value)} className="col-span-3" />
                 </div>
 
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="rdp-height" className="text-right">初始高度</Label>
+                  <Label htmlFor="rdp-height" className="text-right">{t("初始高度")}</Label>
                   <Input id="rdp-height" type="number" min="200" value={height} onChange={(event) => setHeight(event.target.value)} className="col-span-3" />
                 </div>
 
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">自动跟随窗口</Label>
+                  <Label className="text-right">{t("自动跟随窗口")}</Label>
                   <div className="col-span-3 flex items-center gap-3">
                     <Checkbox id="rdp-auto-resize" checked={autoResize} onCheckedChange={(checked) => setAutoResize(checked === true)} />
-                    <Label htmlFor="rdp-auto-resize" className="text-sm text-muted-foreground">窗口尺寸变化时自动请求远端分辨率更新</Label>
+                    <Label htmlFor="rdp-auto-resize" className="text-sm text-muted-foreground">{t("窗口尺寸变化时自动请求远端分辨率更新")}</Label>
                   </div>
                 </div>
               </>
@@ -147,8 +149,8 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-            <Button type="submit">{initialConfig ? "保存修改" : "立即创建"}</Button>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("取消")}</Button>
+            <Button type="submit">{initialConfig ? t("保存修改") : t("立即创建")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -5,6 +5,7 @@ import type { TerminalSession } from "@/store/tabs";
 import { Button } from "@/components/ui/button";
 import { LoaderCircle, RefreshCcw, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 /**
  * 视图基类 props
@@ -226,6 +227,7 @@ export function GraphicalSessionOverlay({
   protocol,
   sessionConfigDetails,
 }: GraphicalSessionOverlayProps) {
+  const { t } = useI18n();
   if (mode === "none") return null;
 
   const isFailed = mode === "failed";
@@ -271,7 +273,7 @@ export function GraphicalSessionOverlay({
               {isConnecting ? (
                 <div className="flex items-center gap-2.5">
                   <LoaderCircle className="h-4 w-4 animate-spin text-sky-500" />
-                  <span className="text-sm font-medium text-sky-500/90">正在建立连接...</span>
+                  <span className="text-sm font-medium text-sky-500/90">{t("正在建立连接...")}</span>
                 </div>
               ) : (
                 <Button 
@@ -280,7 +282,7 @@ export function GraphicalSessionOverlay({
                   className="h-9 w-40 rounded-xl bg-sky-500 hover:bg-sky-400 text-white shadow-md active:scale-95 text-sm font-medium"
                 >
                   <RefreshCcw className="mr-2 h-4 w-4" />
-                  重新连接
+                  {t("重新连接")}
                 </Button>
               )}
             </div>

@@ -19,6 +19,7 @@ import {
   buildCursorStyleFromRgba,
 } from "./BaseGraphicSessionView";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 const VNC_STARTUP_TRACE_WINDOW_MS = 15_000;
 const VNC_POINTER_MOVE_LOG_INTERVAL_MS = 250;
@@ -26,6 +27,7 @@ const VNC_SLOW_DRAW_LOG_THRESHOLD_MS = 20;
 const VNC_ENABLE_DIAGNOSTIC_LOGS = false;
 
 export function VncViewClass(props: BaseSessionViewProps) {
+  const { t } = useI18n();
   const { paneId, sessionId } = props;
   const {
     canvasRef,
@@ -430,7 +432,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
       >
         <TransitionMask 
           visible={resizeMaskVisible} 
-          text="正在调整画面比例..." 
+          text={t("正在调整画面比例...")}
         />
         <canvas
           ref={canvasRef}
@@ -442,15 +444,15 @@ export function VncViewClass(props: BaseSessionViewProps) {
             ? (isClosed ? (everConnectedRef.current ? "disconnected" : "failed") : "connecting") 
             : (!frameSize ? "connecting" : "none")}
           titleText={!connector.isConnected 
-            ? (isClosed ? (everConnectedRef.current ? "连接断开" : "连接失败") : "正在建立连接") 
-            : "正在建立连接"}
+            ? (isClosed ? (everConnectedRef.current ? t("连接断开") : t("连接失败")) : t("正在建立连接"))
+            : t("正在建立连接")}
           description={!connector.isConnected 
-            ? (isClosed ? (everConnectedRef.current ? "与远程主机的 VNC 连接已终止。" : "无法与 VNC 服务器建立连接，请检查配置。") : "正在初始化连接...")
-            : "正在尝试与目标主机建立 RFB 协议通信并解码首帧画面..."}
+            ? (isClosed ? (everConnectedRef.current ? t("与远程主机的 VNC 连接已终止。") : t("无法与 VNC 服务器建立连接，请检查配置。")) : t("正在初始化连接..."))
+            : t("正在尝试与目标主机建立 RFB 协议通信并解码首帧画面...")}
           protocol="VNC"
           sessionConfigDetails={[
-            { label: "目标地址", value: activeSession.config?.vncConfig?.host ? `${activeSession.config.vncConfig.host}:${activeSession.config.vncConfig.port || 5900}` : activeSession.title },
-            { label: "颜色深度", value: "真彩色 (24-bit)" }
+            { label: t("目标地址"), value: activeSession.config?.vncConfig?.host ? `${activeSession.config.vncConfig.host}:${activeSession.config.vncConfig.port || 5900}` : activeSession.title },
+            { label: t("颜色深度"), value: t("真彩色 (24-bit)") }
           ]}
           onReconnect={() => {
             if (retrying) return;

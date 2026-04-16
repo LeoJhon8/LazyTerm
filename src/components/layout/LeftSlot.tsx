@@ -7,6 +7,7 @@ import { HistoryModule } from "@/components/modules/HistoryModule";
 import { SlotConfigDialog } from "@/components/dialogs/SlotConfigDialog";
 import { Folder, Settings, History } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 const MODULE_COMPONENTS: Record<string, React.ComponentType> = {
   SessionModule: SessionModule,
@@ -20,6 +21,7 @@ const MODULE_ICONS: Record<string, React.ReactNode> = {
 };
 
 export function LeftSlot() {
+  const { t } = useI18n();
   const { currentConfig, setActiveModule, toggleSlotCollapse, setActiveAndExpand, setSlotCollapsed } = useSlotConfigStore();
   const { focusSessionId, sessions } = useTabsStore();
   const { modules, activeModule, collapsed } = currentConfig.left;
@@ -38,8 +40,8 @@ export function LeftSlot() {
       <div className="module-empty">
         <div className="module-empty-card">
           <Settings className="h-5 w-5" />
-          <p className="text-sm font-medium text-foreground">左侧面板为空</p>
-          <p className="text-xs">在设置中添加模块后，这里会显示工作区能力。</p>
+          <p className="text-sm font-medium text-foreground">{t("左侧面板为空")}</p>
+          <p className="text-xs">{t("在设置中添加模块后，这里会显示工作区能力。")}</p>
         </div>
       </div>
     );

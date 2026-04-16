@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import type { SSHConfig } from "@/types/terminal";
 // 修复命名冲突：使用别名 openFileDialog
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
+import { useI18n } from "@/i18n";
 
 interface SshConnectDialogProps {
   open: boolean;
@@ -19,6 +20,7 @@ interface SshConnectDialogProps {
 }
 
 export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, isDirect }: SshConnectDialogProps) {
+  const { t } = useI18n();
   const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("");
@@ -87,7 +89,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       const selected = await openFileDialog({
         multiple: false,
         directory: false,
-        title: "选择私钥文件",
+        title: t("选择私钥文件"),
         filters: [{ name: "All Files", extensions: ["*"] }],
       });
 
@@ -106,17 +108,17 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       <DialogContent className="sm:max-w-125">
         <DialogHeader>
           <DialogTitle>
-            {isDirect ? "发起临时 SSH 连接" : (initialConfig ? "编辑 SSH 配置" : "新建 SSH 配置")}
+            {isDirect ? t("发起临时 SSH 连接") : (initialConfig ? t("编辑 SSH 配置") : t("新建 SSH 配置"))}
           </DialogTitle>
         </DialogHeader>
         
         <form onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-nickname" className="text-right">别名</Label>
+              <Label htmlFor="ssh-nickname" className="text-right">{t("别名")}</Label>
               <Input
                 id="ssh-nickname"
-                placeholder="我的服务器"
+                placeholder={t("我的服务器")}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 className="col-span-3"
@@ -124,7 +126,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
             </div>
             
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-host" className="text-right">主机地址</Label>
+              <Label htmlFor="ssh-host" className="text-right">{t("主机地址")}</Label>
               <Input
                 id="ssh-host"
                 placeholder="192.168.1.100"
@@ -136,7 +138,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-port" className="text-right">端口</Label>
+              <Label htmlFor="ssh-port" className="text-right">{t("端口")}</Label>
               <Input
                 id="ssh-port"
                 type="number"
@@ -148,7 +150,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-username" className="text-right">用户名</Label>
+              <Label htmlFor="ssh-username" className="text-right">{t("用户名")}</Label>
               <Input
                 id="ssh-username"
                 value={username}
@@ -161,7 +163,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
             <Separator />
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-password" className="text-right">密码</Label>
+              <Label htmlFor="ssh-password" className="text-right">{t("密码")}</Label>
               <Input
                 id="ssh-password"
                 type="password"
@@ -173,7 +175,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-key-path" className="text-right">私钥路径</Label>
+              <Label htmlFor="ssh-key-path" className="text-right">{t("私钥路径")}</Label>
               <div className="col-span-3 flex items-center">
                 <Input
                   id="ssh-key-path"
@@ -188,7 +190,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
                   className="ml-2"
                   onClick={handleSelectKey}
                 >
-                  浏览
+                  {t("浏览")}
                 </Button>
               </div>
             </div>
@@ -199,10 +201,10 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              取消
+              {t("取消")}
             </Button>
             <Button type="submit">
-              {initialConfig ? "保存修改" : "立即创建"}
+              {initialConfig ? t("保存修改") : t("立即创建")}
             </Button>
           </DialogFooter>
         </form>

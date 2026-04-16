@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
+import { useI18n } from "@/i18n";
 import logo32 from "../../../src-tauri/icons/LazyTerm-32.png";
 import logo128 from "../../../src-tauri/icons/LazyTerm-128.png";
 import logo256 from "../../../src-tauri/icons/LazyTerm-256.png";
@@ -9,6 +10,7 @@ import logo256 from "../../../src-tauri/icons/LazyTerm-256.png";
 const appWindow = getCurrentWindow();
 
 export function CustomTitleBar() {
+  const { t } = useI18n();
   const { focusSessionId, sessions } = useTabsStore();
   const [isMaximized, setIsMaximized] = useState(false);
   const [logoError, setLogoError] = useState(false);
@@ -84,7 +86,7 @@ export function CustomTitleBar() {
           <div className="window-titlebar__titles">
             <span className="window-titlebar__app-name">LazyTerm</span>
             <span className="window-titlebar__session-name">
-              {focusSession ? focusSession.title : "无活动会话"}
+              {focusSession ? focusSession.title : t("无活动会话")}
             </span>
           </div>
         </div>
@@ -93,25 +95,25 @@ export function CustomTitleBar() {
           <span className="window-titlebar__meta-pill">
             {focusSession
               ? focusSession.type === "local"
-                ? "本地终端"
+                ? t("本地终端")
                 : focusSession.type === "ssh"
                   ? "SSH"
                   : focusSession.type === "rdp"
                     ? "RDP"
                     : "VNC"
-              : "开始桌面"}
+              : t("开始桌面")}
           </span>
         </div>
       </div>
 
-      <div className="window-titlebar__controls" aria-label="窗口控制">
+      <div className="window-titlebar__controls" aria-label={t("窗口控制")}>
         <button
           type="button"
           className="window-titlebar__control window-titlebar__control--neutral"
           onClick={() => {
             void appWindow.minimize();
           }}
-          aria-label="最小化"
+          aria-label={t("最小化")}
         >
           <Minus className="h-4 w-4" />
         </button>
@@ -121,7 +123,7 @@ export function CustomTitleBar() {
           onClick={() => {
             void handleToggleMaximize();
           }}
-          aria-label={isMaximized ? "还原" : "最大化"}
+          aria-label={isMaximized ? t("还原") : t("最大化")}
         >
           {isMaximized ? <Copy className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
         </button>
@@ -131,7 +133,7 @@ export function CustomTitleBar() {
           onClick={() => {
             void appWindow.close();
           }}
-          aria-label="关闭"
+          aria-label={t("关闭")}
         >
           <X className="h-4 w-4" />
         </button>
