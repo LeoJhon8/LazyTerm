@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { X, Maximize2 } from "lucide-react";
+
 import { usePanesStore } from "@/store/panes";
 import { useTabsStore } from "@/store/tabs";
 import {
@@ -8,7 +10,6 @@ import {
 } from "@/components/terminal";
 import { cn } from "@/lib/utils";
 import { getDropZone, dropZoneToDirection, type DropZone } from "@/lib/pane-utils";
-import { X, Maximize2 } from "lucide-react";
 import { logger } from "@/lib/logger";
 import {
   TAB_DRAG_START_EVENT,
@@ -21,76 +22,94 @@ interface PaneViewProps {
   paneId: string;
 }
 
-/**
- * 单个面板视图组件
- * 支持从标签栏拖拽分屏 + 关闭/最大化按钮
- */
 export function PaneView({ paneId }: PaneViewProps) {
   const { t } = useI18n();
-  const activeTabId = useTabsStore(state => state.activeTabId);
-  const focusedPaneId = usePanesStore(state => activeTabId ? state.workspaces[activeTabId]?.focusedPaneId : null);
+  const activeTabId = useTabsStore((state) => state.activeTabId);
+  const focusedPaneId = usePanesStore((state) =>
+    activeTabId ? state.workspaces[activeTabId]?.focusedPaneId : null
+  );
   const { focusPane, removePane, maximizePane, splitPane } = usePanesStore();
-  const paneCount = usePanesStore(state => activeTabId ? (state.workspaces[activeTabId]?.rootNode ? state.getAllLeaves(activeTabId).length : 0) : 0);
-  const { sessions } = useTabsStore();
+  const paneCount = usePanesStore((state) =>
+    activeTabId
+      ? (state.workspaces[activeTabId]?.rootNode
+        ? state.getAllLeaves(activeTabId).length
+        : 0)
+      : 0
+  );
+  const sessions = useTabsStore((state) => state.sessions);
 
-  // 拖拽状态
   const [dropZone, setDropZone] = useState<DropZone | null>(null);
   const [isTabDragging, setIsTabDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 获取当前面板叶子
-  const leaf = usePanesStore(state => state.getLeafById(paneId));
+  const leaf = usePanesStore((state) => state.getLeafById(paneId));
   const isFocused = focusedPaneId === paneId;
-
-  // 获取面板关联的会话
   const session = leaf?.sessionId
-    ? sessions.find(s => s.id === leaf.sessionId)
+    ? sessions.find((item) => item.id === leaf.sessionId) ?? null
     : null;
+  const isNativeRdpPane = session?.type === "rdp" && session.config?.rdpConfig?.backend === "msrdpax";
+  const showDockedPaneControls = paneCount > 1 && isNativeRdpPane;
 
-  // ========== 监听跨组件拖拽事件 ==========
+  const syncSinglePaneTabTitle = useCallback((tabId: string) => {
+    const remainingLeaves = usePanesStore.getState().getAllLeaves(tabId);
+    if (remainingLeaves.length !== 1) {
+      return;
+    }
+
+    const remainingSessionId = remainingLeaves[0]?.sessionId;
+    if (!remainingSessionId) {
+      return;
+    }
+
+    const remainingSession = useTabsStore.getState().sessions.find(
+      (item) => item.id === remainingSessionId
+    );
+    if (!remainingSession) {
+      return;
+    }
+
+    useTabsStore.getState().updateTab(tabId, { title: remainingSession.title });
+  }, []);
 
   useEffect(() => {
     const handleDragStart = () => {
       setIsTabDragging(true);
     };
 
-    const handleDragMove = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (!detail || !containerRef.current) return;
-      
+    const handleDragMove = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (!detail || !containerRef.current) {
+        return;
+      }
+
       const rect = containerRef.current.getBoundingClientRect();
       const { x, y } = detail;
-      
-      // 检查指针是否在当前面板范围内
-      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-        const relativeX = (x - rect.left) / rect.width;
-        const relativeY = (y - rect.top) / rect.height;
-        const zone = getDropZone(relativeX, relativeY);
-        setDropZone(zone);
-      } else {
+      const isInside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+
+      if (!isInside) {
         setDropZone(null);
+        return;
       }
+
+      const relativeX = (x - rect.left) / rect.width;
+      const relativeY = (y - rect.top) / rect.height;
+      setDropZone(getDropZone(relativeX, relativeY));
     };
 
-    const handleDragEnd = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
+    const handleDragEnd = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
       setIsTabDragging(false);
-      
+
       if (!detail || !containerRef.current) {
         setDropZone(null);
         return;
       }
 
       const rect = containerRef.current.getBoundingClientRect();
-      // 在 TabBar 拖拽中，detail.sessionId 实际上是 tabId
       const { x, y, sessionId: draggedTabId } = detail;
+      const isInside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 
-      // 检查指针是否在当前面板范围内
-      if (
-        draggedTabId &&
-        x >= rect.left && x <= rect.right &&
-        y >= rect.top && y <= rect.bottom
-      ) {
+      if (draggedTabId && isInside) {
         const relativeX = (x - rect.left) / rect.width;
         const relativeY = (y - rect.top) / rect.height;
         const zone = getDropZone(relativeX, relativeY);
@@ -98,30 +117,20 @@ export function PaneView({ paneId }: PaneViewProps) {
 
         logger.info("FE/PaneView", "Tab dropped on pane", { paneId, draggedTabId, zone, direction });
 
-        // 获取当前激活的 Tab
-        const activeTabId = useTabsStore.getState().activeTabId;
-
-        // 如果拖拽的是当前显示的 Tab，忽略
-        if (draggedTabId === activeTabId) {
-            setDropZone(null);
-            return;
+        const currentActiveTabId = useTabsStore.getState().activeTabId;
+        if (draggedTabId === currentActiveTabId) {
+          setDropZone(null);
+          return;
         }
 
-        // 找到拖拽来源 Tab 的主 session
-        const ws = usePanesStore.getState().getWorkspace(draggedTabId);
-        const droppingLeaf = ws.focusedPaneId 
-             ? usePanesStore.getState().getLeafById(ws.focusedPaneId) 
-             : usePanesStore.getState().getAllLeaves(draggedTabId)[0];
-        
+        const workspace = usePanesStore.getState().getWorkspace(draggedTabId);
+        const droppingLeaf = workspace.focusedPaneId
+          ? usePanesStore.getState().getLeafById(workspace.focusedPaneId)
+          : usePanesStore.getState().getAllLeaves(draggedTabId)[0];
         const sessionToMove = droppingLeaf?.sessionId;
 
         if (sessionToMove) {
-          // 在当前面板分屏显示拖拽过来的 session
           splitPane(paneId, direction, sessionToMove, zone);
-
-          // 关闭原先的 Tab（清理其工作区及它带有的全部内容，除了我们刚移入主工作区的会话）
-          // 但是要小心，会话的所有权移交了，所以不要关闭这个 session 的连接！
-          // TODO: 对于未迁移的额外 session 理论上需要关闭，目前只简单清理掉工作区和 Tab 实体
           usePanesStore.getState().cleanupWorkspace(draggedTabId);
           useTabsStore.getState().removeTab(draggedTabId);
         }
@@ -139,28 +148,61 @@ export function PaneView({ paneId }: PaneViewProps) {
       window.removeEventListener(TAB_DRAG_MOVE_EVENT, handleDragMove);
       window.removeEventListener(TAB_DRAG_END_EVENT, handleDragEnd);
     };
-  }, [paneId, leaf, splitPane]);
+  }, [paneId, splitPane]);
 
-  // 点击面板时设置焦点
   const handlePaneClick = useCallback(() => {
-    // 即使在当前 tab 是焦点 pane，全局的 focusSessionId 也可能不对（例如刚切换 tab）
-    // 所以我们需要确保每次点击都同步
     focusPane(paneId);
-  }, [paneId, focusPane]);
+  }, [focusPane, paneId]);
 
-  // 关闭面板
-  const handleClose = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleClose = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
+
+    const currentTabId = useTabsStore.getState().activeTabId;
+    const sessionId = leaf?.sessionId;
+
+    if (sessionId) {
+      useTabsStore.getState().removeSession(sessionId);
+    }
+
     removePane(paneId);
-  }, [paneId, removePane]);
 
-  // 最大化面板
-  const handleMaximize = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    maximizePane(paneId);
-  }, [paneId, maximizePane]);
+    if (currentTabId) {
+      syncSinglePaneTabTitle(currentTabId);
+    }
+  }, [leaf?.sessionId, paneId, removePane, syncSinglePaneTabTitle]);
 
-  // ========== 渲染 ==========
+  const handleMaximize = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
+
+    const currentTabId = useTabsStore.getState().activeTabId;
+    const result = maximizePane(paneId);
+    if (!currentTabId || !result) {
+      return;
+    }
+
+    const tabsStore = useTabsStore.getState();
+    const keptSession = result.keptSessionId
+      ? tabsStore.sessions.find((item) => item.id === result.keptSessionId) ?? null
+      : null;
+
+    if (keptSession) {
+      tabsStore.updateTab(currentTabId, { title: keptSession.title });
+    }
+
+    result.detachedSessionIds.forEach((sessionId) => {
+      const detachedSession = useTabsStore.getState().sessions.find((item) => item.id === sessionId);
+      useTabsStore.getState().addTab({
+        title: detachedSession?.title ?? "Terminal",
+      });
+      usePanesStore.getState().addPane(sessionId);
+    });
+
+    useTabsStore.getState().setActiveTabId(currentTabId);
+    focusPane(paneId);
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("lazy-term-focus"));
+    });
+  }, [focusPane, maximizePane, paneId]);
 
   if (!leaf) {
     return (
@@ -170,13 +212,12 @@ export function PaneView({ paneId }: PaneViewProps) {
     );
   }
 
-  // 没有关联会话
   if (!session) {
     return (
       <div
         ref={containerRef}
         className={cn(
-          "group relative flex h-full w-full items-center justify-center cursor-pointer transition-all",
+          "group relative flex h-full w-full cursor-pointer items-center justify-center transition-all",
           "bg-background/50",
           paneCount > 1 && "border border-border/40",
           paneCount > 1 && isFocused && "border-2 border-primary/50",
@@ -184,21 +225,19 @@ export function PaneView({ paneId }: PaneViewProps) {
         onClick={handlePaneClick}
       >
         <div className="text-center">
-          <div className="text-sm text-muted-foreground mb-2">{t("此面板未关联会话")}</div>
+          <div className="mb-2 text-sm text-muted-foreground">{t("此面板未关联会话")}</div>
           <div className="text-xs text-muted-foreground/60">
             {t("从标签栏拖拽标签页到此处")}
           </div>
         </div>
 
-        {/* 拖拽指示器 */}
         {isTabDragging && dropZone && <DropZoneOverlay zone={dropZone} />}
 
-        {/* 面板控制按钮 */}
         {paneCount > 1 && (
           <PaneControls
             onClose={handleClose}
             onMaximize={handleMaximize}
-            showMaximize={paneCount > 1}
+            showMaximize
           />
         )}
       </div>
@@ -209,75 +248,87 @@ export function PaneView({ paneId }: PaneViewProps) {
     <div
       ref={containerRef}
       className={cn(
-        "group relative h-full w-full overflow-hidden transition-all",
+        "group relative flex h-full w-full min-h-0 flex-col overflow-hidden transition-all",
         paneCount > 1 && "border border-border/40",
         paneCount > 1 && isFocused && "border-2 border-primary/50",
       )}
       onClick={handlePaneClick}
     >
-      {/* 面板内容 */}
-      {session.type === "rdp" ? (
-        <RemoteDesktopViewClass
-          key={session.id}
-          paneId={paneId}
-          sessionId={session.id}
-        />
-      ) : session.type === "vnc" ? (
-        <VncViewClass
-          key={session.id}
-          paneId={paneId}
-          sessionId={session.id}
-        />
-      ) : (
-        <TerminalViewClass
-          key={session.id}
-          paneId={paneId}
-          sessionId={session.id}
-        />
+      {showDockedPaneControls && (
+        <div className="relative z-20 flex h-8 shrink-0 items-center justify-end border-b border-border/50 bg-background/95 pl-2 backdrop-blur-sm">
+          <div className="mr-auto truncate text-[11px] text-muted-foreground/70">
+            {session.title}
+          </div>
+          <PaneControlButtons
+            onClose={handleClose}
+            onMaximize={handleMaximize}
+            showMaximize
+            compact
+          />
+        </div>
       )}
 
-      {/* 拖拽指示器 */}
+      <div className="relative min-h-0 flex-1">
+        {session.type === "rdp" ? (
+          <RemoteDesktopViewClass
+            key={session.id}
+            paneId={paneId}
+            sessionId={session.id}
+          />
+        ) : session.type === "vnc" ? (
+          <VncViewClass
+            key={session.id}
+            paneId={paneId}
+            sessionId={session.id}
+          />
+        ) : (
+          <TerminalViewClass
+            key={session.id}
+            paneId={paneId}
+            sessionId={session.id}
+          />
+        )}
+      </div>
+
       {isTabDragging && dropZone && <DropZoneOverlay zone={dropZone} />}
 
-      {/* 面板控制按钮（hover 时显示） */}
-      {paneCount > 1 && (
+      {!showDockedPaneControls && paneCount > 1 && (
         <PaneControls
           onClose={handleClose}
           onMaximize={handleMaximize}
-          showMaximize={paneCount > 1}
+          showMaximize
         />
       )}
     </div>
   );
 }
 
-/**
- * 拖拽放置区域指示器
- */
 function DropZoneOverlay({ zone }: { zone: DropZone }) {
   const { t } = useI18n();
   const overlayStyle: Record<DropZone, string> = {
-    left: "left-0 top-0 w-1/2 h-full",
-    right: "right-0 top-0 w-1/2 h-full",
-    top: "left-0 top-0 w-full h-1/2",
-    bottom: "left-0 bottom-0 w-full h-1/2",
+    left: "left-0 top-0 h-full w-1/2",
+    right: "right-0 top-0 h-full w-1/2",
+    top: "left-0 top-0 h-1/2 w-full",
+    bottom: "left-0 bottom-0 h-1/2 w-full",
+  };
+  const overlayLabel: Record<DropZone, string> = {
+    left: t("← 左侧分屏"),
+    right: t("右侧分屏 →"),
+    top: t("↑ 上方分屏"),
+    bottom: t("下方分屏 ↓"),
   };
 
   return (
-    <div className="absolute inset-0 z-50 pointer-events-none">
+    <div className="pointer-events-none absolute inset-0 z-50">
       <div
         className={cn(
-          "absolute transition-all duration-150",
-          "bg-sky-500/20 border-2 border-sky-400/50 rounded-sm",
-          overlayStyle[zone]
+          "absolute rounded-sm border-2 border-sky-400/50 bg-sky-500/20 transition-all duration-150",
+          overlayStyle[zone],
         )}
       >
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="px-3 py-1.5 rounded-md bg-sky-500/80 text-white text-xs font-medium shadow-lg">
-            {zone === "left" && t("← 左侧分屏")}
-            {zone === "right" && t("右侧分屏 →")}
-            {zone === "top" && t("↑ 上方分屏")}
-            {zone === "bottom" && t("下方分屏 ↓")}
+          <div className="rounded-md bg-sky-500/80 px-3 py-1.5 text-xs font-medium text-white shadow-lg">
+            {overlayLabel[zone]}
           </div>
         </div>
       </div>
@@ -285,9 +336,6 @@ function DropZoneOverlay({ zone }: { zone: DropZone }) {
   );
 }
 
-/**
- * 面板控制按钮（关闭 + 最大化）
- */
 function PaneControls({
   onClose,
   onMaximize,
@@ -297,35 +345,56 @@ function PaneControls({
   onMaximize: (e: React.MouseEvent) => void;
   showMaximize: boolean;
 }) {
-  const { t } = useI18n();
   return (
     <div
       className={cn(
-        "absolute top-0 left-0 right-0 z-20",
-        "flex items-center justify-end",
-        "h-8 transition-all duration-200",
+        "absolute left-0 right-0 top-0 z-20",
+        "flex h-8 items-center justify-end",
         "bg-gradient-to-b from-background/90 to-transparent",
-        "opacity-0 -translate-y-full group-hover:opacity-100 group-hover:translate-y-0"
+        "opacity-0 -translate-y-full transition-all duration-200",
+        "group-hover:translate-y-0 group-hover:opacity-100",
       )}
     >
-      <div className="flex items-center gap-1 pr-2 pt-1">
-        {showMaximize && (
-          <button
-            className="p-0.5 rounded-sm hover:bg-accent/80 text-muted-foreground/70 hover:text-foreground transition-colors"
-            onClick={onMaximize}
-            title={t("最大化面板")}
-          >
-            <Maximize2 className="h-3 w-3" />
-          </button>
-        )}
+      <PaneControlButtons
+        onClose={onClose}
+        onMaximize={onMaximize}
+        showMaximize={showMaximize}
+      />
+    </div>
+  );
+}
+
+function PaneControlButtons({
+  onClose,
+  onMaximize,
+  showMaximize,
+  compact = false,
+}: {
+  onClose: (e: React.MouseEvent) => void;
+  onMaximize: (e: React.MouseEvent) => void;
+  showMaximize: boolean;
+  compact?: boolean;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <div className={cn("flex items-center gap-1 pr-2", compact ? "" : "pt-1")}>
+      {showMaximize && (
         <button
-          className="p-0.5 rounded-sm hover:bg-destructive/20 text-muted-foreground/70 hover:text-destructive transition-colors"
-          onClick={onClose}
-          title={t("关闭面板")}
+          className="rounded-sm p-0.5 text-muted-foreground/70 transition-colors hover:bg-accent/80 hover:text-foreground"
+          onClick={onMaximize}
+          title={t("最大化面板")}
         >
-          <X className="h-3 w-3" />
+          <Maximize2 className="h-3 w-3" />
         </button>
-      </div>
+      )}
+      <button
+        className="rounded-sm p-0.5 text-muted-foreground/70 transition-colors hover:bg-destructive/20 hover:text-destructive"
+        onClick={onClose}
+        title={t("关闭面板")}
+      >
+        <X className="h-3 w-3" />
+      </button>
     </div>
   );
 }

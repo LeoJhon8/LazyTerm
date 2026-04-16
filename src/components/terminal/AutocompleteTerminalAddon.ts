@@ -1,43 +1,60 @@
 import { Terminal, type ITerminalAddon } from "@xterm/xterm";
 
+import {
+  parseTerminalCommandLine,
+  type ParsedTerminalCommandLine,
+} from "./terminal-command-line";
+
 export interface AutocompleteSuggestEvent {
   active: boolean;
   buffer: string;
   x: number;
   y: number;
+  parentHeight?: number;
+  cellHeight?: number;
 }
+
+const EMPTY_LINE_STATE: ParsedTerminalCommandLine = {
+  rawLine: "",
+  command: "",
+  commandStartX: 0,
+  cursorCommandOffset: 0,
+  isCursorAtEnd: true,
+};
 
 export class AutocompleteTerminalAddon implements ITerminalAddon {
   private _terminal?: Terminal;
   private _disposables: { dispose: () => void }[] = [];
-  
-  public inputBuffer: string = "";
-  private _onInsert?: (text: string) => void;
-  public isActive: boolean = false;
-  private _ignoreNextKey: boolean = false;
-  private _lastX: number = 0;
-  private _lastY: number = 0;
-  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // 缓存 DOM 测量值，避免每次按键都查询 DOM
-  private _cachedCellWidth: number = 0;
-  private _cachedCellHeight: number = 0;
+  public inputBuffer = "";
+  public isActive = false;
+
+  private _onInsert?: (text: string) => void;
+  private _ignoreNextKey = false;
+  private _lastX = 0;
+  private _lastY = 0;
+
+  private _cachedCellWidth = 0;
+  private _cachedCellHeight = 0;
   private _cachedParentRect: DOMRect | null = null;
   private _cachedTermRect: DOMRect | null = null;
-  private _cacheTick: number = 0;
+  private _cacheTick = 0;
+  private _suppressedAcceptKey: string | null = null;
 
-  private sessionId: string;
-  private _hasSuggestions: boolean = false;
+  private readonly sessionId: string;
+  private _hasSuggestions = false;
+  private _hasSelectedSuggestion = false;
+  private _lineStateCache: ParsedTerminalCommandLine = EMPTY_LINE_STATE;
+  private _trackingCurrentLine = false;
+  private _pendingLineSync = false;
 
   private _onStatusChange = (e: Event) => {
     const customEvent = e as CustomEvent;
     this._hasSuggestions = customEvent.detail.hasSuggestions;
+    this._hasSelectedSuggestion = customEvent.detail.hasSelectedSuggestion;
   };
 
-  constructor(
-    sessionId: string,
-    onInsert?: (text: string) => void
-  ) {
+  constructor(sessionId: string, onInsert?: (text: string) => void) {
     this.sessionId = sessionId;
     this._onInsert = onInsert;
   }
@@ -45,43 +62,70 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
   public activate(terminal: Terminal): void {
     this._terminal = terminal;
 
-    // 监听按键事件提取输入字符串
     this._disposables.push(
       terminal.onKey((e) => this._handleKey(e.key, e.domEvent))
+    );
+    this._disposables.push(
+      terminal.onWriteParsed(() => {
+        if (this._trackingCurrentLine || this._pendingLineSync || this.isActive) {
+          this._syncFromTerminalLine();
+        }
+      })
+    );
+    this._disposables.push(
+      terminal.onCursorMove(() => {
+        if (this._trackingCurrentLine || this._pendingLineSync || this.isActive) {
+          this._syncFromTerminalLine();
+        }
+      })
     );
 
     window.addEventListener(`autocomplete-status-${this.sessionId}`, this._onStatusChange);
     this._disposables.push({
       dispose: () => {
         window.removeEventListener(`autocomplete-status-${this.sessionId}`, this._onStatusChange);
-      }
+      },
     });
 
-    // 拦截特定按键，当 Autocomplete 处于激活状态时阻止 Xterm 通过 PTY 传递给服务器
     terminal.attachCustomKeyEventHandler((e) => {
+      if (this._suppressedAcceptKey === e.key) {
+        if (e.type === "keyup") {
+          this._suppressedAcceptKey = null;
+        }
+        return false;
+      }
+
       if (this.isActive && this._hasSuggestions) {
-        if (e.key === "Tab" || e.key === "ArrowUp" || e.key === "ArrowDown") {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
           if (e.type === "keydown") {
-            const event = new CustomEvent("lazy-term-autocomplete-key", { 
-              detail: { key: e.key, shiftKey: e.shiftKey } 
-            });
-            window.dispatchEvent(event);
+            window.dispatchEvent(
+              new CustomEvent("lazy-term-autocomplete-key", {
+                detail: { key: e.key, shiftKey: e.shiftKey },
+              })
+            );
           }
-          return false; // 阻止 xterm 拦截
-        } else if (e.key === "Enter") {
-           if (e.type === "keydown") {
-             const event = new CustomEvent("lazy-term-autocomplete-key", { 
-               detail: { key: e.key, shiftKey: e.shiftKey } 
-             });
-             window.dispatchEvent(event);
-           }
-           return false;
-        } else if (e.key === "Escape") {
-           this._cancel();
-           // 不拦截 Escape，允许它重置其他逻辑
-           return true; 
+          return false;
+        }
+
+        if ((e.key === "Tab" || e.key === "Enter") && this._hasSelectedSuggestion) {
+          if (e.type === "keydown") {
+            this._suppressedAcceptKey = e.key;
+            window.dispatchEvent(
+              new CustomEvent("lazy-term-autocomplete-key", {
+                detail: { key: e.key, shiftKey: e.shiftKey },
+              })
+            );
+          }
+          return false;
+        }
+
+        if (e.key === "Escape") {
+          this._resetTracking();
+          this._cancel();
+          return true;
         }
       }
+
       return true;
     });
   }
@@ -92,57 +136,100 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
       return;
     }
 
-    if (domEvent.key === "Enter" || domEvent.key === "ArrowUp" || domEvent.key === "ArrowDown" || domEvent.ctrlKey || domEvent.metaKey || domEvent.altKey) {
-       if (!this.isActive) {
-           this._cancel();
-       }
-       return;
-    }
-
-    if (domEvent.key === "Backspace") {
-      if (this.inputBuffer.length > 0) {
-        this.inputBuffer = this.inputBuffer.substring(0, this.inputBuffer.length - 1);
-      }
-    } else if (key.length === 1) { 
-      // 空格断开补全的匹配单词
-      if (key === " ") {
-        this._cancel();
-        return;
-      }
-      this.inputBuffer += key;
-    } else {
-      // 其他控制符号
+    if (domEvent.key === "Enter") {
+      this._resetTracking();
       this._cancel();
       return;
     }
 
-    // 使用 debounce 避免每次按键都触发建议更新
-    this._scheduleSuggest();
+    if (domEvent.ctrlKey || domEvent.metaKey || domEvent.altKey) {
+      this._hideSuggestions();
+      return;
+    }
+
+    if (
+      domEvent.key === "Backspace" ||
+      domEvent.key === "Delete" ||
+      domEvent.key === "Tab" ||
+      domEvent.key === "ArrowLeft" ||
+      domEvent.key === "ArrowRight" ||
+      domEvent.key === "ArrowUp" ||
+      domEvent.key === "ArrowDown" ||
+      domEvent.key === "Home" ||
+      domEvent.key === "End" ||
+      key.length === 1
+    ) {
+      this._trackingCurrentLine = true;
+      this._pendingLineSync = true;
+      return;
+    }
+
+    this._hideSuggestions();
   }
 
-  private _scheduleSuggest() {
-    if (this._debounceTimer !== null) {
-      clearTimeout(this._debounceTimer);
+  private _readTerminalLineState() {
+    if (!this._terminal) {
+      return null;
     }
-    this._debounceTimer = setTimeout(() => {
-      this._debounceTimer = null;
-      if (this.inputBuffer.length > 0) {
-        this._triggerSuggest(true);
-      } else {
+
+    const activeBuffer = this._terminal.buffer.active;
+    const line = activeBuffer.getLine(activeBuffer.baseY + activeBuffer.cursorY);
+    if (!line) {
+      return null;
+    }
+
+    return parseTerminalCommandLine(line.translateToString(true), activeBuffer.cursorX);
+  }
+
+  private _syncFromTerminalLine() {
+    const nextState = this._readTerminalLineState();
+    if (!nextState) {
+      if (!this._pendingLineSync) {
+        this._resetTracking();
         this._cancel();
       }
-    }, 80);
+      return;
+    }
+
+    const lineChanged =
+      nextState.rawLine !== this._lineStateCache.rawLine ||
+      nextState.command !== this._lineStateCache.command ||
+      nextState.cursorCommandOffset !== this._lineStateCache.cursorCommandOffset;
+
+    if (!lineChanged && !this._pendingLineSync && !this.isActive) {
+      return;
+    }
+
+    this._pendingLineSync = false;
+    this._lineStateCache = nextState;
+    this.inputBuffer = nextState.command;
+
+    if (!nextState.command.trim()) {
+      this._resetTracking();
+      this._cancel();
+      return;
+    }
+
+    this._trackingCurrentLine = true;
+
+    if (!nextState.isCursorAtEnd) {
+      this._hideSuggestions();
+      return;
+    }
+
+    this._triggerSuggest(true);
   }
 
-  /**
-   * 刷新 DOM 缓存。每次调用最多每 200ms 重新测量一次，其间使用缓存值。
-   */
   private _refreshDomCache() {
     const now = performance.now();
-    if (now - this._cacheTick < 200 && this._cachedParentRect) return;
+    if (now - this._cacheTick < 200 && this._cachedParentRect) {
+      return;
+    }
     this._cacheTick = now;
 
-    if (!this._terminal) return;
+    if (!this._terminal) {
+      return;
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const core = (this._terminal as any)._core;
@@ -151,15 +238,18 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
       this._cachedCellHeight = core._renderService?.dimensions?.css?.cell?.height || 18;
     }
 
-    const screenElement = this._terminal.element?.querySelector('.xterm-screen') || this._terminal.element;
+    const screenElement =
+      this._terminal.element?.querySelector(".xterm-screen") || this._terminal.element;
     this._cachedTermRect = screenElement?.getBoundingClientRect() ?? null;
 
-    const offsetParent = this._terminal.element?.closest('main') || document.body;
+    const offsetParent = this._terminal.element?.closest("main") || document.body;
     this._cachedParentRect = offsetParent.getBoundingClientRect();
   }
 
   private _getCursorPixelRect() {
-    if (!this._terminal) return { x: this._lastX, y: this._lastY };
+    if (!this._terminal) {
+      return { x: this._lastX, y: this._lastY };
+    }
 
     this._refreshDomCache();
 
@@ -173,56 +263,82 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
     const relativeLeft = this._cachedTermRect.left - this._cachedParentRect.left;
     const relativeTop = this._cachedTermRect.top - this._cachedParentRect.top;
 
-    const x = relativeLeft + (cursorX * this._cachedCellWidth);
-    const y = relativeTop + (cursorY * this._cachedCellHeight) + this._cachedCellHeight + 4;
+    const x = relativeLeft + cursorX * this._cachedCellWidth;
+    const y = relativeTop + cursorY * this._cachedCellHeight + this._cachedCellHeight + 4;
 
     this._lastX = x;
     this._lastY = y;
 
-    return { 
-      x, 
-      y, 
+    return {
+      x,
+      y,
       parentHeight: this._cachedParentRect.height,
-      cellHeight: this._cachedCellHeight 
+      cellHeight: this._cachedCellHeight,
     };
   }
 
   private _triggerSuggest(active: boolean) {
     this.isActive = active;
-    const rect = active ? this._getCursorPixelRect() : { x: 0, y: 0, parentHeight: 0, cellHeight: 0 };
-    window.dispatchEvent(new CustomEvent(`autocomplete-suggest-${this.sessionId}`, {
-      detail: { 
-        active, 
-        buffer: this.inputBuffer, 
-        x: rect.x, 
-        y: rect.y,
-        parentHeight: rect.parentHeight,
-        cellHeight: rect.cellHeight
-      }
-    }));
+    const rect = active
+      ? this._getCursorPixelRect()
+      : { x: 0, y: 0, parentHeight: 0, cellHeight: 0 };
+
+    window.dispatchEvent(
+      new CustomEvent<AutocompleteSuggestEvent>(`autocomplete-suggest-${this.sessionId}`, {
+        detail: {
+          active,
+          buffer: this.inputBuffer,
+          x: rect.x,
+          y: rect.y,
+          parentHeight: rect.parentHeight,
+          cellHeight: rect.cellHeight,
+        },
+      })
+    );
+  }
+
+  private _hideSuggestions() {
+    if (this.isActive) {
+      this._triggerSuggest(false);
+    }
+  }
+
+  private _resetTracking() {
+    this._trackingCurrentLine = false;
+    this._pendingLineSync = false;
+    this._lineStateCache = EMPTY_LINE_STATE;
   }
 
   public insertCompletion(text: string) {
-      if (text.startsWith(this.inputBuffer)) {
-          const remainder = text.substring(this.inputBuffer.length);
-          this._onInsert?.(remainder);
-      } else {
-          // 如果用户补全的是个近义词或中间匹配，我们把它补全上去
-          this._onInsert?.("\b".repeat(this.inputBuffer.length) + text);
-      }
+    const nextState = this._readTerminalLineState();
+    if (nextState) {
+      this._lineStateCache = nextState;
+      this.inputBuffer = nextState.command;
+    }
+
+    if (!text) {
       this._cancel();
+      return;
+    }
+
+    if (text.startsWith(this.inputBuffer)) {
+      const remainder = text.substring(this.inputBuffer.length);
+      this._onInsert?.(remainder);
+    } else {
+      this._onInsert?.("\b".repeat(this.inputBuffer.length) + text);
+    }
+
+    this._trackingCurrentLine = true;
+    this._pendingLineSync = true;
+    this._cancel();
   }
 
   public forceCancel() {
+    this._resetTracking();
     this._cancel();
   }
 
   private _cancel() {
-    if (this._debounceTimer !== null) {
-      clearTimeout(this._debounceTimer);
-      this._debounceTimer = null;
-    }
-    // 只在状态确实改变时发送事件，避免无谓的 React 重渲染
     if (this.isActive || this.inputBuffer.length > 0) {
       this.inputBuffer = "";
       this._triggerSuggest(false);
@@ -230,11 +346,8 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
   }
 
   public dispose(): void {
-    if (this._debounceTimer !== null) {
-      clearTimeout(this._debounceTimer);
-      this._debounceTimer = null;
-    }
-    this._disposables.forEach(d => d.dispose());
+    this._resetTracking();
+    this._disposables.forEach((disposable) => disposable.dispose());
     this.isActive = false;
   }
 }

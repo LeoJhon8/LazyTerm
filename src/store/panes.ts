@@ -72,7 +72,10 @@ interface PanesState {
   /**
    * 最大化叶子面板
    */
-  maximizePane: (leafId: string) => void;
+  maximizePane: (leafId: string) => {
+    keptSessionId: string | null;
+    detachedSessionIds: string[];
+  } | null;
   
   /**
    * 设置叶子面板的会话
@@ -245,9 +248,20 @@ export const usePanesStore = create<PanesState>()(
 
     maximizePane: (leafId) => {
       const tabId = getActiveTabId();
-      if (!tabId) return;
+      if (!tabId) return null;
 
       const ws = get().getActiveWorkspace();
+      const leaves = getAllLeaves(ws.rootNode);
+      const keptLeaf = leaves.find((leaf) => leaf.id === leafId);
+      if (!keptLeaf) {
+        logger.error("FE/store/panes", "Leaf not found for maximize", { tabId, leafId });
+        return null;
+      }
+
+      const detachedSessionIds = leaves
+        .filter((leaf) => leaf.id !== leafId)
+        .map((leaf) => leaf.sessionId)
+        .filter((sessionId): sessionId is string => !!sessionId);
       const newRoot = maximizeLeafUtil(ws.rootNode, leafId);
       set((state) => ({
         workspaces: {
@@ -255,6 +269,16 @@ export const usePanesStore = create<PanesState>()(
           [tabId]: { rootNode: newRoot, focusedPaneId: leafId },
         }
       }));
+      logger.info("FE/store/panes", "Maximized pane and detached sibling sessions", {
+        tabId,
+        leafId,
+        keptSessionId: keptLeaf.sessionId,
+        detachedSessionIds,
+      });
+      return {
+        keptSessionId: keptLeaf.sessionId,
+        detachedSessionIds,
+      };
     },
 
     setPaneSession: (leafId, sessionId) => {

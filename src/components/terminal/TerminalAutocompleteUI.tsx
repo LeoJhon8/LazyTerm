@@ -23,7 +23,7 @@ export function TerminalAutocompleteUI({
 }) {
   const { t } = useI18n();
   const [pos, setPos] = useState<AutocompletePos>({ active: false, buffer: "", x: 0, y: 0 });
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const { commands: historyCommands } = useHistoryStore();
   const { commands: quickCommands } = useQuickCommandsStore();
 
@@ -35,17 +35,23 @@ export function TerminalAutocompleteUI({
 
   // 使用 useMemo 缓存建议列表，只在 buffer/active/数据源变化时重新计算
   const suggestions = useMemo(() => {
-    if (!pos.active || !pos.buffer) return [];
+    if (!pos.active) return [];
 
-    const lowerBuffer = pos.buffer.toLowerCase();
+    const query = pos.buffer.trim();
+    if (!query) return [];
+
+    const lowerBuffer = query.toLowerCase();
+    const isSameAsCurrentLine = (command: string) => command.trim() === query;
     
     const quickMatches = quickCommands
       .filter(c => c.label.toLowerCase().includes(lowerBuffer) || c.command.toLowerCase().includes(lowerBuffer))
+      .filter(c => !isSameAsCurrentLine(c.command))
       .map(c => ({ id: "q_" + c.id, label: c.label, command: c.command, type: 'quick' as const }));
 
     const quickCommandSet = new Set(quickMatches.map(q => q.command));
     const historyMatches = historyCommands
       .filter(c => c.command.toLowerCase().includes(lowerBuffer))
+      .filter(c => !isSameAsCurrentLine(c.command))
       .filter(c => !quickCommandSet.has(c.command))
       .slice(0, 10)
       .map(c => ({ id: "h_" + c.id, label: c.command, command: c.command, type: 'history' as const }));
@@ -55,7 +61,7 @@ export function TerminalAutocompleteUI({
 
   // 建议列表变化时重置选中索引
   useEffect(() => {
-    setSelectedIndex(0);
+    setSelectedIndex(-1);
   }, [suggestions]);
 
   const handleAccept = useCallback((command: string) => {
@@ -69,10 +75,15 @@ export function TerminalAutocompleteUI({
        const { key } = e.detail;
        
        if (key === "ArrowDown") {
-         setSelectedIndex(prev => (prev + 1) % suggestions.length);
+         setSelectedIndex(prev => (prev < 0 ? 0 : (prev + 1) % suggestions.length));
        } else if (key === "ArrowUp") {
-         setSelectedIndex(prev => (prev - 1 + suggestions.length) % suggestions.length);
+         setSelectedIndex(prev => (
+           prev < 0 ? suggestions.length - 1 : (prev - 1 + suggestions.length) % suggestions.length
+         ));
        } else if (key === "Enter" || key === "Tab") {
+         if (selectedIndex < 0) {
+           return;
+         }
          const selected = suggestions[selectedIndex];
          if (selected) {
             handleAccept(selected.command);
@@ -89,10 +100,11 @@ export function TerminalAutocompleteUI({
   // 同步建议状态给 Addon
   useEffect(() => {
     const hasSuggestions = pos.active && suggestions.length > 0;
+    const hasSelectedSuggestion = hasSuggestions && selectedIndex >= 0 && selectedIndex < suggestions.length;
     window.dispatchEvent(new CustomEvent(`autocomplete-status-${sessionId}`, { 
-      detail: { hasSuggestions } 
+      detail: { hasSuggestions, hasSelectedSuggestion } 
     }));
-  }, [sessionId, pos.active, suggestions.length]);
+  }, [sessionId, pos.active, suggestions.length, selectedIndex]);
 
   if (!pos.active || suggestions.length === 0) return null;
 

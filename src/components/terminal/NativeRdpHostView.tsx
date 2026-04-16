@@ -20,14 +20,19 @@ const NATIVE_RDP_OVERLAY_EVENT = "lazy-native-rdp-overlay";
 const READY_STATES: NativeRdpStatePayload["state"][] = ["connected"];
 const FAILED_STATES: NativeRdpStatePayload["state"][] = ["error"];
 const DISCONNECTED_STATES: NativeRdpStatePayload["state"][] = ["disconnected", "closed"];
+const HISTORY_READY_STATES: NativeRdpStatePayload["state"][] = ["hidden", "visible", "focused", "connected"];
+const REACTIVATION_GRACE_MS = 700;
 
-function resolveOverlayMode(payload: NativeRdpStatePayload): "connecting" | "failed" | "disconnected" | "none" {
+function resolveOverlayMode(
+  payload: NativeRdpStatePayload,
+  hasConnectionHistory: boolean,
+): "connecting" | "failed" | "disconnected" | "none" {
   if (FAILED_STATES.includes(payload.state)) {
-    return "failed";
+    return hasConnectionHistory ? "disconnected" : "failed";
   }
 
   if (DISCONNECTED_STATES.includes(payload.state)) {
-    return "disconnected";
+    return hasConnectionHistory ? "disconnected" : "failed";
   }
 
   if (READY_STATES.includes(payload.state)) {
@@ -75,13 +80,16 @@ export function NativeRdpHostView({
 }) {
   const { t } = useI18n();
   const initialState = connector.getLatestState();
-  const initialOverlayMode = resolveOverlayMode(initialState);
+  const initialHasConnectionHistory = connector.hasEverConnected() || HISTORY_READY_STATES.includes(initialState.state);
+  const initialOverlayMode = resolveOverlayMode(initialState, initialHasConnectionHistory);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
   const hasBackgroundImage = useSettingsStore((state) => state.backgroundImageEnabled && !!state.backgroundImage);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const menuOverlayActiveRef = useRef(false);
-  const hasReachedReadyStateRef = useRef(initialOverlayMode === "none");
-  const disconnectedLockedRef = useRef(initialOverlayMode === "disconnected" || initialOverlayMode === "failed");
+  const hasReachedReadyStateRef = useRef(initialHasConnectionHistory || initialOverlayMode === "none");
+  const activationGraceUntilRef = useRef(
+    initialHasConnectionHistory ? performance.now() + REACTIVATION_GRACE_MS : 0
+  );
   const [menuMaskVisible, setMenuMaskVisible] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [overlayMode, setOverlayMode] = useState<"connecting" | "failed" | "disconnected" | "none">(initialOverlayMode);
@@ -101,22 +109,19 @@ export function NativeRdpHostView({
 
     connector.onState((payload) => {
       if (!disposed) {
-        if (disconnectedLockedRef.current && !DISCONNECTED_STATES.includes(payload.state) && !FAILED_STATES.includes(payload.state)) {
-          return;
-        }
-
         setRetrying(false);
         setState(payload);
+        const hasConnectionHistory = hasReachedReadyStateRef.current || connector.hasEverConnected();
+        const withinActivationGrace = hasConnectionHistory && performance.now() < activationGraceUntilRef.current;
 
         if (FAILED_STATES.includes(payload.state)) {
-          disconnectedLockedRef.current = true;
-          setOverlayMode(hasReachedReadyStateRef.current ? "disconnected" : "failed");
+          setOverlayMode(withinActivationGrace ? "connecting" : (hasConnectionHistory ? "disconnected" : "failed"));
           return;
         }
 
         if (DISCONNECTED_STATES.includes(payload.state)) {
-          setOverlayMode(hasReachedReadyStateRef.current ? "disconnected" : "failed");
-          if (!hasReachedReadyStateRef.current && payload.state !== "error") {
+          setOverlayMode(withinActivationGrace ? "connecting" : (hasConnectionHistory ? "disconnected" : "failed"));
+          if (!hasConnectionHistory && payload.state !== "error") {
             setState({
               ...payload,
               state: "error",
@@ -128,6 +133,7 @@ export function NativeRdpHostView({
 
         if (READY_STATES.includes(payload.state)) {
           hasReachedReadyStateRef.current = true;
+          activationGraceUntilRef.current = 0;
           setOverlayMode("none");
           return;
         }
@@ -140,10 +146,10 @@ export function NativeRdpHostView({
       }
     }).catch((error) => {
       if (!disposed) {
-        disconnectedLockedRef.current = true;
+        const hasConnectionHistory = hasReachedReadyStateRef.current || connector.hasEverConnected();
         setRetrying(false);
-        hasReachedReadyStateRef.current = false;
-        setOverlayMode("failed");
+        hasReachedReadyStateRef.current = hasConnectionHistory;
+        setOverlayMode(hasConnectionHistory ? "disconnected" : "failed");
         setState({
           state: "error",
           detail: error instanceof Error ? error.message : String(error),
@@ -157,13 +163,13 @@ export function NativeRdpHostView({
           return;
         }
 
-        disconnectedLockedRef.current = true;
+        const hasConnectionHistory = hasReachedReadyStateRef.current || connector.hasEverConnected();
         setRetrying(false);
-        hasReachedReadyStateRef.current = false;
-        setOverlayMode(stateRef.current.state === "connected" ? "disconnected" : "failed");
+        hasReachedReadyStateRef.current = hasConnectionHistory;
+        setOverlayMode(hasConnectionHistory ? "disconnected" : "failed");
         setState({
-          state: stateRef.current.state === "connected" ? "closed" : "error",
-          detail: stateRef.current.state === "connected"
+          state: hasConnectionHistory ? "closed" : "error",
+          detail: hasConnectionHistory
             ? t("Native RDP 原生宿主会话已断开。")
             : (stateRef.current.detail ?? t("Windows 远程桌面连接未能建立。")),
         });
@@ -308,9 +314,33 @@ export function NativeRdpHostView({
 
   useEffect(() => {
     visualReadyNotifiedRef.current = false;
-    hasReachedReadyStateRef.current = initialOverlayMode === "none";
-    disconnectedLockedRef.current = initialOverlayMode === "disconnected" || initialOverlayMode === "failed";
-  }, [connector, initialOverlayMode]);
+    hasReachedReadyStateRef.current = initialHasConnectionHistory || initialOverlayMode === "none";
+    activationGraceUntilRef.current = initialHasConnectionHistory
+      ? performance.now() + REACTIVATION_GRACE_MS
+      : 0;
+  }, [connector, initialHasConnectionHistory, initialOverlayMode]);
+
+  useEffect(() => {
+    if (!initialHasConnectionHistory) {
+      return;
+    }
+
+    const remaining = activationGraceUntilRef.current - performance.now();
+    if (remaining <= 0) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      const currentState = stateRef.current;
+      if (FAILED_STATES.includes(currentState.state) || DISCONNECTED_STATES.includes(currentState.state)) {
+        setOverlayMode("disconnected");
+      }
+    }, remaining);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [connector, initialHasConnectionHistory]);
 
   useEffect(() => {
     const hasOverlay = menuMaskVisible || resizeMaskVisible;
@@ -379,7 +409,6 @@ export function NativeRdpHostView({
 
     setRetrying(true);
     hasReachedReadyStateRef.current = false;
-    disconnectedLockedRef.current = false;
     setOverlayMode("connecting");
     setState({
       state: "launching",

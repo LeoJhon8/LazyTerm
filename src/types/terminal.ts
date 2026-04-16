@@ -123,6 +123,7 @@ export interface INativeRdpConnector extends ISessionConnector {
   readonly backend: 'msrdpax';
 
   getLatestState(): NativeRdpStatePayload;
+  hasEverConnected(): boolean;
   onState(handler: (payload: NativeRdpStatePayload) => void): Promise<void>;
   onClose(handler: () => void): () => void;
   mount(rect: NativeHostRect): Promise<void>;

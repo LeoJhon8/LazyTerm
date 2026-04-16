@@ -19,6 +19,7 @@ import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
 import { TerminalAutocompleteUI } from "./TerminalAutocompleteUI";
 import { AutocompleteTerminalAddon } from "./AutocompleteTerminalAddon";
+import { extractTerminalCommand } from "./terminal-command-line";
 import { useI18n } from "@/i18n";
 
 // 全局 Terminal 实例缓存，确保切换 tab 时输出历史不丢失
@@ -436,7 +437,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
           if (line) {
             const rawText = line.translateToString(true);
-            const command = extractCommand(rawText);
+            const command = extractTerminalCommand(rawText);
 
             if (command && command.length > 0 && command !== lastCommandRef.current) {
               addHistoryCommandRef.current(command);

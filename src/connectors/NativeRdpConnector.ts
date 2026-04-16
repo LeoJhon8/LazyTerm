@@ -9,7 +9,7 @@ import { logger } from "@/lib/logger";
 import { getErrorMessage } from "@/lib/errorUtils";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
 
-const FINAL_NATIVE_STATES: NativeRdpStatePayload["state"][] = ["disconnected", "closed", "error"];
+const FINAL_NATIVE_STATES: NativeRdpStatePayload["state"][] = ["closed"];
 
 export class NativeRdpConnector implements INativeRdpConnector {
   readonly protocol = "rdp" as const;
@@ -27,6 +27,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
   private visibilityRefCount = 0;
   private visibilityApplied: boolean | null = null;
   private finalStateLocked = false;
+  private everConnected = false;
   private latestState: NativeRdpStatePayload = {
     state: "launching",
     detail: "正在准备 MsTscAx 原生宿主进程。",
@@ -44,6 +45,10 @@ export class NativeRdpConnector implements INativeRdpConnector {
     return this.latestState;
   }
 
+  hasEverConnected(): boolean {
+    return this.everConnected;
+  }
+
   async open(): Promise<void> {
     if (this.sessionId) {
       return;
@@ -52,6 +57,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
     if (!this.connectPromise) {
       this.closedBeforeConnect = false;
       this.finalStateLocked = false;
+      this.everConnected = false;
       this.latestState = {
         state: "launching",
         detail: "正在准备 MsTscAx 原生宿主进程。",
@@ -192,6 +198,10 @@ export class NativeRdpConnector implements INativeRdpConnector {
   private emitState(payload: NativeRdpStatePayload) {
     if (this.finalStateLocked && !FINAL_NATIVE_STATES.includes(payload.state)) {
       return;
+    }
+
+    if (["hidden", "visible", "focused", "connected"].includes(payload.state)) {
+      this.everConnected = true;
     }
 
     if (FINAL_NATIVE_STATES.includes(payload.state)) {
