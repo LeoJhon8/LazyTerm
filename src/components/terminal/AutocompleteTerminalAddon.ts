@@ -47,6 +47,7 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
   private _lineStateCache: ParsedTerminalCommandLine = EMPTY_LINE_STATE;
   private _trackingCurrentLine = false;
   private _pendingLineSync = false;
+  private _suggestTimeout?: number;
 
   private _onStatusChange = (e: Event) => {
     const customEvent = e as CustomEvent;
@@ -279,22 +280,29 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
 
   private _triggerSuggest(active: boolean) {
     this.isActive = active;
-    const rect = active
-      ? this._getCursorPixelRect()
-      : { x: 0, y: 0, parentHeight: 0, cellHeight: 0 };
 
-    window.dispatchEvent(
-      new CustomEvent<AutocompleteSuggestEvent>(`autocomplete-suggest-${this.sessionId}`, {
-        detail: {
-          active,
-          buffer: this.inputBuffer,
-          x: rect.x,
-          y: rect.y,
-          parentHeight: rect.parentHeight,
-          cellHeight: rect.cellHeight,
-        },
-      })
-    );
+    if (this._suggestTimeout !== undefined) {
+      window.clearTimeout(this._suggestTimeout);
+    }
+
+    this._suggestTimeout = window.setTimeout(() => {
+      const rect = active
+        ? this._getCursorPixelRect()
+        : { x: 0, y: 0, parentHeight: 0, cellHeight: 0 };
+
+      window.dispatchEvent(
+        new CustomEvent<AutocompleteSuggestEvent>(`autocomplete-suggest-${this.sessionId}`, {
+          detail: {
+            active,
+            buffer: this.inputBuffer,
+            x: rect.x,
+            y: rect.y,
+            parentHeight: rect.parentHeight,
+            cellHeight: rect.cellHeight,
+          },
+        })
+      );
+    }, 10);
   }
 
   private _hideSuggestions() {
@@ -346,6 +354,9 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
   }
 
   public dispose(): void {
+    if (this._suggestTimeout !== undefined) {
+      window.clearTimeout(this._suggestTimeout);
+    }
     this._resetTracking();
     this._disposables.forEach((disposable) => disposable.dispose());
     this.isActive = false;

@@ -123,6 +123,8 @@ function extractCommand(lineText: string) {
   return text;
 }
 
+void extractCommand;
+
 function isTerminalConnector(connector: SessionConnector | undefined): connector is ITerminalConnector {
   return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
 }

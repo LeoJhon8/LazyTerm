@@ -4,6 +4,7 @@ use crate::error::safe_lock;
 use crate::protocol::sftp_utils;
 use crate::protocol::ssh_auth;
 use crate::utils::map_sftp_error;
+use crate::SftpFileEntry;
 use crate::{
     AppState, SftpUploadCancelGuard, SftpUploadItem, SftpUploadProgress, SshConnectConfig,
 };
@@ -11,7 +12,6 @@ use russh_sftp::client::SftpSession;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::SftpFileEntry;
 
 /// 单文件 SFTP 上传
 #[tauri::command]
@@ -303,7 +303,7 @@ pub async fn sftp_list_dir(
     let mut entries = Vec::new();
     while let Some(entry) = dir_stream.next() {
         let name = entry.file_name();
-        
+
         let stat = entry.metadata();
         entries.push(SftpFileEntry {
             name,

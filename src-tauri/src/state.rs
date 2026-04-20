@@ -2,7 +2,9 @@
 //! 包含全局状态 AppState 的定义
 
 use crate::protocol::NativeRdpSession;
-use crate::types::{LocalTerminalSession, RdpSession, SshTerminalSession, VncSession, TelnetSession};
+use crate::types::{
+    LocalTerminalSession, RdpSession, SshTerminalSession, TelnetSession, VncSession,
+};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as TokioMutex;

@@ -38,15 +38,12 @@ pub async fn open_telnet_session(
     // Register session
     {
         let mut sessions = state.telnet_sessions.lock().await;
-        sessions.insert(
-            session_id.clone(),
-            TelnetSession { control_tx },
-        );
+        sessions.insert(session_id.clone(), TelnetSession { control_tx });
     }
 
     let session_id_clone = session_id.clone();
     let app_clone = app.clone();
-    
+
     let (write_tx, mut write_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
     // Task to handle reading from TCP and emitting to frontend
@@ -54,16 +51,19 @@ pub async fn open_telnet_session(
         let mut buffer = [0u8; 8192];
         let mut state = 0; // 0: Normal, 1: IAC, 2: IAC+DO/DONT/WILL/WONT, 3: IAC+SB, 4: IAC+SB...+IAC
         let mut cmd = 0;
-        
+
         loop {
             match read_half.read(&mut buffer).await {
                 Ok(n) if n == 0 => {
-                    info!("TELNET connection closed by remote (session {})", session_id_clone);
+                    info!(
+                        "TELNET connection closed by remote (session {})",
+                        session_id_clone
+                    );
                     break;
                 }
                 Ok(n) => {
                     let mut output = String::new();
-                    
+
                     for &b in &buffer[..n] {
                         match state {
                             0 => {
@@ -75,7 +75,8 @@ pub async fn open_telnet_session(
                             }
                             1 => {
                                 match b {
-                                    IAC => { // escaped IAC
+                                    IAC => {
+                                        // escaped IAC
                                         output.push(IAC as char);
                                         state = 0;
                                     }
@@ -97,10 +98,18 @@ pub async fn open_telnet_session(
                                 // Accept ECHO(1) and SGA(3), refuse everything else
                                 let reply_cmd = match cmd {
                                     DO => {
-                                        if option == 1 || option == 3 { WILL } else { WONT }
+                                        if option == 1 || option == 3 {
+                                            WILL
+                                        } else {
+                                            WONT
+                                        }
                                     }
                                     WILL => {
-                                        if option == 1 || option == 3 { DO } else { DONT }
+                                        if option == 1 || option == 3 {
+                                            DO
+                                        } else {
+                                            DONT
+                                        }
                                     }
                                     _ => 0,
                                 };
@@ -128,7 +137,9 @@ pub async fn open_telnet_session(
                     }
 
                     if !output.is_empty() {
-                        if let Err(e) = app_clone.emit(&format!("telnet-data-{}", session_id_clone), output) {
+                        if let Err(e) =
+                            app_clone.emit(&format!("telnet-data-{}", session_id_clone), output)
+                        {
                             warn!("Failed to emit telnet data: {:?}", e);
                         }
                     }

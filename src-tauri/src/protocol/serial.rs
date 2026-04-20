@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::io::{Read, Write};
-use tauri::{AppHandle, Emitter, Runtime};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Emitter, Runtime};
 
 #[derive(Debug, Deserialize)]
 pub struct SerialConfigPayload {
@@ -63,7 +63,10 @@ pub async fn list_serial_ports() -> Result<Vec<String>, String> {
                         if let Some(pos) = parts.iter().position(|&s| s == "REG_SZ") {
                             if pos + 1 < parts.len() {
                                 let port_name = parts[pos + 1];
-                                if port_name.starts_with("COM") || port_name.starts_with("CNCA") || port_name.starts_with("CNCB") {
+                                if port_name.starts_with("COM")
+                                    || port_name.starts_with("CNCA")
+                                    || port_name.starts_with("CNCB")
+                                {
                                     ports.insert(port_name.to_string());
                                 }
                             }
@@ -135,7 +138,7 @@ pub async fn open_serial_session<R: Runtime>(
     }
 
     let session_id_clone = session_id.clone();
-    
+
     std::thread::spawn(move || {
         let mut buffer = [0u8; 8192];
         let event_name = format!("serial-data-{}", session_id_clone);

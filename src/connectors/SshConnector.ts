@@ -87,6 +87,8 @@ export class SshConnector implements ITerminalConnector {
 
     try {
       const initialSize = estimateInitialPtySize(this.fontConfig);
+      const keepAlive = this.config.keepAlive ?? true;
+      const keepAliveInterval = Math.max(1, Math.floor(this.config.keepAliveInterval ?? 60));
 
       this.sessionId = await invokeTauri<string>("create_ssh_session", {
         config: {
@@ -95,7 +97,8 @@ export class SshConnector implements ITerminalConnector {
           username: this.config.username,
           password: this.config.authType === "password" ? this.config.password : undefined,
           private_key_path: this.config.authType === "privateKey" ? this.config.privateKeyPath : undefined,
-          keep_alive: this.config.keepAlive,
+          keep_alive: keepAlive,
+          keep_alive_interval: keepAliveInterval,
           ready_timeout: this.config.readyTimeout,
           initial_cols: initialSize.cols,
           initial_rows: initialSize.rows,

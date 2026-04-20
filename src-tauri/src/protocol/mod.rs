@@ -11,11 +11,11 @@ pub mod ssh_auth;
 pub mod tls;
 
 // 终端协议
+pub mod serial;
 pub mod sftp;
 pub mod ssh;
-pub mod terminal;
-pub mod serial;
 pub mod telnet;
+pub mod terminal;
 
 // RDP 协议
 pub mod mstsc;
@@ -33,11 +33,11 @@ pub mod vnc_ffi;
 pub use mstsc::*;
 pub use native_rdp::*;
 pub use rdp::*;
+pub use serial::*;
 pub use sftp::*;
 pub use ssh::*;
-pub use terminal::*;
-pub use serial::*;
 pub use telnet::*;
+pub use terminal::*;
 pub use vnc::*;
 pub mod updater;
 pub use updater::*;

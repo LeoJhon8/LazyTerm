@@ -10,6 +10,22 @@ use std::time::Duration;
 
 use crate::types::SshConnectConfig;
 
+pub fn build_ssh_client_config(config: &SshConnectConfig) -> client::Config {
+    let keepalive_interval = if config.keep_alive.unwrap_or(true) {
+        Some(Duration::from_secs(
+            config.keep_alive_interval.unwrap_or(60).max(1),
+        ))
+    } else {
+        None
+    };
+
+    client::Config {
+        inactivity_timeout: None,
+        keepalive_interval,
+        ..Default::default()
+    }
+}
+
 /// SSH 客户端处理器
 #[derive(Clone)]
 pub struct SshClientHandler {
@@ -300,7 +316,8 @@ pub async fn authenticate_ssh(
             if !password.is_empty() {
                 attempted_pwd = true;
                 authenticated =
-                    authenticate_keyboard_interactive_then_password(handle, username, password).await?;
+                    authenticate_keyboard_interactive_then_password(handle, username, password)
+                        .await?;
             }
         }
     }
@@ -425,18 +442,12 @@ async fn authenticate_keyboard_interactive_then_password(
 }
 
 /// 创建 SSH 客户端配置
-pub fn create_ssh_client_config() -> client::Config {
-    client::Config {
-        inactivity_timeout: Some(Duration::from_secs(300)),
-        ..Default::default()
-    }
-}
 
 /// 建立 SSH 连接并认证
 pub async fn connect_and_authenticate(
     config: &SshConnectConfig,
 ) -> Result<client::Handle<SshClientHandler>, String> {
-    let client_config = create_ssh_client_config();
+    let client_config = build_ssh_client_config(config);
     let client_handler = SshClientHandler::new(config.host.clone(), config.port);
 
     let mut handle = client::connect(
