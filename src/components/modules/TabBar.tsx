@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { X, Plus, Columns } from "lucide-react";
+import { X, Plus, Columns, Pencil, XCircle, ArrowLeftToLine, ArrowRightToLine } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
 import { getAllLeaves } from "@/lib/pane-utils";
 import { useEffect, useRef, useState, useCallback, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
@@ -175,20 +175,23 @@ function SortableTab({
             </Button>
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent className="min-w-32 text-xs">
+        <ContextMenuContent className="min-w-40 text-xs">
           <ContextMenuItem className="py-1 text-xs" onClick={() => onRename(id)}>
+            <Pencil className="mr-2 h-3.5 w-3.5" />
             {t("重命名标签页")}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem className="py-1 text-xs" onClick={() => onCloseOthers(id)}>
-            {t("关闭其他标签页")}
+            <XCircle className="mr-2 h-3.5 w-3.5" />
+            {t("关闭其他")}
           </ContextMenuItem>
-          <ContextMenuSeparator />
           <ContextMenuItem className="py-1 text-xs" disabled={!canCloseLeft} onClick={() => onCloseLeft(id)}>
-            {t("关闭左侧标签页")}
+            <ArrowLeftToLine className="mr-2 h-3.5 w-3.5" />
+            {t("关闭左侧")}
           </ContextMenuItem>
           <ContextMenuItem className="py-1 text-xs" disabled={!canCloseRight} onClick={() => onCloseRight(id)}>
-            {t("关闭右侧标签页")}
+            <ArrowRightToLine className="mr-2 h-3.5 w-3.5" />
+            {t("关闭右侧")}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -241,14 +244,7 @@ export function TabBar() {
       .catch((err) => logger.error("FE/tab-bar", "Failed to get shells", {err}));
   }, []);
 
-  // 不再需要自动化的 Session 生命周期绑定，新建标签时直接分发
-  // 仅在组件挂载时如果没有任何 Tab，创建一个默认 Tab
-  useEffect(() => {
-    if (tabs.length === 0 && shells.length > 0) {
-      handleAddTab();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shells]);
+  // 启动时不自动创建默认 Tab，由用户手动新建或从会话列表连接
 
   useEffect(() => {
     if (!renameState.open) {

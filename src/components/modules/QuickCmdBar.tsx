@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, type WheelEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Plus, Trash2, Pencil } from "lucide-react";
+import { Play, Plus, Trash2, Pencil, Send } from "lucide-react";
 import { useQuickCommandsStore, type QuickCommand } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
@@ -99,7 +99,8 @@ function SortableQuickCommand({
             {t("删除")}
           </ContextMenuItem>
           <ContextMenuItem className="py-1 text-xs" onClick={onContextMenu}>
-            {t("发送到所有标签页")}
+            <Send className="mr-2 h-4 w-4" />
+            {t("发送到全部")}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>

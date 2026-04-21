@@ -36,6 +36,7 @@ function App() {
     backgroundBlur,
     backgroundOpacity,
     uiOpacity,
+    quickCmdBarEnabled,
   } = useSettingsStore();
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
@@ -49,7 +50,7 @@ function App() {
   const focusSession = focusSessionId 
     ? sessions.find(s => s.id === focusSessionId)
     : null;
-  const shouldHideQuickCmdBar = focusSession?.type === "rdp" || focusSession?.type === "vnc";
+  const shouldHideQuickCmdBar = !quickCmdBarEnabled || focusSession?.type === "rdp" || focusSession?.type === "vnc";
   const effectiveBottomRowHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight;
   const localizedConnectionError = connectionError
     ? getConnectionErrorPresentation(connectionError.sessionType, connectionError.technicalDetails)
@@ -68,7 +69,12 @@ function App() {
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [getAllConnectors]);  // 动态处理全局背景色和暗色模式跟班
+  }, [getAllConnectors]);
+
+  // 清理旧版本遗留的持久化数据（tabs/sessions 不再持久化）
+  useEffect(() => {
+    localStorage.removeItem("lazy-term-sessions");
+  }, []);
   useEffect(() => {
     const root = document.documentElement;
     const body = document.body;
@@ -117,7 +123,8 @@ function App() {
     focusSession?.type,
     slotConfig.left.modules, slotConfig.right.modules,
     effectiveBottomPanelHeight,
-    effectiveBottomRowHeight // 监听模块列表变化，触发布局重算
+    effectiveBottomRowHeight, // 监听模块列表变化，触发布局重算
+    quickCmdBarEnabled,
   ]);
 
   // 同步外观自定义到 CSS 变量

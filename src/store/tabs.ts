@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import { logger } from "@/lib/logger";
 import { createConnector, type SessionCreationData } from "@/connectors/ConnectorFactory";
@@ -131,8 +130,7 @@ interface TabsState {
 }
 
 export const useTabsStore = create<TabsState>()(
-  persist(
-    (set, get) => {
+  (set, get) => {
       const handleLocalDisconnect = (targetSessionId: string) => {
         const targetSession = get().sessions.find((session) => session.id === targetSessionId);
         if (!shouldReconnectLocalSession(targetSession)) {
@@ -463,27 +461,7 @@ export const useTabsStore = create<TabsState>()(
           set({ connectionError: null });
         },
       };
-    },
-    {
-      name: "lazy-term-sessions",
-      storage: createJSONStorage(() => localStorage),
-      // 持久化白名单处理
-      partialize: (state) => ({
-        tabs: state.tabs,
-        activeTabId: state.activeTabId,
-        sessions: state.sessions.map((s) => {
-          // 排除不可序列化的 connector 实例
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { connector, ...persistentData } = s;
-          return {
-            ...persistentData,
-            config: s.config || { cwd: s.cwd }
-          };
-        }),
-        focusSessionId: state.focusSessionId,
-      }),
     }
-  )
 );
 
 // 为兼容旧代码，添加 getter 拦截

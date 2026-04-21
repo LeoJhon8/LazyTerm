@@ -21,6 +21,16 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { AVAILABLE_MODULES, LOCKED_MODULES } from "@/config/default-slot-config";
 import type { SlotConfig } from "@/config/default-slot-config";
 import { useSlotConfigStore } from "@/store/slot-config";
@@ -542,7 +552,7 @@ function SlotSettings({ currentConfig, onToggle, onActiveChange, resetToDefault 
 // --- 子组件 4：终端设置 ---
 function TerminalSettings() {
   const { t } = useI18n();
-  const { defaultShell, confirmCloseNonDefaultTabs, terminalAutocomplete, setSettings } = useSettingsStore();
+  const { defaultShell, confirmCloseNonDefaultTabs, terminalAutocomplete, quickCmdBarEnabled, setSettings } = useSettingsStore();
   const [shells, setShells] = useState<ShellInfo[]>([]);
 
   useMountedEffect(() => {
@@ -628,6 +638,22 @@ function TerminalSettings() {
               onCheckedChange={(checked) => setSettings({ terminalAutocomplete: !!checked })}
             />
           </div>
+
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-border/70 bg-background/60 px-4 py-3">
+            <div className="space-y-1">
+              <Label htmlFor="quick-cmd-bar-enabled" className="text-sm font-semibold cursor-pointer">
+                {t("显示快捷命令栏")}
+              </Label>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {t("开启后，终端下方会显示快捷命令栏，可以快速执行预设命令。")}
+              </p>
+            </div>
+            <Checkbox
+              id="quick-cmd-bar-enabled"
+              checked={quickCmdBarEnabled}
+              onCheckedChange={(checked) => setSettings({ quickCmdBarEnabled: !!checked })}
+            />
+          </div>
         </div>
       </div>
 
@@ -670,6 +696,13 @@ function DataImportExport() {
   
   const { gitRepoPath, setGitRepoPath, lastSyncTime, setLastSyncTime } = useGitSyncStore();
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // 恢复确认弹窗状态
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
+  const [pendingRestoreData, setPendingRestoreData] = useState<any>(null);
+
+  // 清空确认弹窗状态
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
 
   const getErrorMessage = (error: unknown) => {
     if (error instanceof Error) {
@@ -734,30 +767,38 @@ function DataImportExport() {
         throw new Error(t("无效的导入文件格式"));
       }
 
-      if (!confirm(t("恢复将覆盖当前的 SSH 配置与快捷命令，确定要继续吗？"))) {
-        return;
-      }
-
-      let importedCount = 0;
-
-      // 导入 SSH 配置 (全量替换)
-      if (data.sshProfiles && Array.isArray(data.sshProfiles)) {
-        importProfiles(data.sshProfiles);
-        importedCount += data.sshProfiles.length;
-      }
-
-      // 导入快捷命令 (全量替换)
-      if (data.quickCommands && Array.isArray(data.quickCommands)) {
-        useQuickCommandsStore.setState({ commands: data.quickCommands });
-        importedCount += data.quickCommands.length;
-      }
-
-      setImportMessage(t("成功恢复 {count} 条配置数据！", { count: importedCount }));
-      setMessageType('success');
+      // 保存解析后的数据，弹出确认弹窗
+      setPendingRestoreData(data);
+      setRestoreConfirmOpen(true);
     } catch (error: unknown) {
       setImportMessage(t("恢复失败：{error}", { error: getErrorMessage(error) }));
       setMessageType('error');
     }
+  };
+
+  // 确认恢复后执行
+  const handleConfirmRestore = () => {
+    const data = pendingRestoreData;
+    if (!data) return;
+
+    let importedCount = 0;
+
+    // 导入 SSH 配置 (全量替换)
+    if (data.sshProfiles && Array.isArray(data.sshProfiles)) {
+      importProfiles(data.sshProfiles);
+      importedCount += data.sshProfiles.length;
+    }
+
+    // 导入快捷命令 (全量替换)
+    if (data.quickCommands && Array.isArray(data.quickCommands)) {
+      useQuickCommandsStore.setState({ commands: data.quickCommands });
+      importedCount += data.quickCommands.length;
+    }
+
+    setImportMessage(t("成功恢复 {count} 条配置数据！", { count: importedCount }));
+    setMessageType('success');
+    setPendingRestoreData(null);
+    setRestoreConfirmOpen(false);
   };
 
   const handleImportFromFile = async () => {
@@ -786,15 +827,18 @@ function DataImportExport() {
 
   // 清空所有数据
   const handleClearAll = () => {
-    if (confirm(t("确定要清空所有会话配置和快捷命令吗？此操作不可恢复！"))) {
-      useSshProfilesStore.setState({
-        nodes: [{ id: "root-folder", type: "folder", name: t("我的会话"), parentId: null, isExpanded: true, isRoot: true, order: 0 }]
-      });
-      useQuickCommandsStore.setState({ commands: [] });
-      setSelectedImportFile(null);
-      setImportMessage(t("所有配置数据已清空！"));
-      setMessageType('success');
-    }
+    setClearConfirmOpen(true);
+  };
+
+  const handleConfirmClear = () => {
+    useSshProfilesStore.setState({
+      nodes: [{ id: "root-folder", type: "folder", name: t("我的会话"), parentId: null, isExpanded: true, isRoot: true, order: 0 }]
+    });
+    useQuickCommandsStore.setState({ commands: [] });
+    setSelectedImportFile(null);
+    setImportMessage(t("所有配置数据已清空！"));
+    setMessageType('success');
+    setClearConfirmOpen(false);
   };
 
   const selectedFileName = selectedImportFile?.split(/[\\/]/).pop() ?? null;
@@ -1006,6 +1050,38 @@ function DataImportExport() {
           </div>
         )}
       </div>
+
+      {/* 恢复数据确认弹窗 */}
+      <AlertDialog open={restoreConfirmOpen} onOpenChange={(open) => { if (!open) { setRestoreConfirmOpen(false); setPendingRestoreData(null); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("恢复数据")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("恢复将覆盖当前的 SSH 配置与快捷命令，确定要继续吗？")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setRestoreConfirmOpen(false); setPendingRestoreData(null); }}>{t("取消")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmRestore}>{t("确认恢复")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 清空数据确认弹窗 */}
+      <AlertDialog open={clearConfirmOpen} onOpenChange={(open) => { if (!open) setClearConfirmOpen(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("清空所有数据")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("确定要清空所有会话配置和快捷命令吗？此操作不可恢复！")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setClearConfirmOpen(false)}>{t("取消")}</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive" onClick={handleConfirmClear}>{t("确认清空")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
