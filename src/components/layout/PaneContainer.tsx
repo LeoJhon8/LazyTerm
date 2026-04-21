@@ -1,35 +1,23 @@
 import { useCallback, useRef, useState } from "react";
 import { usePanesStore, type PaneNode, type PaneSplit } from "@/store/panes";
 import { PaneView } from "./PaneView";
+import { WelcomePage } from "./WelcomePage";
 import { cn } from "@/lib/utils";
 import { isLeaf } from "@/lib/pane-utils";
 
 import { useTabsStore } from "@/store/tabs";
-import { useI18n } from "@/i18n";
 
 /**
  * 面板容器组件
  * 递归渲染面板树
  */
 export function PaneContainer() {
-  const { t } = useI18n();
   const activeTabId = useTabsStore(state => state.activeTabId);
   const rootNode = usePanesStore(state => activeTabId ? state.workspaces[activeTabId]?.rootNode : null);
 
-  // 没有面板：显示欢迎页
+  // 没有面板：显示品牌化欢迎页
   if (!rootNode) {
-    return (
-      <div className="flex h-full w-full items-center justify-center">
-        <div className="text-center">
-          <div className="text-2xl font-semibold text-muted-foreground mb-2">
-            {t("欢迎使用 Lazy Term")}
-          </div>
-          <div className="text-sm text-muted-foreground">
-            {t("点击左侧会话列表开始连接")}
-          </div>
-        </div>
-      </div>
-    );
+    return <WelcomePage />;
   }
 
   return (
@@ -146,19 +134,24 @@ function SplitResizeHandle({ splitId, direction }: SplitResizeHandleProps) {
     <div
       ref={handleRef}
       className={cn(
-        "relative z-10 flex items-center justify-center",
-        "bg-border/30 hover:bg-primary/40 transition-colors",
-        isDragging && "bg-primary/50",
+        "group relative z-10 flex items-center justify-center",
+        "transition-colors duration-150",
         isHorizontal
-          ? "w-1 cursor-col-resize"
-          : "h-1 cursor-row-resize"
+          ? "w-[3px] cursor-col-resize hover:w-[4px]"
+          : "h-[3px] cursor-row-resize hover:h-[4px]",
+        isDragging
+          ? "bg-primary/50"
+          : "bg-border/40 hover:bg-primary/30"
       )}
       onMouseDown={handleMouseDown}
     >
       <div
         className={cn(
-          "rounded-full bg-muted-foreground/40",
-          isHorizontal ? "h-8 w-0.5" : "w-8 h-0.5"
+          "rounded-full transition-all duration-150",
+          isHorizontal ? "h-8 w-[1px]" : "w-8 h-[1px]",
+          isDragging
+            ? "bg-primary/80"
+            : "bg-muted-foreground/25 group-hover:bg-primary/50"
         )}
       />
     </div>

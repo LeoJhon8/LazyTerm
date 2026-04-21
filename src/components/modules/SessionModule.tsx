@@ -35,6 +35,7 @@ import { getAvailableShells } from "@/services/shellService";
 import { logger } from "@/lib/logger";
 import { useDialogState } from "@/hooks/useDialogState";
 import { useI18n } from "@/i18n";
+import { onQuickConnect } from "@/lib/quick-connect-event";
 
 const IS_WINDOWS = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
 
@@ -86,8 +87,8 @@ function NodeRowContent({
     <div
       style={{ paddingLeft: `${isOverlay ? 8 : depth * 14 + 6}px` }}
       className={cn(
-        "flex items-center gap-2 py-1.5 px-2 rounded-sm text-sm transition-all relative border-y border-transparent",
-        !isOverlay && "group hover:bg-accent/40",
+        "flex items-center gap-2 py-2 px-2 rounded-lg text-sm transition-all relative border-y border-transparent",
+        !isOverlay && "group hover:bg-accent/50",
         isOverlay && "bg-background border shadow-xl opacity-90 w-60 z-50 pointer-events-none",
         isUploading && !isOverlay && "border-slate-300/80 bg-amber-100/80 text-amber-950 ring-1 ring-amber-300/80 dark:border-cyan-400/40 dark:bg-cyan-500/16 dark:text-cyan-50 dark:ring-cyan-400/45",
         
@@ -108,15 +109,18 @@ function NodeRowContent({
             <Folder className={cn("h-4 w-4", node.isRoot ? "text-amber-500 fill-amber-500/10" : "text-blue-500 fill-blue-500/10")} />
           </div>
         ) : (
-          node.type === "rdp"
-            ? <AppWindow className="h-4 w-4 text-sky-600/80" />
-            : node.type === "vnc"
-            ? <ScreenShare className="h-4 w-4 text-emerald-600/80" />
-            : node.type === "serial"
-            ? <Usb className="h-4 w-4 text-purple-600/80" />
-            : node.type === "telnet"
-            ? <Terminal className="h-4 w-4 text-emerald-500/80" />
-            : <Server className={cn("h-4 w-4 text-emerald-600/80", isUploading && "text-amber-700 dark:text-cyan-300 animate-pulse")} />
+          <div>
+            {node.type === "rdp"
+              ? <AppWindow className="h-4 w-4 text-sky-600/80" />
+              : node.type === "vnc"
+              ? <ScreenShare className="h-4 w-4 text-emerald-600/80" />
+              : node.type === "serial"
+              ? <Usb className="h-4 w-4 text-purple-600/80" />
+              : node.type === "telnet"
+              ? <Terminal className="h-4 w-4 text-emerald-500/80" />
+              : <Server className={cn("h-4 w-4 text-emerald-600/80", isUploading && "text-amber-700 dark:text-cyan-300 animate-pulse")} />
+            }
+          </div>
         )}
         <span
           title={node.name}
@@ -222,7 +226,44 @@ export function SessionModule() {
   const { nodes, addFolder, addProfile, removeNode, updateNode, moveNode, ensureRoot, syncRootFolderName } = useSshProfilesStore();
   const { addTab, setActiveTabId, addSession } = useTabsStore();
 
+  /**
+   * 判断当前 tab 是否可以被覆盖（替换）
+   * 条件：当前 tab 存在 + 仅有 1 个 pane + 该 pane 关联的 session 类型为 local
+   */
+  const canReplaceCurrentTab = (): { tabId: string; paneId: string; oldSessionId: string } | null => {
+    const tabsStore = useTabsStore.getState();
+    const panesStore = usePanesStore.getState();
+    const currentTabId = tabsStore.activeTabId;
+    if (!currentTabId) return null;
+
+    const ws = panesStore.getWorkspace(currentTabId);
+    if (!ws.rootNode) return null;
+
+    const leaves = panesStore.getAllLeaves(currentTabId);
+    if (leaves.length !== 1) return null;
+
+    const soleLeaf = leaves[0];
+    if (!soleLeaf.sessionId) return null;
+
+    const session = tabsStore.sessions.find(s => s.id === soleLeaf.sessionId);
+    if (!session || session.type !== "local") return null;
+
+    return { tabId: currentTabId, paneId: soleLeaf.id, oldSessionId: soleLeaf.sessionId };
+  };
+
   const launchWorkspaceWithSession = (sessionData: Parameters<typeof addSession>[0]) => {
+    // 尝试覆盖当前本地终端 tab
+    const replaceTarget = canReplaceCurrentTab();
+    if (replaceTarget) {
+      // 覆盖模式：关闭旧 session → 替换 pane 的 sessionId → 更新 tab 标题
+      useTabsStore.getState().removeSession(replaceTarget.oldSessionId);
+      const sessionId = addSession(sessionData);
+      usePanesStore.getState().setPaneSession(replaceTarget.paneId, sessionId);
+      useTabsStore.getState().updateTab(replaceTarget.tabId, { title: sessionData.title });
+      return;
+    }
+
+    // 新建模式：原有逻辑
     const tabId = addTab({ title: sessionData.title });
     setActiveTabId(tabId);
     const sessionId = addSession(sessionData);
@@ -256,6 +297,22 @@ export function SessionModule() {
       .then(setAvailableShells)
       .catch(err => logger.error("FE/session-module/shells", "Failed to get available shells", {err}));
   }, []);
+
+  // 监听来自 WelcomePage 的快速连接请求
+  useEffect(() => {
+    const dialogMap: Record<string, Parameters<typeof dialog.open>[0]> = {
+      ssh: "directSsh",
+      rdp: "directRdp",
+      vnc: "directVnc",
+      serial: "directSerial",
+      telnet: "directTelnet",
+    };
+    const cleanup = onQuickConnect((type) => {
+      const dialogType = dialogMap[type];
+      if (dialogType) dialog.open(dialogType);
+    });
+    return cleanup;
+  }, [dialog]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
@@ -586,8 +643,7 @@ export function SessionModule() {
         onOpenChange={() => dialog.close()}
         isDirect={true}
         onSave={(cfg) => {
-          // 创建会话 - pane 的创建和关联由 TabBar 的生命周期回调集中处理
-          addSession({
+          launchWorkspaceWithSession({
             title: cfg.nickname || cfg.host,
             type: "ssh",
             host: cfg.host,

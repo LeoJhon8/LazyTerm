@@ -5,8 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: "Geist", "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
-  --font-mono: "Geist Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas", monospace;
+  --font-sans: "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas", monospace;
 
   --radius-sm: calc(var(--radius) - 6px);
   --radius-md: calc(var(--radius) - 3px);
@@ -96,7 +96,7 @@
     --panel-strong: color-mix(in srgb, oklch(0.25 0.015 252) 94%, transparent);
     --panel-border: color-mix(in srgb, oklch(0.7 0.03 200) 18%, transparent);
     --panel-shadow: 0 24px 60px rgba(2, 6, 23, 0.34);
-    --panel-glow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --panel-glow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
     --app-gradient-a: rgba(36, 178, 160, 0.16);
     --app-gradient-b: rgba(251, 191, 36, 0.1);
     --app-gradient-c: rgba(59, 130, 246, 0.14);
@@ -202,43 +202,28 @@
 
   .window-titlebar__logo {
     display: inline-flex;
-    height: calc(var(--titlebar-height) - 12px);
-    width: calc(var(--titlebar-height) - 12px);
-    min-height: 28px;
-    min-width: 28px;
+    height: calc(var(--titlebar-height) - 6px);
+    width: calc(var(--titlebar-height) - 6px);
+    min-height: 34px;
+    min-width: 34px;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
     background: transparent;
-    color: var(--primary-foreground);
-    font-size: 0.68rem;
-    font-weight: 800;
-    letter-spacing: 0.14em;
-    box-shadow: none;
-    padding: 2px;
+    padding: 0;
   }
 
   .window-titlebar__logo img {
     width: 100%;
     height: 100%;
     object-fit: contain;
-    border-radius: inherit;
     display: block;
-  }
-
-  /* Make the icon look more like a Windows app icon */
-  .window-titlebar__logo {
-    background: var(--panel-strong);
-    border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
-    box-shadow: 0 6px 18px rgba(2, 6, 23, 0.18), inset 0 1px 0 rgba(255,255,255,0.08);
   }
 
   .window-titlebar__logo-img {
-    border-radius: 6px;
     display: block;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
   }
 
   .window-titlebar__titles {
@@ -283,11 +268,18 @@
     border-radius: 9999px;
     border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
     background: color-mix(in srgb, var(--background) 76%, transparent);
-    font-size: 0.66rem;
+    font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--muted-foreground) 88%, transparent);
+  }
+
+  /* 暗色模式下增强 meta-pill 可读性 */
+  .dark .window-titlebar__meta-pill {
+    color: color-mix(in srgb, var(--muted-foreground) 96%, transparent);
+    background: color-mix(in srgb, var(--background) 68%, transparent);
+    border-color: color-mix(in srgb, var(--panel-border) 92%, transparent);
   }
 
   .window-titlebar__controls {
@@ -394,17 +386,44 @@
     background: transparent;
     color: color-mix(in srgb, var(--muted-foreground) 88%, transparent);
     box-shadow: none;
-    transition: color 160ms ease, opacity 160ms ease;
+    transition: color 160ms ease, opacity 160ms ease, background-color 160ms ease;
   }
 
   .activity-button:hover {
-    background: transparent;
+    background: color-mix(in srgb, var(--accent) 45%, transparent);
     color: var(--foreground);
   }
 
   .activity-button-active {
-    color: var(--foreground);
-    background: transparent;
+    color: var(--primary);
+    background: color-mix(in srgb, var(--accent) 55%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  /* 激活态 — 左侧色条指示器 */
+  .activity-button-active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 25%;
+    bottom: 25%;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--primary);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--primary) 60%, transparent);
+    transition: opacity 160ms ease;
+  }
+
+  /* 右侧活动栏激活态 — 右侧色条指示器 */
+  .activity-button-active-right::before {
+    left: auto;
+    right: 0;
+    border-radius: 3px 0 0 3px;
+  }
+
+  /* 收起态 — 左侧活动栏图标居中提示 */
+  .activity-button-active-left {
+    color: var(--primary);
   }
 
   .module-shell {
@@ -630,7 +649,7 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    height: 34px;
+    height: 36px;
     min-width: 138px;
     max-width: 224px;
     border: 1px solid transparent;
@@ -651,13 +670,17 @@
   }
 
   .tab-item-active {
-    height: 38px;
+    height: 40px;
     padding: 0 12px; 
     border-color: color-mix(in srgb, var(--panel-border) 82%, transparent);
     border-bottom-color: transparent;
     background: linear-gradient(180deg, color-mix(in srgb, var(--background) 94%, transparent), color-mix(in srgb, var(--background) 82%, transparent));
     color: var(--foreground);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), inset 0 -2px 0 var(--primary), 0 -1px 0 color-mix(in srgb, var(--background) 80%, transparent);
+    font-weight: 600;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.24),
+      inset 0 -3px 0 var(--primary),
+      0 -1px 0 color-mix(in srgb, var(--background) 80%, transparent);
     z-index: 2;
   }
 
@@ -677,8 +700,8 @@
     }
 
     .window-titlebar__logo {
-      height: calc(var(--titlebar-height) - 12px);
-      width: calc(var(--titlebar-height) - 12px);
+      height: calc(var(--titlebar-height) - 8px);
+      width: calc(var(--titlebar-height) - 8px);
     }
   }
 
@@ -834,12 +857,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--muted-foreground) 34%, transparent);
+  background-color: color-mix(in srgb, var(--muted-foreground) 42%, transparent);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--muted-foreground) 52%, transparent);
+  background-color: color-mix(in srgb, var(--muted-foreground) 60%, transparent);
 }
 
 .terminal-container {
@@ -910,4 +933,301 @@
 /* 优化终端选中样式 - 仅使用圆角 */
 .xterm .xterm-selection div {
   border-radius: 2px;
+}
+
+/* ========================================
+   欢迎页品牌化样式
+   ======================================== */
+
+/* 背景装饰光环 */
+.welcome-bg-rings {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.welcome-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--primary) 12%, transparent);
+  animation: welcome-pulse 6s ease-in-out infinite;
+}
+
+.welcome-ring-1 {
+  width: min(420px, 60%);
+  height: min(420px, 60%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation-delay: 0s;
+}
+
+.welcome-ring-2 {
+  width: min(560px, 80%);
+  height: min(560px, 80%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation-delay: 2s;
+  border-color: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.welcome-ring-3 {
+  width: min(700px, 100%);
+  height: min(700px, 100%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation-delay: 4s;
+  border-color: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+@keyframes welcome-pulse {
+  0%, 100% { opacity: 0.3; transform: translate(-50%, -50%) scale(1); }
+  50% { opacity: 0.7; transform: translate(-50%, -50%) scale(1.04); }
+}
+
+/* 欢迎卡片 — 扩展 terminal-empty-card */
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  text-align: center;
+  max-width: min(480px, calc(100% - 48px));
+  animation: welcome-fade-in 0.6s ease-out both;
+}
+
+@keyframes welcome-fade-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Logo 区域 */
+.welcome-logo-area {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.welcome-logo-glow {
+  position: absolute;
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: var(--primary);
+  filter: blur(28px);
+  opacity: 0.3;
+  animation: welcome-glow 4s ease-in-out infinite;
+}
+
+@keyframes welcome-glow {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.15); }
+}
+
+.welcome-logo {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+
+/* 标题区 */
+.welcome-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.welcome-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+  line-height: 1.2;
+}
+
+.welcome-subtitle {
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+  max-width: 320px;
+}
+
+/* 快捷操作卡片网格 */
+.welcome-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.welcome-action-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--panel-border) 70%, transparent);
+  background: color-mix(in srgb, var(--background) 50%, transparent);
+  text-align: left;
+  cursor: pointer;
+  transition: all 180ms ease;
+}
+
+.welcome-action-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(2, 6, 23, 0.08);
+}
+
+.welcome-action-card:active {
+  transform: translateY(0);
+}
+
+/* 操作图标 */
+.welcome-action-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.welcome-action-icon--terminal {
+  background: color-mix(in srgb, oklch(0.72 0.16 151) 18%, transparent);
+  color: oklch(0.72 0.16 151);
+}
+
+.welcome-action-icon--ssh {
+  background: color-mix(in srgb, oklch(0.65 0.14 220) 18%, transparent);
+  color: oklch(0.65 0.14 220);
+}
+
+.welcome-action-icon--rdp {
+  background: color-mix(in srgb, oklch(0.63 0.16 270) 18%, transparent);
+  color: oklch(0.63 0.16 270);
+}
+
+.welcome-action-icon--vnc {
+  background: color-mix(in srgb, oklch(0.68 0.14 30) 18%, transparent);
+  color: oklch(0.68 0.14 30);
+}
+.welcome-action-icon--serial {
+  background: color-mix(in srgb, oklch(0.65 0.14 300) 18%, transparent);
+  color: oklch(0.65 0.14 300);
+}
+.welcome-action-icon--telnet {
+  background: color-mix(in srgb, oklch(0.70 0.14 170) 18%, transparent);
+  color: oklch(0.70 0.14 170);
+}
+
+.dark .welcome-action-icon--terminal {
+  background: color-mix(in srgb, oklch(0.78 0.14 151) 22%, transparent);
+  color: oklch(0.78 0.14 151);
+}
+
+.dark .welcome-action-icon--ssh {
+  background: color-mix(in srgb, oklch(0.74 0.12 220) 22%, transparent);
+  color: oklch(0.74 0.12 220);
+}
+
+.dark .welcome-action-icon--rdp {
+  background: color-mix(in srgb, oklch(0.72 0.14 270) 22%, transparent);
+  color: oklch(0.72 0.14 270);
+}
+
+.dark .welcome-action-icon--vnc {
+  background: color-mix(in srgb, oklch(0.76 0.12 30) 22%, transparent);
+  color: oklch(0.76 0.12 30);
+}
+.dark .welcome-action-icon--serial {
+  background: color-mix(in srgb, oklch(0.74 0.12 300) 22%, transparent);
+  color: oklch(0.74 0.12 300);
+}
+.dark .welcome-action-icon--telnet {
+  background: color-mix(in srgb, oklch(0.78 0.12 170) 22%, transparent);
+  color: oklch(0.78 0.12 170);
+}
+
+/* 操作文案 */
+.welcome-action-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.welcome-action-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.welcome-action-desc {
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+}
+
+/* 底部提示 */
+.welcome-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
+  margin-top: 4px;
+}
+
+/* ========================================
+   全局微交互动画
+   ======================================== */
+
+/* 模块内容区展开/收起过渡 */
+.module-content-enter {
+  animation: module-slide-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.module-content-exit {
+  animation: module-slide-out 180ms ease-in both;
+}
+
+@keyframes module-slide-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes module-slide-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(-8px); }
+}
+
+/* 面板焦点切换微闪 */
+.pane-focus-flash {
+  animation: pane-flash 300ms ease-out;
+}
+
+@keyframes pane-flash {
+  0% { box-shadow: inset 0 0 0 2px var(--primary); }
+  100% { box-shadow: inset 0 0 0 2px transparent; }
+}
+
+/* 按钮按下反馈（配合已有的 hover:-translate-y-0.5） */
+button:active:not(:disabled) {
+  transform: translateY(0.5px);
+  transition-duration: 80ms;
+}
+
+/* 列表项悬停入场动画 */
+.activity-button,
+.tab-item,
+.command-card {
+  will-change: transform;
 }

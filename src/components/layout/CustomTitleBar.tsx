@@ -66,7 +66,7 @@ export function CustomTitleBar() {
                 className="window-titlebar__logo-img"
                 src={logo128}
                 srcSet={`${logo32} 32w, ${logo128} 128w, ${logo256} 256w`}
-                sizes="32px"
+                sizes="36px"
                 alt="LazyTerm"
                 onError={(e) => {
                   const target = e.currentTarget as HTMLImageElement;

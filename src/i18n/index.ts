@@ -367,6 +367,16 @@ const zhMessages = {
   "颜色深度": "颜色深度",
   "真彩色 (24-bit)": "真彩色 (24-bit)",
   "警告: 会话连接已更改，输出保留。": "警告: 会话连接已更改，输出保留。",
+  "欢迎使用 LazyTerm": "欢迎使用 LazyTerm",
+  "轻松、快速建立 SSH、远程桌面、VNC、串口、Telnet 连接，或打开本地终端": "轻松、快速建立 SSH、远程桌面、VNC、串口、Telnet 连接，或打开本地终端",
+  "串口通信": "串口通信",
+  "远程终端协议": "远程终端协议",
+  "打开命令行": "打开命令行",
+  "安全远程终端": "安全远程终端",
+  "远程桌面": "远程桌面",
+  "Windows RDP": "Windows RDP",
+  "跨平台远程": "跨平台远程",
+  "点击左侧会话面板创建和管理连接": "点击左侧会话面板创建和管理连接",
 } as const satisfies Record<string, MessageResolver>;
 
 type TranslationKey = keyof typeof zhMessages;
@@ -728,6 +738,16 @@ const enMessages: Record<TranslationKey, MessageResolver> = {
   "颜色深度": "Color depth",
   "真彩色 (24-bit)": "True color (24-bit)",
   "警告: 会话连接已更改，输出保留。": "Warning: the session connection changed. Existing output was kept.",
+  "欢迎使用 LazyTerm": "Welcome to LazyTerm",
+  "轻松、快速建立 SSH、远程桌面、VNC、串口、Telnet 连接，或打开本地终端": "Easily establish SSH, remote desktop, VNC, serial, or Telnet connections, or open a local terminal",
+  "串口通信": "Serial communication",
+  "远程终端协议": "Remote terminal protocol",
+  "打开命令行": "Open command line",
+  "安全远程终端": "Secure remote terminal",
+  "远程桌面": "Remote Desktop",
+  "Windows RDP": "Windows RDP",
+  "跨平台远程": "Cross-platform remote",
+  "点击左侧会话面板创建和管理连接": "Click the session panel on the left to create and manage connections",
 };
 
 const messages = {
