@@ -41,6 +41,8 @@ pub use terminal::*;
 pub use vnc::*;
 pub mod updater;
 pub use updater::*;
+pub mod git_sync;
+pub use git_sync::*;
 
 // 导出核心逻辑函数
 pub use rdp_core::{build_rdp_config, connect_rdp, run_rdp_session};

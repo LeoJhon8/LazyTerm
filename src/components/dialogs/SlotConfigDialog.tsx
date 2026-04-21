@@ -28,9 +28,11 @@ import { useSettingsStore } from "@/store/settings";
 import { useSshProfilesStore } from "@/store/ssh-profiles";
 import { useQuickCommandsStore } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
+import { useGitSyncStore } from "@/store/git-sync";
+import { checkGitRepo, commitAndPushGitRepo, pullGitRepo } from "@/services/gitService";
 import type { TerminalColorScheme } from "@/config/themes";
 import { TERMINAL_THEMES } from "@/config/themes";
-import { FileJson, Upload, Trash2, ImagePlus, X, Palette, LayoutPanelLeft, Database, Terminal, Plus, Info, CloudDownload, RefreshCw } from "lucide-react";
+import { FileJson, Upload, Trash2, ImagePlus, X, Palette, LayoutPanelLeft, Database, Terminal, Plus, Info, CloudDownload, RefreshCw, GitBranch, Send, Download } from "lucide-react";
 import { useEffect as useMountedEffect } from "react";
 import { APP_LANGUAGE_OPTIONS, getModuleDisplayName, getTerminalThemeDisplayName, useI18n, type TranslationKey } from "@/i18n";
 
@@ -665,6 +667,9 @@ function DataImportExport() {
   const [selectedImportFile, setSelectedImportFile] = useState<string | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
+  
+  const { gitRepoPath, setGitRepoPath, lastSyncTime, setLastSyncTime } = useGitSyncStore();
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const getErrorMessage = (error: unknown) => {
     if (error instanceof Error) {
@@ -879,6 +884,128 @@ function DataImportExport() {
           {importMessage}
         </div>
       )}
+
+      {/* --- Git Sync Section --- */}
+      <div className="mt-6 rounded-xl border border-border bg-card p-4">
+        <div className="mb-3 flex items-center gap-2.5">
+          <div className="rounded-lg border border-border bg-muted/30 p-2 text-foreground/80">
+            <GitBranch className="h-4.5 w-4.5" />
+          </div>
+          <Label className="text-sm font-semibold">{"Git 云端同步"}</Label>
+        </div>
+
+        <div className="flex items-center gap-3 mb-4">
+          <Button
+            onClick={async () => {
+              try {
+                const selected = await openDialog({
+                  title: "选择本地 Git 仓库文件夹",
+                  directory: true,
+                  multiple: false,
+                });
+                if (selected && typeof selected === "string") {
+                  const isRepo = await checkGitRepo(selected);
+                  if (!isRepo) {
+                    setImportMessage("警告：该文件夹似乎不是一个有效的 Git 仓库，请先在此初始化 git。");
+                    setMessageType("error");
+                  } else {
+                    setImportMessage("成功设置 Git 同步目录！");
+                    setMessageType("success");
+                  }
+                  setGitRepoPath(selected);
+                }
+              } catch (e) {
+                setImportMessage(String(e));
+                setMessageType("error");
+              }
+            }}
+            variant="outline"
+            className="shrink-0"
+          >
+            {"设置本地仓库目录"}
+          </Button>
+          <div className="flex-1 min-w-0 rounded-lg border border-border bg-muted/15 px-3 py-2 text-sm text-muted-foreground truncate">
+            {gitRepoPath || "尚未选择目录"}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={async () => {
+              if (!gitRepoPath) return;
+              setIsSyncing(true);
+              setImportMessage("正在推送配置...");
+              setMessageType("success");
+              try {
+                const exportData = {
+                  version: "1.0",
+                  exportDate: new Date().toISOString(),
+                  sshProfiles: exportProfiles(),
+                  quickCommands: commands,
+                  sessions: sessions.map(s => ({
+                    title: s.title,
+                    type: s.type,
+                    cwd: s.cwd,
+                    host: s.host,
+                    config: s.config
+                  }))
+                };
+                const jsonString = JSON.stringify(exportData, null, 2);
+                const targetFile = `${gitRepoPath}/lazy-term-sync.json`;
+                await writeTextFile(targetFile, jsonString);
+                
+                await commitAndPushGitRepo(gitRepoPath, "Auto sync config " + new Date().toISOString());
+                setLastSyncTime(Date.now());
+                setImportMessage("同步推送成功！");
+                setMessageType("success");
+              } catch (e) {
+                setImportMessage("推送失败：" + String(e));
+                setMessageType("error");
+              } finally {
+                setIsSyncing(false);
+              }
+            }}
+            disabled={!gitRepoPath || isSyncing}
+            className="flex-1 gap-2"
+          >
+            <Send className="h-4 w-4" />
+            {"推送至远端 (Push)"}
+          </Button>
+          <Button
+            onClick={async () => {
+              if (!gitRepoPath) return;
+              setIsSyncing(true);
+              setImportMessage("正在拉取配置...");
+              setMessageType("success");
+              try {
+                await pullGitRepo(gitRepoPath);
+                const targetFile = `${gitRepoPath}/lazy-term-sync.json`;
+                const rawJson = await readTextFile(targetFile);
+                restoreFromBackup(rawJson);
+                setLastSyncTime(Date.now());
+                setImportMessage("同步拉取并恢复成功！");
+                setMessageType("success");
+              } catch (e) {
+                setImportMessage("拉取失败：" + String(e));
+                setMessageType("error");
+              } finally {
+                setIsSyncing(false);
+              }
+            }}
+            disabled={!gitRepoPath || isSyncing}
+            variant="secondary"
+            className="flex-1 gap-2 border"
+          >
+            <Download className="h-4 w-4" />
+            {"拉取到本地 (Pull)"}
+          </Button>
+        </div>
+        {lastSyncTime && (
+          <div className="mt-3 text-xs text-muted-foreground">
+            {"最后成功同步时间："} {new Date(lastSyncTime).toLocaleString()}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

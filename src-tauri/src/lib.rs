@@ -94,7 +94,10 @@ pub fn run() {
             protocol::close_ssh_session,
             protocol::close_rdp_session,
             protocol::close_vnc_session,
-            protocol::download_and_install_update
+            protocol::download_and_install_update,
+            protocol::git_check_repo,
+            protocol::git_commit_and_push,
+            protocol::git_pull
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

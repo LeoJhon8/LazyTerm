@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@xterm/xterm/css/xterm.css'
+import 'geist/font/sans';
+import 'geist/font/mono';
 import './index.css'
 import App from './App.tsx'
 
