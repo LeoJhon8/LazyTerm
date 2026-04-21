@@ -6,6 +6,14 @@ import { DEFAULT_LANGUAGE_SETTING, type AppLanguageSetting } from "@/i18n/config
 
 export type BackgroundImageUiMode = "frosted" | "clear";
 
+/**
+ * 视图模式
+ * - normal: 标准布局，所有面板正常显示
+ * - focus: 专注模式，仅隐藏左右侧边栏和底栏，保留标题栏和标签栏
+ * - immersive: 沉浸模式，隐藏一切 UI，终端全屏
+ */
+export type ViewMode = "normal" | "focus" | "immersive";
+
 interface SettingsData {
   language: AppLanguageSetting;
   fontSize: number;
@@ -37,6 +45,10 @@ interface SettingsData {
   backgroundBlur: number;             // 背景模糊度 0~20 (px)
   backgroundOpacity: number;          // 背景图片不透明度 0~100
   uiOpacity: number;                  // UI 面板不透明度 30~100
+  // 视图模式
+  viewMode: ViewMode;                  // 当前视图模式（不持久化）
+  immersiveHoverBarDelay: number;      // 悬浮标题栏消失延迟 (ms)
+  immersiveShowTabStrip: boolean;      // 沉浸模式下是否显示悬浮标签条
 }
 
 interface SettingsActions {
@@ -81,6 +93,9 @@ const defaultSettings: SettingsData = {
   backgroundBlur: 0,
   backgroundOpacity: 100,
   uiOpacity: 100,
+  viewMode: "normal",
+  immersiveHoverBarDelay: 800,
+  immersiveShowTabStrip: true,
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -97,6 +112,8 @@ export const useSettingsStore = create<SettingsState>()(
         const data: Partial<SettingsState> = { ...state };
         delete data.setSettings;
         delete data.resetSettings;
+        // 视图模式不持久化，每次启动默认 normal
+        delete data.viewMode;
         return data;
       },
     }

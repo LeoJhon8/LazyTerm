@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState } from "react";
 import { useHistoryStore } from "@/store/history";
 import { useTabsStore } from "@/store/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";

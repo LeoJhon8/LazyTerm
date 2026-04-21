@@ -22,6 +22,9 @@
     {
       "identifier": "http:default",
       "allow": [{ "url": "http://172.50.0.243/*" }]
-    }
+    },
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-is-registered"
   ]
 }

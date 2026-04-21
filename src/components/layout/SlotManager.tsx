@@ -5,6 +5,7 @@ import { TopSlot } from "@/components/layout/TopSlot";
 import { BottomSlot } from "@/components/layout/BottomSlot";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
 import { useTabsStore } from "@/store/tabs";
+import { useViewMode } from "@/hooks/useViewMode";
 
 export function SlotManager() {
   const {
@@ -19,6 +20,7 @@ export function SlotManager() {
     backgroundImage,
   } = useSettingsStore();
   const { focusSessionId, sessions } = useTabsStore();
+  const { isFocus } = useViewMode();
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
   const focusSession = sessions.find((session) => session.id === focusSessionId);
   const shouldHideQuickCmdBar = focusSession?.type === "rdp" || focusSession?.type === "vnc";
@@ -29,24 +31,31 @@ export function SlotManager() {
     ? { backgroundColor: `color-mix(in srgb, var(--color-background) ${uiOpacity}%, transparent)` }
     : {};
 
+  // 专注模式下：隐藏左右侧边栏和底栏，仅保留顶部标签栏
+  const hideLeft = isFocus;
+  const hideRight = isFocus;
+  const hideBottom = isFocus;
+
   return (
     <>
       {/* 左侧插槽 - 宽度由 CSS Grid 列宽 (--lw) 控制 */}
-      <aside
-        id="slot-left"
-        className="panel-surface relative z-10 overflow-hidden border-r transition-all duration-300"
-        style={{
-          gridArea: "left",
-          gridRow: "1 / 4",
-          width: leftPanelCollapsed ? "0px" : "100%",
-          ...panelOpacityStyle,
-          position: "relative",
-        }}
-      >
-        
-        <LeftSlot />
-        {!leftPanelCollapsed && <ResizeHandle side="left" />}
-      </aside>
+      {!hideLeft && (
+        <aside
+          id="slot-left"
+          className="panel-surface relative z-10 overflow-hidden border-r transition-all duration-300"
+          style={{
+            gridArea: "left",
+            gridRow: "1 / 4",
+            width: leftPanelCollapsed ? "0px" : "100%",
+            ...panelOpacityStyle,
+            position: "relative",
+          }}
+        >
+          
+          <LeftSlot />
+          {!leftPanelCollapsed && <ResizeHandle side="left" />}
+        </aside>
+      )}
 
       {/* 顶部插槽 */}
       <header
@@ -62,33 +71,37 @@ export function SlotManager() {
       </header>
 
       {/* 底部插槽 */}
-      <footer
-        id="slot-mid-bottom"
-        className="panel-surface-strong relative z-10 overflow-hidden border-t transition-all duration-300"
-        style={{
-          gridArea: "mid-bottom",
-          height: effectiveFooterHeight,
-          ...panelOpacityStyle,
-        }}
-      >
-        <BottomSlot />
-      </footer>
+      {!hideBottom && (
+        <footer
+          id="slot-mid-bottom"
+          className="panel-surface-strong relative z-10 overflow-hidden border-t transition-all duration-300"
+          style={{
+            gridArea: "mid-bottom",
+            height: effectiveFooterHeight,
+            ...panelOpacityStyle,
+          }}
+        >
+          <BottomSlot />
+        </footer>
+      )}
 
       {/* 右侧插槽 - 宽度由 CSS Grid 列宽 (--rw) 控制 */}
-      <aside
-        id="slot-right"
-        className="panel-surface relative z-10 overflow-hidden border-l transition-all duration-300"
-        style={{
-          gridArea: "right",
-          gridRow: "1 / 4",
-          width: rightPanelCollapsed ? "0px" : "100%",
-          ...panelOpacityStyle,
-          position: "relative",
-        }}
-      >
-        <RightSlot />
-        {!rightPanelCollapsed && <ResizeHandle side="right" />}
-      </aside>
+      {!hideRight && (
+        <aside
+          id="slot-right"
+          className="panel-surface relative z-10 overflow-hidden border-l transition-all duration-300"
+          style={{
+            gridArea: "right",
+            gridRow: "1 / 4",
+            width: rightPanelCollapsed ? "0px" : "100%",
+            ...panelOpacityStyle,
+            position: "relative",
+          }}
+        >
+          <RightSlot />
+          {!rightPanelCollapsed && <ResizeHandle side="right" />}
+        </aside>
+      )}
     </>
   );
 }

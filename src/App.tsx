@@ -4,10 +4,12 @@ import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
 import { getConnectionErrorPresentation } from "@/services/connectionErrorService";
 import { useI18n } from "@/i18n";
+import { useViewMode } from "@/hooks/useViewMode";
 
 import { PaneContainer } from "@/components/layout/PaneContainer";
 import { SlotManager } from "@/components/layout/SlotManager";
 import { CustomTitleBar } from "@/components/layout/CustomTitleBar";
+import { ImmersiveHoverBar } from "@/components/layout/ImmersiveHoverBar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,6 +22,7 @@ import {
 
 function App() {
   const { locale, t } = useI18n();
+  const { viewMode, isImmersive } = useViewMode();
   const { 
     leftPanelWidth,
     rightPanelWidth,
@@ -103,6 +106,25 @@ function App() {
   useEffect(() => {
     const root = document.documentElement;
     
+    // 沉浸模式下所有边栏/标题栏/底栏归零
+    if (viewMode === "immersive") {
+      root.style.setProperty("--lw", "0px");
+      root.style.setProperty("--rw", "0px");
+      root.style.setProperty("--th", "0px");
+      root.style.setProperty("--bh", "0px");
+      return;
+    }
+
+    // 专注模式下隐藏左右侧边栏和底栏，保留顶部标签栏
+    if (viewMode === "focus") {
+      root.style.setProperty("--lw", "0px");
+      root.style.setProperty("--rw", "0px");
+      root.style.setProperty("--bh", "0px");
+      // 保留顶部标签栏
+      root.style.setProperty("--th", `${topPanelCollapsed ? 0 : topPanelHeight}px`);
+      return;
+    }
+
     // 过滤掉 SettingsModule 的左侧实际可见模块
     const leftModulesCount = slotConfig.left.modules.filter(m => m !== 'SettingsModule').length;
     const rightModulesCount = slotConfig.right.modules.length;
@@ -117,6 +139,7 @@ function App() {
     root.style.setProperty("--th", `${topPanelCollapsed ? 0 : topPanelHeight}px`);
     root.style.setProperty("--bh", `${effectiveBottomRowHeight}px`);
   }, [
+    viewMode,
     leftPanelWidth, rightPanelWidth, topPanelHeight, bottomPanelHeight,
     leftPanelCollapsed, rightPanelCollapsed, topPanelCollapsed, bottomPanelCollapsed,
     leftSlotCollapsed, rightSlotCollapsed,
@@ -151,7 +174,10 @@ function App() {
 
   return (
     <div className="app-frame relative h-screen w-screen overflow-hidden bg-background text-foreground">
-      <CustomTitleBar />
+      {/* 正常/专注模式：固定标题栏；沉浸模式：隐藏 */}
+      {!isImmersive && <CustomTitleBar />}
+      {/* 沉浸模式：悬浮标题栏 */}
+      {isImmersive && <ImmersiveHoverBar />}
       <div 
       id="lazy-term-root"
       className="app-shell relative min-h-0 flex-1 overflow-hidden bg-background text-foreground"
@@ -166,32 +192,37 @@ function App() {
         gridTemplateRows: `var(--th, ${topPanelCollapsed ? 0 : topPanelHeight}px) 1fr var(--bh, ${effectiveBottomRowHeight}px)`,
       }}
     >
-      <div
-        aria-hidden="true"
-        className="app-backdrop-orb"
-        style={{
-          top: "-8%",
-          left: "-6%",
-          width: "32vw",
-          height: "32vw",
-          minWidth: "320px",
-          minHeight: "320px",
-          background: "var(--app-gradient-a)",
-        }}
-      />
-      <div
-        aria-hidden="true"
-        className="app-backdrop-orb"
-        style={{
-          right: "-10%",
-          bottom: "-12%",
-          width: "34vw",
-          height: "34vw",
-          minWidth: "340px",
-          minHeight: "340px",
-          background: "var(--app-gradient-b)",
-        }}
-      />
+      {/* 背景装饰球 — 沉浸模式下隐藏 */}
+      {!isImmersive && (
+        <>
+          <div
+            aria-hidden="true"
+            className="app-backdrop-orb"
+            style={{
+              top: "-8%",
+              left: "-6%",
+              width: "32vw",
+              height: "32vw",
+              minWidth: "320px",
+              minHeight: "320px",
+              background: "var(--app-gradient-a)",
+            }}
+          />
+          <div
+            aria-hidden="true"
+            className="app-backdrop-orb"
+            style={{
+              right: "-10%",
+              bottom: "-12%",
+              width: "34vw",
+              height: "34vw",
+              minWidth: "340px",
+              minHeight: "340px",
+              background: "var(--app-gradient-b)",
+            }}
+          />
+        </>
+      )}
 
       {/* 背景图片层 - 使用负 z-index 确保在所有内容后面 */}
       {hasBackgroundImage && (
@@ -210,7 +241,8 @@ function App() {
       )}
 
       {/* 内容层 — 确保在背景之上 */}
-      <SlotManager />
+      {/* 沉浸模式下隐藏所有插槽；专注模式下仅保留顶部标签栏 */}
+      {!isImmersive && <SlotManager />}
       <section
         id="slot-mid-main"
         className="relative z-0 min-h-0 min-w-0 overflow-hidden"
