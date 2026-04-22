@@ -1,9 +1,11 @@
 import { useSettingsStore } from "@/store/settings";
+import { useSlotConfigStore } from "@/store/slot-config";
 import { LeftSlot } from "@/components/layout/LeftSlot";
 import { RightSlot } from "@/components/layout/RightSlot";
 import { TopSlot } from "@/components/layout/TopSlot";
 import { BottomSlot } from "@/components/layout/BottomSlot";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
+import { countValidModules } from "@/components/layout/SideSlot";
 import { useTabsStore } from "@/store/tabs";
 import { useViewMode } from "@/hooks/useViewMode";
 
@@ -19,6 +21,7 @@ export function SlotManager() {
     backgroundImageEnabled,
     backgroundImage,
   } = useSettingsStore();
+  const { currentConfig } = useSlotConfigStore();
   const { focusSessionId, sessions } = useTabsStore();
   const { isFocus } = useViewMode();
   const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
@@ -32,8 +35,11 @@ export function SlotManager() {
     : {};
 
   // 专注模式下：隐藏左右侧边栏和底栏，仅保留顶部标签栏
-  const hideLeft = isFocus;
-  const hideRight = isFocus;
+  // 左右均无有效模块时隐藏侧栏
+  const leftValidCount = countValidModules(currentConfig.left.modules);
+  const rightValidCount = countValidModules(currentConfig.right.modules);
+  const hideLeft = isFocus || leftValidCount === 0;
+  const hideRight = isFocus || rightValidCount === 0;
   const hideBottom = isFocus;
 
   return (
@@ -53,7 +59,7 @@ export function SlotManager() {
         >
           
           <LeftSlot />
-          {!leftPanelCollapsed && <ResizeHandle side="left" />}
+          {!leftPanelCollapsed && leftValidCount > 0 && <ResizeHandle side="left" />}
         </aside>
       )}
 
@@ -99,7 +105,7 @@ export function SlotManager() {
           }}
         >
           <RightSlot />
-          {!rightPanelCollapsed && <ResizeHandle side="right" />}
+          {!rightPanelCollapsed && rightValidCount > 0 && <ResizeHandle side="right" />}
         </aside>
       )}
     </>

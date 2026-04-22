@@ -10,6 +10,8 @@ import { PaneContainer } from "@/components/layout/PaneContainer";
 import { SlotManager } from "@/components/layout/SlotManager";
 import { CustomTitleBar } from "@/components/layout/CustomTitleBar";
 import { ImmersiveHoverBar } from "@/components/layout/ImmersiveHoverBar";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { countValidModules } from "@/components/layout/SideSlot";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,8 +24,8 @@ import {
 
 function App() {
   const { locale, t } = useI18n();
-  const { viewMode, isImmersive } = useViewMode();
-  const { 
+  const { isImmersive } = useViewMode();
+  const {
     leftPanelWidth,
     rightPanelWidth,
     topPanelHeight,
@@ -50,7 +52,7 @@ function App() {
   const hasBackgroundImage = backgroundImageEnabled && !!backgroundImage;
   const shouldDisableUiBlur = hasBackgroundImage && backgroundImageUiMode === "clear";
 
-  const focusSession = focusSessionId 
+  const focusSession = focusSessionId
     ? sessions.find(s => s.id === focusSessionId)
     : null;
   const shouldHideQuickCmdBar = !quickCmdBarEnabled || focusSession?.type === "rdp" || focusSession?.type === "vnc";
@@ -58,6 +60,18 @@ function App() {
   const localizedConnectionError = connectionError
     ? getConnectionErrorPresentation(connectionError.sessionType, connectionError.technicalDetails)
     : null;
+
+  // 列宽/行高：直接同步计算（不再依赖异步 CSS 变量）
+  const leftValidCount = countValidModules(slotConfig.left.modules);
+  const rightValidCount = countValidModules(slotConfig.right.modules);
+  const lw = leftPanelCollapsed || leftValidCount === 0
+    ? 0
+    : (leftSlotCollapsed ? 56 : leftPanelWidth);
+  const rw = rightPanelCollapsed || rightValidCount === 0
+    ? 0
+    : (rightSlotCollapsed ? 56 : rightPanelWidth);
+  const th = topPanelCollapsed ? 0 : topPanelHeight;
+  const bh = effectiveBottomRowHeight;
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -102,54 +116,6 @@ function App() {
     }
   }, [appBackgroundColor, hasBackgroundImage]);
 
-  // 同步布局设置到 CSS 变量（含模块收起状态与迁移监听）
-  useEffect(() => {
-    const root = document.documentElement;
-    
-    // 沉浸模式下所有边栏/标题栏/底栏归零
-    if (viewMode === "immersive") {
-      root.style.setProperty("--lw", "0px");
-      root.style.setProperty("--rw", "0px");
-      root.style.setProperty("--th", "0px");
-      root.style.setProperty("--bh", "0px");
-      return;
-    }
-
-    // 专注模式下隐藏左右侧边栏和底栏，保留顶部标签栏
-    if (viewMode === "focus") {
-      root.style.setProperty("--lw", "0px");
-      root.style.setProperty("--rw", "0px");
-      root.style.setProperty("--bh", "0px");
-      // 保留顶部标签栏
-      root.style.setProperty("--th", `${topPanelCollapsed ? 0 : topPanelHeight}px`);
-      return;
-    }
-
-    // 过滤掉 SettingsModule 的左侧实际可见模块
-    const leftModulesCount = slotConfig.left.modules.filter(m => m !== 'SettingsModule').length;
-    const rightModulesCount = slotConfig.right.modules.length;
-
-    // 左侧：全局隐藏=0, 无业务模块=56(仅图标栏), 模块收起=56, 正常=面板宽度
-    const lw = leftPanelCollapsed ? 0 : (leftModulesCount === 0 || leftSlotCollapsed ? 56 : leftPanelWidth);
-    // 右侧：全局隐藏=0, 无模块=0, 模块收起=56, 正常=面板宽度
-    const rw = rightPanelCollapsed || rightModulesCount === 0 ? 0 : (rightSlotCollapsed ? 56 : rightPanelWidth);
-    
-    root.style.setProperty("--lw", `${lw}px`);
-    root.style.setProperty("--rw", `${rw}px`);
-    root.style.setProperty("--th", `${topPanelCollapsed ? 0 : topPanelHeight}px`);
-    root.style.setProperty("--bh", `${effectiveBottomRowHeight}px`);
-  }, [
-    viewMode,
-    leftPanelWidth, rightPanelWidth, topPanelHeight, bottomPanelHeight,
-    leftPanelCollapsed, rightPanelCollapsed, topPanelCollapsed, bottomPanelCollapsed,
-    leftSlotCollapsed, rightSlotCollapsed,
-    focusSession?.type,
-    slotConfig.left.modules, slotConfig.right.modules,
-    effectiveBottomPanelHeight,
-    effectiveBottomRowHeight, // 监听模块列表变化，触发布局重算
-    quickCmdBarEnabled,
-  ]);
-
   // 同步外观自定义到 CSS 变量
   useEffect(() => {
     const root = document.documentElement;
@@ -178,124 +144,127 @@ function App() {
       {!isImmersive && <CustomTitleBar />}
       {/* 沉浸模式：悬浮标题栏 */}
       {isImmersive && <ImmersiveHoverBar />}
-      <div 
-      id="lazy-term-root"
-      className="app-shell relative min-h-0 flex-1 overflow-hidden bg-background text-foreground"
-      style={{
-        display: "grid",
-        gridTemplateAreas: `
-          "left mid-top    right"
-          "left mid-main   right"
-          "left mid-bottom right"
-        `,
-        gridTemplateColumns: `var(--lw, ${leftPanelCollapsed ? 0 : (slotConfig.left.modules.filter(m => m !== 'SettingsModule').length === 0 || leftSlotCollapsed ? 56 : leftPanelWidth)}px) 1fr var(--rw, ${rightPanelCollapsed || slotConfig.right.modules.length === 0 ? 0 : (rightSlotCollapsed ? 56 : rightPanelWidth)}px)`,
-        gridTemplateRows: `var(--th, ${topPanelCollapsed ? 0 : topPanelHeight}px) 1fr var(--bh, ${effectiveBottomRowHeight}px)`,
-      }}
-    >
-      {/* 背景装饰球 — 沉浸模式下隐藏 */}
-      {!isImmersive && (
-        <>
-          <div
-            aria-hidden="true"
-            className="app-backdrop-orb"
-            style={{
-              top: "-8%",
-              left: "-6%",
-              width: "32vw",
-              height: "32vw",
-              minWidth: "320px",
-              minHeight: "320px",
-              background: "var(--app-gradient-a)",
-            }}
-          />
-          <div
-            aria-hidden="true"
-            className="app-backdrop-orb"
-            style={{
-              right: "-10%",
-              bottom: "-12%",
-              width: "34vw",
-              height: "34vw",
-              minWidth: "340px",
-              minHeight: "340px",
-              background: "var(--app-gradient-b)",
-            }}
-          />
-        </>
-      )}
-
-      {/* 背景图片层 - 使用负 z-index 确保在所有内容后面 */}
-      {hasBackgroundImage && (
-        <div
-          className="fixed inset-0 pointer-events-none"
-          style={{
-            zIndex: -1,
-            backgroundImage: backgroundImage ? `url("${backgroundImage}")` : "none",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-            opacity: backgroundOpacity / 100,
-            filter: backgroundBlur > 0 ? `blur(${backgroundBlur}px)` : undefined,
-          }}
-        />
-      )}
-
-      {/* 内容层 — 确保在背景之上 */}
-      {/* 沉浸模式下隐藏所有插槽；专注模式下仅保留顶部标签栏 */}
-      {!isImmersive && <SlotManager />}
-      <section
-        id="slot-mid-main"
-        className="relative z-0 min-h-0 min-w-0 overflow-hidden"
+      <div
+        id="lazy-term-root"
+        className="app-shell relative min-h-0 flex-1 overflow-hidden bg-background text-foreground"
         style={{
-          gridArea: "mid-main",
+          display: "grid",
+          gridTemplateAreas: `
+            "left mid-top    right"
+            "left mid-main   right"
+            "left mid-bottom right"
+          `,
+          gridTemplateColumns: `${lw}px 1fr ${rw}px`,
+          gridTemplateRows: `${th}px 1fr ${bh}px`,
         }}
       >
-        <PaneContainer />
-      </section>
+        {/* 背景装饰球 — 沉浸模式下隐藏 */}
+        {!isImmersive && (
+          <>
+            <div
+              aria-hidden="true"
+              className="app-backdrop-orb"
+              style={{
+                top: "-8%",
+                left: "-6%",
+                width: "32vw",
+                height: "32vw",
+                minWidth: "320px",
+                minHeight: "320px",
+                background: "var(--app-gradient-a)",
+              }}
+            />
+            <div
+              aria-hidden="true"
+              className="app-backdrop-orb"
+              style={{
+                right: "-10%",
+                bottom: "-12%",
+                width: "34vw",
+                height: "34vw",
+                minWidth: "340px",
+                minHeight: "340px",
+                background: "var(--app-gradient-b)",
+              }}
+            />
+          </>
+        )}
 
-      <AlertDialog open={!!connectionError} onOpenChange={(open) => !open && clearConnectionError()}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {connectionError?.sessionType === "ssh"
-                ? t("SSH 连接失败")
-                : connectionError?.sessionType === "rdp"
-                  ? t("远程桌面连接失败")
-                  : connectionError?.sessionType === "vnc"
-                    ? t("VNC 连接失败")
-                  : t("终端连接失败")}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {connectionError
-                ? t("{target} 未能建立连接。{summary}", {
-                    target: connectionError.sessionTarget || t("会话“{title}”", { title: connectionError.sessionTitle }),
-                    summary: localizedConnectionError?.summary ?? connectionError.summary,
-                  })
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {connectionError ? (
-            <div className="space-y-3 text-sm">
-              <div className="rounded-2xl border border-border/60 bg-background/45 px-4 py-3 text-muted-foreground">
-                <div className="font-medium text-foreground">{t("建议排查")}</div>
-                <ul className="mt-2 space-y-1.5 pl-5">
-                  {(localizedConnectionError?.guidance ?? connectionError.guidance).map((item) => (
-                    <li key={item} className="list-disc">{item}</li>
-                  ))}
-                </ul>
-              </div>
+        {/* 背景图片层 - 使用负 z-index 确保在所有内容后面 */}
+        {hasBackgroundImage && (
+          <div
+            className="fixed inset-0 pointer-events-none"
+            style={{
+              zIndex: -1,
+              backgroundImage: backgroundImage ? `url("${backgroundImage}")` : "none",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              opacity: backgroundOpacity / 100,
+              filter: backgroundBlur > 0 ? `blur(${backgroundBlur}px)` : undefined,
+            }}
+          />
+        )}
 
-              <div className="rounded-2xl border border-border/60 bg-black/25 px-4 py-3 text-xs leading-6 text-muted-foreground">
-                <div className="font-medium text-foreground">{t("技术详情")}</div>
-                <div className="mt-1 break-all">{connectionError.technicalDetails}</div>
+        {/* 内容层 — 确保在背景之上 */}
+        {/* 沉浸模式下隐藏所有插槽；专注模式下仅保留顶部标签栏 */}
+        {!isImmersive && <SlotManager />}
+        <section
+          id="slot-mid-main"
+          className="relative z-0 min-h-0 min-w-0 overflow-hidden"
+          style={{
+            gridArea: "mid-main",
+          }}
+        >
+          <PaneContainer />
+        </section>
+
+        <AlertDialog open={!!connectionError} onOpenChange={(open) => !open && clearConnectionError()}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {connectionError?.sessionType === "ssh"
+                  ? t("SSH 连接失败")
+                  : connectionError?.sessionType === "rdp"
+                    ? t("远程桌面连接失败")
+                    : connectionError?.sessionType === "vnc"
+                      ? t("VNC 连接失败")
+                      : t("终端连接失败")}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {connectionError
+                  ? t("{target} 未能建立连接。{summary}", {
+                      target: connectionError.sessionTarget || t("会话“{title}”", { title: connectionError.sessionTitle }),
+                      summary: localizedConnectionError?.summary ?? connectionError.summary,
+                    })
+                  : ""}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {connectionError ? (
+              <div className="space-y-3 text-sm">
+                <div className="rounded-2xl border border-border/60 bg-background/45 px-4 py-3 text-muted-foreground">
+                  <div className="font-medium text-foreground">{t("建议排查")}</div>
+                  <ul className="mt-2 space-y-1.5 pl-5">
+                    {(localizedConnectionError?.guidance ?? connectionError.guidance).map((item) => (
+                      <li key={item} className="list-disc">{item}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="rounded-2xl border border-border/60 bg-black/25 px-4 py-3 text-xs leading-6 text-muted-foreground">
+                  <div className="font-medium text-foreground">{t("技术详情")}</div>
+                  <div className="mt-1 break-all">{connectionError.technicalDetails}</div>
+                </div>
               </div>
-            </div>
-          ) : null}
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={clearConnectionError}>{t("知道了")}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            ) : null}
+            <AlertDialogFooter>
+              <AlertDialogAction onClick={clearConnectionError}>{t("知道了")}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* 全局设置弹窗 */}
+        <SettingsDialog />
       </div>
     </div>
   );

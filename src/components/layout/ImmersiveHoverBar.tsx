@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Minus, Square, X } from "lucide-react";
+import { Copy, Minus, Square, X, Settings } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
+import { useSettingsDialogStore } from "@/store/settings-dialog";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ export function ImmersiveHoverBar() {
   const { t } = useI18n();
   const { immersiveHoverBarDelay, immersiveShowTabStrip } = useSettingsStore();
   const { focusSessionId, sessions, tabs, activeTabId, setActiveTabId } = useTabsStore();
+  const openSettings = useSettingsDialogStore((s) => s.openSettings);
 
   const [visible, setVisible] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -174,8 +176,16 @@ export function ImmersiveHoverBar() {
               )}
             </div>
 
-            {/* 右侧：窗口控制 */}
+            {/* 右侧：设置 + 窗口控制 */}
             <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                className="rounded-sm p-1.5 text-muted-foreground/70 transition-colors hover:bg-accent/60 hover:text-foreground"
+                onClick={() => openSettings()}
+                aria-label={t("设置")}
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </button>
               <button
                 type="button"
                 className="rounded-sm p-1.5 text-muted-foreground/70 transition-colors hover:bg-accent/60 hover:text-foreground"

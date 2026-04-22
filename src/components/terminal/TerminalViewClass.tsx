@@ -144,8 +144,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const fontSize = useSettingsStore((state) => state.fontSize);
   const fontFamily = useSettingsStore((state) => state.fontFamily);
   const terminalColorScheme = useSettingsStore((state) => state.terminalColorScheme);
-  const customThemeColors = useSettingsStore((state) => state.customThemeColors);
+  const customThemes = useSettingsStore((state) => state.customThemes);
   const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
+  const appBackgroundColor = useSettingsStore((state) => state.appBackgroundColor);
   const backgroundImageEnabled = useSettingsStore((state) => state.backgroundImageEnabled);
   const backgroundImage = useSettingsStore((state) => state.backgroundImage);
   const terminalAutocomplete = useSettingsStore((state) => state.terminalAutocomplete);
@@ -161,8 +162,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     fontSize,
     fontFamily,
     terminalColorScheme,
-    customThemeColors,
+    customThemes,
     terminalOpacity,
+    appBackgroundColor,
     hasBackgroundImage: !!(backgroundImageEnabled && backgroundImage),
   });
 
@@ -176,8 +178,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     fontSize,
     fontFamily,
     terminalColorScheme,
-    customThemeColors,
+    customThemes,
     terminalOpacity,
+    appBackgroundColor,
     hasBackgroundImage: !!hasBackgroundImage,
   };
 
@@ -331,11 +334,12 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         fontSize: nextFontSize,
         fontFamily: nextFontFamily,
         terminalColorScheme: nextTerminalColorScheme,
-        customThemeColors: nextCustomThemeColors,
+        customThemes: nextCustomThemes,
         terminalOpacity: nextTerminalOpacity,
+        appBackgroundColor: nextAppBackgroundColor,
         hasBackgroundImage: nextHasBackgroundImage,
       } = appearanceRef.current;
-      const colorScheme = getTerminalTheme(nextTerminalColorScheme, nextCustomThemeColors);
+      const colorScheme = getTerminalTheme(nextTerminalColorScheme, nextCustomThemes, nextAppBackgroundColor);
       const term = new Terminal({
         fontFamily: nextFontFamily,
         fontSize: nextFontSize,
@@ -517,7 +521,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
   // 监听设置变化
   useEffect(() => {
-    const colorScheme = getTerminalTheme(terminalColorScheme, customThemeColors);
+    const colorScheme = getTerminalTheme(terminalColorScheme, customThemes, appBackgroundColor);
     terminalMap.current.forEach((instance, id) => {
       const { terminal, fitAddon, connector, termState } = instance;
 
@@ -586,7 +590,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
       }
     });
-  }, [fontSize, fontFamily, terminalColorScheme, customThemeColors, terminalOpacity, sessionId, hasBackgroundImage, terminalAutocomplete]);
+  }, [fontSize, fontFamily, terminalColorScheme, customThemes, terminalOpacity, appBackgroundColor, sessionId, hasBackgroundImage, terminalAutocomplete]);
 
   // 清理已被关闭的会话
   useEffect(() => {
@@ -668,7 +672,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     }
   };
 
-  const currentTheme = getTerminalTheme(terminalColorScheme, customThemeColors);
+  const currentTheme = getTerminalTheme(terminalColorScheme, customThemes, appBackgroundColor);
   const xtermTheme = toXtermTheme(currentTheme, terminalOpacity);
 
   // 空状态渲染

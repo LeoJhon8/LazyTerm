@@ -29,6 +29,33 @@ export interface TerminalColorScheme {
   brightWhite: string;
 }
 
+/** 新建自定义方案时的默认模板（基于默认深色主题） */
+export const DEFAULT_DARK_THEME: Omit<TerminalColorScheme, "name" | "label"> = {
+  isDark: true,
+  background: "#1e1e1e",
+  foreground: "#cccccc",
+  cursor: "#528bff",
+  cursorAccent: "#1e1e1e",
+  selectionBackground: "#264f78",
+  selectionForeground: "#ffffff",
+  black: "#000000",
+  red: "#cd3131",
+  green: "#0dbc79",
+  yellow: "#e5e510",
+  blue: "#2472c8",
+  magenta: "#bc3fbc",
+  cyan: "#11a8cd",
+  white: "#e5e5e5",
+  brightBlack: "#666666",
+  brightRed: "#f14c4c",
+  brightGreen: "#23d18b",
+  brightYellow: "#f5f543",
+  brightBlue: "#3b8eea",
+  brightMagenta: "#d670d6",
+  brightCyan: "#29b8db",
+  brightWhite: "#ffffff",
+};
+
 export const TERMINAL_THEMES: TerminalColorScheme[] = [
   {
     name: "default-dark",
@@ -380,46 +407,38 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
     brightCyan: "auto",
     brightWhite: "auto",
   },
-  {
-    name: "custom",
-    label: "自定义",
-    isDark: true,
-    background: "#000000",
-    foreground: "#ffffff",
-    cursor: "#ffffff",
-    cursorAccent: "#000000",
-    selectionBackground: "#3a3a3a",
-    selectionForeground: "#ffffff",
-    black: "#000000",
-    red: "#ff0000",
-    green: "#00ff00",
-    yellow: "#ffff00",
-    blue: "#0000ff",
-    magenta: "#ff00ff",
-    cyan: "#00ffff",
-    white: "#ffffff",
-    brightBlack: "#808080",
-    brightRed: "#ff0000",
-    brightGreen: "#00ff00",
-    brightYellow: "#ffff00",
-    brightBlue: "#0000ff",
-    brightMagenta: "#ff00ff",
-    brightCyan: "#00ffff",
-    brightWhite: "#ffffff",
-  }
 ];
 
 /**
- * 根据配色方案名称获取对应的 xterm ITheme 对象
+ * 根据配色方案名称获取对应的 TerminalColorScheme 对象
+ * @param schemeName 方案名称（预设名或 custom-xxx）
+ * @param customThemes 用户自定义方案列表
+ * @param appBackgroundColor 应用外观主题 ("system" | "light" | "dark")，
+ *   当 schemeName 为 "system-auto" 时，据此判断应使用深色还是浅色终端方案
  */
-export function getTerminalTheme(schemeName: string, customThemeConfig?: TerminalColorScheme): TerminalColorScheme {
-  if (schemeName === "custom" && customThemeConfig) {
-    return customThemeConfig;
+export function getTerminalTheme(
+  schemeName: string,
+  customThemes?: TerminalColorScheme[],
+  appBackgroundColor?: "system" | "light" | "dark"
+): TerminalColorScheme {
+  // 先从自定义列表查找
+  if (customThemes && customThemes.length > 0) {
+    const found = customThemes.find((t) => t.name === schemeName);
+    if (found) return found;
+  }
+
+  // 兼容旧数据：如果 schemeName 是 "custom" 且存在旧格式 customThemeConfig
+  if (schemeName === "custom") {
+    return TERMINAL_THEMES[0]; // fallback
   }
 
   if (schemeName === "system-auto") {
-    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    return getTerminalTheme(isDark ? "default-dark" : "default-light", customThemeConfig);
+    // 优先使用应用外观主题判断深浅，而非系统主题
+    const isDark =
+      appBackgroundColor === "dark" ||
+      (appBackgroundColor !== "light" &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches);
+    return getTerminalTheme(isDark ? "default-dark" : "default-light", customThemes, appBackgroundColor);
   }
 
   return (

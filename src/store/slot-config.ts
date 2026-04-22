@@ -1,7 +1,28 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { SlotConfig } from "../config/default-slot-config";
-import { DEFAULT_SLOT_CONFIG } from "../config/default-slot-config";
+import { DEFAULT_SLOT_CONFIG, VALID_SLOT_MODULE_IDS } from "../config/default-slot-config";
+
+/** 清理持久化数据中的无效 moduleId，并修正关联状态 */
+function sanitizeSlotConfig(config: SlotConfig): SlotConfig {
+  for (const side of ["left", "right"] as const) {
+    const validModules = config[side].modules.filter(id => VALID_SLOT_MODULE_IDS.has(id));
+    const modulesChanged = validModules.length !== config[side].modules.length;
+
+    if (modulesChanged) {
+      config[side].modules = validModules;
+      // 修正 activeModule：如果被移除则指向第一个有效模块
+      if (!VALID_SLOT_MODULE_IDS.has(config[side].activeModule)) {
+        config[side].activeModule = validModules[0] || "";
+      }
+      // 无有效模块时自动收起
+      if (validModules.length === 0) {
+        config[side].collapsed = true;
+      }
+    }
+  }
+  return config;
+}
 
 interface SlotConfigState {
   // 当前配置
@@ -43,15 +64,21 @@ export const useSlotConfigStore = create<SlotConfigState>()(
         })),
       
       toggleSlotCollapse: (slot) =>
-        set((state) => ({
-          currentConfig: {
-            ...state.currentConfig,
-            [slot]: {
-              ...state.currentConfig[slot],
-              collapsed: !state.currentConfig[slot].collapsed
-            }
+        set((state) => {
+          // 无模块时禁止展开
+          if (state.currentConfig[slot].modules.length === 0) {
+            return state;
           }
-        })),
+          return {
+            currentConfig: {
+              ...state.currentConfig,
+              [slot]: {
+                ...state.currentConfig[slot],
+                collapsed: !state.currentConfig[slot].collapsed
+              }
+            }
+          };
+        }),
 
       setSlotCollapsed: (slot, collapsed) =>
         set((state) => ({
@@ -137,7 +164,16 @@ export const useSlotConfigStore = create<SlotConfigState>()(
     }),
     {
       name: "lazy-term-slot-config",
-      partialize: (state) => ({ currentConfig: state.currentConfig })
+      partialize: (state) => ({ currentConfig: state.currentConfig }),
+      // hydrate 时清理无效 moduleId（如已删除的 SettingsModule）
+      merge: (persisted, current) => {
+        const persistedState = persisted as { currentConfig?: SlotConfig };
+        if (persistedState?.currentConfig) {
+          const sanitized = sanitizeSlotConfig({ ...persistedState.currentConfig });
+          return { ...current, currentConfig: sanitized };
+        }
+        return current;
+      },
     }
   )
 );

@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { TerminalColorScheme } from "@/config/themes";
-import { TERMINAL_THEMES } from "@/config/themes";
 import { DEFAULT_LANGUAGE_SETTING, type AppLanguageSetting } from "@/i18n/config";
 
 export type BackgroundImageUiMode = "frosted" | "clear";
@@ -35,8 +34,8 @@ interface SettingsData {
   quickCmdBarEnabled: boolean;         // 是否显示快捷命令栏
   // 外观自定义
   appBackgroundColor: "system" | "light" | "dark"; // 全局背景色 (终端外)
-  terminalColorScheme: string;        // 终端配色方案名称
-  customThemeColors: TerminalColorScheme; // 自定义终端配色数据
+  terminalColorScheme: string;                  // 终端配色方案名称（预设名或 custom-xxx）
+  customThemes: TerminalColorScheme[];          // 用户自定义终端配色方案列表
   terminalOpacity: number;            // 终端背景透明度 0~100
   backgroundImageEnabled: boolean;    // 是否开启图片背景
   backgroundImagePath: string;        // 背景图片的真实路径(用于展示)
@@ -80,11 +79,7 @@ const defaultSettings: SettingsData = {
   // 外观自定义默认值
   appBackgroundColor: "system",
   terminalColorScheme: "system-auto",
-  customThemeColors: {
-    ...TERMINAL_THEMES[0],
-    name: "custom",
-    label: "自定义",
-  },
+  customThemes: [],
   terminalOpacity: 100,
   backgroundImageEnabled: false,
   backgroundImagePath: "",

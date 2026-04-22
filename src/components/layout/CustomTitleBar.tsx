@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Copy, Minus, Square, X } from "lucide-react";
+import { Copy, Minus, Square, X, Settings } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
+import { useSettingsDialogStore } from "@/store/settings-dialog";
 import { useI18n } from "@/i18n";
 import logo32 from "../../../src-tauri/icons/LazyTerm-32.png";
 import logo128 from "../../../src-tauri/icons/LazyTerm-128.png";
@@ -12,6 +13,7 @@ const appWindow = getCurrentWindow();
 export function CustomTitleBar() {
   const { t } = useI18n();
   const { focusSessionId, sessions } = useTabsStore();
+  const openSettings = useSettingsDialogStore((s) => s.openSettings);
   const [isMaximized, setIsMaximized] = useState(false);
   const [logoError, setLogoError] = useState(false);
 
@@ -107,6 +109,14 @@ export function CustomTitleBar() {
       </div>
 
       <div className="window-titlebar__controls" aria-label={t("窗口控制")}>
+        <button
+          type="button"
+          className="window-titlebar__control window-titlebar__control--neutral"
+          onClick={() => openSettings()}
+          aria-label={t("设置")}
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </button>
         <button
           type="button"
           className="window-titlebar__control window-titlebar__control--neutral"
