@@ -2,6 +2,7 @@ use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::os::windows::process::CommandExt;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -45,6 +46,7 @@ pub async fn list_serial_ports() -> Result<Vec<String>, String> {
             if let Ok(output) = std::process::Command::new("cmd")
                 .arg("/c")
                 .arg(query)
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
                 .output()
             {
                 if output.status.success() {

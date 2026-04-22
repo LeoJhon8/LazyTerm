@@ -1,45 +1,44 @@
 import { invokeTauri } from "@/services/tauri";
 import type { ShellInfo } from "@/types/shell";
 
-// 内存缓存
+// 应用生命周期内永久缓存（Shell 列表在运行期间不会变化）
 let cachedShells: ShellInfo[] | null = null;
-let cacheTimestamp: number = 0;
-const CACHE_TTL_MS = 30000; // 30 秒缓存
+let initPromise: Promise<ShellInfo[]> | null = null;
 
 /**
  * 获取可用的 Shell 列表
- * 带有内存缓存，避免短时间内重复调用后端
+ * 仅在首次调用时执行后端检测，后续直接返回缓存
  */
 export async function getAvailableShells(): Promise<ShellInfo[]> {
-  const now = Date.now();
-  
-  if (cachedShells && (now - cacheTimestamp) < CACHE_TTL_MS) {
+  if (cachedShells) {
     return cachedShells;
   }
 
-  try {
-    const shells = await invokeTauri<ShellInfo[]>("get_available_shells", undefined, {
-      scope: "FE/service/shell",
-      logSuccess: false,
-    });
-    
-    cachedShells = shells;
-    cacheTimestamp = now;
-    return shells;
-  } catch (error) {
-    // 如果缓存存在但过期，返回过期缓存作为降级
-    if (cachedShells) {
-      return cachedShells;
-    }
-    throw error;
+  // 防止并发调用时重复执行检测
+  if (initPromise) {
+    return initPromise;
   }
+
+  initPromise = invokeTauri<ShellInfo[]>("get_available_shells", undefined, {
+    scope: "FE/service/shell",
+    logSuccess: false,
+  }).then((shells) => {
+    cachedShells = shells;
+    return shells;
+  }).catch((error) => {
+    // 检测失败时重置，允许下次重试
+    initPromise = null;
+    throw error;
+  });
+
+  return initPromise;
 }
 
 /**
  * 清除 Shell 列表缓存
- * 在需要强制刷新时调用
+ * 仅在需要强制刷新时调用
  */
 export function clearShellCache(): void {
   cachedShells = null;
-  cacheTimestamp = 0;
+  initPromise = null;
 }

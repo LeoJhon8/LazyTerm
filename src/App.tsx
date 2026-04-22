@@ -62,16 +62,17 @@ function App() {
     : null;
 
   // 列宽/行高：直接同步计算（不再依赖异步 CSS 变量）
+  // 沉浸模式下侧栏和底栏宽度/高度归零
   const leftValidCount = countValidModules(slotConfig.left.modules);
   const rightValidCount = countValidModules(slotConfig.right.modules);
-  const lw = leftPanelCollapsed || leftValidCount === 0
+  const lw = isImmersive || leftPanelCollapsed || leftValidCount === 0
     ? 0
     : (leftSlotCollapsed ? 56 : leftPanelWidth);
-  const rw = rightPanelCollapsed || rightValidCount === 0
+  const rw = isImmersive || rightPanelCollapsed || rightValidCount === 0
     ? 0
     : (rightSlotCollapsed ? 56 : rightPanelWidth);
-  const th = topPanelCollapsed ? 0 : topPanelHeight;
-  const bh = effectiveBottomRowHeight;
+  const th = isImmersive ? 0 : (topPanelCollapsed ? 0 : topPanelHeight);
+  const bh = isImmersive ? 0 : effectiveBottomRowHeight;
 
   useEffect(() => {
     document.documentElement.lang = locale;

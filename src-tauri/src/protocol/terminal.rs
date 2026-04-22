@@ -201,9 +201,14 @@ pub async fn get_available_shells() -> Result<Vec<ShellInfo>, String> {
 /// 通过运行 `wsl.exe --list --quiet` 获取发行版列表
 fn detect_wsl_distributions() -> Result<Vec<ShellInfo>, String> {
     use std::process::Command;
+    use std::os::windows::process::CommandExt;
+
+    // CREATE_NO_WINDOW 标志，防止执行 wsl.exe 时闪现控制台窗口
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
 
     let output = Command::new("wsl.exe")
         .args(["--list", "--quiet"])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("无法执行 wsl.exe: {}", e))?;
 
