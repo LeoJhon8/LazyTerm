@@ -35,6 +35,9 @@ pub async fn create_terminal<R: Runtime>(
         }
     });
 
+    // 检测是否为 WSL shell（格式：wsl.exe -d <发行版名> 或 wsl.exe）
+    let is_wsl_shell = cfg!(target_os = "windows") && shell_cmd.starts_with("wsl.exe");
+
     if cfg!(target_os = "windows")
         && (shell_cmd == "bash.exe" || shell_cmd == "git-bash" || shell_cmd == "bash")
     {
@@ -59,7 +62,16 @@ pub async fn create_terminal<R: Runtime>(
         }
     }
 
-    let mut cmd = if cfg!(target_os = "windows") && admin.unwrap_or(false) {
+    let mut cmd = if is_wsl_shell {
+        // WSL shell：解析 "wsl.exe -d <发行版>" 格式
+        let parts: Vec<&str> = shell_cmd.splitn(4, ' ').collect();
+        let mut c = CommandBuilder::new("wsl.exe");
+        // 跳过 "wsl.exe"，将后续参数依次添加
+        for arg in parts.iter().skip(1) {
+            c.arg(*arg);
+        }
+        c
+    } else if cfg!(target_os = "windows") && admin.unwrap_or(false) {
         let mut c = CommandBuilder::new("sudo");
         c.arg("--inline");
         c.arg(shell_cmd);
@@ -156,6 +168,11 @@ pub async fn get_available_shells() -> Result<Vec<ShellInfo>, String> {
                 break;
             }
         }
+
+        // 检测 WSL 发行版
+        if let Ok(wsl_shells) = detect_wsl_distributions() {
+            shells.extend(wsl_shells);
+        }
     } else {
         let common = ["bash", "zsh", "fish", "sh"];
         for s in common {
@@ -178,6 +195,60 @@ pub async fn get_available_shells() -> Result<Vec<ShellInfo>, String> {
     }
 
     Ok(shells)
+}
+
+/// 检测已安装的 WSL 发行版
+/// 通过运行 `wsl.exe --list --quiet` 获取发行版列表
+fn detect_wsl_distributions() -> Result<Vec<ShellInfo>, String> {
+    use std::process::Command;
+
+    let output = Command::new("wsl.exe")
+        .args(["--list", "--quiet"])
+        .output()
+        .map_err(|e| format!("无法执行 wsl.exe: {}", e))?;
+
+    if !output.status.success() {
+        return Err("wsl.exe 执行失败".to_string());
+    }
+
+    // WSL 输出是 UTF-16LE 编码，需要转换
+    let stdout = &output.stdout;
+    if stdout.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // UTF-16LE 解码
+    let distributions = decode_wsl_output(stdout);
+
+    Ok(distributions
+        .into_iter()
+        .filter(|name| !name.is_empty())
+        .map(|distro_name| {
+            let shell_path = format!("wsl.exe -d {}", distro_name);
+            ShellInfo {
+                name: format!("WSL: {}", distro_name),
+                path: shell_path,
+                icon_type: "wsl".into(),
+            }
+        })
+        .collect())
+}
+
+/// 解析 WSL --list --quiet 的 UTF-16LE 输出
+fn decode_wsl_output(raw: &[u8]) -> Vec<String> {
+    // wsl.exe --list --quiet 输出 UTF-16LE 编码
+    let utf16: Vec<u16> = raw
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect();
+
+    let full_text = String::from_utf16_lossy(&utf16);
+
+    full_text
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect()
 }
 
 /// 向终端写入数据

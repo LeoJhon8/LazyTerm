@@ -356,6 +356,8 @@ export function TabBar() {
         ? "PowerShell"
           : defaultShell.includes("cmd")
             ? "CMD"
+            : defaultShell.includes("wsl")
+              ? "WSL"
             : t("终端");
 
     // 创建新会话 - pane 的创建和关联由生命周期回调自动处理

@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck } from "lucide-react";
+import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck, Boxes } from "lucide-react";
 import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig } from "@/types/terminal";
 import type { ShellInfo } from "@/types/shell";
 import { getAvailableShells } from "@/services/shellService";
@@ -436,6 +436,7 @@ export function SessionModule() {
       case 'powershell': return <MonitorCheck className="mr-2 h-4 w-4 text-blue-500" />;
       case 'cmd': return <TerminalIcon className="mr-2 h-4 w-4 text-muted-foreground" />;
       case 'bash': return <TerminalIcon className="mr-2 h-4 w-4 text-orange-500" />;
+      case 'wsl': return <Boxes className="mr-2 h-4 w-4 text-purple-500" />;
       default: return <TerminalIcon className="mr-2 h-4 w-4" />;
     }
   };

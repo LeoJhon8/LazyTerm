@@ -31,6 +31,8 @@ export function WelcomePage() {
         title = "PowerShell";
       } else if (defaultShell.includes("cmd")) {
         title = "CMD";
+      } else if (defaultShell.includes("wsl")) {
+        title = "WSL";
       }
     } catch { /* 降级使用默认标题 */ }
 
