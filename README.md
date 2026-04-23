@@ -276,17 +276,6 @@ npm run build:msrdpax-sidecar:release
 | 拖拽库 | @dnd-kit |
 | React 优化 | React Compiler |
 
-## 路线图
-
-- [x] Telnet 协议支持
-- [x] 串口连接支持
-- [x] 终端自动补全
-- [ ] 多套布局预设管理
-- [ ] 会话树云端同步
-- [ ] 会话录制与回放
-- [ ] 多语言支持
-- [ ] 插件系统
-
 ## 贡献指南
 
 欢迎提交 Issue 和 Pull Request！
@@ -299,9 +288,19 @@ npm run build:msrdpax-sidecar:release
 
 ## 许可证
 
-[MIT License](./LICENSE)
+本项目基于 [Apache License 2.0](./LICENSE) 开源。
+
+Copyright (c) 2025-present LazyTerm Contributors
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+
+ http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 
 ## 致谢
+
+### 开源项目
 
 - [Tauri](https://tauri.app/) - 构建跨平台桌面应用的框架
 - [xterm.js](https://xtermjs.org/) - 功能强大的终端组件
@@ -309,3 +308,11 @@ npm run build:msrdpax-sidecar:release
 - [russh](https://github.com/warp-tech/russh) - Rust SSH 客户端库
 - [ironrdp](https://github.com/Devolutions/IronRDP) - Rust RDP 实现
 - [LibVNCClient](https://github.com/LibVNC/libvncserver) - VNC 客户端 C 库
+
+### AI 工具
+排名区分先后，感谢以下AI工具对当前项目的贡献
+- [Gemini](https://deepmind.google/technologies/gemini/) 
+- [CodeBuddy](https://www.codebuddy.ai/) 
+- [Copilot](https://github.com/features/copilot) 
+- [OpenAI](https://openai.com/) 
+- [Lingma](https://lingma.aliyun.com/) 
