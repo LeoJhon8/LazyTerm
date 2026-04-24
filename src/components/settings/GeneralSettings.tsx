@@ -11,7 +11,7 @@ import { logger } from "@/lib/logger";
 /** 通用设置：语言 + 终端行为 */
 export function GeneralSettings() {
   const { language, setLanguage, t } = useI18n();
-  const { defaultShell, confirmCloseNonDefaultTabs, terminalAutocomplete, quickCmdBarEnabled, setSettings } = useSettingsStore();
+  const { defaultShell, confirmCloseNonDefaultTabs, terminalAutocomplete, setSettings } = useSettingsStore();
   const [shells, setShells] = useState<ShellInfo[]>([]);
 
   useEffect(() => {
@@ -79,14 +79,6 @@ export function GeneralSettings() {
                 id="terminal-autocomplete"
                 checked={terminalAutocomplete}
                 onCheckedChange={(checked) => setSettings({ terminalAutocomplete: !!checked })}
-              />
-            </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
-              <Label htmlFor="quick-cmd-bar" className="text-sm cursor-pointer">{t("快捷命令栏")}</Label>
-              <Switch
-                id="quick-cmd-bar"
-                checked={quickCmdBarEnabled}
-                onCheckedChange={(checked) => setSettings({ quickCmdBarEnabled: !!checked })}
               />
             </div>
           </div>

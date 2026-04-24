@@ -16,6 +16,7 @@ export interface SlotConfig {
   bottom: {
     module: string;
   };
+  quickCmdBarEnabled: boolean;  // 是否显示快捷命令栏
 }
 
 export const DEFAULT_SLOT_CONFIG: SlotConfig = {
@@ -34,7 +35,8 @@ export const DEFAULT_SLOT_CONFIG: SlotConfig = {
   },
   bottom: {
     module: 'QuickCmdModule'
-  }
+  },
+  quickCmdBarEnabled: true  // 默认显示快捷命令栏
 };
 
 // 可用的模块列表（设置模块已移除，通过全局入口访问）

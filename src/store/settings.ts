@@ -31,7 +31,6 @@ interface SettingsData {
   defaultShell: string;
   confirmCloseNonDefaultTabs: boolean;
   terminalAutocomplete: boolean;
-  quickCmdBarEnabled: boolean;         // 是否显示快捷命令栏
   // 外观自定义
   appBackgroundColor: "system" | "light" | "dark"; // 全局背景色 (终端外)
   terminalColorScheme: string;                  // 终端配色方案名称（预设名或 custom-xxx）
@@ -75,7 +74,6 @@ const defaultSettings: SettingsData = {
   defaultShell: "powershell.exe",
   confirmCloseNonDefaultTabs: false,
   terminalAutocomplete: true,
-  quickCmdBarEnabled: true,
   // 外观自定义默认值
   appBackgroundColor: "system",
   terminalColorScheme: "system-auto",

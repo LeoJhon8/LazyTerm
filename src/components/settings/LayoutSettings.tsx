@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { AVAILABLE_MODULES, LOCKED_MODULES } from "@/config/default-slot-config";
 import { useSlotConfigStore } from "@/store/slot-config";
@@ -151,6 +152,29 @@ export function LayoutSettings() {
           <p className="text-xs text-muted-foreground px-3 mt-1">
             {t("每个模块只能分配到左侧或右侧，无模块的侧栏将自动收起。")}
           </p>
+        </div>
+
+        {/* 快捷命令栏 */}
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">
+            {t("工具栏")}
+          </Label>
+          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex-1 min-w-0 mr-4">
+                <Label className="text-sm font-medium">{t("快捷命令栏")}</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {t("在终端顶部显示快捷命令栏，可快速执行常用命令")}
+                </p>
+              </div>
+              <Switch
+                checked={currentConfig.quickCmdBarEnabled}
+                onCheckedChange={(checked) => 
+                  updateSlotConfig({ quickCmdBarEnabled: checked })
+                }
+              />
+            </div>
+          </div>
         </div>
 
         {/* 恢复默认布局 */}

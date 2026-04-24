@@ -41,7 +41,6 @@ function App() {
     backgroundBlur,
     backgroundOpacity,
     uiOpacity,
-    quickCmdBarEnabled,
   } = useSettingsStore();
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
@@ -55,7 +54,7 @@ function App() {
   const focusSession = focusSessionId
     ? sessions.find(s => s.id === focusSessionId)
     : null;
-  const shouldHideQuickCmdBar = !quickCmdBarEnabled || focusSession?.type === "rdp" || focusSession?.type === "vnc";
+  const shouldHideQuickCmdBar = !slotConfig.quickCmdBarEnabled || focusSession?.type === "rdp" || focusSession?.type === "vnc";
   const effectiveBottomRowHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight;
   const localizedConnectionError = connectionError
     ? getConnectionErrorPresentation(connectionError.sessionType, connectionError.technicalDetails)

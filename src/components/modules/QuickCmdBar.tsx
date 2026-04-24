@@ -118,7 +118,7 @@ export function QuickCmdBar() {
 
   const restoreTerminalFocus = () => {
     requestAnimationFrame(() => {
-      window.dispatchEvent(new Event("lazy-terminal-focus"));
+      window.dispatchEvent(new Event("lazy-term-focus"));
     });
   };
 
