@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useHistoryStore } from "@/store/history";
 import { useQuickCommandsStore } from "@/store/quick-commands";
+import { useSettingsStore } from "@/store/settings";
 import { cn } from "@/lib/utils";
 import { Terminal } from "lucide-react";
 import { useI18n } from "@/i18n";
@@ -26,6 +27,7 @@ export function TerminalAutocompleteUI({
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const { commands: historyCommands } = useHistoryStore();
   const { commands: quickCommands } = useQuickCommandsStore();
+  const autocompleteSource = useSettingsStore((state) => state.autocompleteSource);
 
   useEffect(() => {
     const handler = (e: CustomEvent) => setPos(e.detail);
@@ -43,21 +45,28 @@ export function TerminalAutocompleteUI({
     const lowerBuffer = query.toLowerCase();
     const isSameAsCurrentLine = (command: string) => command.trim() === query;
     
-    const quickMatches = quickCommands
-      .filter(c => c.label.toLowerCase().includes(lowerBuffer) || c.command.toLowerCase().includes(lowerBuffer))
-      .filter(c => !isSameAsCurrentLine(c.command))
-      .map(c => ({ id: "q_" + c.id, label: c.label, command: c.command, type: 'quick' as const }));
+    const showQuick = autocompleteSource.includes('quick');
+    const showHistory = autocompleteSource.includes('history');
+
+    const quickMatches = showQuick
+      ? quickCommands
+          .filter(c => c.label.toLowerCase().includes(lowerBuffer) || c.command.toLowerCase().includes(lowerBuffer))
+          .filter(c => !isSameAsCurrentLine(c.command))
+          .map(c => ({ id: "q_" + c.id, label: c.label, command: c.command, type: 'quick' as const }))
+      : [];
 
     const quickCommandSet = new Set(quickMatches.map(q => q.command));
-    const historyMatches = historyCommands
-      .filter(c => c.command.toLowerCase().includes(lowerBuffer))
-      .filter(c => !isSameAsCurrentLine(c.command))
-      .filter(c => !quickCommandSet.has(c.command))
-      .slice(0, 10)
-      .map(c => ({ id: "h_" + c.id, label: c.command, command: c.command, type: 'history' as const }));
+    const historyMatches = showHistory
+      ? historyCommands
+          .filter(c => c.command.toLowerCase().includes(lowerBuffer))
+          .filter(c => !isSameAsCurrentLine(c.command))
+          .filter(c => !quickCommandSet.has(c.command))
+          .slice(0, 10)
+          .map(c => ({ id: "h_" + c.id, label: c.command, command: c.command, type: 'history' as const }))
+      : [];
 
     return [...quickMatches, ...historyMatches].slice(0, 8);
-  }, [pos.active, pos.buffer, quickCommands, historyCommands]);
+  }, [pos.active, pos.buffer, quickCommands, historyCommands, autocompleteSource]);
 
   // 当建议列表变化时，通过依赖关系触发状态重置
   useEffect(() => {

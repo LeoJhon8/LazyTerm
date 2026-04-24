@@ -311,8 +311,15 @@ Unless required by applicable law or agreed to in writing, software distributed 
 
 ### AI 工具
 排名区分先后，感谢以下AI工具对当前项目的贡献
-- [Gemini](https://deepmind.google/technologies/gemini/) 
+- [Antigravity](https://deepmind.google/technologies/gemini/) 
 - [CodeBuddy](https://www.codebuddy.ai/) 
 - [Copilot](https://github.com/features/copilot) 
 - [OpenAI](https://openai.com/) 
 - [Lingma](https://lingma.aliyun.com/) 
+排名区分先后，感谢以下LLM对当前项目的贡献
+- [Gemini]
+- [ChatGPT]
+- [Claude Code]
+- [GLM]
+- [Kimi]
+- [QWen]

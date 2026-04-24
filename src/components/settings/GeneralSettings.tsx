@@ -11,7 +11,7 @@ import { logger } from "@/lib/logger";
 /** 通用设置：语言 + 终端行为 */
 export function GeneralSettings() {
   const { language, setLanguage, t } = useI18n();
-  const { defaultShell, confirmCloseNonDefaultTabs, terminalAutocomplete, setSettings } = useSettingsStore();
+  const { defaultShell, confirmCloseNonDefaultTabs, terminalAutocomplete, autocompleteSource, setSettings } = useSettingsStore();
   const [shells, setShells] = useState<ShellInfo[]>([]);
 
   useEffect(() => {
@@ -81,6 +81,51 @@ export function GeneralSettings() {
                 onCheckedChange={(checked) => setSettings({ terminalAutocomplete: !!checked })}
               />
             </div>
+            {terminalAutocomplete && (
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <Label className="text-sm">{t("自动补全数据源")}</Label>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autocompleteSource.includes('history')}
+                      onChange={(e) => {
+                        const newValue: ('history' | 'quick')[] = e.target.checked
+                          ? [...autocompleteSource, 'history']
+                          : autocompleteSource.filter(s => s !== 'history');
+                        // 如果取消勾选后没有任何数据源，自动关闭自动补全
+                        const shouldDisable = newValue.length === 0;
+                        setSettings({ 
+                          autocompleteSource: shouldDisable ? ['history', 'quick'] : newValue,
+                          terminalAutocomplete: !shouldDisable
+                        });
+                      }}
+                      className="rounded border-border/70"
+                    />
+                    <span className="text-sm">{t("历史命令")}</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autocompleteSource.includes('quick')}
+                      onChange={(e) => {
+                        const newValue: ('history' | 'quick')[] = e.target.checked
+                          ? [...autocompleteSource, 'quick']
+                          : autocompleteSource.filter(s => s !== 'quick');
+                        // 如果取消勾选后没有任何数据源，自动关闭自动补全
+                        const shouldDisable = newValue.length === 0;
+                        setSettings({ 
+                          autocompleteSource: shouldDisable ? ['history', 'quick'] : newValue,
+                          terminalAutocomplete: !shouldDisable
+                        });
+                      }}
+                      className="rounded border-border/70"
+                    />
+                    <span className="text-sm">{t("快捷命令")}</span>
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

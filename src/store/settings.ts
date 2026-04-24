@@ -31,6 +31,7 @@ interface SettingsData {
   defaultShell: string;
   confirmCloseNonDefaultTabs: boolean;
   terminalAutocomplete: boolean;
+  autocompleteSource: ('history' | 'quick')[];  // 自动补全数据源（多选）
   // 外观自定义
   appBackgroundColor: "system" | "light" | "dark"; // 全局背景色 (终端外)
   terminalColorScheme: string;                  // 终端配色方案名称（预设名或 custom-xxx）
@@ -74,6 +75,7 @@ const defaultSettings: SettingsData = {
   defaultShell: "powershell.exe",
   confirmCloseNonDefaultTabs: false,
   terminalAutocomplete: true,
+  autocompleteSource: ['history', 'quick'],  // 默认从所有数据源进行自动补全
   // 外观自定义默认值
   appBackgroundColor: "system",
   terminalColorScheme: "system-auto",

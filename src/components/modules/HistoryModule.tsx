@@ -89,18 +89,7 @@ export function HistoryModule() {
       <div className="flex-1 min-h-0 w-full overflow-hidden">
         <ScrollArea className="h-full w-full overflow-x-hidden">
           <div className="px-0 py-1">
-            {filteredCommands.length === 0 ? (
-              <div className="module-empty py-12">
-                <div className="module-empty-card">
-                  <Search className="h-5 w-5" />
-                  <p className="text-sm font-medium text-foreground">
-                    {searchQuery ? t("未找到匹配命令") : t("暂无历史记录")}
-                  </p>
-                  <p className="text-xs">{t("按回车执行的命令会自动记录到这里。")}</p>
-                </div>
-              </div>
-            ) : (
-              filteredCommands.map((cmd) => (
+            {filteredCommands.length > 0 && filteredCommands.map((cmd) => (
                 <div
                   key={cmd.id}
                   className="group relative flex h-7 w-full items-center gap-1 overflow-hidden border-y border-transparent bg-transparent px-3 py-0.5 transition-colors hover:border-border/60 hover:bg-background/40"
@@ -142,8 +131,7 @@ export function HistoryModule() {
                     </Button>
                   </div>
                 </div>
-              ))
-            )}
+              ))}
           </div>
         </ScrollArea>
       </div>
