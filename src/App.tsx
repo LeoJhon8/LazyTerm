@@ -11,6 +11,7 @@ import { SlotManager } from "@/components/layout/SlotManager";
 import { CustomTitleBar } from "@/components/layout/CustomTitleBar";
 import { ImmersiveHoverBar } from "@/components/layout/ImmersiveHoverBar";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { ToastContainer } from "@/components/ui/toast";
 import { countValidModules } from "@/components/layout/SideSlot";
 import {
   AlertDialog,
@@ -265,6 +266,9 @@ function App() {
 
         {/* 全局设置弹窗 */}
         <SettingsDialog />
+
+        {/* 全局 Toast 通知 */}
+        <ToastContainer />
       </div>
     </div>
   );

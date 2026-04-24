@@ -15,6 +15,7 @@ import { RemoteDirSelector } from "./RemoteDirSelector";
 import type { SessionNode } from "@/store/ssh-profiles";
 import type { SSHConfig } from "@/types/terminal";
 import { useI18n } from "@/i18n";
+import { toast } from "@/components/ui/toast";
 
 interface SftpLocalFile {
   path: string;
@@ -251,6 +252,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
       );
 
       setMessage({ text: t("上传完成"), type: "success" });
+      toast.success(t("上传完成"), files.map(f => f.name));
       setTimeout(() => {
         onOpenChange(false);
       }, 1000);
