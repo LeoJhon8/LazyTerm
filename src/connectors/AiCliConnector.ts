@@ -39,7 +39,6 @@ export class AiCliConnector implements ITerminalConnector {
         cwd: this.config.cwd || null,
         shell: "cmd.exe",
         initCommand: fullCommand || null,
-        admin: false,
       }, {
         scope: "FE/connector/ai-cli/open",
         logStart: true,

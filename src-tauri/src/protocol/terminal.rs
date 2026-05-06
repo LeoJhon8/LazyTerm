@@ -114,7 +114,8 @@ pub async fn create_terminal<R: Runtime>(
 
     // 如果提供了 init_command，在 PTY 启动后立即写入命令
     // PTY 缓冲区会保存数据，shell 初始化完成后会自动读取执行
-    if let Some(cmd) = &init_command {
+    // 同时设置输出抑制期，跳过 cmd.exe 横幅和命令回显
+    let suppress_until = if let Some(cmd) = &init_command {
         log::info!(
             "create_terminal: 写入 init_command 到 PTY, session_id={}, command={}",
             session_id, cmd
@@ -127,7 +128,11 @@ pub async fn create_terminal<R: Runtime>(
         if let Err(e) = writer.flush() {
             log::warn!("create_terminal: flush init_command 失败: {}", e);
         }
-    }
+        // 抑制前 500ms 的输出（cmd.exe 横幅 + 命令回显）
+        Some(std::time::Instant::now() + std::time::Duration::from_millis(500))
+    } else {
+        None
+    };
 
     let session_id_clone = session_id.clone();
     let local_sessions = state.local_sessions.clone();
@@ -138,6 +143,12 @@ pub async fn create_terminal<R: Runtime>(
         while let Ok(n) = reader.read(&mut buffer) {
             if n == 0 {
                 break;
+            }
+            // 抑制期内：读取但丢弃数据，跳过 shell 启动横幅和命令回显
+            if let Some(until) = &suppress_until {
+                if std::time::Instant::now() < *until {
+                    continue;
+                }
             }
             let data = String::from_utf8_lossy(&buffer[..n]).to_string();
             let _ = app.emit(&event_name, data);
