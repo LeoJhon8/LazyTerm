@@ -329,11 +329,15 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
       return;
     }
 
-    if (text.startsWith(this.inputBuffer)) {
-      const remainder = text.substring(this.inputBuffer.length);
+    // 比较时忽略前后空白符
+    const trimmedInput = this.inputBuffer.trim();
+    const trimmedText = text.trim();
+    
+    if (trimmedText.startsWith(trimmedInput)) {
+      const remainder = trimmedText.substring(trimmedInput.length);
       this._onInsert?.(remainder);
     } else {
-      this._onInsert?.("\b".repeat(this.inputBuffer.length) + text);
+      this._onInsert?.("\b".repeat(this.inputBuffer.length) + trimmedText);
     }
 
     this._trackingCurrentLine = true;

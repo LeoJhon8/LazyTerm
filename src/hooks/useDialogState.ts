@@ -14,6 +14,8 @@ export type DialogType =
   | "directSerial"
   | "telnet"
   | "directTelnet"
+  | "ai-cli"
+  | "directAiCli"
   | "folder" 
   | "delete" 
   | "edit" 

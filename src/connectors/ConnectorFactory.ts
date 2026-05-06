@@ -5,6 +5,7 @@ import type {
   VNCConfig,
   SerialConfig,
   TelnetConfig,
+  AiCliConfig,
 } from "@/types/terminal";
 import { useSettingsStore } from "@/store/settings";
 import { LocalConnector } from "@/connectors/LocalConnector";
@@ -14,9 +15,10 @@ import { NativeRdpConnector } from "@/connectors/NativeRdpConnector";
 import { VncConnector } from "@/connectors/VncConnector";
 import { SerialConnector } from "@/connectors/SerialConnector";
 import { TelnetConnector } from "@/connectors/TelnetConnector";
+import { AiCliConnector } from "@/connectors/AiCliConnector";
 
 export interface SessionCreationData {
-  type: "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet";
+  type: "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
   cwd?: string;
   title?: string;
   host?: string;
@@ -30,6 +32,7 @@ export interface SessionCreationData {
     vncConfig?: VNCConfig;
     serialConfig?: SerialConfig;
     telnetConfig?: TelnetConfig;
+    aiCliConfig?: AiCliConfig;
     admin?: boolean;
   };
 }
@@ -108,6 +111,18 @@ export function createConnector(
       }
       return new TelnetConnector(
         sessionData.config.telnetConfig,
+        () => {
+          if (onDisconnect) {
+            onDisconnect(sessionId);
+          }
+        }
+      );
+    case "ai-cli":
+      if (!sessionData.config?.aiCliConfig) {
+        throw new Error("AI CLI 配置不能为空");
+      }
+      return new AiCliConnector(
+        sessionData.config.aiCliConfig,
         () => {
           if (onDisconnect) {
             onDisconnect(sessionId);

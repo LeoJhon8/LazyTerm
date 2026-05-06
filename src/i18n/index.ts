@@ -436,6 +436,16 @@ const zhMessages = {
   "Windows RDP": "Windows RDP",
   "跨平台远程": "跨平台远程",
   "点击左侧会话面板创建和管理连接": "点击左侧会话面板创建和管理连接",
+  "新建 AI CLI 连接": "新建 AI CLI 连接",
+  "编辑 AI CLI": "编辑 AI CLI",
+  "AI CLI 连接": "AI CLI 连接",
+  "参数": "参数",
+  "工作目录": "工作目录",
+  "例如: claude, openai, gemini": "例如: claude, openai, gemini",
+  "逗号分隔，例如: --model gpt-4, --stream": "逗号分隔，例如: --model gpt-4, --stream",
+  "可选，留空使用当前目录": "可选，留空使用当前目录",
+  "可选，留空使用命令名": "可选，留空使用命令名",
+  "选择工作目录": "选择工作目录",
 } as const satisfies Record<string, MessageResolver>;
 
 type TranslationKey = keyof typeof zhMessages;
@@ -866,6 +876,16 @@ const enMessages: Record<TranslationKey, MessageResolver> = {
   "Windows RDP": "Windows RDP",
   "跨平台远程": "Cross-platform remote",
   "点击左侧会话面板创建和管理连接": "Click the session panel on the left to create and manage connections",
+  "新建 AI CLI 连接": "New AI CLI Connection",
+  "编辑 AI CLI": "Edit AI CLI",
+  "AI CLI 连接": "AI CLI Connection",
+  "参数": "Arguments",
+  "工作目录": "Working Directory",
+  "例如: claude, openai, gemini": "e.g. claude, openai, gemini",
+  "逗号分隔，例如: --model gpt-4, --stream": "Comma separated, e.g. --model gpt-4, --stream",
+  "可选，留空使用当前目录": "Optional, leave empty for current directory",
+  "可选，留空使用命令名": "Optional, leave empty to use command name",
+  "选择工作目录": "Select Working Directory",
 };
 
 const messages = {

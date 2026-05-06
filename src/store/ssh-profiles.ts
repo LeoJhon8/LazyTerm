@@ -1,17 +1,17 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig } from "@/types/terminal";
+import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCliConfig } from "@/types/terminal";
 import { getSystemLanguage, resolveAppLocale, type AppLocale } from "@/i18n/config";
 import { useSettingsStore } from "@/store/settings";
 
-export type NodeType = "folder" | "ssh" | "rdp" | "vnc" | "serial" | "telnet";
+export type NodeType = "folder" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
 
 export interface SessionNode {
   id: string;
   type: NodeType;
   name: string;
   parentId: string | null;
-  config?: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig;
+  config?: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig;
   isExpanded?: boolean;
   isRoot?: boolean;
   order: number;
@@ -50,7 +50,7 @@ interface SSHProfilesState {
   ensureRoot: () => void;
   syncRootFolderName: () => void;
   addFolder: (name: string, parentId: string) => void;
-  addProfile: (type: "ssh" | "rdp" | "vnc" | "serial" | "telnet", cfg: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig, parentId: string) => void;
+  addProfile: (type: "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli", cfg: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig, parentId: string) => void;
   updateNode: (id: string, updates: Partial<SessionNode>) => void;
   removeNode: (id: string) => void;
   toggleFolder: (id: string) => void;
@@ -125,13 +125,25 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
         };
       }),
 
-      addProfile: (type, cfg, parentId) => set((state) => {
+      addProfile: (type: "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli", cfg, parentId) => set((state) => {
         const siblings = state.nodes.filter(n => n.parentId === parentId);
         const maxOrder = siblings.length > 0 ? Math.max(...siblings.map(s => s.order)) : 0;
         const normalizedConfig = type === "rdp"
           ? normalizeRdpConfig(cfg as RDPConfig)
           : cfg;
-        const defaultName = (normalizedConfig as any).nickname || (normalizedConfig as any).host || (normalizedConfig as any).port || "Serial";
+        
+        // 根据类型确定默认名称
+        let defaultName = "AI CLI";
+        if (type === "ssh" || type === "rdp" || type === "vnc") {
+          defaultName = (normalizedConfig as any).nickname || (normalizedConfig as any).host || "";
+        } else if (type === "serial") {
+          defaultName = (normalizedConfig as any).nickname || (normalizedConfig as any).port || "Serial";
+        } else if (type === "telnet") {
+          defaultName = (normalizedConfig as any).nickname || (normalizedConfig as any).host || "Telnet";
+        } else if (type === "ai-cli") {
+          defaultName = (normalizedConfig as AiCliConfig).nickname || (normalizedConfig as AiCliConfig).command || "AI CLI";
+        }
+        
         return {
           nodes: state.nodes.map(n => n.id === parentId ? { ...n, isExpanded: true } : n)
             .concat([{ id: `s_${Math.random().toString(36).slice(2, 9)}`, type, name: defaultName, parentId, config: normalizedConfig, order: maxOrder + 1 }]),

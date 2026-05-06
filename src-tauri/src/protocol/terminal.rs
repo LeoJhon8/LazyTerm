@@ -13,7 +13,9 @@ pub async fn create_terminal<R: Runtime>(
     state: State<'_, AppState>,
     cwd: Option<String>,
     shell: Option<String>,
+    shell_args: Option<Vec<String>>,
     admin: Option<bool>,
+    init_command: Option<String>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let pty_system = native_pty_system();
@@ -70,14 +72,33 @@ pub async fn create_terminal<R: Runtime>(
         for arg in parts.iter().skip(1) {
             c.arg(*arg);
         }
+        // 添加额外的 shell_args
+        if let Some(args) = &shell_args {
+            for arg in args {
+                c.arg(arg);
+            }
+        }
         c
     } else if cfg!(target_os = "windows") && admin.unwrap_or(false) {
         let mut c = CommandBuilder::new("sudo");
         c.arg("--inline");
         c.arg(shell_cmd);
+        // 添加额外的 shell_args
+        if let Some(args) = &shell_args {
+            for arg in args {
+                c.arg(arg);
+            }
+        }
         c
     } else {
-        CommandBuilder::new(shell_cmd)
+        let mut c = CommandBuilder::new(&shell_cmd);
+        // 添加额外的 shell_args
+        if let Some(args) = &shell_args {
+            for arg in args {
+                c.arg(arg);
+            }
+        }
+        c
     };
 
     if let Some(path) = cwd {
@@ -88,8 +109,25 @@ pub async fn create_terminal<R: Runtime>(
     drop(pair.slave);
 
     let master = pair.master;
-    let writer = master.take_writer().map_err(|e| e.to_string())?;
+    let mut writer = master.take_writer().map_err(|e| e.to_string())?;
     let mut reader = master.try_clone_reader().map_err(|e| e.to_string())?;
+
+    // 如果提供了 init_command，在 PTY 启动后立即写入命令
+    // PTY 缓冲区会保存数据，shell 初始化完成后会自动读取执行
+    if let Some(cmd) = &init_command {
+        log::info!(
+            "create_terminal: 写入 init_command 到 PTY, session_id={}, command={}",
+            session_id, cmd
+        );
+        // 写入命令 + 回车换行符触发执行
+        let cmd_with_newline = format!("{}\r\n", cmd);
+        if let Err(e) = writer.write_all(cmd_with_newline.as_bytes()) {
+            log::warn!("create_terminal: 写入 init_command 失败: {}", e);
+        }
+        if let Err(e) = writer.flush() {
+            log::warn!("create_terminal: flush init_command 失败: {}", e);
+        }
+    }
 
     let session_id_clone = session_id.clone();
     let local_sessions = state.local_sessions.clone();

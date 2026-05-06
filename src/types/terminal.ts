@@ -1,4 +1,4 @@
-export type SessionProtocol = 'ssh' | 'local' | 'rdp' | 'vnc' | 'serial' | 'telnet';
+export type SessionProtocol = 'ssh' | 'local' | 'rdp' | 'vnc' | 'serial' | 'telnet' | 'ai-cli';
 export type RdpBackend = 'ironrdp' | 'msrdpax' | 'mstsc-external';
 
 export interface ISessionConnector {
@@ -224,4 +224,12 @@ export function isGraphicalProtocol(protocol: SessionProtocol): protocol is 'rdp
 
 export function isTerminalProtocol(protocol: SessionProtocol): protocol is 'ssh' | 'local' | 'serial' | 'telnet' {
   return protocol === 'ssh' || protocol === 'local' || protocol === 'serial' || protocol === 'telnet';
+}
+
+// AI CLI 连接配置（极简版 - 只负责启动 CLI）
+export interface AiCliConfig {
+  command: string;           // CLI 命令，如 "claude", "openai", "gemini"
+  args?: string[];           // 启动参数（可选）
+  cwd?: string;              // 工作目录（可选）
+  nickname?: string;          // 显示名称（可选）
 }

@@ -58,7 +58,7 @@ export type SessionConfig = NonNullable<SessionCreationData["config"]>;
 export interface TerminalSession {
   id: string;
   title: string;
-  type: "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet";
+  type: "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
   /** 连接器实例（仅存在于内存中，不持久化） */
   connector?: SessionConnector;
   cwd?: string;

@@ -20,6 +20,7 @@ import { VncConnectDialog } from "@/components/dialogs/VncConnectDialog";
 import { SerialConnectDialog } from "@/components/dialogs/SerialConnectDialog";
 import { TelnetConnectDialog } from "@/components/dialogs/TelnetConnectDialog";
 import { SftpUploadDialog } from "@/components/dialogs/SftpUploadDialog";
+import { AiCliDialog } from "@/components/dialogs/AiCliDialog";
 import { 
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator 
 } from "@/components/ui/context-menu";
@@ -29,7 +30,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck, Boxes } from "lucide-react";
-import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig } from "@/types/terminal";
+import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCliConfig } from "@/types/terminal";
 import type { ShellInfo } from "@/types/shell";
 import { getAvailableShells } from "@/services/shellService";
 import { logger } from "@/lib/logger";
@@ -118,6 +119,8 @@ function NodeRowContent({
               ? <Usb className="h-4 w-4 text-purple-600/80" />
               : node.type === "telnet"
               ? <Terminal className="h-4 w-4 text-emerald-500/80" />
+              : node.type === "ai-cli"
+              ? <Terminal className="h-4 w-4 text-violet-600/80" />
               : <Server className={cn("h-4 w-4 text-emerald-600/80", isUploading && "text-amber-700 dark:text-cyan-300 animate-pulse")} />
             }
           </div>
@@ -189,6 +192,7 @@ function DraggableDroppableRow({
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-vnc', node)}><ScreenShare className="mr-2 h-4 w-4" /> {t("新建 VNC 连接")}</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-serial', node)}><Usb className="mr-2 h-4 w-4" /> {t("新建串口连接（菜单）")}</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-telnet', node)}><Terminal className="mr-2 h-4 w-4" /> {t("新建 Telnet 连接（菜单）")}</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-ai-cli', node)}><Terminal className="mr-2 h-4 w-4" /> {t("新建 AI CLI 连接")}</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> {t("新建子文件夹")}</ContextMenuItem>
           </>
         ) : node.type === 'ssh' ? (
@@ -205,6 +209,10 @@ function DraggableDroppableRow({
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Usb className="mr-2 h-4 w-4" /> {t("连接")}</ContextMenuItem>
           </>
         ) : node.type === 'telnet' ? (
+          <>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> {t("连接")}</ContextMenuItem>
+          </>
+        ) : node.type === 'ai-cli' ? (
           <>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> {t("连接")}</ContextMenuItem>
           </>
@@ -380,12 +388,15 @@ export function SessionModule() {
         launchWorkspaceWithSession({ title: node.name, type: "serial", host: node.config.port, config: { serialConfig: node.config } });
       } else if (node.type === "telnet" && isTelnetConfig(node.config)) {
         launchWorkspaceWithSession({ title: node.name, type: "telnet", host: node.config.host, config: { telnetConfig: node.config } });
+      } else if (node.type === "ai-cli" && node.config) {
+        launchWorkspaceWithSession({ title: node.name, type: "ai-cli", config: { aiCliConfig: node.config as AiCliConfig } });
       }
     } else if (type === 'new-ssh') { setEditNode(null); openDialog('ssh', node); }
     else if (type === 'new-rdp') { setEditNode(null); openDialog('rdp', node); }
     else if (type === 'new-vnc') { setEditNode(null); openDialog('vnc', node); }
     else if (type === 'new-serial') { setEditNode(null); openDialog('serial', node); }
     else if (type === 'new-telnet') { setEditNode(null); openDialog('telnet', node); }
+    else if (type === 'new-ai-cli') { setEditNode(null); openDialog('ai-cli', node); }
     else if (type === 'new-folder') { setEditNode(null); openDialog('folder', node); }
     else if (type === 'edit') { 
       setEditNode(node); 
@@ -394,6 +405,7 @@ export function SessionModule() {
       else if (node.type === 'rdp') openDialog('rdp', node);
       else if (node.type === 'serial') openDialog('serial', node);
       else if (node.type === 'telnet') openDialog('telnet', node);
+      else if (node.type === 'ai-cli') openDialog('ai-cli', node);
       else openDialog('vnc', node);
     } else if (type === 'delete') { setTargetNode(node); dialog.open('delete', node.id); }
     else if (type === 'sftp-upload' && node.type === 'ssh') { setSftpNode(node); dialog.open('sftp', node.id); }
@@ -427,6 +439,16 @@ export function SessionModule() {
         host: config.host,
         port: config.port,
         vncConfig: config,
+      }
+    });
+  };
+
+  const handleDirectAiCliConnect = (config: AiCliConfig) => {
+    launchWorkspaceWithSession({
+      title: config.nickname || config.command,
+      type: "ai-cli",
+      config: {
+        aiCliConfig: config,
       }
     });
   };
@@ -500,6 +522,9 @@ export function SessionModule() {
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => dialog.open('directTelnet')}>
               <Terminal className="mr-2 h-4 w-4 text-emerald-500" /> {t("Telnet 连接")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => dialog.open('directAiCli')}>
+              <Terminal className="mr-2 h-4 w-4 text-violet-500" /> {t("AI CLI 连接")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -638,6 +663,18 @@ export function SessionModule() {
         }} 
       />
 
+      {/* AI CLI 弹窗 */}
+      <AiCliDialog 
+        open={dialog.isOpen('ai-cli')} 
+        onOpenChange={() => dialog.close()} 
+        initialConfig={editNode?.type === "ai-cli" ? editNode.config as AiCliConfig : undefined} 
+        onSave={(cfg) => {
+          if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.command });
+          else if (targetNode) addProfile("ai-cli" as any, cfg, targetNode.id);
+          dialog.close();
+        }} 
+      />
+
       {/* 直接连接弹窗 */}
       <SshConnectDialog
         open={dialog.isOpen('directSsh')}
@@ -696,6 +733,17 @@ export function SessionModule() {
             host: cfg.host,
             config: { telnetConfig: cfg }
           });
+          dialog.close();
+        }} 
+      />
+
+      {/* AI CLI 直接连接弹窗 */}
+      <AiCliDialog 
+        open={dialog.isOpen('directAiCli')} 
+        onOpenChange={() => dialog.close()} 
+        isDirect={true} 
+        onSave={(cfg) => {
+          handleDirectAiCliConnect(cfg);
           dialog.close();
         }} 
       />
