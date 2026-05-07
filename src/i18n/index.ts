@@ -451,6 +451,7 @@ const zhMessages = {
   "连接类型": "连接类型",
   "以管理员身份运行": "以管理员身份运行",
   "未检测到可用的终端": "未检测到可用的终端",
+  "同步拉取成功！配置将在刷新后生效。": "同步拉取成功！配置将在刷新后生效。",
 } as const satisfies Record<string, MessageResolver>;
 
 type TranslationKey = keyof typeof zhMessages;
@@ -896,6 +897,7 @@ const enMessages: Record<TranslationKey, MessageResolver> = {
   "连接类型": "Connection Type",
   "以管理员身份运行": "Run as administrator",
   "未检测到可用的终端": "No available terminals detected",
+  "同步拉取成功！配置将在刷新后生效。": "Sync pulled successfully! Changes will take effect after refresh.",
 };
 
 const messages = {

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "LazyTerm",
-  "version": "26.50.10934",
+  "version": "26.50.11005",
   "identifier": "com.lazy.term",
   "build": {
     "frontendDist": "../dist",
