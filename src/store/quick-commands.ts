@@ -1,6 +1,7 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { detectPreferredLocale, getSystemLanguage } from "@/i18n/config";
+import { gitAwareStorage } from "@/store/git-aware-storage";
 
 /**
  * 快捷命令接口
@@ -78,6 +79,7 @@ export const useQuickCommandsStore = create<QuickCommandsState>()(
     }),
     {
       name: "lazy-term-quick-commands",
+      storage: createJSONStorage(() => gitAwareStorage),
     }
   )
 );

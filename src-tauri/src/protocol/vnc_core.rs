@@ -951,7 +951,6 @@ pub fn convert_config(config: &crate::types::VncConnectConfig) -> VncClientConfi
         port,
         password: config.password.clone(),
         shared: config.shared.unwrap_or(true),
-        view_only: false,
         allow_jpeg: config.allow_jpeg.unwrap_or(true),
         use_remote_cursor: false,
         handle_new_fb_size: true,

@@ -34,7 +34,6 @@ pub struct VncClientConfig {
     pub port: u16,
     pub password: Option<String>,
     pub shared: bool,
-    pub view_only: bool,
     pub allow_jpeg: bool,
     pub use_remote_cursor: bool,
     pub handle_new_fb_size: bool,
@@ -50,7 +49,6 @@ impl Default for VncClientConfig {
             port: 5900,
             password: None,
             shared: true,
-            view_only: false,
             allow_jpeg: true,
             use_remote_cursor: false,
             handle_new_fb_size: true,
@@ -191,7 +189,6 @@ impl VncClient {
             ffi::RfbClientSetGotCursorPos(client, super::callbacks::got_cursor_pos_callback);
             ffi::RfbClientSetGetPassword(client, get_password_callback);
             ffi::RfbClientSetShared(client, if config.shared { 1 } else { 0 });
-            ffi::RfbClientSetViewOnly(client, if config.view_only { 1 } else { 0 });
             ffi::RfbClientSetEnableJpeg(client, if config.allow_jpeg { 1 } else { 0 });
             ffi::RfbClientSetUseRemoteCursor(client, if config.use_remote_cursor { 1 } else { 0 });
             ffi::RfbClientSetHandleNewFBSize(client, if config.handle_new_fb_size { 1 } else { 0 });
@@ -212,11 +209,6 @@ impl VncClient {
             // 共享标志
             if config.shared {
                 argv_args.push(CString::new("-shared").unwrap());
-            }
-
-            // 视口标志
-            if config.view_only {
-                argv_args.push(CString::new("-viewonly").unwrap());
             }
 
             // 编码

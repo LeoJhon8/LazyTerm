@@ -1,46 +1,14 @@
 import { Terminal, Server, Monitor, Cpu, Keyboard, Usb } from "lucide-react";
 import { useI18n } from "@/i18n";
-import { useTabsStore } from "@/store/tabs";
-import { usePanesStore } from "@/store/panes";
-import { useSettingsStore } from "@/store/settings";
-import { getAvailableShells } from "@/services/shellService";
 import { emitQuickConnect } from "@/lib/quick-connect-event";
 import logo128 from "../../../src-tauri/icons/LazyTerm-128.png";
 
 /**
  * 品牌化欢迎页 — 替代原始的纯文字空状态
- * 利用项目已有的 terminal-empty-state / terminal-empty-card 样式体系
+ * 所有快捷操作统一通过 emitQuickConnect → QuickConnectDialog 处理
  */
 export function WelcomePage() {
   const { t } = useI18n();
-  const { addTab, addSession } = useTabsStore();
-  const { addPane } = usePanesStore();
-
-  /** 打开本地终端（使用用户配置的默认 Shell，标题与 TabBar 一致） */
-  const handleOpenLocalTerminal = async () => {
-    const defaultShell = useSettingsStore.getState().defaultShell;
-    let title = t("终端");
-    try {
-      const shells = await getAvailableShells();
-      const shellInfo = shells.find(
-        (s) => s.path === defaultShell || s.name.toLowerCase() === defaultShell.toLowerCase()
-      );
-      if (shellInfo) {
-        title = shellInfo.name;
-      } else if (defaultShell.includes("powershell")) {
-        title = "PowerShell";
-      } else if (defaultShell.includes("cmd")) {
-        title = "CMD";
-      } else if (defaultShell.includes("wsl")) {
-        title = "WSL";
-      }
-    } catch { /* 降级使用默认标题 */ }
-
-    const tabId = addTab({ title });
-    const sessionId = addSession({ title, type: "local", config: { shell: defaultShell, admin: false } });
-    addPane(sessionId);
-    useTabsStore.getState().setActiveTabId(tabId);
-  };
 
   return (
     <div className="terminal-empty-state">
@@ -73,7 +41,7 @@ export function WelcomePage() {
 
         {/* 快捷操作卡片 */}
         <div className="welcome-actions">
-          <button className="welcome-action-card" onClick={handleOpenLocalTerminal}>
+          <button className="welcome-action-card" onClick={() => emitQuickConnect("local")}>
             <div className="welcome-action-icon welcome-action-icon--terminal">
               <Terminal className="h-5 w-5" />
             </div>

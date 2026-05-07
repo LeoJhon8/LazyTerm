@@ -3,7 +3,6 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import type { VNCConfig } from "@/types/terminal";
@@ -23,10 +22,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
   const [port, setPort] = useState("5900");
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
-  const [shared, setShared] = useState(true);
-  const [allowJpeg, setAllowJpeg] = useState(true);
   const [quality, setQuality] = useState(30);
-  const [viewOnly, setViewOnly] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -39,10 +35,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
         setPort(initialConfig.port?.toString() || "5900");
         setPassword(initialConfig.password || "");
         setNickname(initialConfig.nickname || "");
-        setShared(initialConfig.shared ?? true);
-        setAllowJpeg(initialConfig.allowJpeg ?? true);
         setQuality(initialConfig.quality ?? 30);
-        setViewOnly(initialConfig.viewOnly ?? false);
         return;
       }
 
@@ -50,10 +43,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       setPort("5900");
       setPassword("");
       setNickname("");
-      setShared(true);
-      setAllowJpeg(true);
       setQuality(30);
-      setViewOnly(false);
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -69,10 +59,9 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       port: parseInt(port, 10) || 5900,
       password: password || undefined,
       nickname: nickname || undefined,
-      shared,
-      allowJpeg,
+      shared: true,
+      allowJpeg: true,
       quality,
-      viewOnly,
     });
     onOpenChange(false);
   };
@@ -89,7 +78,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
         <form onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="vnc-nickname" className="text-right">{t("别名")}</Label>
+              <Label htmlFor="vnc-nickname" className="text-right">{t("名称")}</Label>
               <Input id="vnc-nickname" value={nickname} onChange={(event) => setNickname(event.target.value)} className="col-span-3" />
             </div>
 
@@ -111,43 +100,17 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
             <Separator />
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">{t("共享会话")}</Label>
-              <div className="col-span-3 flex items-center gap-3">
-                <Checkbox id="vnc-shared" checked={shared} onCheckedChange={(checked) => setShared(checked === true)} />
-                <Label htmlFor="vnc-shared" className="text-sm text-muted-foreground">{t("允许与其他 VNC 客户端共享同一桌面")}</Label>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">{t("JPEG 压缩")}</Label>
-              <div className="col-span-3 flex items-center gap-3">
-                <Checkbox id="vnc-jpeg" checked={allowJpeg} onCheckedChange={(checked) => setAllowJpeg(checked === true)} />
-                <Label htmlFor="vnc-jpeg" className="text-sm text-muted-foreground">{t("优先使用 JPEG 帧压缩以降低带宽占用")}</Label>
-              </div>
-            </div>
-
-            {allowJpeg && (
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">{t("渲染质量")}</Label>
-                <div className="col-span-3 flex items-center gap-4">
-                  <Slider
-                    min={10}
-                    max={100}
-                    step={10}
-                    value={[quality]}
-                    onValueChange={(val) => setQuality(val[0])}
-                    className="flex-1"
-                  />
-                  <span className="text-sm w-8 text-right">{quality}%</span>
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">{t("仅查看")}</Label>
-              <div className="col-span-3 flex items-center gap-3">
-                <Checkbox id="vnc-view-only" checked={viewOnly} onCheckedChange={(checked) => setViewOnly(checked === true)} />
-                <Label htmlFor="vnc-view-only" className="text-sm text-muted-foreground">{t("连接后不发送鼠标与键盘输入")}</Label>
+              <Label className="text-right">{t("渲染质量")}</Label>
+              <div className="col-span-3 flex items-center gap-4">
+                <Slider
+                  min={10}
+                  max={100}
+                  step={10}
+                  value={[quality]}
+                  onValueChange={(val) => setQuality(val[0])}
+                  className="flex-1"
+                />
+                <span className="text-sm w-8 text-right">{quality}%</span>
               </div>
             </div>
           </div>

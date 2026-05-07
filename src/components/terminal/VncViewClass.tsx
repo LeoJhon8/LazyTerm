@@ -279,8 +279,6 @@ export function VncViewClass(props: BaseSessionViewProps) {
     return null;
   }
 
-  const isViewOnly = activeSession.config?.vncConfig?.viewOnly ?? false;
-
   const emitPointer = useCallback((clientX: number, clientY: number, buttonMask: number, source: "move" | "down" | "up" | "cancel" | "wheel") => {
     const pointerSurface = canvasRef.current ?? containerRef.current;
     if (!frameSize || !pointerSurface) {
@@ -329,13 +327,10 @@ export function VncViewClass(props: BaseSessionViewProps) {
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (isViewOnly) return;
     emitPointer(event.clientX, event.clientY, pointerMaskRef.current, "move");
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (isViewOnly) return;
-
     event.preventDefault();
     event.currentTarget.focus();
     pointerTargetRef.current = event.pointerId;
@@ -346,8 +341,6 @@ export function VncViewClass(props: BaseSessionViewProps) {
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (isViewOnly) return;
-
     event.preventDefault();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -369,8 +362,6 @@ export function VncViewClass(props: BaseSessionViewProps) {
   };
 
   const handleKey = (event: React.KeyboardEvent<HTMLDivElement>, down: boolean) => {
-    if (isViewOnly) return;
-
     const keySym = mapVncKeyboardEvent(event);
     if (keySym === null) return;
 
@@ -392,9 +383,6 @@ export function VncViewClass(props: BaseSessionViewProps) {
 
     const onNativeWheel = (event: WheelEvent) => {
       event.preventDefault();
-      if (isViewOnly) {
-        return;
-      }
 
       const wheelMask = event.deltaY < 0 ? 8 : 16;
       emitPointer(event.clientX, event.clientY, pointerMaskRef.current | wheelMask, "wheel");
@@ -405,7 +393,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
     return () => {
       container.removeEventListener("wheel", onNativeWheel);
     };
-  }, [containerRef, emitPointer, isViewOnly]);
+  }, [containerRef, emitPointer]);
 
   return (
     <main

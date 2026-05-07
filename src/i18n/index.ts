@@ -32,7 +32,6 @@ const zhMessages = {
   "清除": "清除",
   "刷新": "刷新",
   "知道了": "知道了",
-  "别名": "别名",
   "名称": "名称",
   "命令": "命令",
   "主机地址": "主机地址",
@@ -375,6 +374,8 @@ const zhMessages = {
   "无效的导入文件格式": "无效的导入文件格式",
   "恢复将覆盖当前的 SSH 配置与快捷命令，确定要继续吗？": "恢复将覆盖当前的 SSH 配置与快捷命令，确定要继续吗？",
   "成功恢复 {count} 条配置数据！": ({ count }) => `成功恢复 ${count} 条配置数据！`,
+  "成功恢复 {count} 条配置数据！已同步 {synced} 个文件到 git 目录": ({ count, synced }) => `成功恢复 ${count} 条配置数据！已同步 ${synced} 个文件到 git 目录`,
+  "成功恢复 {count} 条配置数据！但同步到 git 目录失败": ({ count }) => `成功恢复 ${count} 条配置数据！但同步到 git 目录失败`,
   "恢复失败：{error}": ({ error }) => `恢复失败：${error}`,
   "选择备份文件": "选择备份文件",
   "读取备份文件失败：{error}": ({ error }) => `读取备份文件失败：${error}`,
@@ -446,6 +447,10 @@ const zhMessages = {
   "可选，留空使用当前目录": "可选，留空使用当前目录",
   "可选，留空使用命令名": "可选，留空使用命令名",
   "选择工作目录": "选择工作目录",
+  "新建连接": "新建连接",
+  "连接类型": "连接类型",
+  "以管理员身份运行": "以管理员身份运行",
+  "未检测到可用的终端": "未检测到可用的终端",
 } as const satisfies Record<string, MessageResolver>;
 
 type TranslationKey = keyof typeof zhMessages;
@@ -472,7 +477,6 @@ const enMessages: Record<TranslationKey, MessageResolver> = {
   "清除": "Clear",
   "刷新": "Refresh",
   "知道了": "OK",
-  "别名": "Alias",
   "名称": "Name",
   "命令": "Command",
   "主机地址": "Host",
@@ -815,6 +819,8 @@ const enMessages: Record<TranslationKey, MessageResolver> = {
   "无效的导入文件格式": "Invalid import file format",
   "恢复将覆盖当前的 SSH 配置与快捷命令，确定要继续吗？": "Restoring will overwrite the current SSH profiles and quick commands. Continue?",
   "成功恢复 {count} 条配置数据！": ({ count }) => `Restored ${count} config entries successfully.`,
+  "成功恢复 {count} 条配置数据！已同步 {synced} 个文件到 git 目录": ({ count, synced }) => `Restored ${count} config entries! Synced ${synced} files to git directory`,
+  "成功恢复 {count} 条配置数据！但同步到 git 目录失败": ({ count }) => `Restored ${count} config entries! But failed to sync to git directory`,
   "恢复失败：{error}": ({ error }) => `Restore failed: ${error}`,
   "选择备份文件": "Choose a backup file",
   "读取备份文件失败：{error}": ({ error }) => `Failed to read the backup file: ${error}`,
@@ -886,6 +892,10 @@ const enMessages: Record<TranslationKey, MessageResolver> = {
   "可选，留空使用当前目录": "Optional, leave empty for current directory",
   "可选，留空使用命令名": "Optional, leave empty to use command name",
   "选择工作目录": "Select Working Directory",
+  "新建连接": "New Connection",
+  "连接类型": "Connection Type",
+  "以管理员身份运行": "Run as administrator",
+  "未检测到可用的终端": "No available terminals detected",
 };
 
 const messages = {

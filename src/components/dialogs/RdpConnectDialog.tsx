@@ -95,7 +95,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
         <form onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-nickname" className="text-right">{t("别名")}</Label>
+              <Label htmlFor="rdp-nickname" className="text-right">{t("名称")}</Label>
               <Input id="rdp-nickname" value={nickname} onChange={(event) => setNickname(event.target.value)} className="col-span-3" />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">

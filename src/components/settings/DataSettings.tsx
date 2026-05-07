@@ -7,6 +7,7 @@ import { useSshProfilesStore } from "@/store/ssh-profiles";
 import { useQuickCommandsStore } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
 import { useGitSyncStore } from "@/store/git-sync";
+import { invalidateCache, syncToGitDir } from "@/store/git-aware-storage";
 import { checkGitRepo, commitAndPushGitRepo, pullGitRepo } from "@/services/gitService";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { save, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import { SYNC_FILE_NAME } from "@/config/update-config";
 import { FileJson, Upload, Trash2, Send, Download, FolderOpen } from "lucide-react";
 import { useI18n } from "@/i18n";
 
@@ -74,16 +74,27 @@ export function DataSettings() {
     }
   };
 
-  const handleConfirmRestore = () => {
+  const handleConfirmRestore = async () => {
     const data = pendingRestoreData as Record<string, unknown> | null;
     if (!data) return;
     let importedCount = 0;
     if (data.sshProfiles && Array.isArray(data.sshProfiles)) { importProfiles(data.sshProfiles); importedCount += data.sshProfiles.length; }
     if (data.quickCommands && Array.isArray(data.quickCommands)) { useQuickCommandsStore.setState({ commands: data.quickCommands }); importedCount += data.quickCommands.length; }
-    setImportMessage(t("成功恢复 {count} 条配置数据！", { count: importedCount }));
-    setMessageType("success");
     setPendingRestoreData(null);
     setRestoreConfirmOpen(false);
+
+    // 导入后显式同步到 git 目录（persist 的 setItem 是异步的且不被 await）
+    if (useGitSyncStore.getState().gitRepoPath) {
+      try {
+        const synced = await syncToGitDir();
+        setImportMessage(t("成功恢复 {count} 条配置数据！已同步 {synced} 个文件到 git 目录", { count: importedCount, synced }));
+      } catch {
+        setImportMessage(t("成功恢复 {count} 条配置数据！但同步到 git 目录失败", { count: importedCount }));
+      }
+    } else {
+      setImportMessage(t("成功恢复 {count} 条配置数据！", { count: importedCount }));
+    }
+    setMessageType("success");
   };
 
   const handleImportFromFile = async () => {
@@ -127,8 +138,7 @@ export function DataSettings() {
     if (!gitRepoPath) return;
     setIsSyncing(true); setImportMessage(t("正在推送配置...")); setMessageType("success");
     try {
-      const jsonString = JSON.stringify(buildExportData(), null, 2);
-      await writeTextFile(`${gitRepoPath}/${SYNC_FILE_NAME}`, jsonString);
+      // 配置数据已自动保存在 git 目录下，直接 commit & push 即可
       await commitAndPushGitRepo(gitRepoPath, "Auto sync config " + new Date().toISOString());
       setLastSyncTime(Date.now());
       setImportMessage(t("同步推送成功！")); setMessageType("success");
@@ -141,10 +151,13 @@ export function DataSettings() {
     setIsSyncing(true); setImportMessage(t("正在拉取配置...")); setMessageType("success");
     try {
       await pullGitRepo(gitRepoPath);
-      const rawJson = await readTextFile(`${gitRepoPath}/${SYNC_FILE_NAME}`);
-      restoreFromBackup(rawJson);
+      // 清除内存缓存，让各 store 重新从 git 目录读取最新配置
+      invalidateCache();
+      // 重新加载页面以应用新配置
       setLastSyncTime(Date.now());
-      setImportMessage(t("同步拉取并恢复成功！")); setMessageType("success");
+      setImportMessage(t("同步拉取成功！配置将在刷新后生效。")); setMessageType("success");
+      // 自动刷新页面以加载新配置
+      setTimeout(() => window.location.reload(), 1500);
     } catch (e) { setImportMessage(t("拉取失败：{error}", { error: String(e) })); setMessageType("error"); }
     finally { setIsSyncing(false); }
   };

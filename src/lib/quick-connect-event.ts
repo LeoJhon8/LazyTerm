@@ -3,7 +3,7 @@
  * 使用 CustomEvent 实现，与项目已有的 tab-drag-state 模式一致
  */
 
-export type QuickConnectType = "ssh" | "rdp" | "vnc" | "serial" | "telnet";
+export type QuickConnectType = "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
 
 export const QUICK_CONNECT_EVENT = "lazy-term-quick-connect";
 

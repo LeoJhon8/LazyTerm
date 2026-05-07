@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { gitAwareStorage } from "@/store/git-aware-storage";
 
 /**
  * 历史命令接口
@@ -76,6 +77,7 @@ export const useHistoryStore = create<HistoryState>()(
     }),
     {
       name: "lazy-term-history",
+      storage: createJSONStorage(() => gitAwareStorage),
     }
   )
 );

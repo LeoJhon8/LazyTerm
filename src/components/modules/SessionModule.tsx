@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { 
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, 
   useDraggable, useDroppable
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useSshProfilesStore, type SessionNode } from "@/store/ssh-profiles";
+import { useI18n } from "@/i18n";
 import { useTabsStore } from "@/store/tabs";
 import { usePanesStore } from "@/store/panes";
 import { SshConnectDialog } from "@/components/dialogs/SshConnectDialog";
@@ -21,21 +22,18 @@ import { SerialConnectDialog } from "@/components/dialogs/SerialConnectDialog";
 import { TelnetConnectDialog } from "@/components/dialogs/TelnetConnectDialog";
 import { SftpUploadDialog } from "@/components/dialogs/SftpUploadDialog";
 import { AiCliDialog } from "@/components/dialogs/AiCliDialog";
+import { NewConnectionDialog } from "@/components/dialogs/NewConnectionDialog";
+import { QuickConnectDialog } from "@/components/dialogs/QuickConnectDialog";
 import { 
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator 
 } from "@/components/ui/context-menu";
-import { 
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel 
-} from "@/components/ui/dropdown-menu";
+
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Terminal as TerminalIcon, ShieldAlert, MonitorCheck, Boxes } from "lucide-react";
+
 import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCliConfig } from "@/types/terminal";
-import type { ShellInfo } from "@/types/shell";
-import { getAvailableShells } from "@/services/shellService";
-import { logger } from "@/lib/logger";
+
 import { useDialogState } from "@/hooks/useDialogState";
-import { useI18n } from "@/i18n";
 import { onQuickConnect } from "@/lib/quick-connect-event";
 
 const IS_WINDOWS = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
@@ -187,12 +185,7 @@ function DraggableDroppableRow({
       <ContextMenuContent className="w-52 text-xs">
         {node.type === 'folder' ? (
           <>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-ssh', node)}><Server className="mr-2 h-4 w-4" /> {t("新建 SSH 连接")}</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-rdp', node)}><AppWindow className="mr-2 h-4 w-4" /> {t("新建 Windows 连接")}</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-vnc', node)}><ScreenShare className="mr-2 h-4 w-4" /> {t("新建 VNC 连接")}</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-serial', node)}><Usb className="mr-2 h-4 w-4" /> {t("新建串口连接（菜单）")}</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-telnet', node)}><Terminal className="mr-2 h-4 w-4" /> {t("新建 Telnet 连接（菜单）")}</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-ai-cli', node)}><Terminal className="mr-2 h-4 w-4" /> {t("新建 AI CLI 连接")}</ContextMenuItem>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-connection', node)}><Plus className="mr-2 h-4 w-4" /> {t("新建连接")}</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> {t("新建子文件夹")}</ContextMenuItem>
           </>
         ) : node.type === 'ssh' ? (
@@ -291,33 +284,18 @@ export function SessionModule() {
   const [targetNode, setTargetNode] = useState<SessionNode | null>(null);
   const [editNode, setEditNode] = useState<SessionNode | null>(null);
   const [sftpNode, setSftpNode] = useState<SessionNode | null>(null);
-
-  // 可用 Shell 列表
-  const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
+  const [initialQuickConnectType, setInitialQuickConnectType] = useState<string | null>(null);
 
   useEffect(() => { 
     ensureRoot(); 
     syncRootFolderName();
   }, [ensureRoot, syncRootFolderName, locale]);
 
-  useEffect(() => {
-    getAvailableShells()
-      .then(setAvailableShells)
-      .catch(err => logger.error("FE/session-module/shells", "Failed to get available shells", {err}));
-  }, []);
-
   // 监听来自 WelcomePage 的快速连接请求
   useEffect(() => {
-    const dialogMap: Record<string, Parameters<typeof dialog.open>[0]> = {
-      ssh: "directSsh",
-      rdp: "directRdp",
-      vnc: "directVnc",
-      serial: "directSerial",
-      telnet: "directTelnet",
-    };
     const cleanup = onQuickConnect((type) => {
-      const dialogType = dialogMap[type];
-      if (dialogType) dialog.open(dialogType);
+      setInitialQuickConnectType(type);
+      dialog.open('quickConnect');
     });
     return cleanup;
   }, [dialog]);
@@ -391,12 +369,7 @@ export function SessionModule() {
       } else if (node.type === "ai-cli" && node.config) {
         launchWorkspaceWithSession({ title: node.name, type: "ai-cli", config: { aiCliConfig: node.config as AiCliConfig } });
       }
-    } else if (type === 'new-ssh') { setEditNode(null); openDialog('ssh', node); }
-    else if (type === 'new-rdp') { setEditNode(null); openDialog('rdp', node); }
-    else if (type === 'new-vnc') { setEditNode(null); openDialog('vnc', node); }
-    else if (type === 'new-serial') { setEditNode(null); openDialog('serial', node); }
-    else if (type === 'new-telnet') { setEditNode(null); openDialog('telnet', node); }
-    else if (type === 'new-ai-cli') { setEditNode(null); openDialog('ai-cli', node); }
+    } else if (type === 'new-connection') { setEditNode(null); openDialog('newConnection', node); }
     else if (type === 'new-folder') { setEditNode(null); openDialog('folder', node); }
     else if (type === 'edit') { 
       setEditNode(node); 
@@ -413,55 +386,7 @@ export function SessionModule() {
 
 
 
-  const handleDirectRdpConnect = (config: RDPConfig) => {
-    const normalizedConfig = IS_WINDOWS
-      ? { ...config, backend: "msrdpax" as const, width: undefined, height: undefined, autoResize: true }
-      : config;
 
-    launchWorkspaceWithSession({
-      title: normalizedConfig.nickname || normalizedConfig.host,
-      type: "rdp",
-      host: normalizedConfig.host,
-      config: {
-        host: normalizedConfig.host,
-        port: normalizedConfig.port,
-        rdpConfig: normalizedConfig,
-      }
-    });
-  };
-
-  const handleDirectVncConnect = (config: VNCConfig) => {
-    launchWorkspaceWithSession({
-      title: config.nickname || config.host,
-      type: "vnc",
-      host: config.host,
-      config: {
-        host: config.host,
-        port: config.port,
-        vncConfig: config,
-      }
-    });
-  };
-
-  const handleDirectAiCliConnect = (config: AiCliConfig) => {
-    launchWorkspaceWithSession({
-      title: config.nickname || config.command,
-      type: "ai-cli",
-      config: {
-        aiCliConfig: config,
-      }
-    });
-  };
-
-  const getShellIcon = (type: string) => {
-    switch (type) {
-      case 'powershell': return <MonitorCheck className="mr-2 h-4 w-4 text-blue-500" />;
-      case 'cmd': return <TerminalIcon className="mr-2 h-4 w-4 text-muted-foreground" />;
-      case 'bash': return <TerminalIcon className="mr-2 h-4 w-4 text-orange-500" />;
-      case 'wsl': return <Boxes className="mr-2 h-4 w-4 text-purple-500" />;
-      default: return <TerminalIcon className="mr-2 h-4 w-4" />;
-    }
-  };
 
   return (
     <div className="module-shell">
@@ -469,65 +394,18 @@ export function SessionModule() {
         <div className="module-title min-w-0">
           <span className="module-heading truncate text-[15px]">{t("会话")}</span>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className={cn(
-                "h-9 w-9 rounded-2xl border border-input bg-background/72 text-accent-foreground shadow-none transition-colors duration-200",
-                "hover:bg-background/88 hover:text-foreground",
-                "opacity-80 group-hover:opacity-100"
-              )}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="right" align="start" sideOffset={4} alignOffset={30} className="w-44 overflow-hidden">
-            <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase py-2 bg-muted/30">{t("快速连接")}</DropdownMenuLabel>
-            
-            {availableShells.map((shell, index) => (
-              <React.Fragment key={`${shell.path}-${index}`}>
-                <DropdownMenuItem onClick={() => launchWorkspaceWithSession({
-                  title: shell.name,
-                  type: "local",
-                  config: { shell: shell.path, admin: false }
-                })}>
-                  {getShellIcon(shell.icon_type)}
-                  {shell.name}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => launchWorkspaceWithSession({
-                  title: t("{name} (管理员)", { name: shell.name }),
-                  type: "local",
-                  config: { shell: shell.path, admin: true }
-                })}>
-                  <ShieldAlert className="mr-2 h-4 w-4 text-amber-500" />
-                  {t("{name} 管理员", { name: shell.name })}
-                </DropdownMenuItem>
-              </React.Fragment>
-            ))}
-
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => dialog.open('directSsh')}>
-              <Server className="mr-2 h-4 w-4 text-emerald-500" /> {t("SSH 连接")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => dialog.open('directRdp')}>
-              <AppWindow className="mr-2 h-4 w-4 text-sky-500" /> {t("Windows 远程连接")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => dialog.open('directVnc')}>
-              <ScreenShare className="mr-2 h-4 w-4 text-emerald-500" /> {t("VNC 连接")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => dialog.open('directSerial')}>
-              <Usb className="mr-2 h-4 w-4 text-purple-500" /> {t("串口连接")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => dialog.open('directTelnet')}>
-              <Terminal className="mr-2 h-4 w-4 text-emerald-500" /> {t("Telnet 连接")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => dialog.open('directAiCli')}>
-              <Terminal className="mr-2 h-4 w-4 text-violet-500" /> {t("AI CLI 连接")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          className={cn(
+            "h-9 w-9 rounded-2xl border border-input bg-background/72 text-accent-foreground shadow-none transition-colors duration-200",
+            "hover:bg-background/88 hover:text-foreground",
+            "opacity-80 group-hover:opacity-100"
+          )}
+          onClick={() => { setInitialQuickConnectType(null); dialog.open('quickConnect'); }}
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
       </div>
       
       <div className="flex-1 overflow-y-auto px-2 pt-0 pb-3">
@@ -580,6 +458,27 @@ export function SessionModule() {
           </DragOverlay>
         </DndContext>
       </div>
+
+      {/* 快速连接弹窗 */}
+      <QuickConnectDialog
+        open={dialog.isOpen('quickConnect')}
+        onOpenChange={() => { setInitialQuickConnectType(null); dialog.close(); }}
+        initialType={initialQuickConnectType as any ?? undefined}
+        onConnect={(sessionData) => {
+          launchWorkspaceWithSession(sessionData as any);
+        }}
+      />
+
+      {/* 新建连接统一弹窗 */}
+      <NewConnectionDialog
+        open={dialog.isOpen('newConnection')}
+        onOpenChange={() => dialog.close()}
+        onSave={(type, cfg) => {
+          const parentId = targetNode?.id ?? "root-folder";
+          addProfile(type as any, cfg, parentId);
+          dialog.close();
+        }}
+      />
 
       {/* 文件夹弹窗 */}
       <Dialog open={dialog.isOpen('folder')} onOpenChange={() => dialog.close()}>
@@ -671,79 +570,6 @@ export function SessionModule() {
         onSave={(cfg) => {
           if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.command });
           else if (targetNode) addProfile("ai-cli" as any, cfg, targetNode.id);
-          dialog.close();
-        }} 
-      />
-
-      {/* 直接连接弹窗 */}
-      <SshConnectDialog
-        open={dialog.isOpen('directSsh')}
-        onOpenChange={() => dialog.close()}
-        isDirect={true}
-        onSave={(cfg) => {
-          launchWorkspaceWithSession({
-            title: cfg.nickname || cfg.host,
-            type: "ssh",
-            host: cfg.host,
-            config: { host: cfg.host, port: cfg.port, sshConfig: cfg }
-          });
-          dialog.close();
-        }}
-      />
-      <RdpConnectDialog 
-        open={dialog.isOpen('directRdp')} 
-        onOpenChange={() => dialog.close()} 
-        isDirect={true} 
-        onSave={(cfg) => {
-          handleDirectRdpConnect(cfg);
-          dialog.close();
-        }} 
-      />
-      <VncConnectDialog 
-        open={dialog.isOpen('directVnc')} 
-        onOpenChange={() => dialog.close()} 
-        isDirect={true} 
-        onSave={(cfg) => {
-          handleDirectVncConnect(cfg);
-          dialog.close();
-        }} 
-      />
-      <SerialConnectDialog 
-        open={dialog.isOpen('directSerial')} 
-        onOpenChange={() => dialog.close()} 
-        isDirect={true} 
-        onSave={(cfg) => {
-          launchWorkspaceWithSession({
-            title: cfg.nickname || cfg.port,
-            type: "serial",
-            host: cfg.port,
-            config: { serialConfig: cfg }
-          });
-          dialog.close();
-        }} 
-      />
-      <TelnetConnectDialog 
-        open={dialog.isOpen('directTelnet')} 
-        onOpenChange={() => dialog.close()} 
-        isDirect={true} 
-        onSave={(cfg) => {
-          launchWorkspaceWithSession({
-            title: cfg.nickname || cfg.host,
-            type: "telnet",
-            host: cfg.host,
-            config: { telnetConfig: cfg }
-          });
-          dialog.close();
-        }} 
-      />
-
-      {/* AI CLI 直接连接弹窗 */}
-      <AiCliDialog 
-        open={dialog.isOpen('directAiCli')} 
-        onOpenChange={() => dialog.close()} 
-        isDirect={true} 
-        onSave={(cfg) => {
-          handleDirectAiCliConnect(cfg);
           dialog.close();
         }} 
       />

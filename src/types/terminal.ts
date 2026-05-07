@@ -11,7 +11,7 @@ export interface ISessionConnector {
 
 // 终端连接器接口定义
 export interface ITerminalConnector extends ISessionConnector {
-  readonly protocol: 'ssh' | 'local' | 'serial' | 'telnet';
+  readonly protocol: 'ssh' | 'local' | 'serial' | 'telnet' | 'ai-cli';
 
   onData(handler: (data: string) => void): Promise<void>;
   write(data: string | Uint8Array): void;
@@ -203,7 +203,6 @@ export interface VNCConfig {
   password?: string;
   nickname?: string;
   shared?: boolean;
-  viewOnly?: boolean;
   allowJpeg?: boolean;
   quality?: number;
 }

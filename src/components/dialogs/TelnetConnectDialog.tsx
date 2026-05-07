@@ -81,7 +81,7 @@ export function TelnetConnectDialog({
           </div>
           {!isDirect && (
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="telnet-nickname" className="text-right">{t("别名")}</Label>
+              <Label htmlFor="telnet-nickname" className="text-right">{t("名称")}</Label>
               <Input
                 id="telnet-nickname"
                 value={config.nickname || ""}

@@ -4,18 +4,14 @@ import { useState, useCallback } from "react";
  * 支持的弹窗类型
  */
 export type DialogType = 
+  | "newConnection"
+  | "quickConnect"
   | "ssh" 
-  | "directSsh" 
   | "rdp" 
-  | "directRdp" 
   | "vnc" 
-  | "directVnc" 
   | "serial"
-  | "directSerial"
   | "telnet"
-  | "directTelnet"
   | "ai-cli"
-  | "directAiCli"
   | "folder" 
   | "delete" 
   | "edit" 

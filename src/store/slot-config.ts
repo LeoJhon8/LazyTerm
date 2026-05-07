@@ -1,7 +1,8 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type { SlotConfig } from "../config/default-slot-config";
 import { DEFAULT_SLOT_CONFIG, VALID_SLOT_MODULE_IDS } from "../config/default-slot-config";
+import { gitAwareStorage } from "@/store/git-aware-storage";
 
 /** 清理持久化数据中的无效 moduleId，并修正关联状态 */
 function sanitizeSlotConfig(config: SlotConfig): SlotConfig {
@@ -164,6 +165,7 @@ export const useSlotConfigStore = create<SlotConfigState>()(
     }),
     {
       name: "lazy-term-slot-config",
+      storage: createJSONStorage(() => gitAwareStorage),
       partialize: (state) => ({ currentConfig: state.currentConfig }),
       // hydrate 时清理无效 moduleId（如已删除的 SettingsModule）
       merge: (persisted, current) => {

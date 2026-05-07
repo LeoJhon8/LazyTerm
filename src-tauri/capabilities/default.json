@@ -16,11 +16,11 @@
     "dialog:allow-save",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
-    "fs:default",
     "fs:read-all",
-    "fs:allow-stat",
-    "fs:allow-read-text-file",
-    "fs:allow-write-text-file",
+    "fs:write-all",
+    {"identifier": "fs:scope",
+      "allow": ["C:/**", "D:/**", "E:/**", "F:/**", "G:/**", "H:/**", "I:/**", "J:/**", "K:/**", "L:/**", "M:/**", "N:/**", "O:/**", "P:/**", "Q:/**", "R:/**", "S:/**", "T:/**", "U:/**", "V:/**", "W:/**", "X:/**", "Y:/**", "Z:/**"]
+    },
     "http:default",
     {
       "identifier": "http:default",

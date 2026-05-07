@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCliConfig } from "@/types/terminal";
 import { getSystemLanguage, resolveAppLocale, type AppLocale } from "@/i18n/config";
 import { useSettingsStore } from "@/store/settings";
+import { gitAwareStorage } from "@/store/git-aware-storage";
 
 export type NodeType = "folder" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
 
@@ -247,7 +248,7 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
     }),
     {
       name: "terminal-sessions-v10",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => gitAwareStorage),
       merge: (persistedState, currentState) => {
         const merged = {
           ...currentState,

@@ -1,7 +1,8 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type { TerminalColorScheme } from "@/config/themes";
 import { DEFAULT_LANGUAGE_SETTING, type AppLanguageSetting } from "@/i18n/config";
+import { gitAwareStorage } from "@/store/git-aware-storage";
 
 export type BackgroundImageUiMode = "frosted" | "clear";
 
@@ -102,6 +103,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "lazy-term-settings",
+      storage: createJSONStorage(() => gitAwareStorage),
       // 只持久化数据，不持久化方法
       partialize: (state) => {
         const data: Partial<SettingsState> = { ...state };

@@ -115,7 +115,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
         <form onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-nickname" className="text-right">{t("别名")}</Label>
+              <Label htmlFor="ssh-nickname" className="text-right">{t("名称")}</Label>
               <Input
                 id="ssh-nickname"
                 placeholder={t("我的服务器")}
