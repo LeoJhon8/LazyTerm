@@ -381,6 +381,13 @@ const zhMessages = {
   "读取备份文件失败：{error}": ({ error }) => `读取备份文件失败：${error}`,
   "确定要清空所有会话配置和快捷命令吗？此操作不可恢复！": "确定要清空所有会话配置和快捷命令吗？此操作不可恢复！",
   "所有配置数据已清空！": "所有配置数据已清空！",
+  "从目录恢复": "从目录恢复",
+  "从 JSON 文件恢复": "从 JSON 文件恢复",
+  "选择数据恢复目录": "选择数据恢复目录",
+  "成功从目录恢复了 {count} 项配置数据！": ({ count }) => `成功从目录恢复了 ${count} 项配置数据！`,
+  "成功从目录恢复了 {count} 项配置数据！配置将在刷新后生效。": ({ count }) => `成功从目录恢复了 ${count} 项配置数据！配置将在刷新后生效。`,
+  "未在目录中找到有效的配置文件": "未在目录中找到有效的配置文件",
+  "从目录恢复失败：{error}": ({ error }) => `从目录恢复失败：${error}`,
   "关于 LazyTerm": "关于 LazyTerm",
   "当前版本：{version}": ({ version }) => `当前版本：${version}`,
   "未知": "未知",
@@ -451,7 +458,13 @@ const zhMessages = {
   "连接类型": "连接类型",
   "以管理员身份运行": "以管理员身份运行",
   "未检测到可用的终端": "未检测到可用的终端",
-  "同步拉取成功！配置将在刷新后生效。": "同步拉取成功！配置将在刷新后生效。",
+  "同步到本地仓库": "同步到本地仓库",
+  "同步文件": "同步文件",
+  "正在同步配置到本地仓库...": "正在同步配置到本地仓库...",
+  "成功同步所有配置到本地仓库文件": "成功同步所有配置到本地仓库文件",
+  "同步失败，请检查目录权限": "同步失败，请检查目录权限",
+  "同步出错：{error}": ({ error }) => `同步出错：${error}`,
+  "同步拉取成功！已更新 {count} 项本地配置，正在刷新页面...": ({ count }) => `同步拉取成功！已更新 ${count} 项本地配置，正在刷新页面...`,
 } as const satisfies Record<string, MessageResolver>;
 
 type TranslationKey = keyof typeof zhMessages;
@@ -827,6 +840,13 @@ const enMessages: Record<TranslationKey, MessageResolver> = {
   "读取备份文件失败：{error}": ({ error }) => `Failed to read the backup file: ${error}`,
   "确定要清空所有会话配置和快捷命令吗？此操作不可恢复！": "Clear all session profiles and quick commands? This cannot be undone.",
   "所有配置数据已清空！": "All configuration data has been cleared.",
+  "从目录恢复": "Restore from directory",
+  "从 JSON 文件恢复": "Restore from JSON file",
+  "选择数据恢复目录": "Select data recovery directory",
+  "成功从目录恢复了 {count} 项配置数据！": ({ count }) => `Successfully restored ${count} configuration items from directory!`,
+  "成功从目录恢复了 {count} 项配置数据！配置将在刷新后生效。": ({ count }) => `Successfully restored ${count} configuration items! Changes will take effect after refresh.`,
+  "未在目录中找到有效的配置文件": "No valid configuration files found in the directory",
+  "从目录恢复失败：{error}": ({ error }) => `Failed to restore from directory: ${error}`,
   "关于 LazyTerm": "About LazyTerm",
   "当前版本：{version}": ({ version }) => `Current version: ${version}`,
   "未知": "Unknown",
@@ -897,7 +917,13 @@ const enMessages: Record<TranslationKey, MessageResolver> = {
   "连接类型": "Connection Type",
   "以管理员身份运行": "Run as administrator",
   "未检测到可用的终端": "No available terminals detected",
-  "同步拉取成功！配置将在刷新后生效。": "Sync pulled successfully! Changes will take effect after refresh.",
+  "同步到本地仓库": "Sync to Local Repo",
+  "同步文件": "Sync Files",
+  "正在同步配置到本地仓库...": "Syncing config to local repo...",
+  "成功同步所有配置到本地仓库文件": "Successfully synced all config to local repo file",
+  "同步失败，请检查目录权限": "Sync failed, please check directory permissions",
+  "同步出错：{error}": ({ error }) => `Sync error: ${error}`,
+  "同步拉取成功！已更新 {count} 项本地配置，正在刷新页面...": ({ count }) => `Sync pull successful! Updated ${count} local config items, reloading page...`,
 };
 
 const messages = {
@@ -908,6 +934,10 @@ const messages = {
 function formatMessage(message: MessageResolver, values?: TranslationValues) {
   if (typeof message === "function") {
     return message(values ?? {});
+  }
+
+  if (typeof message !== "string") {
+    return "";
   }
 
   return message.replace(/\{(\w+)\}/g, (_match, key: string) => {
@@ -921,7 +951,11 @@ export function translate(
   key: TranslationKey,
   values?: TranslationValues,
 ) {
-  return formatMessage(messages[locale][key] ?? zhMessages[key], values);
+  const message = messages[locale][key] ?? zhMessages[key];
+  if (message === undefined) {
+    return key;
+  }
+  return formatMessage(message, values);
 }
 
 export function getCurrentLocale(): AppLocale {

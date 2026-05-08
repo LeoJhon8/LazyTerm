@@ -2,6 +2,8 @@
 use super::rdp_core::build_rdp_full_address;
 use crate::RdpConnectConfig;
 #[cfg(windows)]
+use crate::utils::create_hidden_command;
+#[cfg(windows)]
 use std::process::Command;
 #[cfg(windows)]
 use uuid::Uuid;
@@ -62,7 +64,7 @@ fn build_mstsc_rdp_file(config: &RdpConnectConfig) -> String {
 
 #[cfg(windows)]
 fn run_cmdkey(args: &[String], context: &str) -> Result<(), String> {
-    let output = Command::new("cmdkey")
+    let output = create_hidden_command("cmdkey")
         .args(args)
         .output()
         .map_err(|error| format!("{context}: 无法启动 cmdkey: {error}"))?;
@@ -104,7 +106,7 @@ fn store_mstsc_credentials(
 #[cfg(windows)]
 fn delete_mstsc_credentials(targets: &[String]) {
     for target in targets {
-        let _ = Command::new("cmdkey")
+        let _ = create_hidden_command("cmdkey")
             .arg(format!("/delete:{target}"))
             .output();
     }

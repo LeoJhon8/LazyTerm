@@ -7,7 +7,7 @@ import { useSshProfilesStore } from "@/store/ssh-profiles";
 import { useQuickCommandsStore } from "@/store/quick-commands";
 import { useTabsStore } from "@/store/tabs";
 import { useGitSyncStore } from "@/store/git-sync";
-import { invalidateCache, syncToGitDir } from "@/store/git-aware-storage";
+import { syncToGitDir, syncFromGitDir } from "@/store/git-aware-storage";
 import { checkGitRepo, commitAndPushGitRepo, pullGitRepo } from "@/services/gitService";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
@@ -113,6 +113,7 @@ export function DataSettings() {
     }
   };
 
+
   const handleConfirmClear = () => {
     useSshProfilesStore.setState({ nodes: [{ id: "root-folder", type: "folder", name: t("我的会话"), parentId: null, isExpanded: true, isRoot: true, order: 0 }] });
     useQuickCommandsStore.setState({ commands: [] });
@@ -120,6 +121,27 @@ export function DataSettings() {
     setImportMessage(t("所有配置数据已清空！"));
     setMessageType("success");
     setClearConfirmOpen(false);
+  };
+
+  const handleSyncToLocal = async () => {
+    if (!gitRepoPath) return;
+    setIsSyncing(true);
+    setImportMessage(t("正在同步配置到本地仓库..."));
+    setMessageType("success");
+    try {
+      const success = await syncToGitDir();
+      if (success) {
+        setImportMessage(t("成功同步所有配置到本地仓库文件"));
+      } else {
+        setImportMessage(t("同步失败，请检查目录权限"));
+        setMessageType("error");
+      }
+    } catch (e) {
+      setImportMessage(t("同步出错：{error}", { error: String(e) }));
+      setMessageType("error");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleSelectGitRepo = async () => {
@@ -151,11 +173,13 @@ export function DataSettings() {
     setIsSyncing(true); setImportMessage(t("正在拉取配置...")); setMessageType("success");
     try {
       await pullGitRepo(gitRepoPath);
-      // 清除内存缓存，让各 store 重新从 git 目录读取最新配置
-      invalidateCache();
-      // 重新加载页面以应用新配置
+      // 将拉取到的文件同步回 localStorage
+      const syncedCount = await syncFromGitDir();
+      
       setLastSyncTime(Date.now());
-      setImportMessage(t("同步拉取成功！配置将在刷新后生效。")); setMessageType("success");
+      setImportMessage(t("同步拉取成功！已更新 {count} 项本地配置，正在刷新页面...", { count: syncedCount }));
+      setMessageType("success");
+      
       // 自动刷新页面以加载新配置
       setTimeout(() => window.location.reload(), 1500);
     } catch (e) { setImportMessage(t("拉取失败：{error}", { error: String(e) })); setMessageType("error"); }
@@ -180,9 +204,11 @@ export function DataSettings() {
             </div>
             <div className="flex items-center justify-between px-4 py-2.5">
               <Label className="text-sm">{t("恢复数据")}</Label>
-              <Button variant="outline" size="sm" className="h-8 px-3" onClick={handleImportFromFile}>
-                <Upload className="h-3.5 w-3.5 mr-1.5" />{t("选择 JSON 文件恢复")}
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="h-8 px-3" onClick={handleImportFromFile}>
+                  <Upload className="h-3.5 w-3.5 mr-1.5" />{t("从 JSON 文件恢复")}
+                </Button>
+              </div>
             </div>
             {selectedFileName && (
               <div className="flex items-center justify-between px-4 py-2">
@@ -229,6 +255,12 @@ export function DataSettings() {
                 <div className="text-sm truncate text-muted-foreground" title={gitRepoPath}>{gitRepoPath}</div>
               </div>
             )}
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <Label className="text-sm">{t("同步到本地仓库")}</Label>
+              <Button variant="outline" size="sm" className="h-8 px-3" onClick={handleSyncToLocal} disabled={!gitRepoPath || isSyncing}>
+                <FileJson className="h-3.5 w-3.5 mr-1.5" />{t("同步文件")}
+              </Button>
+            </div>
             <div className="flex items-center justify-between px-4 py-2.5">
               <Label className="text-sm">{t("推送至远端")}</Label>
               <Button size="sm" className="h-8 px-3" onClick={handleGitPush} disabled={!gitRepoPath || isSyncing}>

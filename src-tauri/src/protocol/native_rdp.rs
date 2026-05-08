@@ -7,6 +7,8 @@ use crate::{rdp_target_label, NativeRdpTraceEventPayload};
 #[cfg(windows)]
 use std::io::Write;
 #[cfg(windows)]
+use crate::utils::create_hidden_command;
+#[cfg(windows)]
 use std::process::{Command, Stdio};
 #[cfg(windows)]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -251,7 +253,7 @@ fn spawn_native_rdp_sidecar<R: Runtime>(
         Some(parent_hwnd.to_string()),
     );
 
-    let mut child = Command::new(&sidecar_path)
+    let mut child = create_hidden_command(&sidecar_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

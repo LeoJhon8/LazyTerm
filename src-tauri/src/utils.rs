@@ -2,6 +2,20 @@
 
 use crate::logging;
 use crate::types::{RdpConnectConfig, VncConnectConfig};
+use std::process::Command;
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+/// 创建一个隐藏窗口的命令（仅 Windows 有效）
+pub fn create_hidden_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
 
 /// 生成 RDP 目标标签
 pub fn rdp_target_label(config: &RdpConnectConfig) -> String {

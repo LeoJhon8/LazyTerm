@@ -1,7 +1,7 @@
 {
   "name": "lazy-term",
   "private": true,
-  "version": "26.50.11005",
+  "version": "26.50.12185",
   "type": "module",
   "scripts": {
     "dev": "vite",

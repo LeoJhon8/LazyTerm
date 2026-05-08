@@ -1,5 +1,5 @@
-use std::process::Command;
 use std::path::Path;
+use crate::utils::create_hidden_command;
 
 #[tauri::command]
 pub async fn git_check_repo(path: String) -> Result<bool, String> {
@@ -8,7 +8,7 @@ pub async fn git_check_repo(path: String) -> Result<bool, String> {
         return Ok(false);
     }
     
-    let output = Command::new("git")
+    let output = create_hidden_command("git")
         .arg("status")
         .current_dir(repo_path)
         .output()
@@ -25,7 +25,7 @@ pub async fn git_commit_and_push(path: String, commit_msg: String) -> Result<(),
     }
 
     // git add .
-    let add_output = Command::new("git")
+    let add_output = create_hidden_command("git")
         .arg("add")
         .arg(".")
         .current_dir(repo_path)
@@ -39,7 +39,7 @@ pub async fn git_commit_and_push(path: String, commit_msg: String) -> Result<(),
 
     // git commit -m "..."
     // We don't fail if commit fails, because there might be nothing to commit.
-    let _commit_output = Command::new("git")
+    let _commit_output = create_hidden_command("git")
         .arg("commit")
         .arg("-m")
         .arg(&commit_msg)
@@ -47,7 +47,7 @@ pub async fn git_commit_and_push(path: String, commit_msg: String) -> Result<(),
         .output();
 
     // git push
-    let push_output = Command::new("git")
+    let push_output = create_hidden_command("git")
         .arg("push")
         .current_dir(repo_path)
         .output()
@@ -69,7 +69,7 @@ pub async fn git_pull(path: String) -> Result<(), String> {
     }
 
     // git pull --rebase
-    let pull_output = Command::new("git")
+    let pull_output = create_hidden_command("git")
         .arg("pull")
         .arg("--rebase")
         .current_dir(repo_path)
