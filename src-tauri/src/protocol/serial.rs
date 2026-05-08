@@ -1,8 +1,8 @@
+use crate::utils::create_hidden_command;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::os::windows::process::CommandExt;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -43,13 +43,11 @@ pub async fn list_serial_ports() -> Result<Vec<String>, String> {
         ];
 
         for query in queries {
-            if let Ok(output) = std::process::Command::new("cmd")
+            if let Ok(output) = create_hidden_command("cmd")
                 .arg("/c")
                 .arg(query)
-                .creation_flags(0x08000000) // CREATE_NO_WINDOW
                 .output()
-            {
-                if output.status.success() {
+            {                if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     for line in stdout.lines() {
                         let line_trimmed = line.trim();

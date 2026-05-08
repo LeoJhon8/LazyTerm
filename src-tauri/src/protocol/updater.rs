@@ -62,7 +62,7 @@ pub async fn download_and_install_update(url: String, window: Window) -> Result<
     );
 
     // Launch installer
-    std::process::Command::new(&temp_path)
+    crate::utils::create_hidden_command(&temp_path)
         .spawn()
         .map_err(|e| format!("Failed to start installer: {}", e))?;
 
