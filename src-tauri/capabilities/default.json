@@ -24,7 +24,7 @@
     "http:default",
     {
       "identifier": "http:default",
-      "allow": [{ "url": "http://172.50.0.243/*" }]
+      "allow": [{ "url": "https://gitee.com/**" }]
     },
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",

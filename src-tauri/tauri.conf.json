@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "LazyTerm",
-  "version": "26.50.12185",
+  "version": "26.51.55",
   "identifier": "com.lazy.term",
   "build": {
     "frontendDist": "../dist",
@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost http://asset.localhost data: blob:; font-src 'self' data:; connect-src ipc: http://ipc.localhost https://asset.localhost http://172.50.0.243",
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost http://asset.localhost data: blob:; font-src 'self' data:; connect-src ipc: http://ipc.localhost https://asset.localhost https://gitee.com",
       "assetProtocol": {
         "enable": true,
         "scope": [

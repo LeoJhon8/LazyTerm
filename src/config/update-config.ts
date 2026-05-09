@@ -4,14 +4,17 @@
  */
 
 /** 更新检查服务器基础 URL */
-export const UPDATE_SERVER_URL = "http://172.50.0.243/";
+export const UPDATE_SERVER_URL = "https://gitee.com/ONE_FOR_EGG/lazy-term-releases/releases/";
+
+/** 更新下载服务器基础 URL */
+export const UPDATE_DOWNLOAD_BASE_URL = "https://gitee.com";
 
 /** 同步文件名 */
 export const SYNC_FILE_NAME = "lazy-term-sync.json";
 
-/** 安装包匹配正则（支持 LazyTerm_版本号_架构-setup.exe 等格式） */
+/** 安装包匹配正则（仅匹配 Windows exe 安装包） */
 export const INSTALLER_REGEX =
-  /href="([^"]*LazyTerm[_-]?v?(\d+\.\d+\.\d+)[^"]*\.(?:exe|msi|zip|dmg|AppImage))"/gi;
+  /href="([^"]*LazyTerm[_-]?v?(\d+\.\d+\.\d+)[^"]*\.exe)"/gi;
 
 /** 版本号比较 */
 export function compareVersions(v1: string, v2: string): number {

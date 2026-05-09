@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
-import { UPDATE_SERVER_URL, INSTALLER_REGEX, compareVersions } from "@/config/update-config";
+import { UPDATE_SERVER_URL, UPDATE_DOWNLOAD_BASE_URL, INSTALLER_REGEX, compareVersions } from "@/config/update-config";
 import { CloudDownload, RefreshCw } from "lucide-react";
 import { useI18n } from "@/i18n";
 
@@ -52,7 +52,10 @@ export function AboutSettings() {
       if (maxVersion === "0.0.0") throw new Error(t("未找到有效的安装包"));
       if (compareVersions(maxVersion, currentVersion) > 0) {
         setUpdateStatus(t("发现新版本：{version}！", { version: maxVersion }));
-        setLatestUpdateUrl(`${UPDATE_SERVER_URL}${latestDownloadPath}`);
+        const downloadUrl = latestDownloadPath.startsWith('http') 
+          ? latestDownloadPath 
+          : `${UPDATE_DOWNLOAD_BASE_URL}${latestDownloadPath}`;
+        setLatestUpdateUrl(downloadUrl);
       } else {
         setUpdateStatus(t("当前已是最新版本 ({version})", { version: displayedVersion }));
       }

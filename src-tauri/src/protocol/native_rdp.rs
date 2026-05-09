@@ -9,7 +9,7 @@ use std::io::Write;
 #[cfg(windows)]
 use crate::utils::create_hidden_command;
 #[cfg(windows)]
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 #[cfg(windows)]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(windows)]
