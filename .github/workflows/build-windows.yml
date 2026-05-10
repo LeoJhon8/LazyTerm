@@ -1,0 +1,62 @@
+name: Build Windows App
+
+on:
+  # 手动触发
+  workflow_dispatch:
+  # 当推送带有版本号的 tag 时触发（例如 v1.0.0）
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup .NET SDK (for RDP Sidecar)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Build MSRDP Sidecar
+        run: npm run build:msrdpax-sidecar:release
+
+      - name: Install OpenSSL
+        run: choco install openssl -y
+
+      - name: Build System Dependencies (LibVNCClient)
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\dev
+          git clone --branch LibVNCServer-0.9.14 --depth 1 https://github.com/LibVNC/libvncserver C:\dev\libvncserver
+          cmake -S C:\dev\libvncserver -B C:\dev\libvncserver\build-msvc -G "Visual Studio 17 2022" -A x64 -DWITH_OPENSSL=ON -DWITH_GNUTLS=OFF -DWITH_SDL=OFF -DWITH_GTK=OFF -DWITH_EXAMPLES=OFF -DWITH_TESTS=OFF -DCMAKE_INSTALL_PREFIX=C:\dev\libvncserver\install
+          cmake --build C:\dev\libvncserver\build-msvc --config Release
+          cmake --install C:\dev\libvncserver\build-msvc --config Release
+          # build.rs 已经配置了会自动从 C:\dev\libvncserver\install 读取
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Update App Version
+        run: node scripts/update-version.js
+
+      - name: Build and Release Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target x86_64-pc-windows-msvc

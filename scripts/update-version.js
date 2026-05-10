@@ -1,7 +1,22 @@
 import fs from 'fs';
 import path from 'path';
 
-const date = new Date();
+import { execSync } from 'child_process';
+
+let date;
+try {
+  // 尝试使用最后一次 Git 提交的时间作为版本号的基准时间
+  // 这样能确保 Windows 和 Mac 在不同时间执行打包流水线时，只要针对的是同一个 commit，生成的版本号就绝对一致
+  const timestamp = execSync('git log -1 --format=%ct').toString().trim();
+  if (timestamp) {
+    date = new Date(parseInt(timestamp, 10) * 1000);
+  } else {
+    date = new Date();
+  }
+} catch (error) {
+  // 如果没有 Git 环境则回退到当前时间
+  date = new Date();
+}
 const year = date.getFullYear() - 2000;
 const month = (date.getMonth() + 1).toString();
 const day = date.getDate().toString().padStart(2, '0');
