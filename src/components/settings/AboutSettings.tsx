@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
-import { UPDATE_SERVER_URL, UPDATE_DOWNLOAD_BASE_URL, INSTALLER_REGEX, compareVersions } from "@/config/update-config";
+import { UPDATE_SERVER_URL, UPDATE_DOWNLOAD_BASE_URL, INSTALLER_REGEX, compareVersions, IS_UPDATE_SUPPORTED } from "@/config/update-config";
 import { CloudDownload, RefreshCw } from "lucide-react";
 import { useI18n } from "@/i18n";
 
@@ -79,9 +79,9 @@ export function AboutSettings() {
                 <div className="text-base font-bold">LazyTerm</div>
                 <div className="text-xs text-muted-foreground mt-0.5">{t("当前版本：{version}", { version: displayedVersion })}</div>
               </div>
-              <Button onClick={checkUpdate} disabled={isChecking || downloadProgress !== null} variant="outline" size="sm" className="h-8 px-3">
+              <Button onClick={checkUpdate} disabled={isChecking || downloadProgress !== null || !IS_UPDATE_SUPPORTED} variant="outline" size="sm" className="h-8 px-3">
                 {isChecking ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <CloudDownload className="h-3.5 w-3.5 mr-1.5" />}
-                {t("检查更新")}
+                {!IS_UPDATE_SUPPORTED ? t("暂不支持该平台更新") : t("检查更新")}
               </Button>
             </div>
 

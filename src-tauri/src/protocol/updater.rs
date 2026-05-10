@@ -27,7 +27,14 @@ pub async fn download_and_install_update(url: String, window: Window) -> Result<
     let total_size = res.content_length().unwrap_or(0) as f64;
 
     let mut temp_path = env::temp_dir();
-    temp_path.push("LazyTerm_Update.exe");
+    let file_name = if cfg!(target_os = "windows") {
+        "LazyTerm_Update.exe"
+    } else if cfg!(target_os = "macos") {
+        "LazyTerm_Update.dmg"
+    } else {
+        return Err("Unsupported OS for auto update".to_string());
+    };
+    temp_path.push(file_name);
 
     let mut file =
         File::create(&temp_path).map_err(|e| format!("Failed to create temp file: {}", e))?;
@@ -62,9 +69,19 @@ pub async fn download_and_install_update(url: String, window: Window) -> Result<
     );
 
     // Launch installer
+    #[cfg(target_os = "windows")]
     crate::utils::create_hidden_command(&temp_path)
         .spawn()
         .map_err(|e| format!("Failed to start installer: {}", e))?;
+
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg(&temp_path)
+        .spawn()
+        .map_err(|e| format!("Failed to start installer: {}", e))?;
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    return Err("Unsupported OS for auto update".to_string());
 
     // Slight delay to ensure spawn finishes resolving
     std::thread::sleep(std::time::Duration::from_millis(500));
