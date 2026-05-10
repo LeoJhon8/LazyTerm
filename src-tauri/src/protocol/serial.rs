@@ -1,4 +1,6 @@
+#[cfg(target_os = "windows")]
 use crate::utils::create_hidden_command;
+
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::collections::HashMap;

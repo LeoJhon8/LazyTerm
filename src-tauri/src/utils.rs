@@ -9,6 +9,7 @@ use std::os::windows::process::CommandExt;
 
 /// 创建一个隐藏窗口的命令（仅 Windows 有效）
 pub fn create_hidden_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    #[allow(unused_mut)]
     let mut cmd = Command::new(program);
     #[cfg(windows)]
     {
