@@ -693,7 +693,11 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   // 渲染内容（对应基类的 renderContent 抽象方法）
   return (
     <main
-      className={cn(VIEW_CONTAINER_CLASSNAME, "bg-(--terminal-shell)")}
+      className={cn(
+        VIEW_CONTAINER_CLASSNAME, 
+        "bg-(--terminal-shell)",
+        activeSession?.type === "ai-cli" && "is-ai-cli-mode"
+      )}
       onClick={() => activateTerminal(sessionId)}
       onContextMenu={handleContextMenu}
       style={{

@@ -144,6 +144,18 @@
     background: color-mix(in srgb, var(--primary) 28%, transparent);
     color: var(--foreground);
   }
+
+  /* 修复 xterm.js 终端中输入长中文时，隐藏的输入框不断向右延伸，导致输入法候选框飘到屏幕最右侧的问题 */
+  .xterm-helper-textarea {
+    max-width: 20px !important;
+    overflow: hidden !important;
+  }
+
+  /* 修复 AI CLI 模式下，底层 TUI 绘制了假光标而将真实光标停留在最右侧，导致一开始候选框就在最右侧的问题。
+     我们通过强制将 AI CLI 模式下的输入法隐藏框锁定在左侧来缓解体验问题。 */
+  .is-ai-cli-mode .xterm-helper-textarea {
+    left: 12px !important;
+  }
 }
 
 @layer components {
