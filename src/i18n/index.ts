@@ -464,6 +464,7 @@ const zhMessages = {
   "同步失败，请检查目录权限": "同步失败，请检查目录权限",
   "同步出错：{error}": ({ error }) => `同步出错：${error}`,
   "同步拉取成功！已更新 {count} 项本地配置，正在刷新页面...": ({ count }) => `同步拉取成功！已更新 ${count} 项本地配置，正在刷新页面...`,
+  "暂不支持该平台更新": "暂不支持该平台更新",
 } as const satisfies Record<string, MessageResolver>;
 
 type TranslationKey = keyof typeof zhMessages;
@@ -922,6 +923,7 @@ const enMessages: Record<TranslationKey, MessageResolver> = {
   "同步失败，请检查目录权限": "Sync failed, please check directory permissions",
   "同步出错：{error}": ({ error }) => `Sync error: ${error}`,
   "同步拉取成功！已更新 {count} 项本地配置，正在刷新页面...": ({ count }) => `Sync pull successful! Updated ${count} local config items, reloading page...`,
+  "暂不支持该平台更新": "Updates not supported on this platform",
 };
 
 const messages = {
