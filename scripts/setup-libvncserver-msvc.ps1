@@ -3,6 +3,12 @@ param(
   [string]$RepoUrl = "https://github.com/LibVNC/libvncserver.git",
 
   [Parameter(Mandatory = $false)]
+  [string]$GitRef,
+
+  [Parameter(Mandatory = $false)]
+  [int]$Depth = 0,
+
+  [Parameter(Mandatory = $false)]
   [string]$SourceDir = "C:\dev\libvncserver",
 
   [Parameter(Mandatory = $false)]
@@ -36,6 +42,9 @@ param(
 
   [Parameter(Mandatory = $false)]
   [switch]$EnableOpenSSL,
+
+  [Parameter(Mandatory = $false)]
+  [switch]$EnableSystemOpenSSL,
 
   [Parameter(Mandatory = $false)]
   [switch]$EnableCompressionDeps
@@ -224,7 +233,16 @@ if (-not (Test-Path $SourceDir)) {
     Ensure-Directory -Path $parentDir
   }
 
-  Invoke-Step -FilePath git -Arguments @("clone", $RepoUrl, $SourceDir) -Description "Cloning libvncserver source"
+  $cloneArgs = @("clone")
+  if (-not [string]::IsNullOrWhiteSpace($GitRef)) {
+    $cloneArgs += @("--branch", $GitRef)
+  }
+  if ($Depth -gt 0) {
+    $cloneArgs += @("--depth", "$Depth")
+  }
+  $cloneArgs += @($RepoUrl, $SourceDir)
+
+  Invoke-Step -FilePath git -Arguments $cloneArgs -Description "Cloning libvncserver source"
 } elseif (-not $SkipGitPull) {
   Invoke-Step -FilePath git -Arguments @("-C", $SourceDir, "pull", "--ff-only") -Description "Updating libvncserver source"
 }
@@ -274,6 +292,11 @@ $cmakeArgs = @(
 
 if ($resolvedGenerator -like "Visual Studio *") {
   $cmakeArgs += @("-A", $Platform)
+}
+
+if ($EnableSystemOpenSSL) {
+  $cmakeArgs = $cmakeArgs | Where-Object { $_ -ne "-DWITH_OPENSSL=OFF" }
+  $cmakeArgs += "-DWITH_OPENSSL=ON"
 }
 
 if ($EnableOpenSSL -or $EnableCompressionDeps) {

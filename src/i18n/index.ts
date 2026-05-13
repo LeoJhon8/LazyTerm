@@ -9,8 +9,13 @@ import {
 
 type TranslationValues = Record<string, string | number | boolean | null | undefined>;
 type MessageResolver = string | ((values: TranslationValues) => string);
+type MessageMap = Record<string, MessageResolver>;
 
-const zhMessages = {
+function defineMessages<const T extends MessageMap>(messages: T) {
+  return messages;
+}
+
+const zhMessages = defineMessages({
   "跟随系统": "跟随系统",
   "简体中文": "简体中文",
   "英语": "英语",
@@ -84,6 +89,12 @@ const zhMessages = {
   "刷新端口列表": "刷新端口列表",
   "会话": "会话",
   "快速连接": "快速连接",
+  "SSH": "SSH",
+  "Windows 远程": "Windows 远程",
+  "VNC": "VNC",
+  "串口": "串口",
+  "Telnet": "Telnet",
+  "AI CLI": "AI CLI",
   "SSH 连接": "SSH 连接",
   "Windows 远程连接": "Windows 远程连接",
   "VNC 连接": "VNC 连接",
@@ -465,11 +476,11 @@ const zhMessages = {
   "同步出错：{error}": ({ error }) => `同步出错：${error}`,
   "同步拉取成功！已更新 {count} 项本地配置，正在刷新页面...": ({ count }) => `同步拉取成功！已更新 ${count} 项本地配置，正在刷新页面...`,
   "暂不支持该平台更新": "暂不支持该平台更新",
-} as const satisfies Record<string, MessageResolver>;
+});
 
 type TranslationKey = keyof typeof zhMessages;
 
-const enMessages: Record<TranslationKey, MessageResolver> = {
+const enMessages = defineMessages({
   "跟随系统": "Follow system",
   "简体中文": "Simplified Chinese",
   "英语": "English",
@@ -543,6 +554,12 @@ const enMessages: Record<TranslationKey, MessageResolver> = {
   "刷新端口列表": "Refresh port list",
   "会话": "Sessions",
   "快速连接": "Quick connect",
+  "SSH": "SSH",
+  "Windows 远程": "Windows Remote",
+  "VNC": "VNC",
+  "串口": "Serial",
+  "Telnet": "Telnet",
+  "AI CLI": "AI CLI",
   "SSH 连接": "SSH connection",
   "Windows 远程连接": "Windows remote connection",
   "VNC 连接": "VNC connection",
@@ -924,7 +941,7 @@ const enMessages: Record<TranslationKey, MessageResolver> = {
   "同步出错：{error}": ({ error }) => `Sync error: ${error}`,
   "同步拉取成功！已更新 {count} 项本地配置，正在刷新页面...": ({ count }) => `Sync pull successful! Updated ${count} local config items, reloading page...`,
   "暂不支持该平台更新": "Updates not supported on this platform",
-};
+} satisfies Record<TranslationKey, MessageResolver>);
 
 const messages = {
   "zh-CN": zhMessages,
