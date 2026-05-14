@@ -121,7 +121,7 @@ export function LayoutSettings() {
                   key={mod.id}
                   className="flex items-center px-4 py-2.5 hover:bg-background/40 transition-colors"
                 >
-                  <span className="flex-1 text-sm">
+                  <span className="flex-1 text-sm font-medium">
                     {getModuleDisplayName(mod.id, locale)}
                   </span>
                   <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">

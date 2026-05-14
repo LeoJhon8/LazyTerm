@@ -32,6 +32,10 @@ export function AppearanceSettings() {
   const appBackgroundColor = useSettingsStore((s) => s.appBackgroundColor);
   const fontSize = useSettingsStore((s) => s.fontSize);
   const fontFamily = useSettingsStore((s) => s.fontFamily);
+  const normalFontWeight = useSettingsStore((s) => s.normalFontWeight);
+  const boldFontWeight = useSettingsStore((s) => s.boldFontWeight);
+  const terminalNormalFontWeight = useSettingsStore((s) => s.terminalNormalFontWeight);
+  const terminalBoldFontWeight = useSettingsStore((s) => s.terminalBoldFontWeight);
   const terminalColorScheme = useSettingsStore((s) => s.terminalColorScheme);
   const customThemes = useSettingsStore((s) => s.customThemes);
   const terminalOpacity = useSettingsStore((s) => s.terminalOpacity);
@@ -116,7 +120,7 @@ export function AppearanceSettings() {
           style={{ backgroundColor: bg, borderColor: resolveColor(scheme.brightBlack, "var(--border)") }}
         >
           <div className="w-full h-full flex items-center justify-center">
-            <span className="text-[8px] leading-none font-bold" style={{ color: fg }}>Aa</span>
+            <span className="text-[8px] leading-none font-semibold" style={{ color: fg }}>Aa</span>
           </div>
         </div>
         <div className="flex gap-0.5">
@@ -217,6 +221,54 @@ export function AppearanceSettings() {
                     className="w-24"
                   />
                   <span className="text-xs font-mono text-muted-foreground w-10 text-right">{fontSize}px</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <Label className="text-sm">{t("正常字体粗细")}</Label>
+                <div className="flex items-center gap-3">
+                  <Slider
+                    min={300} max={500} step={10}
+                    value={[normalFontWeight]}
+                    onValueChange={([v]) => setSettings({ normalFontWeight: Math.min(v, boldFontWeight - 10) })}
+                    className="w-24"
+                  />
+                  <span className="text-xs font-mono text-muted-foreground w-10 text-right">{normalFontWeight}</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <Label className="text-sm">{t("粗体字体粗细")}</Label>
+                <div className="flex items-center gap-3">
+                  <Slider
+                    min={450} max={700} step={10}
+                    value={[boldFontWeight]}
+                    onValueChange={([v]) => setSettings({ boldFontWeight: Math.max(v, normalFontWeight + 10) })}
+                    className="w-24"
+                  />
+                  <span className="text-xs font-mono text-muted-foreground w-10 text-right">{boldFontWeight}</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <Label className="text-sm">{t("终端正常字体粗细")}</Label>
+                <div className="flex items-center gap-3">
+                  <Slider
+                    min={300} max={500} step={10}
+                    value={[terminalNormalFontWeight]}
+                    onValueChange={([v]) => setSettings({ terminalNormalFontWeight: Math.min(v, terminalBoldFontWeight - 10) })}
+                    className="w-24"
+                  />
+                  <span className="text-xs font-mono text-muted-foreground w-10 text-right">{terminalNormalFontWeight}</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <Label className="text-sm">{t("终端粗体字体粗细")}</Label>
+                <div className="flex items-center gap-3">
+                  <Slider
+                    min={500} max={900} step={10}
+                    value={[terminalBoldFontWeight]}
+                    onValueChange={([v]) => setSettings({ terminalBoldFontWeight: Math.max(v, terminalNormalFontWeight + 10) })}
+                    className="w-24"
+                  />
+                  <span className="text-xs font-mono text-muted-foreground w-10 text-right">{terminalBoldFontWeight}</span>
                 </div>
               </div>
             </div>

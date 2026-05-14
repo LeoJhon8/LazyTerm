@@ -15,7 +15,7 @@ import { RemoteDirSelector } from "./RemoteDirSelector";
 import type { SessionNode } from "@/store/ssh-profiles";
 import type { SSHConfig } from "@/types/terminal";
 import { useI18n } from "@/i18n";
-import { toast } from "@/components/ui/toast";
+import { useNotificationsStore } from "@/store/notifications";
 
 interface SftpLocalFile {
   path: string;
@@ -66,6 +66,8 @@ function Progress({ value, className }: { value: number; className?: string }) {
 
 export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadDialogProps) {
   const { t } = useI18n();
+  const addNotification = useNotificationsStore((state) => state.addNotification);
+  const updateNotification = useNotificationsStore((state) => state.updateNotification);
   const [remotePath, setRemotePath] = useState("");
   const [files, setFiles] = useState<SftpLocalFile[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -79,6 +81,8 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
   
   const progressUnlistenRef = useRef<UnlistenFn | null>(null);
   const currentUploadIdRef = useRef<string | null>(null);
+  const progressNotificationIdRef = useRef<string | null>(null);
+  const lastNotificationProgressRef = useRef(0);
 
   const selectedTotal = useMemo(() => files.reduce((acc, item) => acc + (item.size || 0), 0), [files]);
 
@@ -90,6 +94,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
         progressUnlistenRef.current = null;
       }
       currentUploadIdRef.current = null;
+      progressNotificationIdRef.current = null;
     };
   }, []);
 
@@ -104,6 +109,8 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
       setFileProgress({});
       setUploading(false);
       setStopping(false);
+      progressNotificationIdRef.current = null;
+      lastNotificationProgressRef.current = 0;
     }
   }, [open]);
 
@@ -200,6 +207,11 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
     return `${dir}${fileName}`;
   };
 
+  const formatUploadProgressMessage = (sent: number, total: number) => {
+    const percent = total > 0 ? Math.min(100, Math.max(0, Math.round((sent / total) * 100))) : 0;
+    return `${percent}% · ${formatBytes(sent)} / ${formatBytes(total)}`;
+  };
+
   const handleUpload = async () => {
     if (!targetNode || files.length === 0) return;
 
@@ -214,6 +226,21 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
       setOverallTotal(selectedTotal);
       setFileProgress({});
 
+      const items = files.map((file) => ({
+        local_path: file.path,
+        remote_path: resolveRemotePath(remotePath, file.name),
+      }));
+      const remotePaths = items.map((item) => item.remote_path);
+
+      progressNotificationIdRef.current = addNotification({
+        type: "info",
+        source: "sftp",
+        title: "SFTP 上传中",
+        message: `${targetNode.name} · ${formatUploadProgressMessage(0, selectedTotal)}`,
+        details: remotePaths,
+      });
+      lastNotificationProgressRef.current = 0;
+
       // 设置进度监听
       const eventName = `sftp-upload-progress-${uploadId}`;
       progressUnlistenRef.current = await listen<SftpUploadProgressPayload>(eventName, (event) => {
@@ -227,12 +254,25 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
             total: payload.file_size,
           },
         }));
+        const now = Date.now();
+        const isComplete = payload.overall_total > 0 && payload.overall_sent >= payload.overall_total;
+        if (
+          progressNotificationIdRef.current &&
+          (isComplete || now - lastNotificationProgressRef.current >= 500)
+        ) {
+          lastNotificationProgressRef.current = now;
+          updateNotification(progressNotificationIdRef.current, {
+            type: "info",
+            title: "SFTP 上传中",
+            message: `${targetNode.name} · ${formatUploadProgressMessage(payload.overall_sent, payload.overall_total)}`,
+            details: [
+              `${payload.file_name} · ${formatBytes(payload.file_sent)} / ${formatBytes(payload.file_size)}`,
+              ...remotePaths,
+            ],
+            read: false,
+          });
+        }
       });
-
-      const items = files.map((file) => ({
-        local_path: file.path,
-        remote_path: resolveRemotePath(remotePath, file.name),
-      }));
 
       await invokeTauri(
         "sftp_upload_files",
@@ -252,13 +292,39 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
       );
 
       setMessage({ text: t("上传完成"), type: "success" });
-      toast.success(t("上传完成"), files.map(f => f.name));
+      if (progressNotificationIdRef.current) {
+        updateNotification(progressNotificationIdRef.current, {
+          type: "success",
+          title: t("上传完成"),
+          message: `${targetNode.name} · ${formatUploadProgressMessage(selectedTotal, selectedTotal)}`,
+          details: remotePaths,
+          read: false,
+        });
+      }
       setTimeout(() => {
         onOpenChange(false);
       }, 1000);
     } catch (error) {
       logger.error("FE/sftp-dialog", "上传失败", error);
-      setMessage({ text: t("上传失败: {error}", { error: String(error) }), type: "error" });
+      const errorMessage = t("上传失败: {error}", { error: String(error) });
+      setMessage({ text: errorMessage, type: "error" });
+      if (progressNotificationIdRef.current) {
+        updateNotification(progressNotificationIdRef.current, {
+          type: "error",
+          title: errorMessage,
+          message: targetNode.name,
+          details: [String(error)],
+          read: false,
+        });
+      } else {
+        addNotification({
+          type: "error",
+          source: "sftp",
+          title: errorMessage,
+          message: targetNode.name,
+          details: [String(error)],
+        });
+      }
     } finally {
       setUploading(false);
       if (progressUnlistenRef.current) {
@@ -279,6 +345,21 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
         { scope: "FE/sftp-dialog/cancel" }
       );
       setMessage({ text: t("已取消上传"), type: "info" });
+      if (progressNotificationIdRef.current) {
+        updateNotification(progressNotificationIdRef.current, {
+          type: "warning",
+          title: t("已取消上传"),
+          message: targetNode?.name,
+          read: false,
+        });
+      } else {
+        addNotification({
+          type: "warning",
+          source: "sftp",
+          title: t("已取消上传"),
+          message: targetNode?.name,
+        });
+      }
     } catch (error) {
       logger.error("FE/sftp-dialog", "取消上传失败", error);
     } finally {
@@ -352,8 +433,24 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
 
                 <div className={cn(
                   "border rounded-md transition-colors relative min-h-[120px] max-h-[300px] flex flex-col",
+                  files.length === 0 && !uploading && "cursor-pointer hover:bg-accent/30",
                   isDragOver ? "bg-accent/50 border-primary" : ""
-                )}>
+                )}
+                  role={files.length === 0 && !uploading ? "button" : undefined}
+                  tabIndex={files.length === 0 && !uploading ? 0 : undefined}
+                  onClick={() => {
+                    if (files.length === 0 && !uploading) {
+                      void handleSelectFiles();
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (files.length > 0 || uploading) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      void handleSelectFiles();
+                    }
+                  }}
+                >
                   {files.length > 0 ? (
                     <div className="divide-y overflow-auto flex-1 h-full">
                       {files.map((file, index) => {

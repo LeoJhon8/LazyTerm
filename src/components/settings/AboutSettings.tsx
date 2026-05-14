@@ -76,7 +76,7 @@ export function AboutSettings() {
           <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
             <div className="flex items-center justify-between px-4 py-3">
               <div>
-                <div className="text-base font-bold">LazyTerm</div>
+                <div className="text-base font-semibold">LazyTerm</div>
                 <div className="text-xs text-muted-foreground mt-0.5">{t("当前版本：{version}", { version: displayedVersion })}</div>
               </div>
               <Button onClick={checkUpdate} disabled={isChecking || downloadProgress !== null || !IS_UPDATE_SUPPORTED} variant="outline" size="sm" className="h-8 px-3">
@@ -107,7 +107,7 @@ export function AboutSettings() {
                   )}
                   {downloadProgress !== null && (
                     <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs font-semibold">
+                      <div className="flex items-center justify-between text-xs font-medium">
                         <span className="animate-pulse">{t("正在下载更新包...")}</span>
                         <span className="font-mono">{downloadProgress.toFixed(1)}%</span>
                       </div>

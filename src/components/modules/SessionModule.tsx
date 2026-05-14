@@ -127,7 +127,7 @@ function NodeRowContent({
           title={node.name}
           className={cn(
             "truncate flex-1 select-none",
-            node.isRoot ? "font-bold text-foreground" : "font-medium text-muted-foreground group-hover:text-foreground",
+            node.isRoot ? "font-semibold text-foreground" : "font-medium text-muted-foreground group-hover:text-foreground",
             isUploading && "text-amber-950 dark:text-cyan-50"
           )}
         >
@@ -182,7 +182,7 @@ function DraggableDroppableRow({
           </div>
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-52 text-xs">
+      <ContextMenuContent className="w-40 text-xs">
         {node.type === 'folder' ? (
           <>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-connection', node)}><Plus className="mr-2 h-4 w-4" /> {t("新建连接")}</ContextMenuItem>

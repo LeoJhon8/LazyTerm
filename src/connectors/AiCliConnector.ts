@@ -1,22 +1,67 @@
-import type { ITerminalConnector, AiCliConfig } from "@/types/terminal";
+import type { AiCliConfig, ITerminalConnector } from "@/types/terminal";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
+import { useNotificationsStore } from "@/store/notifications";
 
-/**
- * AI CLI 连接器
- * 通过 PTY 启动 AI CLI 工具（如 claude, openai, gemini 等）
- */
+function stripAnsiSequences(value: string) {
+  return value
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b\][^\x07]*(\x07|\x1b\\)/g, "")
+    .replace(/\r/g, "\n");
+}
+
+function containsAiConfirmationPrompt(text: string) {
+  const normalized = text.toLowerCase();
+  return [
+    "do you want to",
+    "would you like to",
+    "are you sure",
+    "proceed?",
+    "continue?",
+    "allow",
+    "approve",
+    "confirm",
+    "yes/no",
+    "[y/n]",
+    "(y/n)",
+    "是否继续",
+    "确认",
+    "允许",
+    "批准",
+    "继续吗",
+  ].some((pattern) => normalized.includes(pattern));
+}
+
+function isSessionVisible(appSessionId: string | null) {
+  if (!appSessionId) return false;
+  return Array.from(document.querySelectorAll("[data-session-id]")).some(
+    (element) => element.getAttribute("data-session-id") === appSessionId
+  );
+}
+
 export class AiCliConnector implements ITerminalConnector {
-  public readonly protocol = 'ai-cli' as const;
+  public readonly protocol = "ai-cli" as const;
   private config: AiCliConfig;
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
+  private appSessionId: string | null = null;
   private onDisconnectCallback?: () => void;
+  private dataHandler: ((data: string) => void) | null = null;
+  private lastWriteDedup: { data: string; at: number } | null = null;
+  private lastReadDedup: { data: string; at: number } | null = null;
+  private promptState = {
+    waitingForOutput: false,
+    hasOutput: false,
+    outputBuffer: "",
+    completionTimerId: undefined as number | undefined,
+    confirmationNotified: false,
+  };
 
-  constructor(config: AiCliConfig, onDisconnect?: () => void) {
+  constructor(config: AiCliConfig, onDisconnect?: () => void, appSessionId?: string) {
     this.config = config;
     this.onDisconnectCallback = onDisconnect;
+    this.appSessionId = appSessionId ?? null;
   }
 
   get isConnected(): boolean {
@@ -25,16 +70,13 @@ export class AiCliConnector implements ITerminalConnector {
 
   async open(): Promise<void> {
     try {
-      // 构造完整的命令行
       const fullCommand = [
         this.config.command,
-        ...(this.config.args || [])
-      ].join(' ');
+        ...(this.config.args || []),
+      ].join(" ");
 
       logger.info("FE/connector/ai-cli/open", `启动 AI CLI: command=${this.config.command}, args=${JSON.stringify(this.config.args)}, cwd=${this.config.cwd}, fullCommand=${fullCommand}`);
 
-      // 使用 init_command 方式：先启动 cmd.exe，再通过 PTY 写入命令
-      // 这比 cmd /k 更可靠，因为 portable_pty 的 CommandBuilder 对 cmd.exe 参数处理存在问题
       this.sessionId = await invokeTauri<string>("create_terminal", {
         cwd: this.config.cwd || null,
         shell: "cmd.exe",
@@ -46,62 +88,68 @@ export class AiCliConnector implements ITerminalConnector {
       });
 
       logger.info("FE/connector/ai-cli/open", `AI CLI 启动成功，sessionId=${this.sessionId}`);
+      await this.ensureListeners();
     } catch (error) {
       logger.error("FE/connector/ai-cli/open", "Failed to spawn AI CLI via Rust", error);
       throw error;
     }
   }
 
-  // 监听来自 Rust 的事件
-  async onData(handler: (data: string) => void): Promise<void> {
-    // 等待 sessionId 可用
+  async onData(handler: (data: string) => void): Promise<() => void> {
     if (!this.sessionId) {
       await new Promise<void>((resolve) => {
-        const checkInterval = setInterval(() => {
+        const checkInterval = window.setInterval(() => {
           if (this.sessionId) {
-            clearInterval(checkInterval);
+            window.clearInterval(checkInterval);
             resolve();
           }
         }, 10);
-        
-        // 5 秒超时
-        setTimeout(() => {
-          clearInterval(checkInterval);
+
+        window.setTimeout(() => {
+          window.clearInterval(checkInterval);
           resolve();
         }, 5000);
       });
-      
+
       if (!this.sessionId) {
         throw new Error("Session ID not available after timeout");
       }
     }
 
-    const sessionId = this.sessionId;
-    const dataEventName = `terminal-data-${sessionId}`;
-    const closeEventName = `terminal-close-${sessionId}`;
+    await this.ensureListeners();
+    this.dataHandler = handler;
 
-    const dataUnlisten = await listen<string>(dataEventName, (event) => {
-      handler(event.payload);
-    });
-
-    const closeUnlisten = await listen(closeEventName, () => {
-      this.handleDisconnect();
-    });
-
-    this.unlistenFn = () => {
-      dataUnlisten();
-      closeUnlisten();
+    return () => {
+      if (this.dataHandler === handler) {
+        this.dataHandler = null;
+      }
     };
   }
 
   write(data: string | Uint8Array): void {
     if (!this.sessionId) return;
-    
-    const dataStr = typeof data === 'string' ? data : new TextDecoder().decode(data);
-    
+
+    const dataStr = typeof data === "string" ? data : new TextDecoder().decode(data);
+    const now = performance.now();
+    if (
+      this.lastWriteDedup &&
+      this.lastWriteDedup.data === dataStr &&
+      now - this.lastWriteDedup.at < 40
+    ) {
+      logger.warn("FE/connector/ai-cli/write", "Dropped duplicate write chunk", {
+        size: dataStr.length,
+      });
+      return;
+    }
+    this.lastWriteDedup = { data: dataStr, at: now };
+
+    if (dataStr.includes("\r") || dataStr.includes("\n")) {
+      this.startPromptTracking();
+    }
+
     invokeTauri("write_to_terminal", {
-      sessionId: this.sessionId, 
-      data: dataStr 
+      sessionId: this.sessionId,
+      data: dataStr,
     }, {
       scope: "FE/connector/ai-cli/write",
     }).catch((error) => {
@@ -112,11 +160,11 @@ export class AiCliConnector implements ITerminalConnector {
 
   resize(cols: number, rows: number): void {
     if (!this.sessionId) return;
-    
+
     invokeTauri("resize_terminal", {
-      sessionId: this.sessionId, 
-      cols, 
-      rows 
+      sessionId: this.sessionId,
+      cols,
+      rows,
     }, {
       scope: "FE/connector/ai-cli/resize",
     }).catch((error) => {
@@ -134,6 +182,116 @@ export class AiCliConnector implements ITerminalConnector {
       this.unlistenFn();
       this.unlistenFn = null;
     }
+    this.dataHandler = null;
+    this.clearPromptTimer();
+  }
+
+  private async ensureListeners(): Promise<void> {
+    if (!this.sessionId || this.unlistenFn) return;
+
+    const sessionId = this.sessionId;
+    const dataUnlisten = await listen<string>(`terminal-data-${sessionId}`, (event) => {
+      this.handleData(event.payload);
+    });
+    const closeUnlisten = await listen(`terminal-close-${sessionId}`, () => {
+      this.notifyExit();
+      this.handleDisconnect();
+    });
+
+    this.unlistenFn = () => {
+      dataUnlisten();
+      closeUnlisten();
+    };
+  }
+
+  private getDisplayName(): string {
+    return this.config.nickname || this.config.command || "AI CLI";
+  }
+
+  private notify(title: string, message?: string): void {
+    if (isSessionVisible(this.appSessionId)) {
+      return;
+    }
+
+    useNotificationsStore.getState().addNotification({
+      type: "info",
+      source: "ai",
+      title,
+      message: message ?? this.getDisplayName(),
+    });
+  }
+
+  private notifyExit(): void {
+    this.notify(`退出 ${this.getDisplayName()} AI CLI`, "AI CLI 会话已结束");
+  }
+
+  private startPromptTracking(): void {
+    this.clearPromptTimer();
+    this.promptState = {
+      waitingForOutput: true,
+      hasOutput: false,
+      outputBuffer: "",
+      completionTimerId: undefined,
+      confirmationNotified: false,
+    };
+  }
+
+  private clearPromptTimer(): void {
+    if (this.promptState.completionTimerId) {
+      window.clearTimeout(this.promptState.completionTimerId);
+    }
+    this.promptState.completionTimerId = undefined;
+  }
+
+  private handleData(data: string): void {
+    const now = performance.now();
+    if (
+      this.lastReadDedup &&
+      this.lastReadDedup.data === data &&
+      now - this.lastReadDedup.at < 40
+    ) {
+      logger.warn("FE/connector/ai-cli/data", "Dropped duplicate read chunk", {
+        size: data.length,
+      });
+      return;
+    }
+    this.lastReadDedup = { data, at: now };
+
+    this.dataHandler?.(data);
+
+    const state = this.promptState;
+    if (!state.waitingForOutput) {
+      return;
+    }
+
+    const text = stripAnsiSequences(data);
+    if (!text.trim()) {
+      return;
+    }
+
+    state.hasOutput = true;
+    state.outputBuffer = `${state.outputBuffer}${text}`.slice(-4000);
+
+    if (!state.confirmationNotified && containsAiConfirmationPrompt(state.outputBuffer)) {
+      this.notify("AI 请求确认");
+      state.confirmationNotified = true;
+    }
+
+    this.clearPromptTimer();
+    state.completionTimerId = window.setTimeout(() => {
+      if (!this.promptState.waitingForOutput || !this.promptState.hasOutput || this.promptState.confirmationNotified) {
+        return;
+      }
+
+      this.notify("AI 任务完成");
+      this.promptState = {
+        waitingForOutput: false,
+        hasOutput: false,
+        outputBuffer: "",
+        completionTimerId: undefined,
+        confirmationNotified: false,
+      };
+    }, 10000);
   }
 
   private handleDisconnect(): void {
@@ -147,6 +305,8 @@ export class AiCliConnector implements ITerminalConnector {
       this.unlistenFn();
       this.unlistenFn = null;
     }
+    this.dataHandler = null;
+    this.clearPromptTimer();
 
     this.onDisconnectCallback?.();
   }

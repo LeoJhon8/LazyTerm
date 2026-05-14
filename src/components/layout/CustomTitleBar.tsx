@@ -4,6 +4,7 @@ import { Copy, Minus, Square, X, Settings } from "lucide-react";
 import { useTabsStore } from "@/store/tabs";
 import { useSettingsDialogStore } from "@/store/settings-dialog";
 import { useI18n } from "@/i18n";
+import { NotificationCenter } from "@/components/layout/NotificationCenter";
 import logo32 from "../../../src-tauri/icons/LazyTerm-32.png";
 import logo128 from "../../../src-tauri/icons/LazyTerm-128.png";
 import logo256 from "../../../src-tauri/icons/LazyTerm-256.png";
@@ -117,6 +118,7 @@ export function CustomTitleBar() {
         >
           <Settings className="h-3.5 w-3.5" />
         </button>
+        <NotificationCenter />
         <button
           type="button"
           className="window-titlebar__control window-titlebar__control--neutral"

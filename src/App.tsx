@@ -45,6 +45,8 @@ function App() {
     backgroundBlur,
     backgroundOpacity,
     uiOpacity,
+    normalFontWeight,
+    boldFontWeight,
     quickCommandDisplayMode,
   } = useSettingsStore();
 
@@ -140,6 +142,10 @@ function App() {
   // 同步外观自定义到 CSS 变量
   useEffect(() => {
     const root = document.documentElement;
+    const mediumFontWeight = Math.round((normalFontWeight + boldFontWeight) / 2);
+    root.style.setProperty("--app-font-weight-normal", `${normalFontWeight}`);
+    root.style.setProperty("--app-font-weight-medium", `${mediumFontWeight}`);
+    root.style.setProperty("--app-font-weight-bold", `${boldFontWeight}`);
     root.style.setProperty("--ui-opacity", `${uiOpacity / 100}`);
     root.style.setProperty(
       "--panel-backdrop-filter",
@@ -157,7 +163,7 @@ function App() {
       "--terminal-backdrop-filter",
       shouldDisableUiBlur ? "none" : "blur(24px) saturate(150%)"
     );
-  }, [uiOpacity, shouldDisableUiBlur]);
+  }, [uiOpacity, shouldDisableUiBlur, normalFontWeight, boldFontWeight]);
 
   return (
     <div className="app-frame relative h-screen w-screen overflow-hidden bg-background text-foreground">

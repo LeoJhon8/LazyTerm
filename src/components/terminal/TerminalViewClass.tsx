@@ -146,6 +146,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const { addCommand: addHistoryCommand } = useHistoryStore();
   const fontSize = useSettingsStore((state) => state.fontSize);
   const fontFamily = useSettingsStore((state) => state.fontFamily);
+  const terminalNormalFontWeight = useSettingsStore((state) => state.terminalNormalFontWeight);
+  const terminalBoldFontWeight = useSettingsStore((state) => state.terminalBoldFontWeight);
   const terminalColorScheme = useSettingsStore((state) => state.terminalColorScheme);
   const customThemes = useSettingsStore((state) => state.customThemes);
   const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
@@ -164,6 +166,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const appearanceRef = useRef({
     fontSize,
     fontFamily,
+    terminalNormalFontWeight,
+    terminalBoldFontWeight,
     terminalColorScheme,
     customThemes,
     terminalOpacity,
@@ -180,6 +184,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   appearanceRef.current = {
     fontSize,
     fontFamily,
+    terminalNormalFontWeight,
+    terminalBoldFontWeight,
     terminalColorScheme,
     customThemes,
     terminalOpacity,
@@ -280,6 +286,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
       if (existingInstance?.connector === connector) {
         currentTermInstance = existingInstance;
+        existingInstance.dataUnsubscribe?.();
         existingInstance.dataUnsubscribe = () => {
           isCurrentConnector = false;
           unsubPromise.then((unsub: unknown) => {
@@ -350,6 +357,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       const {
         fontSize: nextFontSize,
         fontFamily: nextFontFamily,
+        terminalNormalFontWeight: nextTerminalNormalFontWeight,
+        terminalBoldFontWeight: nextTerminalBoldFontWeight,
         terminalColorScheme: nextTerminalColorScheme,
         customThemes: nextCustomThemes,
         terminalOpacity: nextTerminalOpacity,
@@ -360,6 +369,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       const term = new Terminal({
         fontFamily: nextFontFamily,
         fontSize: nextFontSize,
+        fontWeight: nextTerminalNormalFontWeight,
+        fontWeightBold: nextTerminalBoldFontWeight,
         cursorBlink: true,
         cursorStyle: "bar",
         scrollback: 10000,
@@ -544,6 +555,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
       terminal.options.fontSize = fontSize;
       terminal.options.fontFamily = fontFamily;
+      terminal.options.fontWeight = terminalNormalFontWeight;
+      terminal.options.fontWeightBold = terminalBoldFontWeight;
       terminal.options.theme = toXtermTheme(colorScheme, terminalOpacity);
       const shouldUseWebgl = !hasBackgroundImage && terminalOpacity >= 100;
       if (shouldUseWebgl && !instance.webglAddon) {
@@ -607,7 +620,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
       }
     });
-  }, [fontSize, fontFamily, terminalColorScheme, customThemes, terminalOpacity, appBackgroundColor, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
+  }, [fontSize, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, customThemes, terminalOpacity, appBackgroundColor, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
 
   // 清理已被关闭的会话
   useEffect(() => {

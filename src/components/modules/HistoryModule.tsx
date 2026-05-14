@@ -75,12 +75,12 @@ export function HistoryModule() {
       {/* 搜索框区域 */}
         <div className="shrink-0 px-2.5 pt-0.5 pb-2">
         <div className="relative group">
-            <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors" />
+            <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-foreground/80" />
           <Input
             placeholder={t("搜索历史记录...")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-7 rounded-none border-border/70 bg-background/72 pl-8 text-[10px]"
+              className="h-7 rounded-md border-border/60 bg-background/60 pl-8 text-[10px] outline-none focus-visible:border-primary/40 focus-visible:bg-background/80 focus-visible:ring-1 focus-visible:ring-primary/25"
           />
         </div>
       </div>
@@ -92,7 +92,7 @@ export function HistoryModule() {
             {filteredCommands.length > 0 && filteredCommands.map((cmd) => (
                 <div
                   key={cmd.id}
-                  className="group relative flex h-7 w-full items-center gap-1 overflow-hidden border-y border-transparent bg-transparent px-3 py-0.5 transition-colors hover:border-border/60 hover:bg-background/40"
+                  className="group relative flex h-7 w-full items-center gap-1 overflow-hidden rounded-md border-y border-transparent bg-transparent px-3 py-0.5 transition-colors hover:bg-accent/50"
                   onClick={() => sendCommand(cmd.command)}
                   title={t("点击执行: {command}", { command: cmd.command })}
                 >
@@ -108,7 +108,7 @@ export function HistoryModule() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-5 w-5 rounded-none p-0 hover:bg-primary/15 hover:text-primary"
+                      className="h-5 w-5 rounded-sm p-0 hover:bg-accent/80 hover:text-foreground"
                       onClick={(e) => {
                         e.stopPropagation();
                         setSendToAllState({ open: true, command: cmd.command });
@@ -120,7 +120,7 @@ export function HistoryModule() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-5 w-5 rounded-none p-0 hover:bg-destructive/15 hover:text-destructive"
+                      className="h-5 w-5 rounded-sm p-0 hover:bg-destructive/20 hover:text-destructive"
                       onClick={(e) => {
                         e.stopPropagation(); // 阻止触发整行的 sendCommand
                         removeCommand(cmd.id);

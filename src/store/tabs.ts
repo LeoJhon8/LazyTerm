@@ -161,7 +161,11 @@ export const useTabsStore = create<TabsState>()(
           const connector = createConnector(
             sessionData as SessionCreationData,
             id,
-            sessionData.type === "local" ? handleLocalDisconnect : sessionData.type === "ssh" ? handleSshDisconnect : undefined,
+            sessionData.type === "local"
+              ? handleLocalDisconnect
+              : sessionData.type === "ssh"
+                ? handleSshDisconnect
+                : undefined,
           );
 
           const newSession: TerminalSession = {
@@ -438,7 +442,11 @@ export const useTabsStore = create<TabsState>()(
             const newConnector = createConnector(
               currentSession as SessionCreationData,
               sessionId,
-              currentSession.type === "local" ? handleLocalDisconnect : currentSession.type === "ssh" ? handleSshDisconnect : undefined,
+              currentSession.type === "local"
+                ? handleLocalDisconnect
+                : currentSession.type === "ssh"
+                  ? handleSshDisconnect
+                  : undefined,
             );
             const newSessions = [...state.sessions];
             newSessions[sessionIndex] = {

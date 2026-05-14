@@ -168,6 +168,7 @@ const zhMessages = defineMessages({
   "标签页": "标签页",
   "标签页（单数）": "标签页",
   "关闭 {title}": ({ title }) => `关闭 ${title}`,
+  "复制会话": "复制会话",
   "重命名标签页": "重命名标签页",
   "关闭其他标签页": "关闭其他标签页",
   "关闭左侧标签页": "关闭左侧标签页",
@@ -480,6 +481,10 @@ const zhMessages = defineMessages({
   "同步出错：{error}": ({ error }) => `同步出错：${error}`,
   "同步拉取成功！已更新 {count} 项本地配置，正在刷新页面...": ({ count }) => `同步拉取成功！已更新 ${count} 项本地配置，正在刷新页面...`,
   "暂不支持该平台更新": "暂不支持该平台更新",
+  "正常字体粗细": "正常字体粗细",
+  "粗体字体粗细": "粗体字体粗细",
+  "终端正常字体粗细": "终端正常字体粗细",
+  "终端粗体字体粗细": "终端粗体字体粗细",
 });
 
 type TranslationKey = keyof typeof zhMessages;
@@ -640,6 +645,7 @@ const enMessages = defineMessages({
   "标签页": "Tabs",
   "标签页（单数）": "tab",
   "关闭 {title}": ({ title }) => `Close ${title}`,
+  "复制会话": "Duplicate session",
   "重命名标签页": "Rename tab",
   "关闭其他标签页": "Close other tabs",
   "关闭左侧标签页": "Close tabs to the left",
@@ -758,6 +764,10 @@ const enMessages = defineMessages({
   "字体设置": "Fonts",
   "字体族": "Font family",
   "字体大小": "Font size",
+  "正常字体粗细": "Normal weight",
+  "粗体字体粗细": "Bold weight",
+  "终端正常字体粗细": "Terminal normal weight",
+  "终端粗体字体粗细": "Terminal bold weight",
   "终端主题": "Terminal themes",
   "背景色": "Background",
   "前景色": "Foreground",

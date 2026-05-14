@@ -131,7 +131,8 @@ export function createConnector(
           if (onDisconnect) {
             onDisconnect(sessionId);
           }
-        }
+        },
+        sessionId
       );
     default:
       throw new Error(`不支持的连接类型：${sessionData.type}`);

@@ -5,22 +5,6 @@
 @custom-variant dark (&:is(.dark *));
 
 @font-face {
-  font-family: "Geist";
-  src: url("../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2") format("woff2");
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Geist";
-  src: url("../node_modules/geist/dist/fonts/geist-sans/Geist-Italic[wght].woff2") format("woff2");
-  font-weight: 100 900;
-  font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
   font-family: "Geist Mono";
   src: url("../node_modules/geist/dist/fonts/geist-mono/GeistMono-Variable.woff2") format("woff2");
   font-weight: 100 900;
@@ -37,8 +21,13 @@
 }
 
 @theme {
-  --font-sans: "Geist", "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", sans-serif;
+  --font-sans: "Inter", "Noto Sans SC", "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", sans-serif;
   --font-mono: "Geist Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas", monospace;
+
+  --font-weight-normal: var(--app-font-weight-normal);
+  --font-weight-medium: var(--app-font-weight-medium);
+  --font-weight-semibold: var(--app-font-weight-bold);
+  --font-weight-bold: var(--app-font-weight-bold);
 
   --radius-sm: 2px;
   --radius-md: 4px;
@@ -70,6 +59,9 @@
 
 @layer base {
   :root {
+    --app-font-weight-normal: 400;
+    --app-font-weight-medium: 475;
+    --app-font-weight-bold: 550;
     --radius: 4px;
     --titlebar-height: 42px;
     --background: oklch(0.978 0.002 255);
@@ -156,6 +148,7 @@
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
     font-family: var(--font-sans);
+    font-weight: var(--app-font-weight-normal);
     background-image:
       radial-gradient(circle at top left, var(--app-gradient-a), transparent 34%),
       radial-gradient(circle at 88% 16%, var(--app-gradient-b), transparent 24%),
@@ -288,7 +281,7 @@
 
   .window-titlebar__app-name {
     font-size: 0.82rem;
-    font-weight: 700;
+    font-weight: var(--app-font-weight-bold);
     letter-spacing: 0.02em;
     color: var(--foreground);
     line-height: 1;
@@ -321,7 +314,7 @@
     border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
     background: color-mix(in srgb, var(--titlebar-surface) 82%, transparent);
     font-size: 0.7rem;
-    font-weight: 700;
+    font-weight: var(--app-font-weight-bold);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--muted-foreground) 88%, transparent);
@@ -533,7 +526,7 @@
 
   .module-heading {
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--app-font-weight-bold);
     letter-spacing: -0.01em;
     color: var(--foreground);
   }
@@ -608,7 +601,7 @@
     gap: 8px;
     white-space: nowrap;
     font-size: 0.74rem;
-    font-weight: 600;
+    font-weight: var(--app-font-weight-bold);
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--muted-foreground) 90%, transparent);
@@ -672,7 +665,7 @@
     overflow-x: auto;
     overflow-y: hidden;
     padding-right: 4px;
-    padding-left: 10px;
+    padding-left: 0;
     padding-top: 6px;
   }
 
@@ -700,17 +693,19 @@
   .tab-item {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    justify-content: space-between;
+    gap: 4px;
+    width: max-content;
     height: 36px;
-    min-width: 138px;
-    max-width: 224px;
+    min-width: 72px;
+    max-width: 180px;
     border: 1px solid transparent;
     border-bottom: 0;
     margin-right: -1px;
     border-radius: 0;
-    padding: 0 14px;
+    padding: 0 8px;
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: var(--app-font-weight-medium);
     color: color-mix(in srgb, var(--muted-foreground) 92%, transparent);
     background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 54%, transparent), color-mix(in srgb, var(--panel) 30%, transparent));
     transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
@@ -723,12 +718,12 @@
 
   .tab-item-active {
     height: 40px;
-    padding: 0 12px; 
+    padding: 0 8px;
     border-color: color-mix(in srgb, var(--panel-border) 82%, transparent);
     border-bottom-color: transparent;
     background: linear-gradient(180deg, color-mix(in srgb, var(--background) 94%, transparent), color-mix(in srgb, var(--background) 82%, transparent));
     color: var(--foreground);
-    font-weight: 600;
+    font-weight: var(--app-font-weight-bold);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.24),
       inset 0 -3px 0 var(--primary),
@@ -737,9 +732,15 @@
   }
 
   .tab-close {
-    height: 22px;
-    width: 22px;
+    height: 16px;
+    width: 16px;
     border-radius: var(--radius);
+  }
+
+  .tab-session-icon {
+    height: 13px;
+    width: 13px;
+    flex: 0 0 auto;
   }
 
   @media (max-width: 900px) {
@@ -884,7 +885,7 @@
     white-space: nowrap;
     text-align: left;
     font-size: 0.7rem;
-    font-weight: 600;
+    font-weight: var(--app-font-weight-bold);
   }
 
   .quickcmd-add-button {
@@ -1157,7 +1158,7 @@
 
 .welcome-title {
   font-size: 1.35rem;
-  font-weight: 700;
+  font-weight: var(--app-font-weight-bold);
   letter-spacing: -0.02em;
   color: var(--foreground);
   line-height: 1.2;
@@ -1279,7 +1280,7 @@
 
 .welcome-action-label {
   font-size: 0.82rem;
-  font-weight: 600;
+  font-weight: var(--app-font-weight-bold);
   color: var(--foreground);
 }
 

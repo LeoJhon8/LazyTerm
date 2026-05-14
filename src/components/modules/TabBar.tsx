@@ -1,4 +1,4 @@
-import { useTabsStore } from "@/store/tabs";
+import { useTabsStore, type TerminalSession } from "@/store/tabs";
 import { usePanesStore } from "@/store/panes";
 import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { X, Plus, Columns, Pencil, XCircle, ArrowLeftToLine, ArrowRightToLine } from "lucide-react";
+import { X, Plus, Columns, Pencil, XCircle, ArrowLeftToLine, ArrowRightToLine, Copy, Server, Terminal, AppWindow, ScreenShare, Usb } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
 import { getAllLeaves } from "@/lib/pane-utils";
 import { useEffect, useRef, useState, useCallback, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
@@ -82,15 +82,43 @@ function isDefaultConnectionTab(
   return normalizedTitle.includes(normalizedShell) || normalizedTitle === "terminal" || normalizedTitle === "终端";
 }
 
+function getTabIcon(type: TerminalSession["type"] | undefined, isSplit?: boolean) {
+  if (isSplit) {
+    return <Columns className="tab-session-icon opacity-70" />;
+  }
+
+  switch (type) {
+    case "ssh":
+      return <Server className="tab-session-icon text-emerald-600/80" />;
+    case "rdp":
+      return <AppWindow className="tab-session-icon text-sky-600/80" />;
+    case "vnc":
+      return <ScreenShare className="tab-session-icon text-emerald-600/80" />;
+    case "serial":
+      return <Usb className="tab-session-icon text-purple-600/80" />;
+    case "telnet":
+      return <Terminal className="tab-session-icon text-emerald-500/80" />;
+    case "ai-cli":
+      return <Terminal className="tab-session-icon text-violet-600/80" />;
+    case "local":
+      return <Terminal className="tab-session-icon text-blue-600/80" />;
+    default:
+      return null;
+  }
+}
+
 function SortableTab({
   id,
   title,
   active,
   canCloseLeft,
   canCloseRight,
+  canDuplicate,
   isSplit,
+  sessionType,
   onSwitch,
   onClose,
+  onDuplicate,
   onRename,
   onCloseOthers,
   onCloseLeft,
@@ -101,8 +129,11 @@ function SortableTab({
   active: boolean;
   canCloseLeft: boolean;
   canCloseRight: boolean;
+  canDuplicate: boolean;
+  sessionType?: TerminalSession["type"];
   onSwitch: (id: string) => void;
   onClose: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
+  onDuplicate: (id: string) => void;
   onRename: (id: string) => void;
   onCloseOthers: (id: string) => void;
   onCloseLeft: (id: string) => void;
@@ -130,6 +161,8 @@ function SortableTab({
     event.stopPropagation();
   };
 
+  const tabIcon = getTabIcon(sessionType, isSplit);
+
   return (
     <div
       ref={setNodeRef}
@@ -156,15 +189,15 @@ function SortableTab({
             {...attributes}
             {...listeners}
           >
-            <span className="pointer-events-none max-w-48 flex-1 truncate text-[13px] flex items-center justify-center gap-1.5 leading-none">
-              {isSplit && <Columns className="h-3.5 w-3.5 opacity-70 shrink-0" />}
-              <span className="truncate">{title}</span>
+            <span className="pointer-events-none min-w-0 truncate text-[13px] flex items-center justify-center gap-1.5 leading-none">
+              {tabIcon}
+              <span className="min-w-0 truncate">{title}</span>
             </span>
 
             <Button
               variant="ghost"
               size="icon"
-              className={`tab-close ml-1 text-muted-foreground transition-all hover:bg-background/40 hover:text-foreground ${
+              className={`tab-close h-4! w-4! min-w-0! p-0! text-muted-foreground transition-all hover:bg-background/40 hover:text-foreground ${
                 active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
               }`}
               onPointerDown={handleClosePointerDown}
@@ -176,6 +209,10 @@ function SortableTab({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="min-w-40 text-xs">
+          <ContextMenuItem className="py-1 text-xs" disabled={!canDuplicate} onClick={() => onDuplicate(id)}>
+            <Copy className="mr-2 h-3.5 w-3.5" />
+            {t("复制会话")}
+          </ContextMenuItem>
           <ContextMenuItem className="py-1 text-xs" onClick={() => onRename(id)}>
             <Pencil className="mr-2 h-3.5 w-3.5" />
             {t("重命名标签页")}
@@ -509,6 +546,45 @@ export function TabBar() {
     );
   };
 
+  const cloneSessionConfig = <T,>(value: T): T => {
+    if (value === undefined || value === null) {
+      return value;
+    }
+
+    if (typeof structuredClone === "function") {
+      return structuredClone(value);
+    }
+
+    return JSON.parse(JSON.stringify(value)) as T;
+  };
+
+  const handleDuplicateSession = (id: string) => {
+    const sourceTab = tabs.find((tab) => tab.id === id);
+    const leaves = usePanesStore.getState().getAllLeaves(id);
+
+    if (!sourceTab || leaves.length !== 1 || !leaves[0]?.sessionId) {
+      return;
+    }
+
+    const sourceSession = useTabsStore.getState().sessions.find((session) => session.id === leaves[0].sessionId);
+    if (!sourceSession) {
+      return;
+    }
+
+    const tabId = addTab({ title: sourceTab.title });
+    setActiveTabId(tabId);
+
+    const sessionId = addSession({
+      title: sourceSession.title,
+      type: sourceSession.type,
+      cwd: sourceSession.cwd,
+      host: sourceSession.host,
+      config: cloneSessionConfig(sourceSession.config),
+    });
+
+    usePanesStore.getState().addPane(sessionId);
+  };
+
   const handleRenameOpen = (id: string) => {
     const session = tabs.find((tab) => tab.id === id);
     if (!session) {
@@ -601,6 +677,10 @@ export function TabBar() {
                 const ws = workspaces[tab.id];
                 const leaves = ws?.rootNode ? getAllLeaves(ws.rootNode) : [];
                 const isSplit = leaves.length > 1;
+                const canDuplicate = leaves.length === 1 && !!leaves[0]?.sessionId;
+                const singleSession = !isSplit && leaves[0]?.sessionId
+                  ? sessions.find((session) => session.id === leaves[0].sessionId)
+                  : undefined;
 
                 let displayTitle = tab.title;
                 if (isSplit) {
@@ -617,8 +697,11 @@ export function TabBar() {
                     active={activeTabId === tab.id}
                     canCloseLeft={tabs[0]?.id !== tab.id}
                     canCloseRight={tabs[tabs.length - 1]?.id !== tab.id}
+                    canDuplicate={canDuplicate}
+                    sessionType={singleSession?.type}
                     onSwitch={handleTabSwitch}
                     onClose={handleCloseTab}
+                    onDuplicate={handleDuplicateSession}
                     onRename={handleRenameOpen}
                     onCloseOthers={handleCloseOthers}
                     onCloseLeft={handleCloseLeft}

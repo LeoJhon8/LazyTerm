@@ -19,6 +19,10 @@ interface SettingsData {
   language: AppLanguageSetting;
   fontSize: number;
   fontFamily: string;
+  normalFontWeight: number;
+  boldFontWeight: number;
+  terminalNormalFontWeight: number;
+  terminalBoldFontWeight: number;
   leftPanelWidth: number;
   rightPanelWidth: number;
   topPanelHeight: number;
@@ -67,6 +71,10 @@ const defaultSettings: SettingsData = {
   language: DEFAULT_LANGUAGE_SETTING,
   fontSize: 14,
   fontFamily: DEFAULT_FONT_FAMILY,
+  normalFontWeight: 400,
+  boldFontWeight: 550,
+  terminalNormalFontWeight: 400,
+  terminalBoldFontWeight: 700,
   leftPanelWidth: 200,
   rightPanelWidth: 200,
   topPanelHeight: 40,

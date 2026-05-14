@@ -13,7 +13,7 @@ export interface ISessionConnector {
 export interface ITerminalConnector extends ISessionConnector {
   readonly protocol: 'ssh' | 'local' | 'serial' | 'telnet' | 'ai-cli';
 
-  onData(handler: (data: string) => void): Promise<void>;
+  onData(handler: (data: string) => void): Promise<void | (() => void)>;
   write(data: string | Uint8Array): void;
   resize(cols: number, rows: number): void;
 }
