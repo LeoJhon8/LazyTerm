@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, type WheelEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Play, Plus, Trash2, Pencil, Send } from "lucide-react";
 import { useQuickCommandsStore, type QuickCommand } from "@/store/quick-commands";
+import { useSettingsStore } from "@/store/settings";
 import { useTabsStore } from "@/store/tabs";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import {
@@ -34,9 +35,11 @@ import {
   sortableKeyboardCoordinates,
   useSortable,
   horizontalListSortingStrategy,
+  rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useI18n } from "@/i18n";
+import { cn } from "@/lib/utils";
 
 // 可排序的快捷命令按钮组件
 function SortableQuickCommand({
@@ -69,13 +72,13 @@ function SortableQuickCommand({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="flex h-full items-stretch">
+    <div ref={setNodeRef} style={style} className="quickcmd-command-item">
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <Button
             variant="outline"
             size="sm"
-            className="command-card h-full rounded-none px-3 text-xs shadow-none"
+            className="command-card rounded-none px-3 text-xs shadow-none"
             onClick={onClick}
             title={t("命令：{command}", {
               command: `${cmd.command.split("\n")[0].substring(0, 30)}${cmd.command.length > 30 ? "..." : ""}`,
@@ -111,10 +114,12 @@ function SortableQuickCommand({
 export function QuickCmdBar() {
   const { t } = useI18n();
   const { commands, addCommand, removeCommand, updateCommand, reorderCommands } = useQuickCommandsStore();
+  const { quickCommandDisplayMode } = useSettingsStore();
   const { focusSessionId, sessions, getAllConnectors } = useTabsStore();
   const [configOpen, setConfigOpen] = useState(false);
   const [editingCmd, setEditingCmd] = useState<QuickCommand | null>(null);
   const commandsContainerRef = useRef<HTMLDivElement>(null);
+  const isPanelMode = quickCommandDisplayMode === "panel";
 
   const restoreTerminalFocus = () => {
     requestAnimationFrame(() => {
@@ -219,8 +224,8 @@ export function QuickCmdBar() {
   };
 
   return (
-    <div className="quickcmd-surface">
-      <div className="quickcmd-leading-icon" aria-label={t("快捷命令栏")} title={t("快捷命令栏")}>
+    <div className="quickcmd-surface" data-mode={quickCommandDisplayMode}>
+      <div className="quickcmd-leading-icon" aria-label={t("快捷命令")} title={t("快捷命令")}>
         <Play className="h-3 w-3 fill-current" />
       </div>
 
@@ -231,15 +236,18 @@ export function QuickCmdBar() {
       >
         <SortableContext
           items={sortedCommands.map(cmd => cmd.id)}
-          strategy={horizontalListSortingStrategy}
+          strategy={isPanelMode ? rectSortingStrategy : horizontalListSortingStrategy}
         >
           <div
             ref={commandsContainerRef}
-            className="toolbar-scroll command-scroll no-scrollbar h-full flex-1"
-            onWheel={handleCommandsWheel}
+            className={cn(
+              "toolbar-scroll command-scroll no-scrollbar flex-1",
+              isPanelMode ? "quickcmd-panel-scroll" : "h-full"
+            )}
+            onWheel={isPanelMode ? undefined : handleCommandsWheel}
           >
             {sortedCommands.length === 0 ? (
-              <div className="flex h-full items-center border border-dashed border-border/70 px-4 text-xs text-muted-foreground">
+              <div className="quickcmd-empty">
                 {t("暂无快捷命令，点击右侧加号创建常用操作。")}
               </div>
             ) : (
@@ -344,7 +352,7 @@ function QuickCommandForm({
             id="label"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder={t("如：清屏")}
+            placeholder={t("请输入名称")}
           />
         </div>
         
@@ -354,7 +362,7 @@ function QuickCommandForm({
             id="command"
             value={command}
             onChange={(e) => setCommand(e.target.value)}
-            placeholder={t("输入命令，支持换行\n例如：\ncd project\nnpm install\n\n提示：有几个换行，就会触发几次执行；最后一行没有换行时，只会输入不会执行")}
+            placeholder={t("输入命令，支持换行")}
             rows={6}
           />
         </div>

@@ -18,9 +18,13 @@ import {
 } from "@/components/ui/select";
 import { DialogFooter } from "@/components/ui/dialog";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { KeyRound, Settings } from "lucide-react";
 import { invokeTauri } from "@/services/tauri";
 import { logger } from "@/lib/logger";
 import { useI18n } from "@/i18n";
+import { useCredentialsStore } from "@/store/credentials";
+import { useSettingsDialogStore } from "@/store/settings-dialog";
+import type { Credential, CredentialType } from "@/types/credential";
 import type {
   SSHConfig,
   RDPConfig,
@@ -34,14 +38,73 @@ import type {
 export type SubmitLabel = "立即创建" | "连接";
 
 /* ==================== 通用表单字段布局 ==================== */
-export function FormField({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+export function FormField({
+  label,
+  required,
+  description,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  description?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="grid grid-cols-4 items-center gap-4">
+    <div className="grid grid-cols-4 items-start gap-4">
       <Label className="text-right text-[13px]">
         {label}
         {required && <span className="text-destructive ml-0.5">*</span>}
       </Label>
-      <div className="col-span-3">{children}</div>
+      <div className="col-span-3 space-y-1.5">
+        {children}
+        {description && <p className="text-xs text-muted-foreground">{description}</p>}
+      </div>
+    </div>
+  );
+}
+
+function CredentialSelect({
+  value,
+  onChange,
+  types,
+}: {
+  value: string;
+  onChange: (credential: Credential | null) => void;
+  types?: CredentialType[];
+}) {
+  const credentials = useCredentialsStore((state) => state.credentials);
+  const openSettings = useSettingsDialogStore((state) => state.openSettings);
+  const filteredCredentials = types
+    ? credentials.filter((credential) => types.includes(credential.type))
+    : credentials;
+
+  return (
+    <div className="flex items-center gap-2">
+      <Select
+        value={value}
+        onValueChange={(nextValue) => {
+          if (nextValue === "manual") {
+            onChange(null);
+            return;
+          }
+          onChange(filteredCredentials.find((credential) => credential.id === nextValue) ?? null);
+        }}
+      >
+        <SelectTrigger className="flex-1">
+          <SelectValue placeholder="手动输入" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="manual">手动输入</SelectItem>
+          {filteredCredentials.map((credential) => (
+            <SelectItem key={credential.id} value={credential.id}>
+              {credential.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => openSettings("credentials")} title="管理凭据">
+        {filteredCredentials.length > 0 ? <KeyRound className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
+      </Button>
     </div>
   );
 }
@@ -55,6 +118,7 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
   const [password, setPassword] = useState("");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [nickname, setNickname] = useState("");
+  const [credentialId, setCredentialId] = useState("manual");
 
   const handleSelectKey = async () => {
     try {
@@ -74,13 +138,16 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
 
   const handleSubmit = () => {
     if (!host || !port || !username) return;
+    const usesSavedCredential = credentialId !== "manual";
+    const credential = usesSavedCredential ? useCredentialsStore.getState().getCredential(credentialId) : undefined;
     onSubmit({
       host,
       port: parseInt(port, 10),
       username,
-      authType: privateKeyPath ? "privateKey" : "password",
-      password: password || undefined,
-      privateKeyPath: privateKeyPath || undefined,
+      credentialId: usesSavedCredential ? credentialId : undefined,
+      authType: credential?.type === "ssh-key" || privateKeyPath ? "privateKey" : "password",
+      password: usesSavedCredential ? undefined : (password || undefined),
+      privateKeyPath: usesSavedCredential ? undefined : (privateKeyPath || undefined),
       nickname: nickname || undefined,
       keepAlive: true,
       keepAliveInterval: 60,
@@ -90,11 +157,11 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")}>
-        <Input placeholder={t("我的服务器")} value={nickname} onChange={(e) => setNickname(e.target.value)} />
+      <FormField label={t("名称")} description="留空时使用主机地址">
+        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
       </FormField>
       <FormField label={t("主机地址")} required>
-        <Input placeholder="192.168.1.100" value={host} onChange={(e) => setHost(e.target.value)} required />
+        <Input value={host} onChange={(e) => setHost(e.target.value)} required />
       </FormField>
       <FormField label={t("端口")} required>
         <Input type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
@@ -103,13 +170,30 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
         <Input value={username} onChange={(e) => setUsername(e.target.value)} required />
       </FormField>
       <Separator />
+      <FormField label="凭据">
+        <CredentialSelect
+          value={credentialId}
+          onChange={(credential) => {
+            setCredentialId(credential?.id ?? "manual");
+            if (!credential) return;
+            if (credential.username) setUsername(credential.username);
+            if (credential.type === "password") {
+              setPassword("");
+              setPrivateKeyPath("");
+            } else {
+              setPassword("");
+              setPrivateKeyPath(credential.privateKeyPath ?? "");
+            }
+          }}
+        />
+      </FormField>
       <FormField label={t("密码")}>
-        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
+        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" disabled={credentialId !== "manual"} />
       </FormField>
       <FormField label={t("私钥路径")}>
         <div className="flex items-center gap-2">
-          <Input value={privateKeyPath} onChange={(e) => setPrivateKeyPath(e.target.value)} className="flex-1" />
-          <Button type="button" variant="outline" size="sm" onClick={handleSelectKey}>{t("浏览")}</Button>
+          <Input value={privateKeyPath} onChange={(e) => setPrivateKeyPath(e.target.value)} className="flex-1" disabled={credentialId !== "manual"} />
+          <Button type="button" variant="outline" size="sm" onClick={handleSelectKey} disabled={credentialId !== "manual"}>{t("浏览")}</Button>
         </div>
       </FormField>
       <DialogFooter className="pt-2">
@@ -131,6 +215,7 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
   const [password, setPassword] = useState("");
   const [domain, setDomain] = useState("");
   const [nickname, setNickname] = useState("");
+  const [credentialId, setCredentialId] = useState("manual");
   const [width, setWidth] = useState("1280");
   const [height, setHeight] = useState("720");
   const [autoResize, setAutoResize] = useState(true);
@@ -141,7 +226,8 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
       host,
       port: parseInt(port, 10) || 3389,
       username,
-      password: password || undefined,
+      credentialId: credentialId !== "manual" ? credentialId : undefined,
+      password: credentialId !== "manual" ? undefined : (password || undefined),
       domain: domain || undefined,
       nickname: nickname || undefined,
       width: isWindows ? undefined : (parseInt(width, 10) || 1280),
@@ -153,7 +239,7 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")}>
+      <FormField label={t("名称")} description="留空时使用主机地址">
         <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
       </FormField>
       <FormField label={t("主机地址")} required>
@@ -166,10 +252,21 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
         <Input value={username} onChange={(e) => setUsername(e.target.value)} required />
       </FormField>
       <FormField label={t("域")}>
-        <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder={t("可选")} />
+        <Input value={domain} onChange={(e) => setDomain(e.target.value)} />
+      </FormField>
+      <FormField label="凭据">
+        <CredentialSelect
+          value={credentialId}
+          types={["password"]}
+          onChange={(credential) => {
+            setCredentialId(credential?.id ?? "manual");
+            if (credential?.username) setUsername(credential.username);
+            if (credential) setPassword("");
+          }}
+        />
       </FormField>
       <FormField label={t("密码")}>
-        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
+        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" disabled={credentialId !== "manual"} />
       </FormField>
       {!isWindows && (
         <>
@@ -205,13 +302,15 @@ export function VncForm({ onSubmit, submitLabel }: { onSubmit: (config: VNCConfi
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
   const [quality, setQuality] = useState(30);
+  const [credentialId, setCredentialId] = useState("manual");
 
   const handleSubmit = () => {
     if (!host) return;
     onSubmit({
       host,
       port: parseInt(port, 10) || 5900,
-      password: password || undefined,
+      credentialId: credentialId !== "manual" ? credentialId : undefined,
+      password: credentialId !== "manual" ? undefined : (password || undefined),
       nickname: nickname || undefined,
       shared: true,
       allowJpeg: true,
@@ -221,7 +320,7 @@ export function VncForm({ onSubmit, submitLabel }: { onSubmit: (config: VNCConfi
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")}>
+      <FormField label={t("名称")} description="留空时使用主机地址">
         <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
       </FormField>
       <FormField label={t("主机地址")} required>
@@ -230,8 +329,18 @@ export function VncForm({ onSubmit, submitLabel }: { onSubmit: (config: VNCConfi
       <FormField label={t("端口")} required>
         <Input type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
       </FormField>
-      <FormField label={t("密码")}>
-        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" placeholder={t("无密码可留空")} />
+      <FormField label="凭据">
+        <CredentialSelect
+          value={credentialId}
+          types={["password"]}
+          onChange={(credential) => {
+            setCredentialId(credential?.id ?? "manual");
+            if (credential) setPassword("");
+          }}
+        />
+      </FormField>
+      <FormField label={t("密码")} description="无密码时留空">
+        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" disabled={credentialId !== "manual"} />
       </FormField>
       <Separator />
       <FormField label={t("渲染质量")}>
@@ -290,8 +399,8 @@ export function SerialForm({ onSubmit, submitLabel }: { onSubmit: (config: Seria
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")}>
-        <Input value={config.nickname || ""} onChange={(e) => setConfig({ ...config, nickname: e.target.value })} placeholder={t("可选的备注名称")} />
+      <FormField label={t("名称")} description="留空时使用串口名称">
+        <Input value={config.nickname || ""} onChange={(e) => setConfig({ ...config, nickname: e.target.value })} />
       </FormField>
       <FormField label={t("端口")} required>
         <div className="flex gap-2">
@@ -299,7 +408,7 @@ export function SerialForm({ onSubmit, submitLabel }: { onSubmit: (config: Seria
             list="serial-ports-list-qc"
             value={config.port}
             onChange={(e) => setConfig({ ...config, port: e.target.value })}
-            placeholder={loadingPorts ? t("加载中...") : t("选择或输入串口 (例: COM10)")}
+            placeholder={loadingPorts ? t("加载中...") : t("选择或输入串口")}
           />
           <datalist id="serial-ports-list-qc">
             {availablePorts.map((p) => <option key={p} value={p} />)}
@@ -381,11 +490,11 @@ export function TelnetForm({ onSubmit, submitLabel }: { onSubmit: (config: Telne
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")}>
-        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder={t("可选（默认显示主机名）")} />
+      <FormField label={t("名称")} description="留空时使用主机名">
+        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
       </FormField>
       <FormField label={t("主机名 (Host)")} required>
-        <Input placeholder="192.168.1.1" value={host} onChange={(e) => setHost(e.target.value)} required />
+        <Input value={host} onChange={(e) => setHost(e.target.value)} required />
       </FormField>
       <FormField label={t("端口 (Port)")} required>
         <Input type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
@@ -437,18 +546,18 @@ export function AiCliForm({ onSubmit, submitLabel }: { onSubmit: (config: AiCliC
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")}>
-        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder={t("可选，留空使用命令名")} />
+      <FormField label={t("名称")} description="留空时使用命令名">
+        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
       </FormField>
       <FormField label={t("命令")} required>
-        <Input value={command} onChange={(e) => setCommand(e.target.value)} placeholder={t("例如: claude, openai, gemini")} required />
+        <Input value={command} onChange={(e) => setCommand(e.target.value)} placeholder={t("请输入命令")} required />
       </FormField>
-      <FormField label={t("参数")}>
-        <Input value={args} onChange={(e) => setArgs(e.target.value)} placeholder={t("逗号分隔，例如: --model gpt-4, --stream")} />
+      <FormField label={t("参数")} description="多个参数用逗号分隔">
+        <Input value={args} onChange={(e) => setArgs(e.target.value)} placeholder={t("请输入参数")} />
       </FormField>
-      <FormField label={t("工作目录")}>
+      <FormField label={t("工作目录")} description="留空时使用当前目录">
         <div className="flex gap-2">
-          <Input value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder={t("可选，留空使用当前目录")} className="flex-1" />
+          <Input value={cwd} onChange={(e) => setCwd(e.target.value)} className="flex-1" />
           <Button type="button" variant="outline" size="sm" onClick={handleSelectCwd}>{t("浏览")}</Button>
         </div>
       </FormField>

@@ -94,7 +94,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="vnc-password" className="text-right">{t("密码")}</Label>
-              <Input id="vnc-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="col-span-3" autoComplete="off" placeholder={t("无密码可留空")} />
+              <Input id="vnc-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="col-span-3" autoComplete="off" />
             </div>
 
             <Separator />

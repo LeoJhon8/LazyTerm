@@ -115,7 +115,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="rdp-domain" className="text-right">{t("域")}</Label>
-              <Input id="rdp-domain" value={domain} onChange={(event) => setDomain(event.target.value)} className="col-span-3" placeholder={t("可选")} />
+              <Input id="rdp-domain" value={domain} onChange={(event) => setDomain(event.target.value)} className="col-span-3" />
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">

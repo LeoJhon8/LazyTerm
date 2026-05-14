@@ -107,7 +107,6 @@ export function AiCliDialog({
               id="nickname"
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
-              placeholder={t("可选，留空使用命令名")}
               className="col-span-3"
             />
           </div>
@@ -121,7 +120,7 @@ export function AiCliDialog({
               id="command"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
-              placeholder={t("例如: claude, openai, gemini")}
+              placeholder={t("请输入命令")}
               className="col-span-3"
             />
           </div>
@@ -135,7 +134,7 @@ export function AiCliDialog({
               id="args"
               value={args}
               onChange={(e) => setArgs(e.target.value)}
-              placeholder={t("逗号分隔，例如: --model gpt-4, --stream")}
+              placeholder={t("请输入参数")}
               className="col-span-3"
             />
           </div>
@@ -150,7 +149,6 @@ export function AiCliDialog({
                 id="cwd"
                 value={cwd}
                 onChange={(e) => setCwd(e.target.value)}
-                placeholder={t("可选，留空使用当前目录")}
                 className="flex-1"
               />
               <Button

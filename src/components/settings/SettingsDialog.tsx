@@ -5,9 +5,10 @@ import { useSettingsDialogStore, type SettingsTab } from "@/store/settings-dialo
 import { GeneralSettings } from "./GeneralSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { LayoutSettings } from "./LayoutSettings";
+import { CredentialSettings } from "./CredentialSettings";
 import { DataSettings } from "./DataSettings";
 import { AboutSettings } from "./AboutSettings";
-import { Globe, Palette, LayoutPanelLeft, Database, Info } from "lucide-react";
+import { Globe, Palette, LayoutPanelLeft, KeyRound, Database, Info } from "lucide-react";
 import { useI18n } from "@/i18n";
 
 /** Tab 配置：value → 图标 + 标签 key */
@@ -15,6 +16,7 @@ const SETTINGS_TABS: Array<{ value: SettingsTab; icon: React.ComponentType<{ cla
   { value: "general", icon: Globe, labelKey: "通用设置" },
   { value: "appearance", icon: Palette, labelKey: "外观设置" },
   { value: "layout", icon: LayoutPanelLeft, labelKey: "布局管理" },
+  { value: "credentials", icon: KeyRound, labelKey: "凭据管理" },
   { value: "data", icon: Database, labelKey: "数据备份" },
   { value: "about", icon: Info, labelKey: "关于与更新" },
 ];
@@ -63,6 +65,9 @@ export function SettingsDialog() {
               </TabsContent>
               <TabsContent value="layout" className="m-0 focus-visible:outline-none">
                 <LayoutSettings />
+              </TabsContent>
+              <TabsContent value="credentials" className="m-0 focus-visible:outline-none">
+                <CredentialSettings />
               </TabsContent>
               <TabsContent value="data" className="m-0 focus-visible:outline-none">
                 <DataSettings />

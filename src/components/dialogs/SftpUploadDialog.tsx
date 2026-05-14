@@ -317,7 +317,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
                 <div className="flex items-center gap-2">
                   <Input
                     id="remote-path"
-                    placeholder={t("例如: /home/user/uploads/")}
+                    placeholder={t("请输入远程路径")}
                     value={remotePath}
                     onChange={(e) => setRemotePath(e.target.value)}
                     disabled={uploading}

@@ -154,6 +154,7 @@ export interface SSHConfig {
   host: string;
   port: number;
   username: string;
+  credentialId?: string;
   // 认证方式
   authType: SSHAuthType;
   // 密码认证（当 authType 为 password 时必需）
@@ -161,6 +162,7 @@ export interface SSHConfig {
   // 私钥路径或内容（当 authType 为 privateKey 时必需）
   privateKeyPath?: string;
   privateKey?: string;
+  privateKeyPassphrase?: string;
   // 可选配置
   nickname?: string;
   // 高级选项
@@ -188,6 +190,7 @@ export interface RDPConfig {
   host: string;
   port: number;
   username: string;
+  credentialId?: string;
   password?: string;
   domain?: string;
   nickname?: string;
@@ -200,6 +203,7 @@ export interface RDPConfig {
 export interface VNCConfig {
   host: string;
   port: number;
+  credentialId?: string;
   password?: string;
   nickname?: string;
   shared?: boolean;

@@ -2,9 +2,17 @@ import { useCallback } from "react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { AVAILABLE_MODULES, LOCKED_MODULES } from "@/config/default-slot-config";
 import { useSlotConfigStore } from "@/store/slot-config";
+import { useSettingsStore } from "@/store/settings";
 import { getModuleDisplayName, useI18n } from "@/i18n";
 import { PanelLeft, PanelRight } from "lucide-react";
 
@@ -25,6 +33,7 @@ function getModuleSide(
 export function LayoutSettings() {
   const { locale, t } = useI18n();
   const { currentConfig, updateSlotConfig, resetToDefault } = useSlotConfigStore();
+  const { quickCommandDisplayMode, setSettings } = useSettingsStore();
 
   // 过滤掉锁定的模块（TabModule、QuickCmdModule 等固定位置）
   const displayModules = AVAILABLE_MODULES.filter(
@@ -164,7 +173,7 @@ export function LayoutSettings() {
               <div className="flex-1 min-w-0 mr-4">
                 <Label className="text-sm font-medium">{t("快捷命令栏")}</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {t("在终端顶部显示快捷命令栏，可快速执行常用命令")}
+                  {t("在终端底部显示快捷命令，可快速执行常用命令")}
                 </p>
               </div>
               <Switch
@@ -173,6 +182,28 @@ export function LayoutSettings() {
                   updateSlotConfig({ quickCmdBarEnabled: checked })
                 }
               />
+            </div>
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex-1 min-w-0 mr-4">
+                <Label className="text-sm font-medium">{t("快捷命令显示模式")}</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {t("单行保持紧凑，多行面板可同时展示更多命令。")}
+                </p>
+              </div>
+              <Select
+                value={quickCommandDisplayMode}
+                onValueChange={(value) =>
+                  setSettings({ quickCommandDisplayMode: value as typeof quickCommandDisplayMode })
+                }
+              >
+                <SelectTrigger className="h-8 w-32 rounded-lg">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bar">{t("单行工具栏")}</SelectItem>
+                  <SelectItem value="panel">{t("多行面板")}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>

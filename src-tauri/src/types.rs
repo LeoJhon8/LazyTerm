@@ -19,6 +19,7 @@ pub struct SshConnectConfig {
     pub username: String,
     pub password: Option<String>,
     pub private_key_path: Option<String>,
+    pub private_key: Option<String>,
     pub private_key_passphrase: Option<String>,
     pub keep_alive: Option<bool>,
     pub keep_alive_interval: Option<u64>,

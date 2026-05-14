@@ -5,6 +5,7 @@ import { DEFAULT_LANGUAGE_SETTING, type AppLanguageSetting } from "@/i18n/config
 import { gitAwareStorage } from "@/store/git-aware-storage";
 
 export type BackgroundImageUiMode = "frosted" | "clear";
+export type QuickCommandDisplayMode = "bar" | "panel";
 
 /**
  * 视图模式
@@ -49,6 +50,7 @@ interface SettingsData {
   viewMode: ViewMode;                  // 当前视图模式（不持久化）
   immersiveHoverBarDelay: number;      // 悬浮标题栏消失延迟 (ms)
   immersiveShowTabStrip: boolean;      // 沉浸模式下是否显示悬浮标签条
+  quickCommandDisplayMode: QuickCommandDisplayMode; // 快捷命令显示方式
 }
 
 interface SettingsActions {
@@ -92,6 +94,7 @@ const defaultSettings: SettingsData = {
   viewMode: "normal",
   immersiveHoverBarDelay: 800,
   immersiveShowTabStrip: true,
+  quickCommandDisplayMode: "bar",
 };
 
 export const useSettingsStore = create<SettingsState>()(

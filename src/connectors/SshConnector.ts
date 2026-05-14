@@ -97,6 +97,8 @@ export class SshConnector implements ITerminalConnector {
           username: this.config.username,
           password: this.config.authType === "password" ? this.config.password : undefined,
           private_key_path: this.config.authType === "privateKey" ? this.config.privateKeyPath : undefined,
+          private_key: this.config.authType === "privateKey" ? this.config.privateKey : undefined,
+          private_key_passphrase: this.config.authType === "privateKey" ? this.config.privateKeyPassphrase : undefined,
           keep_alive: keepAlive,
           keep_alive_interval: keepAliveInterval,
           ready_timeout: this.config.readyTimeout,

@@ -16,6 +16,7 @@ import { VncConnector } from "@/connectors/VncConnector";
 import { SerialConnector } from "@/connectors/SerialConnector";
 import { TelnetConnector } from "@/connectors/TelnetConnector";
 import { AiCliConnector } from "@/connectors/AiCliConnector";
+import { resolveRdpCredential, resolveSshCredential, resolveVncCredential } from "@/store/credentials";
 
 export interface SessionCreationData {
   type: "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
@@ -71,7 +72,7 @@ export function createConnector(
       }
 
       return new SshConnector({
-        config: sessionData.config.sshConfig,
+        config: resolveSshCredential(sessionData.config.sshConfig),
         fontConfig: getCurrentFontConfig(),
         onDisconnect: () => {
           if (onDisconnect) {
@@ -84,15 +85,18 @@ export function createConnector(
         throw new Error("RDP 配置不能为空");
       }
 
-      return sessionData.config.rdpConfig.backend === "msrdpax"
-        ? new NativeRdpConnector(sessionData.config.rdpConfig)
-        : new RdpConnector(sessionData.config.rdpConfig);
+      {
+        const config = resolveRdpCredential(sessionData.config.rdpConfig);
+        return config.backend === "msrdpax"
+          ? new NativeRdpConnector(config)
+          : new RdpConnector(config);
+      }
     case "vnc":
       if (!sessionData.config?.vncConfig) {
         throw new Error("VNC 配置不能为空");
       }
 
-      return new VncConnector(sessionData.config.vncConfig);
+      return new VncConnector(resolveVncCredential(sessionData.config.vncConfig));
     case "serial":
       if (!sessionData.config?.serialConfig) {
         throw new Error("Serial 配置不能为空");

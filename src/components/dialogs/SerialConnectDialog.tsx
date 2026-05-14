@@ -104,7 +104,6 @@ export function SerialConnectDialog({
               value={config.nickname || ""}
               onChange={(e) => setConfig({ ...config, nickname: e.target.value })}
               className="col-span-3 text-[13px]"
-              placeholder={t("可选的备注名称")}
             />
           </div>
 
@@ -119,7 +118,7 @@ export function SerialConnectDialog({
                   value={config.port}
                   onChange={(e) => setConfig({...config, port: e.target.value})}
                   className="w-full text-[13px]"
-                  placeholder={loadingPorts ? t("加载中...") : t("选择或输入串口 (例: COM10)")}
+                  placeholder={loadingPorts ? t("加载中...") : t("选择或输入串口")}
                 />
                 <datalist id="serial-ports-list">
                   {availablePorts.map((p) => (

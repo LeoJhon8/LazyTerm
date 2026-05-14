@@ -20,11 +20,14 @@ export function SlotManager() {
     uiOpacity,
     backgroundImageEnabled,
     backgroundImage,
+    quickCommandDisplayMode,
   } = useSettingsStore();
   const { currentConfig } = useSlotConfigStore();
   const { focusSessionId, sessions } = useTabsStore();
   const { isFocus } = useViewMode();
-  const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
+  const effectiveBottomPanelHeight = quickCommandDisplayMode === "panel"
+    ? Math.max(112, bottomPanelHeight * 3)
+    : Math.round(bottomPanelHeight * 0.7);
   const focusSession = sessions.find((session) => session.id === focusSessionId);
   const shouldHideQuickCmdBar = focusSession?.type === "rdp" || focusSession?.type === "vnc";
   const effectiveFooterHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? "0px" : `${effectiveBottomPanelHeight}px`;

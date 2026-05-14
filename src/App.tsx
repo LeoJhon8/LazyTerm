@@ -42,13 +42,16 @@ function App() {
     backgroundBlur,
     backgroundOpacity,
     uiOpacity,
+    quickCommandDisplayMode,
   } = useSettingsStore();
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
   const { getAllConnectors, connectionError, clearConnectionError, focusSessionId, sessions } = useTabsStore();
   const leftSlotCollapsed = slotConfig.left.collapsed;
   const rightSlotCollapsed = slotConfig.right.collapsed;
-  const effectiveBottomPanelHeight = Math.round(bottomPanelHeight * 0.7);
+  const effectiveBottomPanelHeight = quickCommandDisplayMode === "panel"
+    ? Math.max(112, bottomPanelHeight * 3)
+    : Math.round(bottomPanelHeight * 0.7);
   const hasBackgroundImage = backgroundImageEnabled && !!backgroundImage;
   const shouldDisableUiBlur = hasBackgroundImage && backgroundImageUiMode === "clear";
 

@@ -118,7 +118,6 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
               <Label htmlFor="ssh-nickname" className="text-right">{t("名称")}</Label>
               <Input
                 id="ssh-nickname"
-                placeholder={t("我的服务器")}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 className="col-span-3"
@@ -129,7 +128,6 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
               <Label htmlFor="ssh-host" className="text-right">{t("主机地址")}</Label>
               <Input
                 id="ssh-host"
-                placeholder="192.168.1.100"
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
                 className="col-span-3"

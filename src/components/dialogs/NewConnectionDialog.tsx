@@ -13,7 +13,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { useI18n } from "@/i18n";
-import { cn } from "@/lib/utils";
+import { ConnectionTypeList, type ConnectionTypeOption } from "./ConnectionTypeList";
 import type {
   SSHConfig,
   RDPConfig,
@@ -34,19 +34,13 @@ import {
 /** 连接类型定义 */
 type ConnectionType = "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
 
-interface ConnectionTypeOption {
-  type: ConnectionType;
-  icon: React.ReactNode;
-  labelKey: string;
-}
-
-const CONNECTION_TYPES: ConnectionTypeOption[] = [
+const CONNECTION_TYPES: Array<ConnectionTypeOption<ConnectionType>> = [
   { type: "ssh", icon: <Server className="h-4 w-4 text-emerald-600/80" />, labelKey: "SSH" },
+  { type: "ai-cli", icon: <Terminal className="h-4 w-4 text-violet-600/80" />, labelKey: "AI CLI" },
   { type: "rdp", icon: <AppWindow className="h-4 w-4 text-sky-600/80" />, labelKey: "Windows 远程" },
   { type: "vnc", icon: <ScreenShare className="h-4 w-4 text-emerald-600/80" />, labelKey: "VNC" },
-  { type: "serial", icon: <Usb className="h-4 w-4 text-purple-600/80" />, labelKey: "串口" },
   { type: "telnet", icon: <Terminal className="h-4 w-4 text-emerald-500/80" />, labelKey: "Telnet" },
-  { type: "ai-cli", icon: <Terminal className="h-4 w-4 text-violet-600/80" />, labelKey: "AI CLI" },
+  { type: "serial", icon: <Usb className="h-4 w-4 text-purple-600/80" />, labelKey: "串口" },
 ];
 
 interface NewConnectionDialogProps {
@@ -82,27 +76,7 @@ export function NewConnectionDialog({ open, onOpenChange, initialType, onSave }:
         </DialogHeader>
 
         <div className="flex min-h-[420px]">
-          {/* 左侧：连接类型选择 */}
-          <div className="w-44 shrink-0 border-r border-border/50 bg-muted/20 px-2 py-2">
-            <div className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider px-2 py-1.5">
-              {t("连接类型")}
-            </div>
-            {CONNECTION_TYPES.map((opt) => (
-              <button
-                key={opt.type}
-                onClick={() => setSelectedType(opt.type)}
-                className={cn(
-                  "flex items-center gap-2.5 w-full rounded-xl px-3 py-2 text-[13px] font-medium transition-colors",
-                  selectedType === opt.type
-                    ? "bg-accent/80 text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/30 hover:text-foreground"
-                )}
-              >
-                {opt.icon}
-                {t(opt.labelKey as any)}
-              </button>
-            ))}
-          </div>
+          <ConnectionTypeList options={CONNECTION_TYPES} selectedType={selectedType} onSelect={setSelectedType} />
 
           {/* 右侧：配置表单 */}
           <div className="flex-1 flex flex-col min-w-0">

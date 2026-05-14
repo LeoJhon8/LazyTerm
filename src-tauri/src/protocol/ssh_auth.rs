@@ -226,6 +226,14 @@ pub async fn load_ssh_key(path: &str, passphrase: Option<String>) -> Result<key:
         .map_err(|e| format!("私钥解析失败: {:?}. 请检查格式或密码。", e))
 }
 
+pub fn load_ssh_key_content(
+    key_content: &str,
+    passphrase: Option<String>,
+) -> Result<key::KeyPair, String> {
+    russh_keys::decode_secret_key(key_content, passphrase.as_deref())
+        .map_err(|e| format!("私钥解析失败: {:?}. 请检查格式或密码。", e))
+}
+
 /// 使用私钥认证
 async fn authenticate_with_key(
     handle: &mut client::Handle<SshClientHandler>,
@@ -234,6 +242,26 @@ async fn authenticate_with_key(
     passphrase: Option<String>,
 ) -> Result<(), String> {
     let key_pair = load_ssh_key(key_path, passphrase).await?;
+
+    let auth_result = handle
+        .authenticate_publickey(username.to_string(), Arc::new(key_pair))
+        .await
+        .map_err(|e| format!("私钥认证请求失败: {}", e))?;
+
+    if auth_result {
+        Ok(())
+    } else {
+        Err("私钥认证被拒绝".to_string())
+    }
+}
+
+async fn authenticate_with_key_content(
+    handle: &mut client::Handle<SshClientHandler>,
+    username: &str,
+    key_content: &str,
+    passphrase: Option<String>,
+) -> Result<(), String> {
+    let key_pair = load_ssh_key_content(key_content, passphrase)?;
 
     let auth_result = handle
         .authenticate_publickey(username.to_string(), Arc::new(key_pair))
@@ -290,7 +318,7 @@ pub async fn authenticate_ssh(
     if let Some(ref key_path) = config.private_key_path {
         if !key_path.trim().is_empty() {
             attempted_key = true;
-            logging::info("SSH/auth", format!("尝试私钥认证: {key_path}"));
+            logging::info("SSH/auth", format!("尝试私钥文件认证: {key_path}"));
             match authenticate_with_key(
                 handle,
                 username,
@@ -305,6 +333,31 @@ pub async fn authenticate_ssh(
                 }
                 Err(e) => {
                     logging::warn("SSH/auth", format!("私钥认证失败: {e}"));
+                }
+            }
+        }
+    }
+
+    if !authenticated {
+        if let Some(ref key_content) = config.private_key {
+            if !key_content.trim().is_empty() {
+                attempted_key = true;
+                logging::info("SSH/auth", "尝试私钥内容认证");
+                match authenticate_with_key_content(
+                    handle,
+                    username,
+                    key_content,
+                    config.private_key_passphrase.clone(),
+                )
+                .await
+                {
+                    Ok(()) => {
+                        logging::info("SSH/auth", "私钥认证成功");
+                        authenticated = true;
+                    }
+                    Err(e) => {
+                        logging::warn("SSH/auth", format!("私钥认证失败: {e}"));
+                    }
                 }
             }
         }

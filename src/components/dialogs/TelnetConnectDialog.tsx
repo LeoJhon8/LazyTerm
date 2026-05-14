@@ -65,7 +65,6 @@ export function TelnetConnectDialog({
               id="telnet-host"
               value={config.host}
               onChange={(e) => handleChange("host", e.target.value)}
-              placeholder="192.168.1.1"
               className="col-span-3"
             />
           </div>
@@ -86,7 +85,6 @@ export function TelnetConnectDialog({
                 id="telnet-nickname"
                 value={config.nickname || ""}
                 onChange={(e) => handleChange("nickname", e.target.value)}
-                placeholder={t("可选（默认显示主机名）")}
                 className="col-span-3"
               />
             </div>
