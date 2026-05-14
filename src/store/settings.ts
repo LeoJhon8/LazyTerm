@@ -60,10 +60,13 @@ interface SettingsActions {
 
 export type SettingsState = SettingsData & SettingsActions;
 
+const LEGACY_DEFAULT_FONT_FAMILY = "Menlo, Monaco, 'Courier New', monospace";
+const DEFAULT_FONT_FAMILY = "'Geist Mono', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace";
+
 const defaultSettings: SettingsData = {
   language: DEFAULT_LANGUAGE_SETTING,
   fontSize: 14,
-  fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+  fontFamily: DEFAULT_FONT_FAMILY,
   leftPanelWidth: 200,
   rightPanelWidth: 200,
   topPanelHeight: 40,
@@ -107,6 +110,20 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: "lazy-term-settings",
       storage: createJSONStorage(() => gitAwareStorage),
+      version: 1,
+      migrate: (persistedState, version) => {
+        if (version < 1 && persistedState && typeof persistedState === "object") {
+          const data = persistedState as Partial<SettingsData>;
+          if (data.fontFamily === LEGACY_DEFAULT_FONT_FAMILY) {
+            return {
+              ...data,
+              fontFamily: DEFAULT_FONT_FAMILY,
+            };
+          }
+        }
+
+        return persistedState;
+      },
       // 只持久化数据，不持久化方法
       partialize: (state) => {
         const data: Partial<SettingsState> = { ...state };

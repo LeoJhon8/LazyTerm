@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
@@ -137,6 +137,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const { t } = useI18n();
   const { paneId, sessionId } = props;
   const acAddonRef = useRef<AutocompleteTerminalAddon | null>(null);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
 
   // Terminal 特有状态
   const { sessions } = useTabsStore();
@@ -183,6 +186,20 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     appBackgroundColor,
     hasBackgroundImage: !!hasBackgroundImage,
   };
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (event: MediaQueryListEvent) => {
+      setSystemPrefersDark(event.matches);
+    };
+
+    setSystemPrefersDark(media.matches);
+    media.addEventListener("change", handleChange);
+
+    return () => {
+      media.removeEventListener("change", handleChange);
+    };
+  }, []);
 
   // 激活终端 & 调整自适应大小
   const activateTerminal = useCallback(
@@ -590,7 +607,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
       }
     });
-  }, [fontSize, fontFamily, terminalColorScheme, customThemes, terminalOpacity, appBackgroundColor, sessionId, hasBackgroundImage, terminalAutocomplete]);
+  }, [fontSize, fontFamily, terminalColorScheme, customThemes, terminalOpacity, appBackgroundColor, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
 
   // 清理已被关闭的会话
   useEffect(() => {

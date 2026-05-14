@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
@@ -26,6 +26,9 @@ import {
 function App() {
   const { locale, t } = useI18n();
   const { isImmersive } = useViewMode();
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
   const {
     leftPanelWidth,
     rightPanelWidth,
@@ -96,6 +99,21 @@ function App() {
   useEffect(() => {
     localStorage.removeItem("lazy-term-sessions");
   }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (event: MediaQueryListEvent) => {
+      setSystemPrefersDark(event.matches);
+    };
+
+    setSystemPrefersDark(media.matches);
+    media.addEventListener("change", handleChange);
+
+    return () => {
+      media.removeEventListener("change", handleChange);
+    };
+  }, []);
+
   useEffect(() => {
     const root = document.documentElement;
     const body = document.body;
@@ -103,8 +121,7 @@ function App() {
     root.style.removeProperty("--color-background");
     root.style.removeProperty("--background");
 
-    const isSystemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const isDark = appBackgroundColor === "dark" || (appBackgroundColor === "system" && isSystemDark);
+    const isDark = appBackgroundColor === "dark" || (appBackgroundColor === "system" && systemPrefersDark);
 
     if (isDark) {
       root.classList.add("dark");
@@ -118,7 +135,7 @@ function App() {
     } else {
       body.classList.remove("has-background-image");
     }
-  }, [appBackgroundColor, hasBackgroundImage]);
+  }, [appBackgroundColor, hasBackgroundImage, systemPrefersDark]);
 
   // 同步外观自定义到 CSS 变量
   useEffect(() => {

@@ -3,6 +3,7 @@ import type { TranslationKey } from "@/i18n";
 
 // 可选字体列表
 export const FONT_OPTIONS = [
+  { value: "'Geist Mono', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace", label: "Geist Mono" },
   { value: "Cascadia Code, Menlo, monospace", label: "Cascadia Code" },
   { value: "JetBrains Mono, Menlo, monospace", label: "JetBrains Mono" },
   { value: "Fira Code, Menlo, monospace", label: "Fira Code" },

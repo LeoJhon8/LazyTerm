@@ -54,7 +54,7 @@ export function CustomTitleBar() {
   };
 
   return (
-    <header className="window-titlebar panel-surface-strong">
+    <header className="window-titlebar">
       <div
         className="window-titlebar__drag-region"
         onDoubleClick={() => {

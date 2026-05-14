@@ -8,7 +8,12 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { useSettingsStore } from "@/store/settings";
-import { TERMINAL_THEMES, DEFAULT_DARK_THEME } from "@/config/themes";
+import {
+  DEFAULT_DARK_THEME,
+  TERMINAL_THEME_ECOSYSTEMS,
+  getTerminalTheme,
+  normalizeTerminalThemeName,
+} from "@/config/themes";
 import type { TerminalColorScheme } from "@/config/themes";
 import { FONT_OPTIONS, APP_BACKGROUND_OPTIONS, EDITABLE_THEME_COLOR_ITEMS } from "./constants";
 import { getTerminalThemeDisplayName, useI18n } from "@/i18n";
@@ -46,17 +51,18 @@ export function AppearanceSettings() {
     : appBackgroundColor === "dark";
 
   // 合并预设 + 自定义方案，按配色模式排序
-  const allThemes: TerminalColorScheme[] = [...TERMINAL_THEMES, ...customThemes];
-  const sortedThemes = [...allThemes].sort((a, b) => {
-    if (a.name === "system-auto") return -1;
-    if (b.name === "system-auto") return 1;
-    const aMatch = a.isDark === isDarkApp ? 0 : 1;
-    const bMatch = b.isDark === isDarkApp ? 0 : 1;
-    return aMatch - bMatch;
-  });
-
   const activeCustomTheme = customThemes.find((c) => c.name === terminalColorScheme);
   const isCustomSelected = !!activeCustomTheme;
+  const selectedTerminalColorScheme = activeCustomTheme
+    ? terminalColorScheme
+    : normalizeTerminalThemeName(terminalColorScheme);
+  const ecosystemThemeOptions: TerminalColorScheme[] = TERMINAL_THEME_ECOSYSTEMS.map((theme) => ({
+    ...getTerminalTheme(theme.name, customThemes, appBackgroundColor),
+    name: theme.name,
+    label: theme.label,
+    isDark: isDarkApp,
+  }));
+  const allThemes: TerminalColorScheme[] = [...ecosystemThemeOptions, ...customThemes];
 
   const handleAddCustomTheme = () => {
     const id = generateCustomThemeId();
@@ -148,8 +154,8 @@ export function AppearanceSettings() {
 
   // 当前终端主题的显示名（用于 tooltip）
   const currentThemeLabel = (() => {
-    const theme = allThemes.find((th) => th.name === terminalColorScheme);
-    return theme ? getTerminalThemeDisplayName(theme.name, theme.label, locale) : terminalColorScheme;
+    const theme = allThemes.find((th) => th.name === selectedTerminalColorScheme);
+    return theme ? getTerminalThemeDisplayName(theme.name, theme.label, locale) : selectedTerminalColorScheme;
   })();
 
   return (
@@ -226,12 +232,12 @@ export function AppearanceSettings() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div>
-                        <Select value={terminalColorScheme} onValueChange={(value) => setSettings({ terminalColorScheme: value })}>
+                        <Select value={selectedTerminalColorScheme} onValueChange={(value) => setSettings({ terminalColorScheme: value })}>
                           <SelectTrigger className="h-8 w-auto min-w-[160px] max-w-[280px] bg-background/80 border-0 shadow-none focus:ring-1 focus:ring-primary/30 text-sm">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {sortedThemes.map((scheme) => {
+                            {allThemes.map((scheme) => {
                               const displayName = getTerminalThemeDisplayName(scheme.name, scheme.label, locale);
                               return (
                                 <SelectItem key={scheme.name} value={scheme.name} className="py-2">

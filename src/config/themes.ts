@@ -1,6 +1,3 @@
-// 终端配色方案预设
-// 每个方案包含 xterm ITheme 兼容的完整 ANSI 16 色
-
 export interface TerminalColorScheme {
   name: string;
   label: string;
@@ -29,7 +26,77 @@ export interface TerminalColorScheme {
   brightWhite: string;
 }
 
-/** 新建自定义方案时的默认模板（基于默认深色主题） */
+export interface TerminalThemeEcosystem {
+  name: string;
+  label: string;
+  darkThemeName: string;
+  lightThemeName: string;
+}
+
+const APP_DARK_TERMINAL_THEME: TerminalColorScheme = {
+  name: "app-dark",
+  label: "跟随外观深色",
+  isDark: true,
+  background: "#171b24",
+  foreground: "#e8ecf2",
+  cursor: "#62c7d8",
+  cursorAccent: "#171b24",
+  selectionBackground: "#245a66",
+  selectionForeground: "#ffffff",
+  black: "#11141a",
+  red: "#f26d78",
+  green: "#7dd88f",
+  yellow: "#eacb72",
+  blue: "#78b7ff",
+  magenta: "#c99af2",
+  cyan: "#63d2dc",
+  white: "#d5dbe5",
+  brightBlack: "#667080",
+  brightRed: "#ff8a94",
+  brightGreen: "#96e7a6",
+  brightYellow: "#f2dc8a",
+  brightBlue: "#99caff",
+  brightMagenta: "#ddb6ff",
+  brightCyan: "#84e3ea",
+  brightWhite: "#ffffff",
+};
+
+const APP_LIGHT_TERMINAL_THEME: TerminalColorScheme = {
+  name: "app-light",
+  label: "跟随外观浅色",
+  isDark: false,
+  background: "#f7f7f8",
+  foreground: "#262d35",
+  cursor: "#0f8ea1",
+  cursorAccent: "#f7f7f8",
+  selectionBackground: "#c8e5ea",
+  selectionForeground: "#19232b",
+  black: "#242b33",
+  red: "#b94d55",
+  green: "#2f8b62",
+  yellow: "#8b7026",
+  blue: "#2b6f9a",
+  magenta: "#7f63aa",
+  cyan: "#168995",
+  white: "#d9dcdf",
+  brightBlack: "#737b84",
+  brightRed: "#cf6269",
+  brightGreen: "#419b72",
+  brightYellow: "#9d8336",
+  brightBlue: "#347fae",
+  brightMagenta: "#9175bc",
+  brightCyan: "#25a0aa",
+  brightWhite: "#ffffff",
+};
+
+function getSystemPrefersDark(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function resolveAppIsDark(appBackgroundColor?: "system" | "light" | "dark"): boolean {
+  return appBackgroundColor === "dark" || (appBackgroundColor !== "light" && getSystemPrefersDark());
+}
+
 export const DEFAULT_DARK_THEME: Omit<TerminalColorScheme, "name" | "label"> = {
   isDark: true,
   background: "#1e1e1e",
@@ -58,8 +125,34 @@ export const DEFAULT_DARK_THEME: Omit<TerminalColorScheme, "name" | "label"> = {
 
 export const TERMINAL_THEMES: TerminalColorScheme[] = [
   {
-    name: "default-dark",
-    label: "默认深色",
+    name: "system-auto",
+    label: "跟随外观主题 (自动)",
+    isDark: true,
+    background: "auto",
+    foreground: "auto",
+    cursor: "auto",
+    cursorAccent: "auto",
+    selectionBackground: "auto",
+    black: "auto",
+    red: "auto",
+    green: "auto",
+    yellow: "auto",
+    blue: "auto",
+    magenta: "auto",
+    cyan: "auto",
+    white: "auto",
+    brightBlack: "auto",
+    brightRed: "auto",
+    brightGreen: "auto",
+    brightYellow: "auto",
+    brightBlue: "auto",
+    brightMagenta: "auto",
+    brightCyan: "auto",
+    brightWhite: "auto",
+  },
+  {
+    name: "vscode-dark",
+    label: "VS Code Dark",
     isDark: true,
     background: "#1e1e1e",
     foreground: "#cccccc",
@@ -85,8 +178,8 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
     brightWhite: "#ffffff",
   },
   {
-    name: "default-light",
-    label: "默认浅色",
+    name: "vscode-light",
+    label: "VS Code Light",
     isDark: false,
     background: "#ffffff",
     foreground: "#333333",
@@ -112,347 +205,338 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
     brightWhite: "#a5a5a5",
   },
   {
-    name: "dracula",
-    label: "Dracula",
+    name: "github-dark",
+    label: "GitHub Dark",
     isDark: true,
-    background: "#282a36",
-    foreground: "#f8f8f2",
-    cursor: "#f8f8f2",
-    cursorAccent: "#282a36",
-    selectionBackground: "#44475a",
+    background: "#0d1117",
+    foreground: "#c9d1d9",
+    cursor: "#58a6ff",
+    cursorAccent: "#0d1117",
+    selectionBackground: "#1f6feb55",
     selectionForeground: "#ffffff",
-    black: "#21222c",
-    red: "#ff5555",
-    green: "#50fa7b",
-    yellow: "#f1fa8c",
-    blue: "#bd93f9",
-    magenta: "#ff79c6",
-    cyan: "#8be9fd",
-    white: "#f8f8f2",
-    brightBlack: "#6272a4",
-    brightRed: "#ff6e6e",
-    brightGreen: "#69ff94",
-    brightYellow: "#ffffa5",
-    brightBlue: "#d6acff",
-    brightMagenta: "#ff92df",
-    brightCyan: "#a4ffff",
+    black: "#484f58",
+    red: "#ff7b72",
+    green: "#3fb950",
+    yellow: "#d29922",
+    blue: "#58a6ff",
+    magenta: "#bc8cff",
+    cyan: "#39c5cf",
+    white: "#b1bac4",
+    brightBlack: "#6e7681",
+    brightRed: "#ffa198",
+    brightGreen: "#56d364",
+    brightYellow: "#e3b341",
+    brightBlue: "#79c0ff",
+    brightMagenta: "#d2a8ff",
+    brightCyan: "#56d4dd",
+    brightWhite: "#f0f6fc",
+  },
+  {
+    name: "github-light",
+    label: "GitHub Light",
+    isDark: false,
+    background: "#ffffff",
+    foreground: "#24292f",
+    cursor: "#0969da",
+    cursorAccent: "#ffffff",
+    selectionBackground: "#0969da33",
+    selectionForeground: "#24292f",
+    black: "#24292f",
+    red: "#cf222e",
+    green: "#116329",
+    yellow: "#4d2d00",
+    blue: "#0969da",
+    magenta: "#8250df",
+    cyan: "#1b7c83",
+    white: "#d0d7de",
+    brightBlack: "#57606a",
+    brightRed: "#a40e26",
+    brightGreen: "#1a7f37",
+    brightYellow: "#9a6700",
+    brightBlue: "#218bff",
+    brightMagenta: "#a475f9",
+    brightCyan: "#3192aa",
+    brightWhite: "#f6f8fa",
+  },
+  {
+    name: "google-dark",
+    label: "Google Dark",
+    isDark: true,
+    background: "#202124",
+    foreground: "#e8eaed",
+    cursor: "#8ab4f8",
+    cursorAccent: "#202124",
+    selectionBackground: "#3c4043",
+    selectionForeground: "#ffffff",
+    black: "#202124",
+    red: "#f28b82",
+    green: "#81c995",
+    yellow: "#fdd663",
+    blue: "#8ab4f8",
+    magenta: "#c58af9",
+    cyan: "#78d9ec",
+    white: "#e8eaed",
+    brightBlack: "#5f6368",
+    brightRed: "#f6aea9",
+    brightGreen: "#a8dab5",
+    brightYellow: "#fde293",
+    brightBlue: "#aecbfa",
+    brightMagenta: "#d7aefb",
+    brightCyan: "#cbf0f8",
     brightWhite: "#ffffff",
   },
   {
-    name: "one-dark",
-    label: "One Dark",
+    name: "google-light",
+    label: "Google Light",
+    isDark: false,
+    background: "#ffffff",
+    foreground: "#202124",
+    cursor: "#1a73e8",
+    cursorAccent: "#ffffff",
+    selectionBackground: "#d2e3fc",
+    selectionForeground: "#202124",
+    black: "#202124",
+    red: "#d93025",
+    green: "#188038",
+    yellow: "#b06000",
+    blue: "#1a73e8",
+    magenta: "#a142f4",
+    cyan: "#007b83",
+    white: "#dadce0",
+    brightBlack: "#5f6368",
+    brightRed: "#ea4335",
+    brightGreen: "#34a853",
+    brightYellow: "#fbbc04",
+    brightBlue: "#4285f4",
+    brightMagenta: "#c58af9",
+    brightCyan: "#12a4af",
+    brightWhite: "#f8fafd",
+  },
+  {
+    name: "apple-dark",
+    label: "Apple Dark",
     isDark: true,
-    background: "#282c34",
-    foreground: "#abb2bf",
-    cursor: "#528bff",
-    cursorAccent: "#282c34",
-    selectionBackground: "#3e4451",
+    background: "#1c1c1e",
+    foreground: "#f2f2f7",
+    cursor: "#0a84ff",
+    cursorAccent: "#1c1c1e",
+    selectionBackground: "#0a84ff55",
     selectionForeground: "#ffffff",
-    black: "#282c34",
-    red: "#e06c75",
-    green: "#98c379",
-    yellow: "#e5c07b",
-    blue: "#61afef",
-    magenta: "#c678dd",
-    cyan: "#56b6c2",
-    white: "#abb2bf",
-    brightBlack: "#5c6370",
-    brightRed: "#be5046",
-    brightGreen: "#98c379",
-    brightYellow: "#d19a66",
-    brightBlue: "#61afef",
-    brightMagenta: "#c678dd",
-    brightCyan: "#56b6c2",
+    black: "#1c1c1e",
+    red: "#ff453a",
+    green: "#30d158",
+    yellow: "#ffd60a",
+    blue: "#0a84ff",
+    magenta: "#bf5af2",
+    cyan: "#64d2ff",
+    white: "#f2f2f7",
+    brightBlack: "#636366",
+    brightRed: "#ff6961",
+    brightGreen: "#32d74b",
+    brightYellow: "#ffdf4d",
+    brightBlue: "#409cff",
+    brightMagenta: "#da8fff",
+    brightCyan: "#80dfff",
     brightWhite: "#ffffff",
   },
   {
-    name: "one-light",
-    label: "One Light",
+    name: "apple-light",
+    label: "Apple Light",
     isDark: false,
-    background: "#fafafa",
-    foreground: "#383a42",
-    cursor: "#4078f2",
-    cursorAccent: "#fafafa",
-    selectionBackground: "#c6c6c6",
-    selectionForeground: "#000000",
-    black: "#383a42",
-    red: "#e45649",
-    green: "#50a14f",
-    yellow: "#c18401",
-    blue: "#4078f2",
-    magenta: "#a626a4",
-    cyan: "#0184bc",
-    white: "#a0a1a7",
-    brightBlack: "#383a42",
-    brightRed: "#e45649",
-    brightGreen: "#50a14f",
-    brightYellow: "#c18401",
-    brightBlue: "#4078f2",
-    brightMagenta: "#a626a4",
-    brightCyan: "#0184bc",
+    background: "#f5f5f7",
+    foreground: "#1d1d1f",
+    cursor: "#007aff",
+    cursorAccent: "#f5f5f7",
+    selectionBackground: "#007aff33",
+    selectionForeground: "#1d1d1f",
+    black: "#1d1d1f",
+    red: "#ff3b30",
+    green: "#34c759",
+    yellow: "#a15c00",
+    blue: "#007aff",
+    magenta: "#af52de",
+    cyan: "#32ade6",
+    white: "#d1d1d6",
+    brightBlack: "#6e6e73",
+    brightRed: "#d70015",
+    brightGreen: "#248a3d",
+    brightYellow: "#ffcc00",
+    brightBlue: "#0a84ff",
+    brightMagenta: "#bf5af2",
+    brightCyan: "#64d2ff",
     brightWhite: "#ffffff",
   },
   {
-    name: "nord",
-    label: "Nord",
+    name: "jetbrains-dark",
+    label: "JetBrains Dark",
     isDark: true,
-    background: "#2e3440",
-    foreground: "#d8dee9",
-    cursor: "#d8dee9",
-    cursorAccent: "#2e3440",
-    selectionBackground: "#434c5e",
+    background: "#1e1f22",
+    foreground: "#bcbec4",
+    cursor: "#c6c8d0",
+    cursorAccent: "#1e1f22",
+    selectionBackground: "#2f65ca66",
     selectionForeground: "#ffffff",
-    black: "#3b4252",
-    red: "#bf616a",
-    green: "#a3be8c",
-    yellow: "#ebcb8b",
-    blue: "#81a1c1",
-    magenta: "#b48ead",
-    cyan: "#88c0d0",
-    white: "#e5e9f0",
-    brightBlack: "#4c566a",
-    brightRed: "#bf616a",
-    brightGreen: "#a3be8c",
-    brightYellow: "#ebcb8b",
-    brightBlue: "#81a1c1",
-    brightMagenta: "#b48ead",
-    brightCyan: "#8fbcbb",
-    brightWhite: "#eceff4",
+    black: "#1e1f22",
+    red: "#f75464",
+    green: "#6aab73",
+    yellow: "#caa24d",
+    blue: "#548af7",
+    magenta: "#c77dbb",
+    cyan: "#2aacb8",
+    white: "#bcbec4",
+    brightBlack: "#6c707e",
+    brightRed: "#ff6470",
+    brightGreen: "#7bc47f",
+    brightYellow: "#e5bd5d",
+    brightBlue: "#6da0ff",
+    brightMagenta: "#d991cd",
+    brightCyan: "#37c7d4",
+    brightWhite: "#ffffff",
   },
   {
-    name: "solarized-dark",
-    label: "Solarized Dark",
-    isDark: true,
-    background: "#002b36",
-    foreground: "#839496",
-    cursor: "#839496",
-    cursorAccent: "#002b36",
-    selectionBackground: "#073642",
-    selectionForeground: "#93a1a1",
-    black: "#073642",
-    red: "#dc322f",
-    green: "#859900",
-    yellow: "#b58900",
-    blue: "#268bd2",
-    magenta: "#d33682",
-    cyan: "#2aa198",
-    white: "#eee8d5",
-    brightBlack: "#586e75",
-    brightRed: "#cb4b16",
-    brightGreen: "#586e75",
-    brightYellow: "#657b83",
-    brightBlue: "#839496",
-    brightMagenta: "#6c71c4",
-    brightCyan: "#93a1a1",
-    brightWhite: "#fdf6e3",
-  },
-  {
-    name: "solarized-light",
-    label: "Solarized Light",
+    name: "jetbrains-light",
+    label: "JetBrains Light",
     isDark: false,
-    background: "#fdf6e3",
-    foreground: "#657b83",
-    cursor: "#657b83",
-    cursorAccent: "#fdf6e3",
-    selectionBackground: "#eee8d5",
-    selectionForeground: "#073642",
-    black: "#073642",
-    red: "#dc322f",
-    green: "#859900",
-    yellow: "#b58900",
-    blue: "#268bd2",
-    magenta: "#d33682",
-    cyan: "#2aa198",
-    white: "#eee8d5",
-    brightBlack: "#002b36",
-    brightRed: "#cb4b16",
-    brightGreen: "#586e75",
-    brightYellow: "#657b83",
-    brightBlue: "#839496",
-    brightMagenta: "#6c71c4",
-    brightCyan: "#93a1a1",
-    brightWhite: "#fdf6e3",
-  },
-  {
-    name: "catppuccin-latte",
-    label: "Catppuccin Latte",
-    isDark: false,
-    background: "#eff1f5",
-    foreground: "#4c4f69",
-    cursor: "#dc8a78",
-    cursorAccent: "#eff1f5",
-    selectionBackground: "#ccd0da",
-    selectionForeground: "#000000",
-    black: "#4c4f69",
-    red: "#d20f39",
-    green: "#40a02b",
-    yellow: "#df8e1d",
-    blue: "#1e66f5",
-    magenta: "#ea76cb",
-    cyan: "#179299",
-    white: "#acb0be",
-    brightBlack: "#4c4f69",
-    brightRed: "#d20f39",
-    brightGreen: "#40a02b",
-    brightYellow: "#df8e1d",
-    brightBlue: "#1e66f5",
-    brightMagenta: "#ea76cb",
-    brightCyan: "#179299",
-    brightWhite: "#bcc0cc",
-  },
-  {
-    name: "catppuccin-mocha",
-    label: "Catppuccin Mocha",
-    isDark: true,
-    background: "#1e1e2e",
-    foreground: "#cdd6f4",
-    cursor: "#f5e0dc",
-    cursorAccent: "#1e1e2e",
-    selectionBackground: "#313244",
-    selectionForeground: "#ffffff",
-    black: "#45475a",
-    red: "#f38ba8",
-    green: "#a6e3a1",
-    yellow: "#f9e2af",
-    blue: "#89b4fa",
-    magenta: "#f5c2e7",
-    cyan: "#94e2d5",
-    white: "#bac2de",
-    brightBlack: "#585b70",
-    brightRed: "#f38ba8",
-    brightGreen: "#a6e3a1",
-    brightYellow: "#f9e2af",
-    brightBlue: "#89b4fa",
-    brightMagenta: "#f5c2e7",
-    brightCyan: "#94e2d5",
-    brightWhite: "#a6adc8",
-  },
-  {
-    name: "gruvbox-light",
-    label: "Gruvbox Light",
-    isDark: false,
-    background: "#fbf1c7",
-    foreground: "#3c3836",
-    cursor: "#3c3836",
-    cursorAccent: "#fbf1c7",
-    selectionBackground: "#d5c4a1",
-    selectionForeground: "#000000",
-    black: "#fbf1c7",
-    red: "#cc241d",
-    green: "#98971a",
-    yellow: "#d79921",
-    blue: "#458588",
-    magenta: "#b16286",
-    cyan: "#689d6a",
-    white: "#7c6f64",
-    brightBlack: "#928374",
-    brightRed: "#9d0006",
-    brightGreen: "#79740e",
-    brightYellow: "#b57614",
-    brightBlue: "#076678",
-    brightMagenta: "#8f3f71",
-    brightCyan: "#427b58",
-    brightWhite: "#3c3836",
-  },
-  {
-    name: "monokai",
-    label: "Monokai",
-    isDark: true,
-    background: "#272822",
-    foreground: "#f8f8f2",
-    cursor: "#f8f8f0",
-    cursorAccent: "#272822",
-    selectionBackground: "#49483e",
-    selectionForeground: "#ffffff",
-    black: "#272822",
-    red: "#f92672",
-    green: "#a6e22e",
-    yellow: "#f4bf75",
-    blue: "#66d9ef",
-    magenta: "#ae81ff",
-    cyan: "#a1efe4",
-    white: "#f8f8f2",
-    brightBlack: "#75715e",
-    brightRed: "#f92672",
-    brightGreen: "#a6e22e",
-    brightYellow: "#f4bf75",
-    brightBlue: "#66d9ef",
-    brightMagenta: "#ae81ff",
-    brightCyan: "#a1efe4",
-    brightWhite: "#f9f8f5",
-  },
-  {
-    name: "system-auto",
-    label: "跟随外观主题 (自动)",
-    isDark: true, // This is dynamic but we flag it as dark as fallback or for grouping (it will probably be handled specially)
-    background: "auto",
-    foreground: "auto",
-    cursor: "auto",
-    cursorAccent: "auto",
-    selectionBackground: "auto",
-    black: "auto",
-    red: "auto",
-    green: "auto",
-    yellow: "auto",
-    blue: "auto",
-    magenta: "auto",
-    cyan: "auto",
-    white: "auto",
-    brightBlack: "auto",
-    brightRed: "auto",
-    brightGreen: "auto",
-    brightYellow: "auto",
-    brightBlue: "auto",
-    brightMagenta: "auto",
-    brightCyan: "auto",
-    brightWhite: "auto",
+    background: "#ffffff",
+    foreground: "#19191c",
+    cursor: "#005fb8",
+    cursorAccent: "#ffffff",
+    selectionBackground: "#d4e4ff",
+    selectionForeground: "#19191c",
+    black: "#19191c",
+    red: "#cf232e",
+    green: "#067d17",
+    yellow: "#8c6c00",
+    blue: "#005fb8",
+    magenta: "#7a3e9d",
+    cyan: "#007c7c",
+    white: "#dfe1e5",
+    brightBlack: "#6c707e",
+    brightRed: "#d9343f",
+    brightGreen: "#128a26",
+    brightYellow: "#a67f00",
+    brightBlue: "#167dff",
+    brightMagenta: "#8e4ec6",
+    brightCyan: "#0097a7",
+    brightWhite: "#ffffff",
   },
 ];
 
-/**
- * 根据配色方案名称获取对应的 TerminalColorScheme 对象
- * @param schemeName 方案名称（预设名或 custom-xxx）
- * @param customThemes 用户自定义方案列表
- * @param appBackgroundColor 应用外观主题 ("system" | "light" | "dark")，
- *   当 schemeName 为 "system-auto" 时，据此判断应使用深色还是浅色终端方案
- */
+export const TERMINAL_THEME_ECOSYSTEMS: TerminalThemeEcosystem[] = [
+  {
+    name: "system-auto",
+    label: "跟随外观主题 (自动)",
+    darkThemeName: "app-dark",
+    lightThemeName: "app-light",
+  },
+  {
+    name: "vscode",
+    label: "VS Code",
+    darkThemeName: "vscode-dark",
+    lightThemeName: "vscode-light",
+  },
+  {
+    name: "github",
+    label: "GitHub",
+    darkThemeName: "github-dark",
+    lightThemeName: "github-light",
+  },
+  {
+    name: "google",
+    label: "Google",
+    darkThemeName: "google-dark",
+    lightThemeName: "google-light",
+  },
+  {
+    name: "apple",
+    label: "Apple",
+    darkThemeName: "apple-dark",
+    lightThemeName: "apple-light",
+  },
+  {
+    name: "jetbrains",
+    label: "JetBrains",
+    darkThemeName: "jetbrains-dark",
+    lightThemeName: "jetbrains-light",
+  },
+];
+
+const THEME_ECOSYSTEM_BY_NAME = new Map(
+  TERMINAL_THEME_ECOSYSTEMS.map((theme) => [theme.name, theme])
+);
+
+const THEME_ECOSYSTEM_BY_VARIANT_NAME = new Map(
+  TERMINAL_THEME_ECOSYSTEMS.flatMap((theme) => [
+    [theme.darkThemeName, theme.name],
+    [theme.lightThemeName, theme.name],
+  ])
+);
+
+const LEGACY_THEME_NAME_ALIASES: Record<string, string> = {
+  "default-dark": "vscode",
+  "default-light": "vscode",
+  "one-dark": "vscode",
+  "one-light": "vscode",
+  nord: "apple",
+  "solarized-dark": "github",
+  "solarized-light": "github",
+  "catppuccin-mocha": "jetbrains",
+  "catppuccin-latte": "jetbrains",
+  dracula: "jetbrains",
+  "gruvbox-light": "github",
+  monokai: "jetbrains",
+};
+
+export function normalizeTerminalThemeName(schemeName: string): string {
+  return (
+    LEGACY_THEME_NAME_ALIASES[schemeName] ??
+    THEME_ECOSYSTEM_BY_VARIANT_NAME.get(schemeName) ??
+    schemeName
+  );
+}
+
 export function getTerminalTheme(
   schemeName: string,
   customThemes?: TerminalColorScheme[],
   appBackgroundColor?: "system" | "light" | "dark"
 ): TerminalColorScheme {
-  // 先从自定义列表查找
   if (customThemes && customThemes.length > 0) {
     const found = customThemes.find((t) => t.name === schemeName);
     if (found) return found;
   }
 
-  // 兼容旧数据：如果 schemeName 是 "custom" 且存在旧格式 customThemeConfig
-  if (schemeName === "custom") {
-    return TERMINAL_THEMES[0]; // fallback
+  const resolvedSchemeName = normalizeTerminalThemeName(schemeName);
+
+  if (resolvedSchemeName === "custom") {
+    return TERMINAL_THEMES[1];
   }
 
-  if (schemeName === "system-auto") {
-    // 优先使用应用外观主题判断深浅，而非系统主题
-    const isDark =
-      appBackgroundColor === "dark" ||
-      (appBackgroundColor !== "light" &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches);
-    return getTerminalTheme(isDark ? "default-dark" : "default-light", customThemes, appBackgroundColor);
+  if (resolvedSchemeName === "system-auto") {
+    return resolveAppIsDark(appBackgroundColor)
+      ? APP_DARK_TERMINAL_THEME
+      : APP_LIGHT_TERMINAL_THEME;
+  }
+
+  const ecosystem = THEME_ECOSYSTEM_BY_NAME.get(resolvedSchemeName);
+  if (ecosystem) {
+    const themeName = resolveAppIsDark(appBackgroundColor)
+      ? ecosystem.darkThemeName
+      : ecosystem.lightThemeName;
+
+    return (
+      TERMINAL_THEMES.find((t) => t.name === themeName) ||
+      TERMINAL_THEMES[1]
+    );
   }
 
   return (
-    TERMINAL_THEMES.find((t) => t.name === schemeName) ||
-    TERMINAL_THEMES[0] // fallback to default-dark
+    TERMINAL_THEMES.find((t) => t.name === resolvedSchemeName) ||
+    TERMINAL_THEMES[1]
   );
 }
 
-/**
- * 将 TerminalColorScheme 转换为 xterm ITheme 格式
- */
 export function toXtermTheme(scheme: TerminalColorScheme, opacityPercent: number = 100) {
   const bg = scheme.background;
-  // 如果需要半透明背景，将 hex 转为 rgba
   const backgroundWithOpacity =
     opacityPercent <= 0
       ? "rgba(0,0,0,0)"
@@ -486,9 +570,6 @@ export function toXtermTheme(scheme: TerminalColorScheme, opacityPercent: number
   };
 }
 
-/**
- * 将 hex 颜色转为 rgba
- */
 function hexToRgba(hex: string, alpha: number): string {
   hex = hex.replace("#", "");
   if (hex.length === 3) {

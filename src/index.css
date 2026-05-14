@@ -4,15 +4,48 @@
 
 @custom-variant dark (&:is(.dark *));
 
-@theme {
-  --font-sans: "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
-  --font-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas", monospace;
+@font-face {
+  font-family: "Geist";
+  src: url("../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
 
-  --radius-sm: calc(var(--radius) - 6px);
-  --radius-md: calc(var(--radius) - 3px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 6px);
-  --radius-2xl: calc(var(--radius) + 12px);
+@font-face {
+  font-family: "Geist";
+  src: url("../node_modules/geist/dist/fonts/geist-sans/Geist-Italic[wght].woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../node_modules/geist/dist/fonts/geist-mono/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../node_modules/geist/dist/fonts/geist-mono/GeistMono-Italic[wght].woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: "Geist", "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", sans-serif;
+  --font-mono: "Geist Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas", monospace;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+  --radius-2xl: 4px;
+  --radius-3xl: 4px;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -37,38 +70,40 @@
 
 @layer base {
   :root {
-    --radius: 0.95rem;
+    --radius: 4px;
     --titlebar-height: 42px;
-    --background: oklch(0.982 0.006 95);
-    --foreground: oklch(0.236 0.02 245);
-    --card: oklch(0.995 0.003 95);
+    --background: oklch(0.978 0.002 255);
+    --foreground: oklch(0.24 0.012 255);
+    --card: oklch(0.997 0.001 255);
     --card-foreground: oklch(0.236 0.02 245);
-    --popover: oklch(0.995 0.003 95 / 0.96);
+    --popover: oklch(0.997 0.001 255 / 0.96);
     --popover-foreground: oklch(0.236 0.02 245);
-    --primary: oklch(0.63 0.125 202);
-    --primary-foreground: oklch(0.992 0.004 95);
-    --secondary: oklch(0.958 0.01 95);
-    --secondary-foreground: oklch(0.276 0.016 242);
-    --muted: oklch(0.952 0.008 95);
-    --muted-foreground: oklch(0.53 0.018 250);
-    --accent: oklch(0.945 0.018 186);
-    --accent-foreground: oklch(0.3 0.025 220);
+    --primary: oklch(0.58 0.115 205);
+    --primary-foreground: oklch(0.99 0.001 255);
+    --secondary: oklch(0.948 0.003 255);
+    --secondary-foreground: oklch(0.285 0.012 255);
+    --muted: oklch(0.94 0.003 255);
+    --muted-foreground: oklch(0.51 0.012 255);
+    --accent: oklch(0.932 0.012 205);
+    --accent-foreground: oklch(0.29 0.018 235);
     --destructive: oklch(0.62 0.225 25);
-    --destructive-foreground: oklch(0.985 0.004 95);
-    --border: oklch(0.885 0.012 240 / 0.7);
-    --input: oklch(0.94 0.01 240 / 0.72);
-    --ring: oklch(0.66 0.105 203 / 0.42);
+    --destructive-foreground: oklch(0.985 0.002 255);
+    --border: oklch(0.865 0.006 255 / 0.72);
+    --input: oklch(0.925 0.004 255 / 0.72);
+    --ring: oklch(0.62 0.09 205 / 0.36);
 
-    --panel: color-mix(in srgb, white 84%, transparent);
-    --panel-strong: color-mix(in srgb, white 92%, transparent);
-    --panel-border: color-mix(in srgb, oklch(0.78 0.02 240) 28%, transparent);
-    --panel-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
-    --panel-glow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-    --app-gradient-a: rgba(35, 180, 156, 0.18);
-    --app-gradient-b: rgba(245, 158, 11, 0.14);
-    --app-gradient-c: rgba(59, 130, 246, 0.12);
-    --terminal-shell: color-mix(in srgb, white 72%, transparent);
-    --terminal-border: color-mix(in srgb, oklch(0.7 0.015 240) 22%, transparent);
+    --panel: color-mix(in srgb, white 82%, transparent);
+    --panel-strong: color-mix(in srgb, white 90%, transparent);
+    --panel-border: color-mix(in srgb, oklch(0.72 0.006 255) 24%, transparent);
+    --panel-shadow: 0 14px 40px rgba(15, 23, 42, 0.055);
+    --panel-glow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    --app-gradient-a: rgba(148, 163, 184, 0.08);
+    --app-gradient-b: rgba(148, 163, 184, 0.055);
+    --app-gradient-c: rgba(14, 165, 233, 0.045);
+    --titlebar-surface: var(--card);
+    --titlebar-surface-hover: color-mix(in srgb, var(--accent) 42%, var(--card) 58%);
+    --terminal-shell: color-mix(in srgb, white 70%, transparent);
+    --terminal-border: color-mix(in srgb, oklch(0.68 0.006 255) 22%, transparent);
   }
 
   .dark {
@@ -100,6 +135,8 @@
     --app-gradient-a: rgba(36, 178, 160, 0.16);
     --app-gradient-b: rgba(251, 191, 36, 0.1);
     --app-gradient-c: rgba(59, 130, 246, 0.14);
+    --titlebar-surface: var(--card);
+    --titlebar-surface-hover: color-mix(in srgb, var(--accent) 48%, var(--card) 52%);
     --terminal-shell: color-mix(in srgb, oklch(0.21 0.013 252) 88%, transparent);
     --terminal-border: color-mix(in srgb, oklch(0.72 0.03 198) 16%, transparent);
   }
@@ -176,6 +213,9 @@
     min-height: var(--titlebar-height);
     height: var(--titlebar-height);
     border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 78%, transparent);
+    background: var(--titlebar-surface);
+    box-shadow: none;
+    backdrop-filter: blur(18px) saturate(130%);
     padding-left: 14px;
     padding-right: 0;
     user-select: none;
@@ -279,7 +319,7 @@
     padding: 0 12px;
     border-radius: 9999px;
     border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
-    background: color-mix(in srgb, var(--background) 76%, transparent);
+    background: color-mix(in srgb, var(--titlebar-surface) 82%, transparent);
     font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.12em;
@@ -318,7 +358,7 @@
   }
 
   .window-titlebar__control--neutral:hover {
-    background: color-mix(in srgb, var(--background) 42%, transparent);
+    background: var(--titlebar-surface-hover);
   }
 
   .window-titlebar__control--danger:hover {
@@ -339,7 +379,7 @@
     right: 12px;
     left: 12px;
     bottom: 12px;
-    border-radius: 28px 28px 0 0;
+    border-radius: 4px 4px 0 0;
     border: 1px solid color-mix(in srgb, var(--panel-border) 72%, transparent);
     border-bottom: 0;
     background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 72%, transparent), transparent 22%);
@@ -470,7 +510,7 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: 10px;
+    border-radius: var(--radius);
     background: color-mix(in srgb, var(--accent) 78%, transparent);
     color: var(--accent-foreground);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
@@ -523,7 +563,7 @@
     align-items: center;
     gap: 10px;
     border: 1px solid color-mix(in srgb, var(--panel-border) 75%, transparent);
-    border-radius: 20px;
+    border-radius: var(--radius);
     background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
     padding: 20px;
     box-shadow: var(--panel-glow);
@@ -545,7 +585,7 @@
     min-width: 0;
     align-items: center;
     gap: 10px;
-    border-radius: 22px;
+    border-radius: var(--radius);
     border: 1px solid color-mix(in srgb, var(--panel-border) 78%, transparent);
     background: linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 82%, transparent), color-mix(in srgb, var(--panel) 60%, transparent));
     padding: 0 10px;
@@ -605,7 +645,7 @@
   .toolbar-action-button {
     height: 38px;
     width: 38px;
-    border-radius: 14px;
+    border-radius: var(--radius);
     background: color-mix(in srgb, var(--background) 74%, transparent);
   }
 
@@ -699,7 +739,7 @@
   .tab-close {
     height: 22px;
     width: 22px;
-    border-radius: 7px;
+    border-radius: var(--radius);
   }
 
   @media (max-width: 900px) {
@@ -905,22 +945,11 @@
     overflow: hidden;
   }
 
-  .terminal-empty-state::before {
-    content: "";
-    position: absolute;
-    inset: 20px;
-    border-radius: 28px;
-    background: linear-gradient(145deg, color-mix(in srgb, var(--terminal-shell) 92%, transparent), color-mix(in srgb, var(--panel) 45%, transparent));
-    border: 1px solid var(--terminal-border);
-    box-shadow: var(--panel-glow), var(--panel-shadow);
-    backdrop-filter: blur(20px);
-  }
-
   .terminal-empty-card {
     position: relative;
     z-index: 1;
     width: min(520px, calc(100% - 48px));
-    border-radius: 24px;
+    border-radius: var(--radius);
     border: 1px solid color-mix(in srgb, var(--terminal-border) 80%, transparent);
     background: color-mix(in srgb, var(--terminal-shell) 88%, transparent);
     padding: 28px;
@@ -1099,7 +1128,7 @@
   position: absolute;
   width: 72px;
   height: 72px;
-  border-radius: 20px;
+  border-radius: var(--radius);
   background: var(--primary);
   filter: blur(28px);
   opacity: 0.3;
@@ -1154,7 +1183,7 @@
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  border-radius: 16px;
+  border-radius: var(--radius);
   border: 1px solid color-mix(in srgb, var(--panel-border) 70%, transparent);
   background: color-mix(in srgb, var(--background) 50%, transparent);
   text-align: left;
@@ -1180,7 +1209,7 @@
   justify-content: center;
   width: 38px;
   height: 38px;
-  border-radius: 12px;
+  border-radius: var(--radius);
   flex-shrink: 0;
 }
 
