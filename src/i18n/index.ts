@@ -485,6 +485,10 @@ const zhMessages = defineMessages({
   "粗体字体粗细": "粗体字体粗细",
   "终端正常字体粗细": "终端正常字体粗细",
   "终端粗体字体粗细": "终端粗体字体粗细",
+  "Cursor style": "光标样式",
+  "Cursor style bar": "竖线",
+  "Cursor style block": "块状",
+  "Cursor style underline": "下划线",
 });
 
 type TranslationKey = keyof typeof zhMessages;
@@ -959,6 +963,10 @@ const enMessages = defineMessages({
   "同步出错：{error}": ({ error }) => `Sync error: ${error}`,
   "同步拉取成功！已更新 {count} 项本地配置，正在刷新页面...": ({ count }) => `Sync pull successful! Updated ${count} local config items, reloading page...`,
   "暂不支持该平台更新": "Updates not supported on this platform",
+  "Cursor style": "Cursor style",
+  "Cursor style bar": "Bar",
+  "Cursor style block": "Block",
+  "Cursor style underline": "Underline",
 } satisfies Record<TranslationKey, MessageResolver>);
 
 const messages = {

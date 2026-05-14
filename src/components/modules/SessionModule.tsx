@@ -34,7 +34,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCliConfig } from "@/types/terminal";
 
 import { useDialogState } from "@/hooks/useDialogState";
-import { onQuickConnect } from "@/lib/quick-connect-event";
+import { onNewConnection, onQuickConnect } from "@/lib/quick-connect-event";
 
 const IS_WINDOWS = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
 
@@ -296,6 +296,15 @@ export function SessionModule() {
     const cleanup = onQuickConnect((type) => {
       setInitialQuickConnectType(type);
       dialog.open('quickConnect');
+    });
+    return cleanup;
+  }, [dialog]);
+
+  useEffect(() => {
+    const cleanup = onNewConnection(() => {
+      setEditNode(null);
+      setTargetNode(null);
+      dialog.open('newConnection');
     });
     return cleanup;
   }, [dialog]);

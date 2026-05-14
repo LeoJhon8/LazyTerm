@@ -149,6 +149,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const terminalNormalFontWeight = useSettingsStore((state) => state.terminalNormalFontWeight);
   const terminalBoldFontWeight = useSettingsStore((state) => state.terminalBoldFontWeight);
   const terminalColorScheme = useSettingsStore((state) => state.terminalColorScheme);
+  const terminalCursorStyle = useSettingsStore((state) => state.terminalCursorStyle);
   const customThemes = useSettingsStore((state) => state.customThemes);
   const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
   const appBackgroundColor = useSettingsStore((state) => state.appBackgroundColor);
@@ -169,6 +170,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     terminalNormalFontWeight,
     terminalBoldFontWeight,
     terminalColorScheme,
+    terminalCursorStyle,
     customThemes,
     terminalOpacity,
     appBackgroundColor,
@@ -187,6 +189,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     terminalNormalFontWeight,
     terminalBoldFontWeight,
     terminalColorScheme,
+    terminalCursorStyle,
     customThemes,
     terminalOpacity,
     appBackgroundColor,
@@ -360,6 +363,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         terminalNormalFontWeight: nextTerminalNormalFontWeight,
         terminalBoldFontWeight: nextTerminalBoldFontWeight,
         terminalColorScheme: nextTerminalColorScheme,
+        terminalCursorStyle: nextTerminalCursorStyle,
         customThemes: nextCustomThemes,
         terminalOpacity: nextTerminalOpacity,
         appBackgroundColor: nextAppBackgroundColor,
@@ -372,7 +376,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         fontWeight: nextTerminalNormalFontWeight,
         fontWeightBold: nextTerminalBoldFontWeight,
         cursorBlink: true,
-        cursorStyle: "bar",
+        cursorStyle: nextTerminalCursorStyle,
         scrollback: 10000,
         allowProposedApi: true,
         allowTransparency: true,
@@ -557,6 +561,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       terminal.options.fontFamily = fontFamily;
       terminal.options.fontWeight = terminalNormalFontWeight;
       terminal.options.fontWeightBold = terminalBoldFontWeight;
+      terminal.options.cursorStyle = terminalCursorStyle;
       terminal.options.theme = toXtermTheme(colorScheme, terminalOpacity);
       const shouldUseWebgl = !hasBackgroundImage && terminalOpacity >= 100;
       if (shouldUseWebgl && !instance.webglAddon) {
@@ -620,7 +625,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
       }
     });
-  }, [fontSize, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, customThemes, terminalOpacity, appBackgroundColor, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
+  }, [fontSize, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalOpacity, appBackgroundColor, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
 
   // 清理已被关闭的会话
   useEffect(() => {

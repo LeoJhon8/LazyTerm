@@ -6,6 +6,7 @@ import { gitAwareStorage } from "@/store/git-aware-storage";
 
 export type BackgroundImageUiMode = "frosted" | "clear";
 export type QuickCommandDisplayMode = "bar" | "panel";
+export type TerminalCursorStyle = "block" | "underline" | "bar";
 
 /**
  * 视图模式
@@ -32,6 +33,7 @@ interface SettingsData {
   topPanelCollapsed: boolean;
   bottomPanelCollapsed: boolean;
   cursorBlink: boolean;
+  terminalCursorStyle: TerminalCursorStyle;
   scrollback: number;
   tabStopWidth: number;
   defaultShell: string;
@@ -84,6 +86,7 @@ const defaultSettings: SettingsData = {
   topPanelCollapsed: false,
   bottomPanelCollapsed: false,
   cursorBlink: true,
+  terminalCursorStyle: "bar",
   scrollback: 10000,
   tabStopWidth: 4,
   defaultShell: "powershell.exe",

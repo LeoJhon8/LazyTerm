@@ -15,7 +15,7 @@ import {
   normalizeTerminalThemeName,
 } from "@/config/themes";
 import type { TerminalColorScheme } from "@/config/themes";
-import { FONT_OPTIONS, APP_BACKGROUND_OPTIONS, EDITABLE_THEME_COLOR_ITEMS } from "./constants";
+import { FONT_OPTIONS, APP_BACKGROUND_OPTIONS, EDITABLE_THEME_COLOR_ITEMS, TERMINAL_CURSOR_STYLE_OPTIONS } from "./constants";
 import { getTerminalThemeDisplayName, useI18n } from "@/i18n";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -37,6 +37,7 @@ export function AppearanceSettings() {
   const terminalNormalFontWeight = useSettingsStore((s) => s.terminalNormalFontWeight);
   const terminalBoldFontWeight = useSettingsStore((s) => s.terminalBoldFontWeight);
   const terminalColorScheme = useSettingsStore((s) => s.terminalColorScheme);
+  const terminalCursorStyle = useSettingsStore((s) => s.terminalCursorStyle);
   const customThemes = useSettingsStore((s) => s.customThemes);
   const terminalOpacity = useSettingsStore((s) => s.terminalOpacity);
   const backgroundImageEnabled = useSettingsStore((s) => s.backgroundImageEnabled);
@@ -369,6 +370,24 @@ export function AppearanceSettings() {
               )}
 
               <div className="border-t border-border/30 divide-y divide-border/30">
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <Label className="text-sm">{t("Cursor style")}</Label>
+                  <Select
+                    value={terminalCursorStyle}
+                    onValueChange={(value) => setSettings({ terminalCursorStyle: value as typeof terminalCursorStyle })}
+                  >
+                    <SelectTrigger className="h-8 w-36 bg-background/80 border-0 shadow-none focus:ring-1 focus:ring-primary/30 text-sm" aria-label={t("Cursor style")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TERMINAL_CURSOR_STYLE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {t(option.labelKey)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <Label className="text-sm">{t("终端背景不透明度")}</Label>
                   <div className="flex items-center gap-3">
