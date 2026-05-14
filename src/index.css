@@ -1123,16 +1123,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 190px;
 }
 
 .welcome-logo-glow {
   position: absolute;
-  width: 72px;
-  height: 72px;
+  width: 190px;
+  height: 190px;
   border-radius: var(--radius);
   background: var(--primary);
-  filter: blur(28px);
-  opacity: 0.3;
+  filter: blur(52px);
+  opacity: 0.36;
   animation: welcome-glow 4s ease-in-out infinite;
 }
 
@@ -1143,8 +1144,8 @@
 
 .welcome-logo {
   position: relative;
-  width: 64px;
-  height: 64px;
+  width: 176px;
+  height: 176px;
   object-fit: contain;
 }
 
@@ -1158,8 +1159,8 @@
 
 .welcome-title {
   font-size: 1.35rem;
-  font-weight: var(--app-font-weight-bold);
-  letter-spacing: -0.02em;
+  font-weight: var(--app-font-weight-normal);
+  letter-spacing: 0;
   color: var(--foreground);
   line-height: 1.2;
 }

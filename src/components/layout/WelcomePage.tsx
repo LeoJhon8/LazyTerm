@@ -1,7 +1,7 @@
 import { Plus, Zap } from "lucide-react";
 import { useI18n } from "@/i18n";
 import { emitNewConnection, emitQuickConnect } from "@/lib/quick-connect-event";
-import logo128 from "../../../src-tauri/icons/LazyTerm-128.png";
+import logo256 from "../../../src-tauri/icons/LazyTerm-256.png";
 
 /**
  * Branded welcome page.
@@ -22,7 +22,7 @@ export function WelcomePage() {
         <div className="welcome-logo-area">
           <div className="welcome-logo-glow" aria-hidden="true" />
           <img
-            src={logo128}
+            src={logo256}
             alt="LazyTerm"
             className="welcome-logo"
             draggable={false}
@@ -30,7 +30,7 @@ export function WelcomePage() {
         </div>
 
         <div className="welcome-heading">
-          <h1 className="welcome-title">{t("欢迎使用 LazyTerm")}</h1>
+          <h1 className="welcome-title">{t("一个懒人开发的全栈终端")}</h1>
         </div>
 
         <div className="welcome-actions">
