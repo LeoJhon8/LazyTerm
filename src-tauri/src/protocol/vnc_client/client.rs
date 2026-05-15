@@ -3,7 +3,7 @@
 //! 提供安全的、异步的 VNC 客户端 API
 
 use parking_lot::{Mutex, RwLock};
-use std::ffi::{c_char, c_int, c_void, CString};
+use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
@@ -156,6 +156,7 @@ impl VncClient {
 
         unsafe {
             ffi::RfbClientRegisterIgnoreQemuExtension();
+            ffi::RfbClientInstallLogCapture();
 
             // 创建客户端
             let client = ffi::rfbGetClient(8, 3, 4); // bitsPerSample, samplesPerPixel, bytesPerPixel
@@ -195,21 +196,15 @@ impl VncClient {
             ffi::RfbClientSetCompressLevel(client, config.compression_level as c_int);
             ffi::RfbClientSetQualityLevel(client, config.jpeg_quality as c_int);
 
-            // 配置客户端
-            // 注意：这些设置需要在 rfbInitClient 之前完成
-            // 这里我们使用命令行参数方式初始化
-
-            // 构建参数
-            let mut argv_args: Vec<CString> = Vec::new();
+            // 配置客户端。这些设置需要在 rfbInitClient 之前完成。
+            // 直接设置 host/port 比模拟命令行参数更稳定，尤其适合打包后的 GUI 应用。
             let mut owned_cstrings: Vec<CString> = Vec::new();
 
-            // 程序名
-            argv_args.push(CString::new("vnc_client").unwrap());
-
-            // 共享标志
-            if config.shared {
-                argv_args.push(CString::new("-shared").unwrap());
-            }
+            let host_cstring = CString::new(config.host.clone())
+                .map_err(|_| VncError::FfiError("Invalid hostname".to_string()))?;
+            ffi::RfbClientSetServerHost(client, host_cstring.as_ptr());
+            ffi::RfbClientSetServerPort(client, config.port as c_int);
+            owned_cstrings.push(host_cstring);
 
             // 编码
             if !config.encodings.is_empty() {
@@ -237,10 +232,6 @@ impl VncClient {
                 owned_cstrings.push(encodings_cstring);
             }
 
-            // 压缩级别
-            argv_args.push(CString::new("-compress").unwrap());
-            argv_args.push(CString::new(config.compression_level.to_string()).unwrap());
-
             // 设置密码（如果提供）
             if let Some(password) = config.password.clone() {
                 ffi::rfbClientSetClientData(
@@ -250,34 +241,29 @@ impl VncClient {
                 );
             }
 
-            // HOST 必须放在最后，否则 libvncclient 会把最后一个参数视为目标地址。
-            let host_arg = if config.port == 5900 {
-                config.host.clone()
-            } else {
-                format!("{}:{}", config.host, config.port)
-            };
-            argv_args.push(
-                CString::new(host_arg)
-                    .map_err(|_| VncError::FfiError("Invalid hostname".to_string()))?,
-            );
-
-            let mut argv_storage: Vec<*mut c_char> = argv_args
-                .iter_mut()
-                .map(|arg| arg.as_ptr() as *mut c_char)
-                .collect();
-            let mut argc = argv_storage.len() as c_int;
-            let argv = argv_storage.as_mut_ptr();
-
             // 初始化客户端
             *inner.state.write() = VncConnectionState::Authenticating;
 
-            let result = ffi::rfbInitClient(client, &mut argc, argv);
+            let result = ffi::rfbInitClient(client, ptr::null_mut(), ptr::null_mut());
 
             if result == 0 {
+                let last_error = {
+                    let error_ptr = ffi::RfbClientGetLastError(client);
+                    if error_ptr.is_null() {
+                        None
+                    } else {
+                        CStr::from_ptr(error_ptr)
+                            .to_str()
+                            .ok()
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .map(ToOwned::to_owned)
+                    }
+                };
                 unregister_session(client_ptr);
                 *inner.state.write() = VncConnectionState::Error;
                 return Err(VncError::ConnectionFailed(
-                    "Failed to initialize VNC client".to_string(),
+                    last_error.unwrap_or_else(|| "Failed to initialize VNC client".to_string()),
                 ));
             }
 

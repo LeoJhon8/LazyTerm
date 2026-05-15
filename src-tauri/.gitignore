@@ -2,3 +2,6 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+/native/msrdpax-host/bin/
+/native/msrdpax-host/obj/
+/native/msrdpax-host/publish/

@@ -248,6 +248,8 @@ extern "C" {
     pub fn RfbClientSetQualityLevel(client: *mut RfbClient, level: c_int);
     pub fn RfbClientSetShared(client: *mut RfbClient, shared: c_uchar);
     pub fn RfbClientSetViewOnly(client: *mut RfbClient, view_only: c_uchar);
+    pub fn RfbClientSetServerHost(client: *mut RfbClient, host: *const c_char);
+    pub fn RfbClientSetServerPort(client: *mut RfbClient, port: c_int);
 
     // 设置回调
     pub fn RfbClientSetMallocFrameBuffer(
@@ -274,6 +276,7 @@ extern "C" {
     // 错误处理
     pub fn RfbClientSetLastError(client: *mut RfbClient, error: *const c_char);
     pub fn RfbClientGetLastError(client: *mut RfbClient) -> *const c_char;
+    pub fn RfbClientInstallLogCapture();
 
     // 日志设置
     pub fn rfbEnableClientLogging();

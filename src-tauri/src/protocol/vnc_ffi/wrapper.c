@@ -19,6 +19,7 @@
 
 #include <rfb/rfbclient.h>
 #include <rfb/rfbproto.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -261,6 +262,25 @@ void RfbClientSetPixelFormat(rfbClient* client, int bits_per_pixel, int depth,
 // ============================================================================
 
 static char lastError[1024] = {0};
+
+static void RfbClientCaptureLog(const char* format, ...) {
+    if (!format) {
+        return;
+    }
+
+    va_list args;
+    va_start(args, format);
+    vsnprintf(lastError, sizeof(lastError), format, args);
+    va_end(args);
+
+    lastError[sizeof(lastError) - 1] = '\0';
+}
+
+void RfbClientInstallLogCapture() {
+    rfbClientLog = RfbClientCaptureLog;
+    rfbClientErr = RfbClientCaptureLog;
+    rfbEnableClientLogging = TRUE;
+}
 
 void RfbClientSetLastError(rfbClient* client, const char* error) {
     (void)client; // 暂不使用 client 特定的错误存储

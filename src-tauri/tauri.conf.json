@@ -43,7 +43,8 @@
       "icons/LazyTerm.ico"
     ],
     "resources": {
-      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+      "native/msrdpax-host/publish/win-x64/*": "msrdpax-host/"
     }
   }
 }

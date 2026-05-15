@@ -3,11 +3,11 @@ use std::sync::mpsc as std_mpsc;
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 #[cfg(windows)]
+use crate::utils::create_hidden_command;
+#[cfg(windows)]
 use crate::{rdp_target_label, NativeRdpTraceEventPayload};
 #[cfg(windows)]
 use std::io::Write;
-#[cfg(windows)]
-use crate::utils::create_hidden_command;
 #[cfg(windows)]
 use std::process::Stdio;
 #[cfg(windows)]
@@ -72,16 +72,23 @@ pub(crate) enum NativeRdpSidecarCommand {
 }
 
 #[cfg(windows)]
-fn native_rdp_sidecar_path() -> Option<std::path::PathBuf> {
+fn native_rdp_sidecar_path<R: Runtime>(app: &AppHandle<R>) -> Option<std::path::PathBuf> {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    [
-        manifest_dir.join("native/msrdpax-host/bin/Debug/net9.0-windows/msrdpax-host.exe"),
-        manifest_dir.join("native/msrdpax-host/bin/Release/net9.0-windows/msrdpax-host.exe"),
-        manifest_dir.join("native/msrdpax-host/bin/Debug/net8.0-windows/msrdpax-host.exe"),
+    let mut candidates = Vec::new();
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join("msrdpax-host/msrdpax-host.exe"));
+    }
+
+    candidates.extend([
+        manifest_dir.join("native/msrdpax-host/publish/win-x64/msrdpax-host.exe"),
         manifest_dir.join("native/msrdpax-host/bin/Release/net8.0-windows/msrdpax-host.exe"),
-    ]
-    .into_iter()
-    .find(|path| path.exists())
+        manifest_dir.join("native/msrdpax-host/bin/Debug/net8.0-windows/msrdpax-host.exe"),
+        manifest_dir.join("native/msrdpax-host/bin/Release/net9.0-windows/msrdpax-host.exe"),
+        manifest_dir.join("native/msrdpax-host/bin/Debug/net9.0-windows/msrdpax-host.exe"),
+    ]);
+
+    candidates.into_iter().find(|path| path.exists())
 }
 
 #[cfg(windows)]
@@ -229,8 +236,8 @@ fn spawn_native_rdp_sidecar<R: Runtime>(
         )),
     );
 
-    let sidecar_path = native_rdp_sidecar_path().ok_or_else(|| {
-        "未找到 msrdpax-host.exe。请先执行 npm run build:msrdpax-sidecar:debug 或安装 .NET SDK 8+ 后手动构建。".to_string()
+    let sidecar_path = native_rdp_sidecar_path(&app).ok_or_else(|| {
+        "未找到 msrdpax-host.exe。打包版本应包含 msrdpax-host 资源；开发环境请先执行 npm run build:msrdpax-sidecar:debug 或 npm run build:msrdpax-sidecar:release。".to_string()
     })?;
 
     emit_native_rdp_trace(
