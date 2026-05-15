@@ -4,7 +4,7 @@ import {
   useDraggable, useDroppable
 } from "@dnd-kit/core";
 import { 
-  Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, 
+  Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, Zap,
   Pencil, Trash2, Terminal, Upload, AppWindow, ScreenShare, Usb
 } from "lucide-react";
 
@@ -413,7 +413,7 @@ export function SessionModule() {
           )}
           onClick={() => { setInitialQuickConnectType(null); dialog.open('quickConnect'); }}
         >
-          <Plus className="h-4 w-4" />
+          <Zap className="h-4 w-4" />
         </Button>
       </div>
       

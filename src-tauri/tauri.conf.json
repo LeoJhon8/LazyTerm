@@ -41,6 +41,9 @@
       "icons/LazyTerm-256.png",
       "icons/LazyTerm.icns",
       "icons/LazyTerm.ico"
-    ]
+    ],
+    "resources": {
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    }
   }
 }

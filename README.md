@@ -232,6 +232,8 @@ npm run build
 
 本项目基于 [Apache License 2.0](./LICENSE) 开源。
 
+第三方字体与依赖的许可说明见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
+
 Copyright (c) 2025-present LazyTerm Contributors
 
 ## 致谢

@@ -152,7 +152,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
   },
   {
     name: "vscode-dark",
-    label: "VS Code Dark",
+    label: "VS Code 风格深色",
     isDark: true,
     background: "#1e1e1e",
     foreground: "#cccccc",
@@ -179,7 +179,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
   },
   {
     name: "vscode-light",
-    label: "VS Code Light",
+    label: "VS Code 风格浅色",
     isDark: false,
     background: "#ffffff",
     foreground: "#333333",
@@ -206,7 +206,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
   },
   {
     name: "github-dark",
-    label: "GitHub Dark",
+    label: "GitHub 风格深色",
     isDark: true,
     background: "#0d1117",
     foreground: "#c9d1d9",
@@ -233,7 +233,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
   },
   {
     name: "github-light",
-    label: "GitHub Light",
+    label: "GitHub 风格浅色",
     isDark: false,
     background: "#ffffff",
     foreground: "#24292f",
@@ -260,7 +260,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
   },
   {
     name: "google-dark",
-    label: "Google Dark",
+    label: "Google 风格深色",
     isDark: true,
     background: "#202124",
     foreground: "#e8eaed",
@@ -287,7 +287,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
   },
   {
     name: "google-light",
-    label: "Google Light",
+    label: "Google 风格浅色",
     isDark: false,
     background: "#ffffff",
     foreground: "#202124",
@@ -314,7 +314,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
   },
   {
     name: "apple-dark",
-    label: "Apple Dark",
+    label: "Apple 风格深色",
     isDark: true,
     background: "#1c1c1e",
     foreground: "#f2f2f7",
@@ -341,7 +341,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
   },
   {
     name: "apple-light",
-    label: "Apple Light",
+    label: "Apple 风格浅色",
     isDark: false,
     background: "#f5f5f7",
     foreground: "#1d1d1f",
@@ -368,7 +368,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
   },
   {
     name: "jetbrains-dark",
-    label: "JetBrains Dark",
+    label: "JetBrains 风格深色",
     isDark: true,
     background: "#1e1f22",
     foreground: "#bcbec4",
@@ -395,7 +395,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
   },
   {
     name: "jetbrains-light",
-    label: "JetBrains Light",
+    label: "JetBrains 风格浅色",
     isDark: false,
     background: "#ffffff",
     foreground: "#19191c",
@@ -431,31 +431,31 @@ export const TERMINAL_THEME_ECOSYSTEMS: TerminalThemeEcosystem[] = [
   },
   {
     name: "vscode",
-    label: "VS Code",
+    label: "VS Code 风格",
     darkThemeName: "vscode-dark",
     lightThemeName: "vscode-light",
   },
   {
     name: "github",
-    label: "GitHub",
+    label: "GitHub 风格",
     darkThemeName: "github-dark",
     lightThemeName: "github-light",
   },
   {
     name: "google",
-    label: "Google",
+    label: "Google 风格",
     darkThemeName: "google-dark",
     lightThemeName: "google-light",
   },
   {
     name: "apple",
-    label: "Apple",
+    label: "Apple 风格",
     darkThemeName: "apple-dark",
     lightThemeName: "apple-light",
   },
   {
     name: "jetbrains",
-    label: "JetBrains",
+    label: "JetBrains 风格",
     darkThemeName: "jetbrains-dark",
     lightThemeName: "jetbrains-light",
   },
