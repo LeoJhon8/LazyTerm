@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X, Settings } from "lucide-react";
-import { useTabsStore } from "@/store/tabs";
 import { useSettingsDialogStore } from "@/store/settings-dialog";
 import { useI18n } from "@/i18n";
 import { NotificationCenter } from "@/components/layout/NotificationCenter";
+import { TitleBarActivityNav } from "@/components/layout/TitleBarActivityNav";
 import logo32 from "../../../src-tauri/icons/LazyTerm-32.png";
 import logo128 from "../../../src-tauri/icons/LazyTerm-128.png";
 import logo256 from "../../../src-tauri/icons/LazyTerm-256.png";
@@ -13,15 +13,9 @@ const appWindow = getCurrentWindow();
 
 export function CustomTitleBar() {
   const { t } = useI18n();
-  const { focusSessionId, sessions } = useTabsStore();
   const openSettings = useSettingsDialogStore((s) => s.openSettings);
   const [isMaximized, setIsMaximized] = useState(false);
   const [logoError, setLogoError] = useState(false);
-
-  const focusSession = useMemo(
-    () => sessions.find((session) => session.id === focusSessionId),
-    [focusSessionId, sessions],
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -88,25 +82,10 @@ export function CustomTitleBar() {
           </div>
           <div className="window-titlebar__titles">
             <span className="window-titlebar__app-name">LazyTerm</span>
-            <span className="window-titlebar__session-name">
-              {focusSession ? focusSession.title : t("无活动会话")}
-            </span>
           </div>
         </div>
 
-        <div className="window-titlebar__meta" data-tauri-drag-region>
-          <span className="window-titlebar__meta-pill">
-            {focusSession
-              ? focusSession.type === "local"
-                ? t("本地终端")
-                : focusSession.type === "ssh"
-                  ? "SSH"
-                  : focusSession.type === "rdp"
-                    ? "RDP"
-                    : "VNC"
-              : t("开始桌面")}
-          </span>
-        </div>
+        <TitleBarActivityNav />
       </div>
 
       <div className="window-titlebar__controls" aria-label={t("窗口控制")}>

@@ -17,6 +17,7 @@ import {
 import { Trash2, Search, X, Send } from "lucide-react";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import { useI18n } from "@/i18n";
+import { cn } from "@/lib/utils";
 
 function isTerminalConnector(connector: SessionConnector | undefined): connector is ITerminalConnector {
   return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
@@ -59,34 +60,33 @@ export function HistoryModule() {
             <span className="module-heading truncate text-[15px]">{t("历史命令")}</span>
           </div>
         </div>
+        <div className={cn("history-header-actions", searchQuery && "history-header-actions--searching")}>
+          <div className={cn("history-header-search", searchQuery && "history-header-search--active")}>
+            <Search className="history-header-search-icon" />
+            <Input
+              placeholder=""
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="history-header-search-input"
+            />
+          </div>
         {commands.length > 0 && (
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 rounded-xl p-0 text-muted-foreground transition-colors hover:text-destructive"
+            className="history-header-action-button hover:text-destructive"
             onClick={() => setClearConfirmOpen(true)}
             title={t("清空所有历史")}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         )}
-      </div>
-
-      {/* 搜索框区域 */}
-        <div className="shrink-0 px-2.5 pt-0.5 pb-2">
-        <div className="relative group">
-            <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-foreground/80" />
-          <Input
-            placeholder={t("搜索历史记录...")}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-7 rounded-md border-border/60 bg-background/60 pl-8 text-[10px] outline-none focus-visible:border-primary/40 focus-visible:bg-background/80 focus-visible:ring-1 focus-visible:ring-primary/25"
-          />
         </div>
       </div>
 
+      {/* 搜索框区域 */}
       {/* 列表区域 */}
-      <div className="flex-1 min-h-0 w-full overflow-hidden">
+      <div className="relative flex-1 min-h-0 w-full overflow-hidden">
         <ScrollArea className="h-full w-full overflow-x-hidden">
           <div className="px-0 py-1">
             {filteredCommands.length > 0 && filteredCommands.map((cmd) => (
@@ -104,7 +104,7 @@ export function HistoryModule() {
                   </div>
 
                   {/* 操作按钮：hover时显示 */}
-                  <div className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 flex items-center gap-0.5">
+                  <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                     <Button
                       variant="ghost"
                       size="sm"

@@ -1,18 +1,20 @@
+import { useEffect } from "react";
+import { X } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
-import { LeftSlot } from "@/components/layout/LeftSlot";
-import { RightSlot } from "@/components/layout/RightSlot";
+import { Button } from "@/components/ui/button";
 import { TopSlot } from "@/components/layout/TopSlot";
 import { BottomSlot } from "@/components/layout/BottomSlot";
-import { ResizeHandle } from "@/components/layout/ResizeHandle";
 import { countValidModules } from "@/components/layout/SideSlot";
+import { getValidActivityModules } from "@/components/layout/activity-registry";
 import { useTabsStore } from "@/store/tabs";
 import { useViewMode } from "@/hooks/useViewMode";
+import { cn } from "@/lib/utils";
 
 export function SlotManager() {
   const {
-    leftPanelCollapsed,
-    rightPanelCollapsed,
+    leftPanelWidth,
+    rightPanelWidth,
     topPanelHeight,
     bottomPanelHeight,
     topPanelCollapsed,
@@ -22,7 +24,7 @@ export function SlotManager() {
     backgroundImage,
     quickCommandDisplayMode,
   } = useSettingsStore();
-  const { currentConfig } = useSlotConfigStore();
+  const { currentConfig, setSlotCollapsed } = useSlotConfigStore();
   const { focusSessionId, sessions } = useTabsStore();
   const { isFocus } = useViewMode();
   const effectiveBottomPanelHeight = quickCommandDisplayMode === "panel"
@@ -30,56 +32,104 @@ export function SlotManager() {
     : Math.round(bottomPanelHeight * 0.7);
   const focusSession = sessions.find((session) => session.id === focusSessionId);
   const shouldHideQuickCmdBar = focusSession?.type === "rdp" || focusSession?.type === "vnc";
+  const isRdpActive = shouldHideQuickCmdBar;
   const effectiveFooterHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? "0px" : `${effectiveBottomPanelHeight}px`;
 
-  // 当有背景图片时，使面板半透明
   const panelOpacityStyle = backgroundImageEnabled && backgroundImage
     ? { backgroundColor: `color-mix(in srgb, var(--color-background) ${uiOpacity}%, transparent)` }
     : {};
 
-  // 专注模式下：隐藏左右侧边栏和底栏，仅保留顶部标签栏
-  // 左右均无有效模块时隐藏侧栏
   const leftValidCount = countValidModules(currentConfig.left.modules);
   const rightValidCount = countValidModules(currentConfig.right.modules);
   const hideLeft = isFocus || leftValidCount === 0;
   const hideRight = isFocus || rightValidCount === 0;
   const hideBottom = isFocus;
 
+  useEffect(() => {
+    if (!isRdpActive) return;
+
+    for (const side of ["left", "right"] as const) {
+      const slot = currentConfig[side];
+      if (slot.activeModule === "HistoryModule" && !slot.collapsed) {
+        setSlotCollapsed(side, true);
+      }
+    }
+  }, [currentConfig, isRdpActive, setSlotCollapsed]);
+
+  const getActivityPanelWidth = (side: "left" | "right") => {
+    const slot = currentConfig[side];
+    const hidden = side === "left" ? hideLeft : hideRight;
+    const activeDefinition = getValidActivityModules([slot.activeModule])[0];
+
+    if (hidden || slot.collapsed || !activeDefinition) {
+      return 0;
+    }
+
+    return side === "left" ? leftPanelWidth : rightPanelWidth;
+  };
+
+  const openLeftPanelWidth = getActivityPanelWidth("left");
+  const openRightPanelWidth = getActivityPanelWidth("right");
+
+  const renderActivityPanel = (side: "left" | "right") => {
+    const slot = currentConfig[side];
+    const activeDefinition = getValidActivityModules([slot.activeModule])[0];
+    const hidden = side === "left" ? hideLeft : hideRight;
+
+    if (hidden || slot.collapsed || !activeDefinition) {
+      return null;
+    }
+
+    const Component = activeDefinition.component;
+    const width = side === "left" ? leftPanelWidth : rightPanelWidth;
+
+    return (
+      <aside
+        id={`slot-${side}`}
+        className={cn(
+          "activity-panel-overlay panel-surface",
+          side === "left"
+            ? "activity-panel-overlay--left border-r animate-in slide-in-from-left-2"
+            : "activity-panel-overlay--right border-l animate-in slide-in-from-right-2",
+        )}
+        style={{
+          width: `${width}px`,
+          ...panelOpacityStyle,
+        }}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="activity-panel-close"
+          aria-label="关闭模块面板"
+          onClick={() => setSlotCollapsed(side, true)}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+        <Component />
+      </aside>
+    );
+  };
+
   return (
     <>
-      {/* 左侧插槽 - 宽度由 CSS Grid 列宽 (--lw) 控制 */}
-      {!hideLeft && (
-        <aside
-          id="slot-left"
-          className="panel-surface relative z-10 overflow-hidden border-r transition-all duration-300"
-          style={{
-            gridArea: "left",
-            gridRow: "1 / 4",
-            width: leftPanelCollapsed ? "0px" : "100%",
-            ...panelOpacityStyle,
-            position: "relative",
-          }}
-        >
-          
-          <LeftSlot />
-          {!leftPanelCollapsed && leftValidCount > 0 && <ResizeHandle side="left" />}
-        </aside>
-      )}
+      {renderActivityPanel("left")}
 
-      {/* 顶部插槽 */}
       <header
         id="slot-mid-top"
         className="panel-surface-strong relative z-10 overflow-hidden border-b transition-all duration-300"
         style={{
           gridArea: "mid-top",
           height: topPanelCollapsed ? "0px" : `${topPanelHeight}px`,
+          marginLeft: openLeftPanelWidth ? `${openLeftPanelWidth}px` : undefined,
+          marginRight: openRightPanelWidth ? `${openRightPanelWidth}px` : undefined,
           ...panelOpacityStyle,
         }}
       >
         <TopSlot />
       </header>
 
-      {/* 底部插槽 */}
       {!hideBottom && (
         <footer
           id="slot-mid-bottom"
@@ -87,6 +137,8 @@ export function SlotManager() {
           style={{
             gridArea: "mid-bottom",
             height: effectiveFooterHeight,
+            marginLeft: openLeftPanelWidth ? `${openLeftPanelWidth}px` : undefined,
+            marginRight: openRightPanelWidth ? `${openRightPanelWidth}px` : undefined,
             ...panelOpacityStyle,
           }}
         >
@@ -94,23 +146,7 @@ export function SlotManager() {
         </footer>
       )}
 
-      {/* 右侧插槽 - 宽度由 CSS Grid 列宽 (--rw) 控制 */}
-      {!hideRight && (
-        <aside
-          id="slot-right"
-          className="panel-surface relative z-10 overflow-hidden border-l transition-all duration-300"
-          style={{
-            gridArea: "right",
-            gridRow: "1 / 4",
-            width: rightPanelCollapsed ? "0px" : "100%",
-            ...panelOpacityStyle,
-            position: "relative",
-          }}
-        >
-          <RightSlot />
-          {!rightPanelCollapsed && rightValidCount > 0 && <ResizeHandle side="right" />}
-        </aside>
-      )}
+      {renderActivityPanel("right")}
     </>
   );
 }

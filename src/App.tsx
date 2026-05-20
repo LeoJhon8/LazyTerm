@@ -12,7 +12,6 @@ import { CustomTitleBar } from "@/components/layout/CustomTitleBar";
 import { ImmersiveHoverBar } from "@/components/layout/ImmersiveHoverBar";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { ToastContainer } from "@/components/ui/toast";
-import { countValidModules } from "@/components/layout/SideSlot";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,12 +29,8 @@ function App() {
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
   const {
-    leftPanelWidth,
-    rightPanelWidth,
     topPanelHeight,
     bottomPanelHeight,
-    leftPanelCollapsed,
-    rightPanelCollapsed,
     topPanelCollapsed,
     bottomPanelCollapsed,
     appBackgroundColor,
@@ -52,8 +47,6 @@ function App() {
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
   const { getAllConnectors, connectionError, clearConnectionError, focusSessionId, sessions } = useTabsStore();
-  const leftSlotCollapsed = slotConfig.left.collapsed;
-  const rightSlotCollapsed = slotConfig.right.collapsed;
   const effectiveBottomPanelHeight = quickCommandDisplayMode === "panel"
     ? Math.max(112, bottomPanelHeight * 3)
     : Math.round(bottomPanelHeight * 0.7);
@@ -71,14 +64,8 @@ function App() {
 
   // 列宽/行高：直接同步计算（不再依赖异步 CSS 变量）
   // 沉浸模式下侧栏和底栏宽度/高度归零
-  const leftValidCount = countValidModules(slotConfig.left.modules);
-  const rightValidCount = countValidModules(slotConfig.right.modules);
-  const lw = isImmersive || leftPanelCollapsed || leftValidCount === 0
-    ? 0
-    : (leftSlotCollapsed ? 56 : leftPanelWidth);
-  const rw = isImmersive || rightPanelCollapsed || rightValidCount === 0
-    ? 0
-    : (rightSlotCollapsed ? 56 : rightPanelWidth);
+  const lw = 0;
+  const rw = 0;
   const th = isImmersive ? 0 : (topPanelCollapsed ? 0 : topPanelHeight);
   const bh = isImmersive ? 0 : effectiveBottomRowHeight;
 

@@ -205,11 +205,11 @@
     align-items: stretch;
     min-height: var(--titlebar-height);
     height: var(--titlebar-height);
-    border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 78%, transparent);
-    background: var(--titlebar-surface);
+    border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 86%, transparent);
+    background: color-mix(in srgb, var(--titlebar-surface) 92%, var(--background) 8%);
     box-shadow: none;
-    backdrop-filter: blur(18px) saturate(130%);
-    padding-left: 14px;
+    backdrop-filter: blur(14px) saturate(118%);
+    padding-left: 8px;
     padding-right: 0;
     user-select: none;
     position: relative;
@@ -217,24 +217,17 @@
   }
 
   .window-titlebar::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--panel-border) 88%, transparent), transparent);
-    opacity: 0.72;
-    pointer-events: none;
+    content: none;
   }
 
   .window-titlebar__drag-region {
+    position: static;
     display: flex;
     min-width: 0;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding-right: 16px;
+    justify-content: flex-start;
+    gap: 8px;
+    padding-right: 10px;
     -webkit-app-region: drag;
   }
 
@@ -242,15 +235,59 @@
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    z-index: 1;
+  }
+
+  .window-titlebar__activity {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    display: flex;
+    flex: 0 0 auto;
+    max-width: min(48vw, calc(100vw - 360px));
+    min-width: max-content;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 12px;
+    transform: translate(-50%, -50%);
+    -webkit-app-region: no-drag;
+    z-index: 2;
+  }
+
+  .window-titlebar__activity-button {
+    position: relative;
+    height: 34px !important;
+    width: 38px !important;
+    min-width: 38px !important;
+    border-radius: 8px !important;
+    color: color-mix(in srgb, var(--muted-foreground) 86%, transparent);
+    transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  }
+
+  .window-titlebar__activity-button:hover {
+    background: color-mix(in srgb, var(--accent) 48%, transparent) !important;
+    color: var(--foreground);
+    transform: translateY(-1px);
+  }
+
+  .window-titlebar__activity-button--active {
+    background: color-mix(in srgb, var(--accent) 58%, transparent) !important;
+    color: var(--foreground);
+    box-shadow: inset 0 -2px 0 var(--primary), 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  .window-titlebar__activity-button--active::after {
+    content: none;
   }
 
   .window-titlebar__logo {
     display: inline-flex;
-    height: calc(var(--titlebar-height) - 6px);
-    width: calc(var(--titlebar-height) - 6px);
-    min-height: 34px;
-    min-width: 34px;
+    height: 28px;
+    width: 28px;
+    min-height: 28px;
+    min-width: 28px;
     align-items: center;
     justify-content: center;
     background: transparent;
@@ -276,13 +313,12 @@
     min-width: 0;
     flex-direction: column;
     justify-content: center;
-    gap: 2px;
   }
 
   .window-titlebar__app-name {
-    font-size: 0.82rem;
+    font-size: 0.76rem;
     font-weight: var(--app-font-weight-bold);
-    letter-spacing: 0.02em;
+    letter-spacing: 0;
     color: var(--foreground);
     line-height: 1;
   }
@@ -291,7 +327,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     color: color-mix(in srgb, var(--muted-foreground) 92%, transparent);
     line-height: 1.1;
   }
@@ -309,13 +345,13 @@
     justify-content: center;
     min-width: 70px;
     height: calc(var(--titlebar-height) - 18px);
-    padding: 0 12px;
-    border-radius: 9999px;
-    border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
-    background: color-mix(in srgb, var(--titlebar-surface) 82%, transparent);
-    font-size: 0.7rem;
+    padding: 0 8px;
+    border-radius: 5px;
+    border: 1px solid transparent;
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
+    font-size: 0.66rem;
     font-weight: var(--app-font-weight-bold);
-    letter-spacing: 0.12em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--muted-foreground) 88%, transparent);
   }
@@ -332,11 +368,13 @@
     height: 100%;
     align-items: stretch;
     -webkit-app-region: no-drag;
+    position: relative;
+    z-index: 3;
   }
 
   .window-titlebar__control {
     display: inline-flex;
-    width: clamp(46px, calc(var(--titlebar-height) + 2px), 56px);
+    width: 46px;
     align-items: center;
     justify-content: center;
     border: 0;
@@ -408,6 +446,219 @@
     background: color-mix(in srgb, var(--panel) 68%, transparent);
     border-color: color-mix(in srgb, var(--panel-border) 78%, transparent);
     backdrop-filter: var(--panel-rail-backdrop-filter, blur(18px) saturate(150%));
+  }
+
+  .activity-panel-overlay {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 24;
+    min-width: 180px;
+    max-width: min(360px, calc(100vw - 48px));
+    overflow: hidden;
+  }
+
+  .activity-panel-overlay.panel-surface {
+    background: color-mix(in srgb, var(--panel) 94%, var(--background) 6%);
+    box-shadow: none;
+  }
+
+  .activity-panel-overlay--left {
+    left: 0;
+  }
+
+  .activity-panel-overlay--right {
+    right: 0;
+  }
+
+  .activity-panel-close {
+    position: absolute;
+    top: 5px;
+    right: 6px;
+    z-index: 5;
+    height: 28px !important;
+    width: 28px !important;
+    min-width: 28px !important;
+    border-radius: 4px !important;
+    border: 1px solid transparent;
+    color: color-mix(in srgb, var(--muted-foreground) 82%, transparent);
+    background: transparent !important;
+    opacity: 0.78;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, opacity 150ms ease;
+  }
+
+  .activity-panel-close:hover {
+    opacity: 1;
+    color: var(--foreground);
+    border-color: transparent;
+    background: color-mix(in srgb, var(--accent) 52%, transparent) !important;
+  }
+
+  .activity-panel-close:focus-visible {
+    opacity: 1;
+    outline: none;
+    border-color: color-mix(in srgb, var(--primary) 38%, transparent);
+    background: color-mix(in srgb, var(--accent) 55%, transparent) !important;
+  }
+
+  .activity-panel-overlay > .module-shell > .module-header {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 6px;
+    min-height: 40px;
+    height: 40px;
+    padding: 0 42px 0 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 82%, transparent);
+    background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
+  }
+
+  .activity-panel-overlay > .module-shell > .module-header + * {
+    padding-top: 6px !important;
+  }
+
+  .activity-panel-overlay .module-title {
+    min-width: 0;
+    overflow: hidden;
+    gap: 8px;
+  }
+
+  .activity-panel-overlay .module-title-text {
+    gap: 1px;
+  }
+
+  .activity-panel-overlay .module-heading {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px !important;
+    line-height: 20px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--foreground) 82%, transparent);
+  }
+
+  .activity-panel-overlay > .module-shell > .module-header > button {
+    height: 28px !important;
+    width: 28px !important;
+    min-width: 28px !important;
+    border-radius: 4px !important;
+    border-color: transparent !important;
+    background: transparent !important;
+    color: color-mix(in srgb, var(--muted-foreground) 84%, transparent) !important;
+    box-shadow: none !important;
+    opacity: 0.84;
+  }
+
+  .activity-panel-overlay > .module-shell > .module-header > button:hover {
+    background: color-mix(in srgb, var(--accent) 52%, transparent) !important;
+    color: var(--foreground) !important;
+    opacity: 1;
+  }
+
+  .activity-panel-overlay > .module-shell > .module-header > button:hover .text-destructive,
+  .activity-panel-overlay > .module-shell > .module-header > button:hover svg,
+  .activity-panel-overlay .history-header-action-button:hover svg {
+    color: inherit;
+  }
+
+  .history-header-actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  .history-header-actions:focus-within,
+  .history-header-actions:hover,
+  .history-header-actions--searching {
+    position: absolute;
+    inset: 0 42px 0 0;
+    padding-left: 8px;
+    right: 42px;
+    z-index: 6;
+    background: var(--background);
+  }
+
+  .activity-panel-overlay > .module-shell > .module-header:has(.history-header-actions:hover) .module-title,
+  .activity-panel-overlay > .module-shell > .module-header:has(.history-header-actions:focus-within) .module-title,
+  .activity-panel-overlay > .module-shell > .module-header:has(.history-header-actions--searching) .module-title {
+    visibility: hidden;
+  }
+
+  .history-header-search {
+    position: relative;
+    display: flex;
+    height: 28px;
+    width: 28px;
+    align-items: center;
+    overflow: hidden;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: color-mix(in srgb, var(--muted-foreground) 86%, transparent);
+    transition: width 160ms ease, border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+  }
+
+  .history-header-search:hover,
+  .history-header-search:focus-within,
+  .history-header-search--active {
+    width: min(168px, 44vw);
+    border-color: color-mix(in srgb, var(--panel-border) 78%, transparent);
+    background: color-mix(in srgb, var(--accent) 42%, var(--panel-strong) 58%);
+    color: var(--foreground);
+  }
+
+  .history-header-actions:focus-within .history-header-search,
+  .history-header-actions:hover .history-header-search,
+  .history-header-actions--searching .history-header-search {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  .history-header-search-icon {
+    pointer-events: none;
+    position: absolute;
+    left: 7px;
+    top: 50%;
+    height: 13px;
+    width: 13px;
+    transform: translateY(-50%);
+  }
+
+  .history-header-search-input {
+    height: 100% !important;
+    width: 100% !important;
+    border: 0 !important;
+    border-radius: 6px !important;
+    background: transparent !important;
+    padding-left: 26px !important;
+    padding-right: 8px !important;
+    font-size: 11px !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  .history-header-action-button {
+    height: 28px !important;
+    width: 28px !important;
+    min-width: 28px !important;
+    border-radius: 4px !important;
+    border-color: transparent !important;
+    background: transparent !important;
+    color: color-mix(in srgb, var(--muted-foreground) 84%, transparent) !important;
+    box-shadow: none !important;
+    opacity: 0.84;
+  }
+
+  .history-header-action-button:hover {
+    background: color-mix(in srgb, var(--accent) 52%, transparent) !important;
+    color: var(--foreground) !important;
+    opacity: 1;
   }
 
   .activity-rail {
@@ -748,6 +999,18 @@
       display: none;
     }
 
+    .window-titlebar__activity {
+      gap: 5px;
+      padding: 0 8px;
+      max-width: min(52vw, calc(100vw - 260px));
+    }
+
+    .window-titlebar__activity-button {
+      height: 32px !important;
+      width: 34px !important;
+      min-width: 34px !important;
+    }
+
     .window-titlebar__drag-region {
       padding-right: 8px;
     }
@@ -773,7 +1036,7 @@
   }
 
   .quickcmd-surface[data-mode="panel"] {
-    align-items: flex-start;
+    align-items: center;
     gap: 6px;
     padding: 6px;
   }
@@ -792,6 +1055,7 @@
   }
 
   .quickcmd-surface[data-mode="panel"] .quickcmd-leading-icon {
+    align-self: center;
     height: 32px;
     width: 24px;
     border: 1px solid color-mix(in srgb, var(--panel-border) 46%, transparent);
