@@ -6,6 +6,8 @@ export interface ParsedTerminalCommandLine {
   isCursorAtEnd: boolean;
 }
 
+const PROMPT_CHARS = ">$%#❯➜λ";
+
 function resolveCommandStart(text: string) {
   if (!text) {
     return 0;
@@ -25,12 +27,12 @@ function resolveCommandStart(text: string) {
     }
   }
 
-  const unixMatch = text.match(/^[^@\s]+@[^:\s\\]+[:\s][^#$%]*?[#$%]\s+/);
+  const unixMatch = text.match(/^[^@\s]+@[^:\s\\]+[:\s][^#$%❯➜λ]*?[#$%❯➜λ]\s+/);
   if (unixMatch) {
     return unixMatch[0].length;
   }
 
-  const minimalMatch = text.match(/^([a-zA-Z0-9_\-/.~]+\s?)?[#$%鉂灉]\s+/);
+  const minimalMatch = text.match(/^([a-zA-Z0-9_\-/.~]+\s?)?[#$%❯➜λ]\s+/);
   if (minimalMatch) {
     return minimalMatch[0].length;
   }
@@ -40,7 +42,7 @@ function resolveCommandStart(text: string) {
     return arrowMatch[0].length;
   }
 
-  if (/[>$%#]$/.test(text)) {
+  if (PROMPT_CHARS.includes(text[text.length - 1])) {
     return text.length;
   }
 

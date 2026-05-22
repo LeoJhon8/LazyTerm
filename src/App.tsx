@@ -5,6 +5,7 @@ import { useTabsStore } from "@/store/tabs";
 import { getConnectionErrorPresentation } from "@/services/connectionErrorService";
 import { useI18n } from "@/i18n";
 import { useViewMode } from "@/hooks/useViewMode";
+import { countValidModules, getValidActivityModules } from "@/components/layout/activity-registry";
 
 import { PaneContainer } from "@/components/layout/PaneContainer";
 import { SlotManager } from "@/components/layout/SlotManager";
@@ -24,13 +25,15 @@ import {
 
 function App() {
   const { locale, t } = useI18n();
-  const { isImmersive } = useViewMode();
+  const { isImmersive, isFocus } = useViewMode();
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
   const {
     topPanelHeight,
     bottomPanelHeight,
+    leftPanelWidth,
+    rightPanelWidth,
     topPanelCollapsed,
     bottomPanelCollapsed,
     appBackgroundColor,
@@ -58,6 +61,23 @@ function App() {
     : null;
   const shouldHideQuickCmdBar = !slotConfig.quickCmdBarEnabled || focusSession?.type === "rdp" || focusSession?.type === "vnc";
   const effectiveBottomRowHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight;
+  const leftValidCount = countValidModules(slotConfig.left.modules);
+  const rightValidCount = countValidModules(slotConfig.right.modules);
+  const hideLeft = isImmersive || isFocus || leftValidCount === 0;
+  const hideRight = isImmersive || isFocus || rightValidCount === 0;
+  const getActivityPanelWidth = (side: "left" | "right") => {
+    const slot = slotConfig[side];
+    const hidden = side === "left" ? hideLeft : hideRight;
+    const activeDefinition = getValidActivityModules([slot.activeModule])[0];
+
+    if (hidden || slot.collapsed || !activeDefinition) {
+      return 0;
+    }
+
+    return side === "left" ? leftPanelWidth : rightPanelWidth;
+  };
+  const openLeftPanelWidth = getActivityPanelWidth("left");
+  const openRightPanelWidth = getActivityPanelWidth("right");
   const localizedConnectionError = connectionError
     ? getConnectionErrorPresentation(connectionError.sessionType, connectionError.technicalDetails)
     : null;
@@ -225,9 +245,11 @@ function App() {
         {!isImmersive && <SlotManager />}
         <section
           id="slot-mid-main"
-          className="relative z-0 min-h-0 min-w-0 overflow-hidden"
+          className="relative z-0 min-h-0 min-w-0 overflow-hidden transition-all duration-300"
           style={{
             gridArea: "mid-main",
+            marginLeft: openLeftPanelWidth ? `${openLeftPanelWidth}px` : undefined,
+            marginRight: openRightPanelWidth ? `${openRightPanelWidth}px` : undefined,
           }}
         >
           <PaneContainer />

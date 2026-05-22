@@ -44,6 +44,8 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
   private readonly sessionId: string;
   private _hasSuggestions = false;
   private _hasSelectedSuggestion = false;
+  private _canNavigateUp = false;
+  private _canNavigateDown = false;
   private _lineStateCache: ParsedTerminalCommandLine = EMPTY_LINE_STATE;
   private _trackingCurrentLine = false;
   private _pendingLineSync = false;
@@ -53,6 +55,8 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
     const customEvent = e as CustomEvent;
     this._hasSuggestions = customEvent.detail.hasSuggestions;
     this._hasSelectedSuggestion = customEvent.detail.hasSelectedSuggestion;
+    this._canNavigateUp = customEvent.detail.canNavigateUp;
+    this._canNavigateDown = customEvent.detail.canNavigateDown;
   };
 
   constructor(sessionId: string, onInsert?: (text: string) => void) {
@@ -97,10 +101,14 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
       }
 
       if (this.isActive && this._hasSuggestions) {
-        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        const shouldHandleArrow =
+          (e.key === "ArrowUp" && this._canNavigateUp) ||
+          (e.key === "ArrowDown" && this._canNavigateDown);
+
+        if (shouldHandleArrow) {
           if (e.type === "keydown") {
             window.dispatchEvent(
-              new CustomEvent("lazy-term-autocomplete-key", {
+              new CustomEvent(`lazy-term-autocomplete-key-${this.sessionId}`, {
                 detail: { key: e.key, shiftKey: e.shiftKey },
               })
             );
@@ -108,11 +116,11 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
           return false;
         }
 
-        if ((e.key === "Tab" || e.key === "Enter") && this._hasSelectedSuggestion) {
+        if (e.key === "Enter" && this._hasSelectedSuggestion) {
           if (e.type === "keydown") {
             this._suppressedAcceptKey = e.key;
             window.dispatchEvent(
-              new CustomEvent("lazy-term-autocomplete-key", {
+              new CustomEvent(`lazy-term-autocomplete-key-${this.sessionId}`, {
                 detail: { key: e.key, shiftKey: e.shiftKey },
               })
             );
@@ -329,7 +337,6 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
       return;
     }
 
-    // 比较时忽略前后空白符
     const trimmedInput = this.inputBuffer.trim();
     const trimmedText = text.trim();
     

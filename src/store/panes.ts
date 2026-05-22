@@ -42,6 +42,7 @@ interface PanesState {
   
   /** 所有工作区（每个 Tab 对应一个） */
   workspaces: Record<string, WorkspaceTree>;
+  paneFontSizeOverrides: Record<string, number>;
 
   // ========== 核心操作 ==========
   
@@ -96,6 +97,7 @@ interface PanesState {
    * 清空当前工作区所有面板
    */
   clearPanes: () => void;
+  setPaneFontSizeOverride: (leafId: string, fontSize: number) => void;
 
   // ========== 查询方法 ==========
   
@@ -130,6 +132,7 @@ const getActiveTabId = () => {
 export const usePanesStore = create<PanesState>()(
   (set, get) => ({
     workspaces: {},
+    paneFontSizeOverrides: {},
 
     // ========== 辅助操作 ==========
 
@@ -146,8 +149,13 @@ export const usePanesStore = create<PanesState>()(
     cleanupWorkspace: (tabId) => {
       set((state) => {
         const newWorkspaces = { ...state.workspaces };
+        const removedLeafIds = getAllLeaves(newWorkspaces[tabId]?.rootNode ?? null).map((leaf) => leaf.id);
+        const paneFontSizeOverrides = { ...state.paneFontSizeOverrides };
+        removedLeafIds.forEach((leafId) => {
+          delete paneFontSizeOverrides[leafId];
+        });
         delete newWorkspaces[tabId];
-        return { workspaces: newWorkspaces };
+        return { workspaces: newWorkspaces, paneFontSizeOverrides };
       });
       logger.info("FE/store/panes", "Cleaned up workspace for tab", { tabId });
     },
@@ -239,7 +247,10 @@ export const usePanesStore = create<PanesState>()(
         workspaces: {
           ...state.workspaces,
           [tabId]: { rootNode: newRoot, focusedPaneId: newFocusId },
-        }
+        },
+        paneFontSizeOverrides: Object.fromEntries(
+          Object.entries(state.paneFontSizeOverrides).filter(([id]) => id !== leafId)
+        ),
       }));
 
       logger.info("FE/store/panes", "Removed pane", { tabId, leafId, newFocusId });
@@ -263,11 +274,15 @@ export const usePanesStore = create<PanesState>()(
         .map((leaf) => leaf.sessionId)
         .filter((sessionId): sessionId is string => !!sessionId);
       const newRoot = maximizeLeafUtil(ws.rootNode, leafId);
+      const removedLeafIds = new Set(leaves.filter((leaf) => leaf.id !== leafId).map((leaf) => leaf.id));
       set((state) => ({
         workspaces: {
           ...state.workspaces,
           [tabId]: { rootNode: newRoot, focusedPaneId: leafId },
-        }
+        },
+        paneFontSizeOverrides: Object.fromEntries(
+          Object.entries(state.paneFontSizeOverrides).filter(([id]) => !removedLeafIds.has(id))
+        ),
       }));
       logger.info("FE/store/panes", "Maximized pane and detached sibling sessions", {
         tabId,
@@ -338,14 +353,30 @@ export const usePanesStore = create<PanesState>()(
     clearPanes: () => {
       const tabId = getActiveTabId();
       if (!tabId) return;
+      const ws = get().getActiveWorkspace();
+      const removedLeafIds = new Set(getAllLeaves(ws.rootNode).map((leaf) => leaf.id));
 
       set((state) => ({
         workspaces: {
           ...state.workspaces,
           [tabId]: { rootNode: null, focusedPaneId: null },
-        }
+        },
+        paneFontSizeOverrides: Object.fromEntries(
+          Object.entries(state.paneFontSizeOverrides).filter(([id]) => !removedLeafIds.has(id))
+        ),
       }));
       logger.info("FE/store/panes", "Cleared all panes", { tabId });
+    },
+
+    setPaneFontSizeOverride: (leafId, fontSize) => {
+      if (!get().getLeafById(leafId)) return;
+
+      set((state) => ({
+        paneFontSizeOverrides: {
+          ...state.paneFontSizeOverrides,
+          [leafId]: Math.max(6, Math.min(100, fontSize)),
+        },
+      }));
     },
 
     // ========== 查询方法 ==========

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, type WheelEvent as ReactWheelEvent } from "react";
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useHistoryStore } from "@/store/history";
+import { usePanesStore } from "@/store/panes";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -87,6 +88,37 @@ function shouldBlockNamedColorChange(data: string): boolean {
   return data.trim() !== "?";
 }
 
+function hasAnyParam(params: (number | number[])[], targets: Set<number>): boolean {
+  return params.some((param) => {
+    if (Array.isArray(param)) {
+      return param.some((value) => targets.has(value));
+    }
+    return targets.has(param);
+  });
+}
+
+function shouldBlockEraseInDisplayDuringTransition(params: (number | number[])[]): boolean {
+  const mode = params[0];
+  return mode === 2 || mode === 3;
+}
+
+const ALTERNATE_SCREEN_PARAMS = new Set([47, 1047, 1049]);
+
+function clampTerminalFontSize(fontSize: number): number {
+  return Math.max(6, Math.min(100, fontSize));
+}
+
+function getEffectiveFontSizeForSession(
+  sessionId: string,
+  globalFontSize: number,
+  paneFontSizeOverrides: Record<string, number>
+): number {
+  const paneId = usePanesStore.getState().getPaneIdBySession(sessionId);
+  if (!paneId) return globalFontSize;
+
+  return paneFontSizeOverrides[paneId] ?? globalFontSize;
+}
+
 function extractCommand(lineText: string) {
   const text = lineText.trim();
   if (!text) return "";
@@ -156,16 +188,18 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const backgroundImageEnabled = useSettingsStore((state) => state.backgroundImageEnabled);
   const backgroundImage = useSettingsStore((state) => state.backgroundImage);
   const terminalAutocomplete = useSettingsStore((state) => state.terminalAutocomplete);
-  const setSettings = useSettingsStore((state) => state.setSettings);
+  const paneFontSizeOverrides = usePanesStore((state) => state.paneFontSizeOverrides);
+  const setPaneFontSizeOverride = usePanesStore((state) => state.setPaneFontSizeOverride);
+  const effectiveFontSize = paneFontSizeOverrides[paneId] ?? fontSize;
 
   // 使用全局缓存替代组件级别的 ref，确保切换 tab 时输出历史不丢失
   const containerMap = useRef(globalContainerCache);
   const terminalMap = useRef(globalTerminalCache);
   const lastCommandRef = useRef<string>("");
   const addHistoryCommandRef = useRef(addHistoryCommand);
-  const setSettingsRef = useRef(setSettings);
+  const setPaneFontSizeOverrideRef = useRef(setPaneFontSizeOverride);
   const appearanceRef = useRef({
-    fontSize,
+    fontSize: effectiveFontSize,
     fontFamily,
     terminalNormalFontWeight,
     terminalBoldFontWeight,
@@ -182,9 +216,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const hasBackgroundImage = backgroundImageEnabled && backgroundImage;
 
   addHistoryCommandRef.current = addHistoryCommand;
-  setSettingsRef.current = setSettings;
+  setPaneFontSizeOverrideRef.current = setPaneFontSizeOverride;
   appearanceRef.current = {
-    fontSize,
+    fontSize: effectiveFontSize,
     fontFamily,
     terminalNormalFontWeight,
     terminalBoldFontWeight,
@@ -261,6 +295,11 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     if (!containerEl) return;
 
     const existingInstance = terminalMap.current.get(sessionId);
+    if (existingInstance?.connector === connector) {
+      acAddonRef.current = existingInstance.acAddon ?? null;
+      activateTerminal(sessionId);
+      return;
+    }
 
     let isMounted = true;
     let tempBuffer = "";
@@ -325,13 +364,13 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           existingInstance.termState.isTransitioning = false;
         }, 2000);
 
-        let spacer = "\r\n";
-        for (let i = 0; i < existingInstance.terminal.rows; i++) {
-          spacer += "\r\n";
-        }
-
         existingInstance.terminal.write(
-          `\r\n\x1b[33m ${t("警告: 会话连接已更改，输出保留。")} \x1b[0m` + spacer
+          [
+            "\r\n",
+            `\x1b[33m${t("SSH 连接已断开，已降级到本地终端。")}\x1b[0m`,
+            `\r\n\x1b[90m${t("之前的 SSH 输出已保留。")}\x1b[0m`,
+            "\r\n\r\n",
+          ].join("")
         );
 
         currentTermInstance = existingInstance;
@@ -389,7 +428,32 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       });
 
       term.parser.registerCsiHandler({ final: "J" }, (params) => {
-        if (termState.isTransitioning && params[0] === 3) return true;
+        if (termState.isTransitioning && shouldBlockEraseInDisplayDuringTransition(params)) return true;
+        return false;
+      });
+
+      term.parser.registerCsiHandler({ final: "H" }, () => {
+        if (termState.isTransitioning) return true;
+        return false;
+      });
+
+      term.parser.registerCsiHandler({ final: "f" }, () => {
+        if (termState.isTransitioning) return true;
+        return false;
+      });
+
+      term.parser.registerCsiHandler({ final: "d" }, () => {
+        if (termState.isTransitioning) return true;
+        return false;
+      });
+
+      term.parser.registerCsiHandler({ prefix: "?", final: "h" }, (params) => {
+        if (termState.isTransitioning && hasAnyParam(params, ALTERNATE_SCREEN_PARAMS)) return true;
+        return false;
+      });
+
+      term.parser.registerCsiHandler({ prefix: "?", final: "l" }, (params) => {
+        if (termState.isTransitioning && hasAnyParam(params, ALTERNATE_SCREEN_PARAMS)) return true;
         return false;
       });
 
@@ -445,10 +509,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         if (e.ctrlKey) {
           e.preventDefault();
           e.stopPropagation();
-          const currentSize = useSettingsStore.getState().fontSize;
-          const delta = e.deltaY > 0 ? -1 : 1;
-          const newSize = Math.max(6, Math.min(100, currentSize + delta));
-          setSettingsRef.current({ fontSize: newSize });
         }
       };
 
@@ -544,10 +604,12 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
     return () => {
       isMounted = false;
-      isCurrentConnector = false;
-      unsubPromise.then((unsub: unknown) => {
-        if (typeof unsub === "function") unsub();
-      });
+      if (!currentTermInstance) {
+        isCurrentConnector = false;
+        unsubPromise.then((unsub: unknown) => {
+          if (typeof unsub === "function") unsub();
+        });
+      }
     };
   }, [sessionId, activeConnector, activateTerminal]);
 
@@ -556,8 +618,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     const colorScheme = getTerminalTheme(terminalColorScheme, customThemes, appBackgroundColor);
     terminalMap.current.forEach((instance, id) => {
       const { terminal, fitAddon, connector, termState } = instance;
+      const nextFontSize = getEffectiveFontSizeForSession(id, fontSize, paneFontSizeOverrides);
 
-      terminal.options.fontSize = fontSize;
+      terminal.options.fontSize = nextFontSize;
       terminal.options.fontFamily = fontFamily;
       terminal.options.fontWeight = terminalNormalFontWeight;
       terminal.options.fontWeightBold = terminalBoldFontWeight;
@@ -625,7 +688,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
       }
     });
-  }, [fontSize, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalOpacity, appBackgroundColor, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
+  }, [fontSize, paneFontSizeOverrides, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalOpacity, appBackgroundColor, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
 
   // 清理已被关闭的会话
   useEffect(() => {
@@ -707,6 +770,18 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     }
   };
 
+  const handleTerminalWheel = useCallback((event: ReactWheelEvent<HTMLElement>) => {
+    if (!event.ctrlKey) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const instance = terminalMap.current.get(sessionId);
+    const currentSize = Number(instance?.terminal.options.fontSize) || useSettingsStore.getState().fontSize;
+    const delta = event.deltaY > 0 ? -1 : 1;
+    setPaneFontSizeOverrideRef.current(paneId, clampTerminalFontSize(currentSize + delta));
+  }, [paneId, sessionId]);
+
   const currentTheme = getTerminalTheme(terminalColorScheme, customThemes, appBackgroundColor);
   const xtermTheme = toXtermTheme(currentTheme, terminalOpacity);
 
@@ -734,6 +809,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         activeSession?.type === "ai-cli" && "is-ai-cli-mode"
       )}
       onClick={() => activateTerminal(sessionId)}
+      onWheelCapture={handleTerminalWheel}
       onContextMenu={handleContextMenu}
       style={{
         backgroundColor: hasBackgroundImage ? "transparent" : xtermTheme.background,
