@@ -1,5 +1,15 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+struct RusshLogBridge;
+
+static RUSSH_LOGGER: RusshLogBridge = RusshLogBridge;
+
+pub fn init() {
+    if log::set_logger(&RUSSH_LOGGER).is_ok() {
+        log::set_max_level(log::LevelFilter::Trace);
+    }
+}
+
 fn format_time() -> String {
     let now = SystemTime::now();
     let duration = now.duration_since(UNIX_EPOCH).unwrap_or_default();
@@ -77,4 +87,43 @@ pub fn warn(scope: &str, message: impl AsRef<str>) {
 
 pub fn error(scope: &str, message: impl AsRef<str>) {
     emit("ERROR", scope, message.as_ref());
+}
+
+impl log::Log for RusshLogBridge {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.target().starts_with("russh::client") && metadata.level() <= log::Level::Trace
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+
+        let message = record.args().to_string();
+        if !is_relevant_russh_log(&message) {
+            return;
+        }
+
+        let level = match record.level() {
+            log::Level::Error => "ERROR",
+            log::Level::Warn => "WARN",
+            log::Level::Info => "INFO",
+            log::Level::Debug | log::Level::Trace => "INFO",
+        };
+        let scope = format!("RUSSH/{}", record.target());
+        emit(level, &scope, &message);
+    }
+
+    fn flush(&self) {}
+}
+
+fn is_relevant_russh_log(message: &str) -> bool {
+    message.contains("keep alive")
+        || message.contains("keepalive")
+        || message.contains("global request")
+        || message.contains("Global Request")
+        || message.contains("channel_close")
+        || message.contains("channel_eof")
+        || message.contains("disconnected")
+        || message.contains("Timeout, server not responding")
 }

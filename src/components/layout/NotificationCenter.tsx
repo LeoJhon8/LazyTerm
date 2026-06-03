@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   AlertTriangle,
   Bell,
@@ -19,6 +20,7 @@ import {
   type NotificationType,
   useNotificationsStore,
 } from "@/store/notifications";
+import { useSettingsDialogStore } from "@/store/settings-dialog";
 import { cn } from "@/lib/utils";
 
 const typeConfig: Record<NotificationType, { icon: typeof Info; className: string }> = {
@@ -81,8 +83,18 @@ function NotificationIcon({ item }: { item: NotificationItem }) {
   );
 }
 
-function NotificationRow({ item }: { item: NotificationItem }) {
+function NotificationRow({ item, onClose }: { item: NotificationItem; onClose: () => void }) {
   const markAsRead = useNotificationsStore((state) => state.markAsRead);
+  const openSettings = useSettingsDialogStore((state) => state.openSettings);
+
+  const handleClick = () => {
+    markAsRead(item.id);
+
+    if (item.target?.type === "settings") {
+      openSettings(item.target.tab);
+      onClose();
+    }
+  };
 
   return (
     <button
@@ -91,7 +103,7 @@ function NotificationRow({ item }: { item: NotificationItem }) {
         "flex w-full gap-3 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent/60",
         !item.read && "bg-accent/35",
       )}
-      onClick={() => markAsRead(item.id)}
+      onClick={handleClick}
     >
       <NotificationIcon item={item} />
       <span className="min-w-0 flex-1 space-y-1">
@@ -121,6 +133,7 @@ function NotificationRow({ item }: { item: NotificationItem }) {
 }
 
 export function NotificationCenter() {
+  const [open, setOpen] = useState(false);
   const notifications = useNotificationsStore((state) => state.notifications);
   const markAllAsRead = useNotificationsStore((state) => state.markAllAsRead);
   const clearNotifications = useNotificationsStore((state) => state.clearNotifications);
@@ -129,7 +142,7 @@ export function NotificationCenter() {
   const visibleUnreadCount = unreadCount > 99 ? "99+" : String(unreadCount);
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -178,7 +191,7 @@ export function NotificationCenter() {
           {notifications.length > 0 ? (
             <div className="space-y-1">
               {notifications.map((item) => (
-                <NotificationRow key={item.id} item={item} />
+                <NotificationRow key={item.id} item={item} onClose={() => setOpen(false)} />
               ))}
             </div>
           ) : (

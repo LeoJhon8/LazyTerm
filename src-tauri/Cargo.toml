@@ -1,21 +1,22 @@
 [package]
 name = "app"
-version = "26.52.638"
+version = "26.52.3494"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
 repository = ""
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.85"
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["vnc-libvncclient"]
+default = ["vnc-libvncclient", "rdp-freerdp"]
 vnc-libvncclient = []
 vnc-rust = []
+rdp-freerdp = []
 
 [build-dependencies]
 tauri-build = { version = "2.5.4", features = [] }
@@ -35,11 +36,8 @@ thiserror = "1.0"
 portable-pty = "0.8" 
 
 # 异步 SSH 支持
-russh = "0.45"
-russh-keys = { version = "0.45", features = ["openssl"] }
-openssl = { version = "0.10", features = ["vendored"] }
+russh = { version = "0.61.1", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "2.1.1"
-async-trait = "0.1"
 home = "0.5"
 
 # 异步运行时与工具
@@ -51,11 +49,6 @@ tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-fs = "2.4.5"
 base64 = "0.22.1"
 image = { version = "0.25.8", default-features = false, features = ["jpeg", "png"] }
-ironrdp = { version = "0.14.0", features = ["connector", "displaycontrol", "graphics", "input", "session"] }
-ironrdp-blocking = "0.8.0"
-sspi = { version = "=0.18.7", features = ["network_client"] }
-tokio-rustls = "0.26.4"
-x509-cert = "0.2.5"
 raw-window-handle = "0.6.2"
 
 # LibVNCClient FFI 依赖

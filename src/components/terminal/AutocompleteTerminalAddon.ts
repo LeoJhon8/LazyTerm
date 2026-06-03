@@ -4,6 +4,7 @@ import {
   parseTerminalCommandLine,
   type ParsedTerminalCommandLine,
 } from "./terminal-command-line";
+import { getCompletionInsertion } from "./completion-insertion";
 
 export interface AutocompleteSuggestEvent {
   active: boolean;
@@ -337,15 +338,7 @@ export class AutocompleteTerminalAddon implements ITerminalAddon {
       return;
     }
 
-    const trimmedInput = this.inputBuffer.trim();
-    const trimmedText = text.trim();
-    
-    if (trimmedText.startsWith(trimmedInput)) {
-      const remainder = trimmedText.substring(trimmedInput.length);
-      this._onInsert?.(remainder);
-    } else {
-      this._onInsert?.("\b".repeat(this.inputBuffer.length) + trimmedText);
-    }
+    this._onInsert?.(getCompletionInsertion(this.inputBuffer, text));
 
     this._trackingCurrentLine = true;
     this._pendingLineSync = true;

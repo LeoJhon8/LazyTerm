@@ -170,6 +170,11 @@
     font: inherit;
   }
 
+  .password-input-native-reveal-hidden::-ms-reveal,
+  .password-input-native-reveal-hidden::-ms-clear {
+    display: none;
+  }
+
   ::selection {
     background: color-mix(in srgb, var(--primary) 28%, transparent);
     color: var(--foreground);

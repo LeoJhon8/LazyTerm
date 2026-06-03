@@ -34,9 +34,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCliConfig } from "@/types/terminal";
 
 import { useDialogState } from "@/hooks/useDialogState";
+import { resolveRdpBackend } from "@/lib/rdp-backend";
 import { onNewConnection, onQuickConnect } from "@/lib/quick-connect-event";
-
-const IS_WINDOWS = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
+import { useSettingsStore } from "@/store/settings";
 
 type DropPosition = 'before' | 'after' | 'inside';
 
@@ -365,9 +365,10 @@ export function SessionModule() {
       if (node.type === "ssh" && isSshConfig(node.config)) {
         launchWorkspaceWithSession({ title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } });
       } else if (node.type === "rdp" && isRdpConfig(node.config)) {
-        const rdpConfig = IS_WINDOWS
-          ? { ...node.config, backend: "msrdpax" as const, width: undefined, height: undefined, autoResize: true }
-          : node.config;
+        const backend = resolveRdpBackend(useSettingsStore.getState().rdpBackend);
+        const rdpConfig = backend === "msrdpax"
+          ? { ...node.config, backend, width: undefined, height: undefined, autoResize: true }
+          : { ...node.config, backend, autoResize: false };
         launchWorkspaceWithSession({ title: node.name, type: "rdp", host: rdpConfig.host, config: { host: rdpConfig.host, port: rdpConfig.port, rdpConfig } });
       } else if (node.type === "vnc" && isVncConfig(node.config)) {
         launchWorkspaceWithSession({ title: node.name, type: "vnc", host: node.config.host, config: { host: node.config.host, port: node.config.port, vncConfig: node.config } });

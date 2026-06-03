@@ -47,7 +47,7 @@ export function PaneView({ paneId }: PaneViewProps) {
   const session = leaf?.sessionId
     ? sessions.find((item) => item.id === leaf.sessionId) ?? null
     : null;
-  const isNativeRdpPane = session?.type === "rdp" && session.config?.rdpConfig?.backend === "msrdpax";
+  const isNativeRdpPane = session?.type === "rdp" && session.connector?.protocol === "rdp" && session.connector.backend === "msrdpax";
   const showDockedPaneControls = paneCount > 1 && isNativeRdpPane;
 
   const syncSinglePaneTabTitle = useCallback((tabId: string) => {

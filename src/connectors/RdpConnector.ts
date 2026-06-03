@@ -14,7 +14,7 @@ export class RdpConnector
   implements IRdpConnector
 {
   readonly protocol = "rdp" as const;
-  readonly backend = "ironrdp" as const;
+  readonly backend = "freerdp" as const;
 
   constructor(config: RDPConfig) {
     super(
@@ -93,7 +93,7 @@ export class RdpConnector
         domain: this.config.domain,
         width: this.config.width,
         height: this.config.height,
-        auto_resize: this.config.autoResize ?? true,
+        auto_resize: this.config.autoResize ?? false,
       },
       frameChannel: this.frameChannel,
     };

@@ -1,7 +1,12 @@
 import { create } from "zustand";
+import type { SettingsTab } from "@/store/settings-dialog";
 
 export type NotificationType = "info" | "success" | "warning" | "error";
 export type NotificationSource = "sftp" | "terminal" | "system" | "ai";
+export type NotificationTarget = {
+  type: "settings";
+  tab: SettingsTab;
+};
 
 export interface NotificationItem {
   id: string;
@@ -10,6 +15,7 @@ export interface NotificationItem {
   title: string;
   message?: string;
   details?: string[];
+  target?: NotificationTarget;
   createdAt: number;
   read: boolean;
 }

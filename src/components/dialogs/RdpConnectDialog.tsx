@@ -7,6 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import type { RDPConfig } from "@/types/terminal";
 import { useI18n } from "@/i18n";
+import { resolveRdpBackend } from "@/lib/rdp-backend";
+import { useSettingsStore } from "@/store/settings";
 
 interface RdpConnectDialogProps {
   open: boolean;
@@ -18,8 +20,9 @@ interface RdpConnectDialogProps {
 
 export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, isDirect }: RdpConnectDialogProps) {
   const { t } = useI18n();
-  const isWindows = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
-  const fixedBackend = isWindows ? "msrdpax" : "ironrdp";
+  const configuredRdpBackend = useSettingsStore((state) => state.rdpBackend);
+  const fixedBackend = resolveRdpBackend(configuredRdpBackend);
+  const usesNativeRdp = fixedBackend === "msrdpax";
   const [host, setHost] = useState("");
   const [port, setPort] = useState("3389");
   const [username, setUsername] = useState("");
@@ -75,9 +78,9 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       password: password || undefined,
       domain: domain || undefined,
       nickname: nickname || undefined,
-      width: isWindows ? undefined : (parseInt(width, 10) || 1280),
-      height: isWindows ? undefined : (parseInt(height, 10) || 720),
-      autoResize: isWindows ? true : autoResize,
+      width: usesNativeRdp ? undefined : (parseInt(width, 10) || 1280),
+      height: usesNativeRdp ? undefined : (parseInt(height, 10) || 720),
+      autoResize: usesNativeRdp ? true : false,
       backend: fixedBackend,
     });
     onOpenChange(false);
@@ -125,7 +128,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
 
             <Separator />
 
-            {!isWindows ? (
+            {!usesNativeRdp ? (
               <>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="rdp-width" className="text-right">{t("初始宽度")}</Label>
@@ -137,7 +140,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
                   <Input id="rdp-height" type="number" min="200" value={height} onChange={(event) => setHeight(event.target.value)} className="col-span-3" />
                 </div>
 
-                <div className="grid grid-cols-4 items-center gap-4">
+                <div className="hidden grid-cols-4 items-center gap-4">
                   <Label className="text-right">{t("自动跟随窗口")}</Label>
                   <div className="col-span-3 flex items-center gap-3">
                     <Checkbox id="rdp-auto-resize" checked={autoResize} onCheckedChange={(checked) => setAutoResize(checked === true)} />

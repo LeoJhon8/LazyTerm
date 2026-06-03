@@ -4,6 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useSettingsStore } from "@/store/settings";
 import { APP_LANGUAGE_OPTIONS, useI18n } from "@/i18n";
+import { isWindowsPlatform, resolveRdpBackend, type ConfigurableRdpBackend } from "@/lib/rdp-backend";
 import type { ShellInfo } from "@/types/shell";
 import { getAvailableShells } from "@/services/shellService";
 import { logger } from "@/lib/logger";
@@ -11,7 +12,9 @@ import { logger } from "@/lib/logger";
 /** 通用设置：语言 + 终端行为 */
 export function GeneralSettings() {
   const { language, setLanguage, t } = useI18n();
-  const { defaultShell, confirmCloseNonDefaultTabs, terminalAutocomplete, autocompleteSource, setSettings } = useSettingsStore();
+  const { defaultShell, rdpBackend, confirmCloseNonDefaultTabs, terminalAutocomplete, autocompleteSource, setSettings } = useSettingsStore();
+  const isWindows = isWindowsPlatform();
+  const resolvedRdpBackend = resolveRdpBackend(rdpBackend);
   const [shells, setShells] = useState<ShellInfo[]>([]);
 
   useEffect(() => {
@@ -55,6 +58,25 @@ export function GeneralSettings() {
                       {s.name}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="flex flex-col gap-0.5">
+                <Label className="text-sm">{t("RDP 连接方案")}</Label>
+                {!isWindows && <span className="text-xs text-muted-foreground">{t("非 Windows 平台固定使用 FreeRDP")}</span>}
+              </div>
+              <Select
+                value={resolvedRdpBackend}
+                disabled={!isWindows}
+                onValueChange={(value) => setSettings({ rdpBackend: value as ConfigurableRdpBackend })}
+              >
+                <SelectTrigger className="h-8 w-44 bg-background/80 border-0 shadow-none focus:ring-1 focus:ring-primary/30 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="freerdp">FreeRDP</SelectItem>
+                  <SelectItem value="msrdpax">MsTscAx</SelectItem>
                 </SelectContent>
               </Select>
             </div>

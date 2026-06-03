@@ -64,17 +64,18 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
 
   const handleSave = () => {
     if (!host || !port || !username) return;
+    const parsedPort = parseInt(port, 10);
 
     const cfg: SSHConfig = {
       host,
-      port: parseInt(port, 10),
+      port: parsedPort,
       username,
       authType: privateKeyPath ? "privateKey" : "password",
       password: password || undefined,
       privateKeyPath: privateKeyPath || undefined,
       nickname: nickname || undefined,
-      keepAlive: true,
-      keepAliveInterval: 60,
+      keepAlive: parsedPort === 2222 ? undefined : true,
+      keepAliveInterval: parsedPort === 2222 ? undefined : 60,
       readyTimeout: 30000,
 
     };

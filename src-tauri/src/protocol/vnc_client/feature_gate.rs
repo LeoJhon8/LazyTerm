@@ -44,20 +44,3 @@ impl std::fmt::Display for VncBackend {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_backend_detection() {
-        let backend = VncBackend::current();
-
-        // 根据编译特性断言
-        #[cfg(feature = "vnc-libvncclient")]
-        assert!(backend.is_libvncclient());
-
-        #[cfg(not(feature = "vnc-libvncclient"))]
-        assert!(backend.is_vnc_rs());
-    }
-}

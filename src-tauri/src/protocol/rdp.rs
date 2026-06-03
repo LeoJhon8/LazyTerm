@@ -32,19 +32,8 @@ pub async fn create_rdp_session<R: Runtime>(
         log_rdp_error(&session_id, &target, "config", &error);
         error
     })?;
-    let (connection_context, framed) = connect_rdp(
-        &session_id,
-        &target,
-        connector_config,
-        config.host.clone(),
-        config.port,
-    )
-    .map_err(|error| {
-        log_rdp_error(&session_id, &target, "connect", &error);
-        error
-    })?;
-
     let (control_tx, control_rx) = std_mpsc::channel::<RdpControlMsg>();
+    let (start_tx, start_rx) = std_mpsc::channel::<Result<(), String>>();
     state
         .rdp_sessions
         .lock()
@@ -60,18 +49,36 @@ pub async fn create_rdp_session<R: Runtime>(
 
     let session_id_clone = session_id.clone();
     let target_clone = target.clone();
+    let host = config.host.clone();
+    let port = config.port;
     let app_clone = app.clone();
     let rdp_sessions = Arc::clone(&state.rdp_sessions);
     std::thread::spawn(move || {
-        match run_rdp_session(
-            app_clone.clone(),
-            session_id_clone.clone(),
-            target_clone.clone(),
-            connection_context,
-            framed,
-            frame_channel,
-            control_rx,
+        let run_result = match connect_rdp(
+            &session_id_clone,
+            &target_clone,
+            connector_config,
+            host,
+            port,
         ) {
+            Ok(client) => {
+                let _ = start_tx.send(Ok(()));
+                run_rdp_session(
+                    app_clone.clone(),
+                    session_id_clone.clone(),
+                    target_clone.clone(),
+                    client,
+                    frame_channel,
+                    control_rx,
+                )
+            }
+            Err(error) => {
+                let _ = start_tx.send(Err(error.clone()));
+                Err(error)
+            }
+        };
+
+        match run_result {
             Ok(()) => log_rdp_info(
                 &session_id_clone,
                 &target_clone,
@@ -84,7 +91,18 @@ pub async fn create_rdp_session<R: Runtime>(
         let _ = app_clone.emit(&format!("rdp-close-{}", session_id_clone), ());
     });
 
-    Ok(session_id)
+    match start_rx.recv() {
+        Ok(Ok(())) => Ok(session_id),
+        Ok(Err(error)) => {
+            log_rdp_error(&session_id, &target, "connect", &error);
+            Err(error)
+        }
+        Err(error) => {
+            let message = format!("RDP session thread exited before connect result: {error}");
+            log_rdp_error(&session_id, &target, "connect", &message);
+            Err(message)
+        }
+    }
 }
 
 /// 发送 RDP 鼠标事件

@@ -118,7 +118,8 @@ pub async fn create_terminal<R: Runtime>(
     let suppress_until = if let Some(cmd) = &init_command {
         log::info!(
             "create_terminal: 写入 init_command 到 PTY, session_id={}, command={}",
-            session_id, cmd
+            session_id,
+            cmd
         );
         // 写入命令 + 回车换行符触发执行
         let cmd_with_newline = format!("{}\r\n", cmd);

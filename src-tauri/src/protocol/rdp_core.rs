@@ -1,593 +1,7 @@
-//! RDP 核心逻辑模块
-//! 包含 RDP 连接、CredSSP 认证、帧编码和会话运行逻辑
-
-use image::codecs::jpeg::JpegEncoder;
-use image::ExtendedColorType;
-use ironrdp::connector::connection_activation::ConnectionActivationState;
-use ironrdp::connector::credssp::KerberosConfig;
-use ironrdp::connector::sspi::credssp::{self, ClientState, CredSspClient};
-use ironrdp::connector::sspi::generator::GeneratorState;
-use ironrdp::connector::sspi::negotiate::ProtocolConfig;
-use ironrdp::connector::sspi::network_client::NetworkClient;
-use ironrdp::connector::Sequence as _;
-use ironrdp::connector::State as ConnectorState;
-use ironrdp::connector::{self, ConnectionResult, Credentials};
-use ironrdp::core::other_err;
-use ironrdp::core::WriteBuf;
-use ironrdp::displaycontrol::pdu::MonitorLayoutEntry;
-use ironrdp::graphics::image_processing::PixelFormat;
-use ironrdp::input::{
-    Database as RdpInputDatabase, MouseButton as RdpMouseButton, MousePosition, Operation,
-    Scancode, WheelRotations,
-};
-use ironrdp::pdu::gcc::KeyboardType;
-use ironrdp::pdu::geometry::InclusiveRectangle;
-use ironrdp::pdu::rdp::capability_sets::MajorPlatformType;
-use ironrdp::pdu::rdp::client_info::{PerformanceFlags, TimezoneInfo};
-use ironrdp::pdu::rdp::headers::ShareDataPdu;
-use ironrdp::pdu::rdp::refresh_rectangle::RefreshRectanglePdu;
-use ironrdp::pdu::rdp::suppress_output::SuppressOutputPdu;
-use ironrdp::pdu::PduHint;
-use ironrdp::session::image::DecodedImage;
-use ironrdp::session::{fast_path, ActiveStage, ActiveStageOutput};
-use sspi::network_client::reqwest_network_client::ReqwestNetworkClient;
-use sspi::{AuthIdentity as SspiAuthIdentity, Username};
-use std::{
-    io::Write,
-    net::{IpAddr, TcpStream, ToSocketAddrs},
-    sync::mpsc as std_mpsc,
-    time::{Duration, Instant},
-};
-use tauri::ipc::{Channel, Response};
-use tauri::{AppHandle, Runtime};
+//! RDP runtime backed by FreeRDP.
 
 use crate::types::RdpConnectConfig;
-use crate::utils::log_rdp_info;
 
-// ============================================================================
-// 常量定义
-// ============================================================================
-
-const RDP_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-const RDP_POLL_TIMEOUT: Duration = Duration::from_millis(16);
-const RDP_FRAME_INTERVAL: Duration = Duration::from_millis(41);
-const RDP_POINTER_MOVE_FRAME_INTERVAL: Duration = Duration::from_millis(22);
-const RDP_WHEEL_FRAME_INTERVAL: Duration = Duration::from_millis(26);
-const RDP_KEYBOARD_FRAME_INTERVAL: Duration = Duration::from_millis(30);
-const RDP_CLICK_FRAME_INTERVAL: Duration = Duration::from_millis(32);
-const RDP_FRAME_BATCH_WINDOW: Duration = Duration::from_millis(28);
-const RDP_POINTER_MOVE_BATCH_WINDOW: Duration = Duration::from_millis(8);
-const RDP_WHEEL_BATCH_WINDOW: Duration = Duration::from_millis(10);
-const RDP_KEYBOARD_BATCH_WINDOW: Duration = Duration::from_millis(12);
-const RDP_CLICK_BATCH_WINDOW: Duration = Duration::from_millis(12);
-const RDP_FULL_JPEG_QUALITY: u8 = 58;
-const RDP_POINTER_MOVE_JPEG_QUALITY: u8 = 28;
-const RDP_WHEEL_JPEG_QUALITY: u8 = 32;
-const RDP_KEYBOARD_JPEG_QUALITY: u8 = 42;
-const RDP_CLICK_JPEG_QUALITY: u8 = 46;
-const RDP_INTERACTION_WINDOW: Duration = Duration::from_millis(320);
-const RDP_REFINEMENT_DELAY: Duration = Duration::from_millis(90);
-const RDP_FIRST_FRAME_WAKE_DELAY: Duration = Duration::from_millis(700);
-const RDP_FIRST_FRAME_WAKE_REPEAT: Duration = Duration::from_secs(2);
-
-// ============================================================================
-// 帧刷新请求
-// ============================================================================
-
-pub fn request_rdp_refresh(
-    framed: &mut UpgradedFramed,
-    user_channel_id: u16,
-    io_channel_id: u16,
-    share_id: u32,
-    image: &DecodedImage,
-) -> Result<(), String> {
-    let full_rect = InclusiveRectangle {
-        left: 0,
-        top: 0,
-        right: image.width().saturating_sub(1),
-        bottom: image.height().saturating_sub(1),
-    };
-
-    let mut buffer = WriteBuf::new();
-    let suppress_output_pdu = ShareDataPdu::SuppressOutput(SuppressOutputPdu {
-        desktop_rect: Some(full_rect.clone()),
-    });
-    let written = connector::legacy::encode_share_data(
-        user_channel_id,
-        io_channel_id,
-        share_id,
-        suppress_output_pdu,
-        &mut buffer,
-    )
-    .map_err(|e| format!("encode suppress output request failed: {e}"))?;
-    framed
-        .write_all(&buffer[..written])
-        .map_err(|e| format!("send suppress output request failed: {e}"))?;
-
-    buffer.clear();
-    let refresh_pdu = ShareDataPdu::RefreshRectangle(RefreshRectanglePdu {
-        areas_to_refresh: vec![full_rect],
-    });
-    let written = connector::legacy::encode_share_data(
-        user_channel_id,
-        io_channel_id,
-        share_id,
-        refresh_pdu,
-        &mut buffer,
-    )
-    .map_err(|e| format!("encode refresh rectangle request failed: {e}"))?;
-    framed
-        .write_all(&buffer[..written])
-        .map_err(|e| format!("send refresh rectangle request failed: {e}"))?;
-
-    framed
-        .get_inner_mut()
-        .0
-        .flush()
-        .map_err(|e| format!("flush refresh request failed: {e}"))?;
-
-    Ok(())
-}
-
-// ============================================================================
-// RDP 连接上下文和帧状态结构体
-// ============================================================================
-
-pub struct RdpConnectionContext {
-    pub connection_result: ConnectionResult,
-    pub share_id: u32,
-}
-
-pub struct PendingRdpFrame {
-    dirty: bool,
-    force: bool,
-    updated_at: Option<Instant>,
-}
-
-pub struct RdpFrameEncoderState {
-    rgb_buffer: Vec<u8>,
-    jpeg_buffer: Vec<u8>,
-    packet_buffer: Vec<u8>,
-    last_interaction: Option<(RdpInteractionKind, Instant)>,
-    needs_refinement: bool,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum RdpFrameEncodeMode {
-    Jpeg { quality: u8 },
-    RawRgba,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RdpInteractionKind {
-    PointerMove,
-    Wheel,
-    Keyboard,
-    Click,
-}
-
-impl RdpInteractionKind {
-    fn priority(self) -> u8 {
-        match self {
-            Self::PointerMove => 4,
-            Self::Wheel => 3,
-            Self::Keyboard => 2,
-            Self::Click => 1,
-        }
-    }
-
-    fn frame_interval(self) -> Duration {
-        match self {
-            Self::PointerMove => RDP_POINTER_MOVE_FRAME_INTERVAL,
-            Self::Wheel => RDP_WHEEL_FRAME_INTERVAL,
-            Self::Keyboard => RDP_KEYBOARD_FRAME_INTERVAL,
-            Self::Click => RDP_CLICK_FRAME_INTERVAL,
-        }
-    }
-
-    fn batch_window(self) -> Duration {
-        match self {
-            Self::PointerMove => RDP_POINTER_MOVE_BATCH_WINDOW,
-            Self::Wheel => RDP_WHEEL_BATCH_WINDOW,
-            Self::Keyboard => RDP_KEYBOARD_BATCH_WINDOW,
-            Self::Click => RDP_CLICK_BATCH_WINDOW,
-        }
-    }
-
-    fn jpeg_quality(self) -> u8 {
-        match self {
-            Self::PointerMove => RDP_POINTER_MOVE_JPEG_QUALITY,
-            Self::Wheel => RDP_WHEEL_JPEG_QUALITY,
-            Self::Keyboard => RDP_KEYBOARD_JPEG_QUALITY,
-            Self::Click => RDP_CLICK_JPEG_QUALITY,
-        }
-    }
-
-    fn prefer_raw_rgba(self) -> bool {
-        matches!(self, Self::PointerMove | Self::Wheel)
-    }
-}
-
-impl RdpFrameEncoderState {
-    pub fn new() -> Self {
-        Self {
-            rgb_buffer: Vec::new(),
-            jpeg_buffer: Vec::new(),
-            packet_buffer: Vec::new(),
-            last_interaction: None,
-            needs_refinement: false,
-        }
-    }
-
-    fn mark_interaction(&mut self, kind: RdpInteractionKind) {
-        let now = Instant::now();
-
-        self.last_interaction = match self.last_interaction {
-            Some((current_kind, current_at))
-                if now.duration_since(current_at) <= RDP_INTERACTION_WINDOW
-                    && current_kind.priority() > kind.priority() =>
-            {
-                Some((current_kind, now))
-            }
-            _ => Some((kind, now)),
-        };
-    }
-
-    fn interaction_kind(&self) -> Option<RdpInteractionKind> {
-        self.last_interaction.and_then(|(kind, instant)| {
-            (instant.elapsed() <= RDP_INTERACTION_WINDOW).then_some(kind)
-        })
-    }
-
-    fn frame_interval(&self) -> Duration {
-        self.interaction_kind()
-            .map(RdpInteractionKind::frame_interval)
-            .unwrap_or(RDP_FRAME_INTERVAL)
-    }
-
-    fn batch_window(&self) -> Duration {
-        self.interaction_kind()
-            .map(RdpInteractionKind::batch_window)
-            .unwrap_or(RDP_FRAME_BATCH_WINDOW)
-    }
-
-    fn jpeg_quality(&self, prioritize_speed: bool) -> u8 {
-        if let Some(kind) = self.interaction_kind() {
-            kind.jpeg_quality()
-        } else if prioritize_speed {
-            RDP_FULL_JPEG_QUALITY.saturating_sub(8)
-        } else {
-            RDP_FULL_JPEG_QUALITY
-        }
-    }
-
-    fn prefer_raw_rgba(&self) -> bool {
-        self.interaction_kind()
-            .is_some_and(RdpInteractionKind::prefer_raw_rgba)
-    }
-
-    fn encode_mode(&self, prioritize_speed: bool) -> RdpFrameEncodeMode {
-        if self.prefer_raw_rgba() {
-            RdpFrameEncodeMode::RawRgba
-        } else {
-            RdpFrameEncodeMode::Jpeg {
-                quality: self.jpeg_quality(prioritize_speed),
-            }
-        }
-    }
-
-    fn mark_degraded_emit(&mut self) {
-        self.needs_refinement = true;
-    }
-
-    fn clear_refinement(&mut self) {
-        self.needs_refinement = false;
-    }
-
-    fn should_emit_refinement(&self) -> bool {
-        self.needs_refinement
-            && self.last_interaction.is_some_and(|(_, instant)| {
-                instant.elapsed() > RDP_INTERACTION_WINDOW + RDP_REFINEMENT_DELAY
-            })
-    }
-}
-
-impl PendingRdpFrame {
-    pub fn new() -> Self {
-        Self {
-            dirty: false,
-            force: false,
-            updated_at: None,
-        }
-    }
-
-    fn mark_dirty(&mut self, force: bool) {
-        self.dirty = true;
-        self.force |= force;
-        self.updated_at = Some(Instant::now());
-    }
-
-    fn clear(&mut self) {
-        self.dirty = false;
-        self.force = false;
-        self.updated_at = None;
-    }
-}
-
-// ============================================================================
-// CredSSP 本地实现
-// ============================================================================
-
-#[derive(Clone, Copy, Debug)]
-struct LocalCredsspTsRequestHint;
-
-const LOCAL_CREDSSP_TS_REQUEST_HINT: LocalCredsspTsRequestHint = LocalCredsspTsRequestHint;
-
-impl PduHint for LocalCredsspTsRequestHint {
-    fn find_size(&self, bytes: &[u8]) -> ironrdp::core::DecodeResult<Option<(bool, usize)>> {
-        match credssp::TsRequest::read_length(bytes) {
-            Ok(length) => Ok(Some((true, length))),
-            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
-            Err(error) => Err(other_err!("LocalCredsspTsRequestHint", source: error)),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct LocalCredsspEarlyUserAuthResultHint;
-
-const LOCAL_CREDSSP_EARLY_USER_AUTH_RESULT_HINT: LocalCredsspEarlyUserAuthResultHint =
-    LocalCredsspEarlyUserAuthResultHint;
-
-impl PduHint for LocalCredsspEarlyUserAuthResultHint {
-    fn find_size(&self, _: &[u8]) -> ironrdp::core::DecodeResult<Option<(bool, usize)>> {
-        Ok(Some((true, credssp::EARLY_USER_AUTH_RESULT_PDU_SIZE)))
-    }
-}
-
-type LocalCredsspProcessGenerator<'a> = sspi::generator::Generator<
-    'a,
-    sspi::generator::NetworkRequest,
-    sspi::Result<Vec<u8>>,
-    sspi::Result<ClientState>,
->;
-
-#[derive(Debug, PartialEq)]
-enum LocalCredsspState {
-    Ongoing,
-    EarlyUserAuthResult,
-    Finished,
-}
-
-#[derive(Debug)]
-struct LocalCredsspSequence {
-    client: CredSspClient,
-    state: LocalCredsspState,
-    selected_protocol: ironrdp::pdu::nego::SecurityProtocol,
-}
-
-impl LocalCredsspSequence {
-    fn next_pdu_hint(&self) -> Option<&dyn PduHint> {
-        match self.state {
-            LocalCredsspState::Ongoing => Some(&LOCAL_CREDSSP_TS_REQUEST_HINT),
-            LocalCredsspState::EarlyUserAuthResult => {
-                Some(&LOCAL_CREDSSP_EARLY_USER_AUTH_RESULT_HINT)
-            }
-            LocalCredsspState::Finished => None,
-        }
-    }
-
-    fn init(
-        credentials: Credentials,
-        domain: Option<&str>,
-        protocol: ironrdp::pdu::nego::SecurityProtocol,
-        server_name: connector::ServerName,
-        server_public_key: Vec<u8>,
-    ) -> Result<(Self, credssp::TsRequest), String> {
-        let credentials: sspi::Credentials = match credentials {
-            Credentials::UsernamePassword { username, password } => {
-                let username = Username::new(&username, domain)
-                    .map_err(|e| format!("invalid username: {e}"))?;
-                SspiAuthIdentity {
-                    username,
-                    password: password.into(),
-                }
-                .into()
-            }
-            Credentials::SmartCard { .. } => {
-                return Err(
-                    "smart card authentication is not supported by the local CredSSP path"
-                        .to_string(),
-                )
-            }
-        };
-
-        let server_name = server_name.into_inner();
-        let service_principal_name = format!("TERMSRV/{server_name}");
-        let force_ntlm_only = server_name.parse::<IpAddr>().is_ok();
-        let package_list = force_ntlm_only.then(|| "!kerberos,!pku2u".to_string());
-        let protocol_config: Box<dyn ProtocolConfig> = Box::<sspi::ntlm::NtlmConfig>::default();
-
-        let client = CredSspClient::new(
-            server_public_key,
-            credentials,
-            credssp::CredSspMode::WithCredentials,
-            credssp::ClientMode::Negotiate(sspi::NegotiateConfig {
-                protocol_config,
-                package_list,
-                client_computer_name: server_name.clone(),
-            }),
-            service_principal_name,
-        )
-        .map_err(|e| format!("CredSSP init failed: {e}"))?;
-
-        Ok((
-            Self {
-                client,
-                state: LocalCredsspState::Ongoing,
-                selected_protocol: protocol,
-            },
-            credssp::TsRequest::default(),
-        ))
-    }
-
-    fn decode_server_message(
-        &mut self,
-        input: &[u8],
-    ) -> Result<Option<credssp::TsRequest>, String> {
-        match self.state {
-            LocalCredsspState::Ongoing => credssp::TsRequest::from_buffer(input)
-                .map(Some)
-                .map_err(|e| format!("CredSSP decode failed: {e}")),
-            LocalCredsspState::EarlyUserAuthResult => {
-                let result = credssp::EarlyUserAuthResult::from_buffer(input)
-                    .map_err(|e| format!("CredSSP early auth decode failed: {e}"))?;
-
-                match result {
-                    credssp::EarlyUserAuthResult::Success => {
-                        self.state = LocalCredsspState::Finished;
-                        Ok(None)
-                    }
-                    credssp::EarlyUserAuthResult::AccessDenied => {
-                        Err("CredSSP access denied".to_string())
-                    }
-                }
-            }
-            LocalCredsspState::Finished => Err("CredSSP sequence is already finished".to_string()),
-        }
-    }
-
-    fn process_ts_request(
-        &mut self,
-        request: credssp::TsRequest,
-    ) -> LocalCredsspProcessGenerator<'_> {
-        self.client.process(request)
-    }
-
-    fn handle_process_result(
-        &mut self,
-        result: ClientState,
-        output: &mut WriteBuf,
-    ) -> Result<connector::Written, String> {
-        let (size, next_state) = match self.state {
-            LocalCredsspState::Ongoing => {
-                let (ts_request_from_client, next_state) = match result {
-                    ClientState::ReplyNeeded(ts_request) => {
-                        (ts_request, LocalCredsspState::Ongoing)
-                    }
-                    ClientState::FinalMessage(ts_request) => (
-                        ts_request,
-                        if self
-                            .selected_protocol
-                            .contains(ironrdp::pdu::nego::SecurityProtocol::HYBRID_EX)
-                        {
-                            LocalCredsspState::EarlyUserAuthResult
-                        } else {
-                            LocalCredsspState::Finished
-                        },
-                    ),
-                };
-
-                let length = usize::from(ts_request_from_client.buffer_len());
-                let unfilled_buffer = output.unfilled_to(length);
-                ts_request_from_client
-                    .encode_ts_request(unfilled_buffer)
-                    .map_err(|e| format!("CredSSP encode failed: {e}"))?;
-                output.advance(length);
-
-                (
-                    connector::Written::from_size(length).map_err(|e| e.to_string())?,
-                    next_state,
-                )
-            }
-            LocalCredsspState::EarlyUserAuthResult => {
-                (connector::Written::Nothing, LocalCredsspState::Finished)
-            }
-            LocalCredsspState::Finished => {
-                return Err("CredSSP sequence is already done".to_string())
-            }
-        };
-
-        self.state = next_state;
-        Ok(size)
-    }
-}
-
-// ============================================================================
-// 类型别名
-// ============================================================================
-
-pub type UpgradedFramed =
-    ironrdp_blocking::Framed<rustls::StreamOwned<rustls::ClientConnection, TcpStream>>;
-
-// ============================================================================
-// RDP 配置和连接函数
-// ============================================================================
-
-pub fn build_rdp_config(config: &RdpConnectConfig) -> Result<connector::Config, String> {
-    let password = config
-        .password
-        .clone()
-        .ok_or_else(|| "RDP 连接当前仅支持密码认证。".to_string())?;
-
-    let width = config.width.unwrap_or(1280).clamp(200, 8192);
-    let height = config.height.unwrap_or(720).clamp(200, 8192);
-    let (width, height) = MonitorLayoutEntry::adjust_display_size(width, height);
-
-    Ok(connector::Config {
-        credentials: Credentials::UsernamePassword {
-            username: config.username.clone(),
-            password,
-        },
-        domain: config.domain.clone(),
-        enable_tls: false,
-        enable_credssp: true,
-        keyboard_type: KeyboardType::IbmEnhanced,
-        keyboard_subtype: 0,
-        keyboard_layout: 0,
-        keyboard_functional_keys_count: 12,
-        ime_file_name: String::new(),
-        dig_product_id: String::new(),
-        desktop_size: connector::DesktopSize {
-            width: width as u16,
-            height: height as u16,
-        },
-        bitmap: None,
-        client_build: 0,
-        client_name: "lazy-term-rdp".to_owned(),
-        client_dir: "C:\\Windows\\System32\\mstscax.dll".to_owned(),
-        #[cfg(windows)]
-        platform: MajorPlatformType::WINDOWS,
-        #[cfg(target_os = "macos")]
-        platform: MajorPlatformType::MACINTOSH,
-        #[cfg(target_os = "ios")]
-        platform: MajorPlatformType::IOS,
-        #[cfg(target_os = "linux")]
-        platform: MajorPlatformType::UNIX,
-        #[cfg(target_os = "android")]
-        platform: MajorPlatformType::ANDROID,
-        #[cfg(target_os = "freebsd")]
-        platform: MajorPlatformType::UNIX,
-        #[cfg(target_os = "dragonfly")]
-        platform: MajorPlatformType::UNIX,
-        #[cfg(target_os = "openbsd")]
-        platform: MajorPlatformType::UNIX,
-        #[cfg(target_os = "netbsd")]
-        platform: MajorPlatformType::UNIX,
-        enable_server_pointer: true,
-        request_data: None,
-        autologon: false,
-        enable_audio_playback: false,
-        pointer_software_rendering: true,
-        performance_flags: PerformanceFlags::default(),
-        desktop_scale_factor: 0,
-        hardware_id: None,
-        license_cache: None,
-        timezone_info: TimezoneInfo::default(),
-    })
-}
-
-#[cfg_attr(not(windows), allow(dead_code))]
 pub fn build_rdp_full_address(config: &RdpConnectConfig) -> String {
     if config.port == 3389 {
         config.host.clone()
@@ -596,983 +10,543 @@ pub fn build_rdp_full_address(config: &RdpConnectConfig) -> String {
     }
 }
 
-pub fn connect_rdp(
-    session_id: &str,
-    target: &str,
-    config: connector::Config,
-    server_name: String,
-    port: u16,
-) -> Result<(RdpConnectionContext, UpgradedFramed), String> {
-    log_rdp_info(session_id, target, "resolve", "resolving target address");
-    let server_addr = (server_name.as_str(), port)
-        .to_socket_addrs()
-        .map_err(|e| format!("lookup addr failed: {e}"))?
-        .next()
-        .ok_or_else(|| "socket address not found".to_string())?;
+#[cfg(feature = "rdp-freerdp")]
+mod freerdp_runtime {
+    use std::collections::HashSet;
+    use std::sync::mpsc as std_mpsc;
+    use std::time::{Duration, Instant};
 
-    log_rdp_info(
-        session_id,
-        target,
-        "tcp",
-        format!("connecting to {server_addr}"),
-    );
-    let tcp_stream =
-        TcpStream::connect(server_addr).map_err(|e| format!("TCP connect failed: {e}"))?;
-    tcp_stream
-        .set_read_timeout(Some(RDP_HANDSHAKE_TIMEOUT))
-        .map_err(|e| format!("set read timeout failed: {e}"))?;
-    tcp_stream
-        .set_write_timeout(Some(RDP_HANDSHAKE_TIMEOUT))
-        .map_err(|e| format!("set write timeout failed: {e}"))?;
+    use image::codecs::jpeg::JpegEncoder;
+    use image::ExtendedColorType;
+    use tauri::ipc::{Channel, Response};
+    use tauri::{AppHandle, Runtime};
 
-    log_rdp_info(session_id, target, "tcp", "TCP connection established");
+    use crate::protocol::freerdp_client::{FreeRdpClient, FreeRdpClientConfig, FreeRdpFrame};
+    use crate::types::{RdpConnectConfig, RdpControlMsg, RdpPointerEventPayload};
+    use crate::utils::log_rdp_info;
 
-    let client_addr = tcp_stream
-        .local_addr()
-        .map_err(|e| format!("get socket local address failed: {e}"))?;
-    let mut framed = ironrdp_blocking::Framed::new(tcp_stream);
-    let mut client_connector = connector::ClientConnector::new(config, client_addr);
+    const RDP_POLL_TIMEOUT: Duration = Duration::from_millis(16);
+    const RDP_IDLE_FRAME_INTERVAL: Duration = Duration::from_millis(33);
+    const RDP_INTERACTIVE_FRAME_INTERVAL: Duration = Duration::from_millis(16);
+    const RDP_FULL_JPEG_QUALITY: u8 = 58;
+    const RDP_POINTER_MOVE_JPEG_QUALITY: u8 = 28;
+    const RDP_WHEEL_JPEG_QUALITY: u8 = 32;
+    const RDP_KEYBOARD_JPEG_QUALITY: u8 = 42;
+    const RDP_CLICK_JPEG_QUALITY: u8 = 46;
+    const RDP_INTERACTION_WINDOW: Duration = Duration::from_millis(320);
 
-    log_rdp_info(
-        session_id,
-        target,
-        "negotiation",
-        "starting RDP negotiation",
-    );
-    let should_upgrade = ironrdp_blocking::connect_begin(&mut framed, &mut client_connector)
-        .map_err(|e| format!("begin connection failed: {e}"))?;
-
-    let initial_stream = framed.into_inner_no_leftover();
-    log_rdp_info(session_id, target, "tls", "starting TLS handshake");
-    let (upgraded_stream, server_public_key) = tls_upgrade(initial_stream, server_name.clone())?;
-    log_rdp_info(session_id, target, "tls", "TLS handshake completed");
-    let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut client_connector);
-    let mut upgraded_framed = ironrdp_blocking::Framed::new(upgraded_stream);
-
-    let mut network_client = ReqwestNetworkClient;
-    log_rdp_info(
-        session_id,
-        target,
-        "auth",
-        "starting CredSSP and session finalization",
-    );
-    let connection_context = connect_finalize_with_share_id(
-        session_id,
-        target,
-        client_connector,
-        &mut upgraded_framed,
-        &mut network_client,
-        server_name.into(),
-        server_public_key,
-        None,
-    )
-    .map_err(|e| format!("finalize connection failed: {e}"))?;
-
-    log_rdp_info(
-        session_id,
-        target,
-        "connected",
-        format!(
-            "desktop session established at {}x{}",
-            connection_context.connection_result.desktop_size.width,
-            connection_context.connection_result.desktop_size.height
-        ),
-    );
-
-    upgraded_framed
-        .get_inner_mut()
-        .0
-        .get_mut()
-        .set_read_timeout(Some(RDP_POLL_TIMEOUT))
-        .map_err(|e| format!("set session read timeout failed: {e}"))?;
-
-    let _ = upgraded;
-
-    Ok((connection_context, upgraded_framed))
-}
-
-// ============================================================================
-// CredSSP 状态解析
-// ============================================================================
-
-fn resolve_credssp_state(
-    generator: &mut LocalCredsspProcessGenerator<'_>,
-    network_client: &mut impl NetworkClient,
-) -> Result<ClientState, String> {
-    let mut state = generator.start();
-
-    loop {
-        match state {
-            GeneratorState::Suspended(request) => {
-                let response = network_client
-                    .send(&request)
-                    .map_err(|e| format!("network client send failed: {e}"))?;
-                state = generator.resume(Ok(response));
-            }
-            GeneratorState::Completed(client_state) => {
-                return client_state.map_err(|e| format!("CredSSP failed: {e}"));
-            }
-        }
+    pub struct RdpFrameEncoderState {
+        rgb_buffer: Vec<u8>,
+        jpeg_buffer: Vec<u8>,
+        packet_buffer: Vec<u8>,
+        last_interaction: Option<(RdpInteractionKind, Instant)>,
     }
-}
 
-fn perform_credssp_step(
-    connector: &mut connector::ClientConnector,
-    framed: &mut UpgradedFramed,
-    network_client: &mut impl NetworkClient,
-    buf: &mut WriteBuf,
-    server_name: connector::ServerName,
-    server_public_key: Vec<u8>,
-    _kerberos_config: Option<KerberosConfig>,
-) -> Result<(), String> {
-    let selected_protocol = match connector.state {
-        connector::ClientConnectorState::Credssp {
-            selected_protocol, ..
-        } => selected_protocol,
-        _ => return Err("invalid connector state for CredSSP sequence".to_string()),
-    };
+    #[derive(Clone, Copy)]
+    enum RdpFrameEncodeMode {
+        Jpeg { quality: u8 },
+        RawRgba,
+    }
 
-    let (mut sequence, mut ts_request) = LocalCredsspSequence::init(
-        connector.config.credentials.clone(),
-        connector.config.domain.as_deref(),
-        selected_protocol,
-        server_name,
-        server_public_key,
-    )?;
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum RdpInteractionKind {
+        PointerMove,
+        Wheel,
+        Keyboard,
+        Click,
+    }
 
-    loop {
-        let client_state = {
-            let mut generator = sequence.process_ts_request(ts_request);
-            resolve_credssp_state(&mut generator, network_client)?
-        };
-
-        buf.clear();
-        let written = sequence
-            .handle_process_result(client_state, buf)
-            .map_err(|e| format!("CredSSP process result failed: {e}"))?;
-
-        if let Some(response_len) = written.size() {
-            framed
-                .write_all(&buf[..response_len])
-                .map_err(|e| format!("CredSSP write failed: {e}"))?;
+    impl RdpInteractionKind {
+        fn priority(self) -> u8 {
+            match self {
+                Self::PointerMove => 4,
+                Self::Wheel => 3,
+                Self::Keyboard => 2,
+                Self::Click => 1,
+            }
         }
 
-        let Some(next_pdu_hint) = sequence.next_pdu_hint() else {
-            break;
-        };
+        fn jpeg_quality(self) -> u8 {
+            match self {
+                Self::PointerMove => RDP_POINTER_MOVE_JPEG_QUALITY,
+                Self::Wheel => RDP_WHEEL_JPEG_QUALITY,
+                Self::Keyboard => RDP_KEYBOARD_JPEG_QUALITY,
+                Self::Click => RDP_CLICK_JPEG_QUALITY,
+            }
+        }
 
-        let pdu = framed
-            .read_by_hint(next_pdu_hint)
-            .map_err(|e| format!("CredSSP read failed: {e}"))?;
-
-        if let Some(next_request) = sequence
-            .decode_server_message(&pdu)
-            .map_err(|e| format!("CredSSP decode failed: {e}"))?
-        {
-            ts_request = next_request;
-        } else {
-            break;
+        fn prefer_raw_rgba(self) -> bool {
+            matches!(self, Self::PointerMove | Self::Wheel)
         }
     }
 
-    connector.mark_credssp_as_done();
-    Ok(())
-}
+    impl RdpFrameEncoderState {
+        fn new() -> Self {
+            Self {
+                rgb_buffer: Vec::new(),
+                jpeg_buffer: Vec::new(),
+                packet_buffer: Vec::new(),
+                last_interaction: None,
+            }
+        }
 
-// ============================================================================
-// 连接最终化
-// ============================================================================
+        fn mark_interaction(&mut self, kind: RdpInteractionKind) {
+            let now = Instant::now();
+            self.last_interaction = match self.last_interaction {
+                Some((current_kind, current_at))
+                    if now.duration_since(current_at) <= RDP_INTERACTION_WINDOW
+                        && current_kind.priority() > kind.priority() =>
+                {
+                    Some((current_kind, now))
+                }
+                _ => Some((kind, now)),
+            };
+        }
 
-fn connect_finalize_with_share_id(
-    session_id: &str,
-    target: &str,
-    mut connector: connector::ClientConnector,
-    framed: &mut UpgradedFramed,
-    network_client: &mut impl NetworkClient,
-    server_name: connector::ServerName,
-    server_public_key: Vec<u8>,
-    kerberos_config: Option<KerberosConfig>,
-) -> Result<RdpConnectionContext, String> {
-    let mut buf = WriteBuf::new();
-    let mut share_id: Option<u32> = None;
-    let finalize_started_at = Instant::now();
-    let mut last_state_name = connector.state.name();
+        fn interaction_kind(&self) -> Option<RdpInteractionKind> {
+            self.last_interaction.and_then(|(kind, instant)| {
+                (instant.elapsed() <= RDP_INTERACTION_WINDOW).then_some(kind)
+            })
+        }
 
-    log_rdp_info(
-        session_id,
-        target,
-        "auth",
-        format!("entered finalize flow at state {last_state_name}"),
-    );
+        fn encode_mode(&self, prioritize_speed: bool) -> RdpFrameEncodeMode {
+            if let Some(kind) = self.interaction_kind() {
+                if kind.prefer_raw_rgba() {
+                    return RdpFrameEncodeMode::RawRgba;
+                }
 
-    if connector.should_perform_credssp() {
-        let credssp_started_at = Instant::now();
-        perform_credssp_step(
-            &mut connector,
-            framed,
-            network_client,
-            &mut buf,
-            server_name,
-            server_public_key,
-            kerberos_config,
-        )?;
+                return RdpFrameEncodeMode::Jpeg {
+                    quality: kind.jpeg_quality(),
+                };
+            }
+
+            RdpFrameEncodeMode::Jpeg {
+                quality: if prioritize_speed {
+                    RDP_FULL_JPEG_QUALITY.saturating_sub(8)
+                } else {
+                    RDP_FULL_JPEG_QUALITY
+                },
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct RdpInputState {
+        pressed_keys: HashSet<u16>,
+        pressed_buttons: HashSet<u8>,
+        last_x: u16,
+        last_y: u16,
+    }
+
+    pub fn build_rdp_config(config: &RdpConnectConfig) -> Result<FreeRdpClientConfig, String> {
+        let password = config
+            .password
+            .clone()
+            .ok_or_else(|| "RDP 连接当前仅支持密码认证。".to_string())?;
+
+        let width = config.width.unwrap_or(1280).clamp(200, 8192);
+        let height = config.height.unwrap_or(720).clamp(200, 8192);
+
+        Ok(FreeRdpClientConfig {
+            host: config.host.clone(),
+            port: config.port,
+            username: config.username.clone(),
+            password,
+            domain: config.domain.clone(),
+            width,
+            height,
+        })
+    }
+
+    pub fn connect_rdp(
+        session_id: &str,
+        target: &str,
+        mut config: FreeRdpClientConfig,
+        server_name: String,
+        port: u16,
+    ) -> Result<FreeRdpClient, String> {
+        config.host = server_name;
+        config.port = port;
+
         log_rdp_info(
             session_id,
             target,
-            "auth",
+            "connect",
             format!(
-                "CredSSP finished in {} ms, next state {}",
-                credssp_started_at.elapsed().as_millis(),
-                connector.state.name()
+                "starting FreeRDP connection {}x{}",
+                config.width, config.height
             ),
         );
-        last_state_name = connector.state.name();
+
+        let client = FreeRdpClient::connect(&config)?;
+
+        log_rdp_info(
+            session_id,
+            target,
+            "connected",
+            format!(
+                "FreeRDP desktop session established{}",
+                FreeRdpClient::version()
+                    .map(|version| format!(" with FreeRDP {version}"))
+                    .unwrap_or_default()
+            ),
+        );
+
+        Ok(client)
     }
 
-    loop {
-        buf.clear();
+    pub fn run_rdp_session<R: Runtime>(
+        _app: AppHandle<R>,
+        session_id: String,
+        target: String,
+        mut client: FreeRdpClient,
+        frame_channel: Channel<Response>,
+        control_rx: std_mpsc::Receiver<RdpControlMsg>,
+    ) -> Result<(), String> {
+        let mut encoder_state = RdpFrameEncoderState::new();
+        let mut input_state = RdpInputState::default();
+        let mut has_emitted_frame = false;
+        let mut pending_frame: Option<FreeRdpFrame> = None;
+        let mut last_frame_emitted_at: Option<Instant> = None;
+        let started_at = Instant::now();
 
-        let written = if let Some(next_pdu_hint) = connector.next_pdu_hint() {
-            let read_started_at = Instant::now();
-            let pdu = framed
-                .read_by_hint(next_pdu_hint)
-                .map_err(|e| format!("read frame by hint failed: {e}"))?;
-            let read_elapsed = read_started_at.elapsed();
+        log_rdp_info(
+            &session_id,
+            &target,
+            "stream",
+            "FreeRDP frame channel initialized",
+        );
 
-            if read_elapsed >= Duration::from_millis(500) {
-                log_rdp_info(
-                    session_id,
-                    target,
-                    "auth",
-                    format!(
-                        "waited {} ms for server PDU while in state {}",
-                        read_elapsed.as_millis(),
-                        connector.state.name()
-                    ),
-                );
-            }
-
-            if share_id.is_none()
-                && matches!(
-                    connector.state,
-                    connector::ClientConnectorState::CapabilitiesExchange { .. }
-                )
-            {
-                let send_data_ctx = connector::legacy::decode_send_data_indication(&pdu)
-                    .map_err(|e| format!("decode send data indication failed: {e}"))?;
-                let share_control_ctx = connector::legacy::decode_share_control(send_data_ctx)
-                    .map_err(|e| format!("decode share control failed: {e}"))?;
-                share_id = Some(share_control_ctx.share_id);
-            }
-
-            connector
-                .step(&pdu, &mut buf)
-                .map_err(|e| format!("connection step failed: {e}"))?
-        } else {
-            connector
-                .step_no_input(&mut buf)
-                .map_err(|e| format!("connection step without input failed: {e}"))?
-        };
-
-        if let Some(response_len) = written.size() {
-            framed
-                .write_all(&buf[..response_len])
-                .map_err(|e| format!("write response failed: {e}"))?;
-        }
-
-        let state_name = connector.state.name();
-        if state_name != last_state_name {
-            log_rdp_info(
-                session_id,
-                target,
-                "auth",
-                format!(
-                    "state transition: {} -> {} at {} ms",
-                    last_state_name,
-                    state_name,
-                    finalize_started_at.elapsed().as_millis()
-                ),
-            );
-            last_state_name = state_name;
-        }
-
-        if let connector::ClientConnectorState::Connected { result } = connector.state {
-            log_rdp_info(
-                session_id,
-                target,
-                "auth",
-                format!(
-                    "finalize flow completed in {} ms",
-                    finalize_started_at.elapsed().as_millis()
-                ),
-            );
-            return Ok(RdpConnectionContext {
-                connection_result: result,
-                share_id: share_id
-                    .ok_or_else(|| "share_id was not captured during activation".to_string())?,
-            });
-        }
-    }
-}
-
-// ============================================================================
-// TLS 升级
-// ============================================================================
-
-use std::sync::Arc;
-use tokio_rustls::rustls;
-use x509_cert::der::Decode as _;
-
-pub fn tls_upgrade(
-    stream: TcpStream,
-    server_name: String,
-) -> Result<
-    (
-        rustls::StreamOwned<rustls::ClientConnection, TcpStream>,
-        Vec<u8>,
-    ),
-    String,
-> {
-    let mut config = rustls::client::ClientConfig::builder()
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(super::tls::NoCertificateVerification))
-        .with_no_client_auth();
-
-    config.key_log = Arc::new(rustls::KeyLogFile::new());
-    config.resumption = rustls::client::Resumption::disabled();
-
-    let server_name = server_name
-        .try_into()
-        .map_err(|e| format!("invalid server name: {e}"))?;
-
-    let client = rustls::ClientConnection::new(Arc::new(config), server_name)
-        .map_err(|e| format!("create TLS client failed: {e}"))?;
-    let mut tls_stream = rustls::StreamOwned::new(client, stream);
-
-    tls_stream
-        .flush()
-        .map_err(|e| format!("TLS handshake flush failed: {e}"))?;
-
-    let cert = tls_stream
-        .conn
-        .peer_certificates()
-        .and_then(|certificates| certificates.first())
-        .ok_or_else(|| "peer certificate is missing".to_string())?;
-
-    let server_public_key = extract_tls_server_public_key(cert)?;
-    Ok((tls_stream, server_public_key))
-}
-
-fn extract_tls_server_public_key(cert: &[u8]) -> Result<Vec<u8>, String> {
-    let cert = x509_cert::Certificate::from_der(cert)
-        .map_err(|e| format!("parse certificate failed: {e}"))?;
-    cert.tbs_certificate
-        .subject_public_key_info
-        .subject_public_key
-        .as_bytes()
-        .map(|value| value.to_owned())
-        .ok_or_else(|| "subject public key BIT STRING is not aligned".to_string())
-}
-
-// ============================================================================
-// 矩形辅助函数
-// ============================================================================
-
-fn rect_width(rect: &InclusiveRectangle) -> u16 {
-    rect.right.saturating_sub(rect.left).saturating_add(1)
-}
-
-fn rect_height(rect: &InclusiveRectangle) -> u16 {
-    rect.bottom.saturating_sub(rect.top).saturating_add(1)
-}
-
-// ============================================================================
-// RDP 帧编码与发送
-// ============================================================================
-
-pub fn emit_rdp_frame(
-    frame_channel: &Channel<Response>,
-    image: &DecodedImage,
-    encoder_state: &mut RdpFrameEncoderState,
-    encode_mode: RdpFrameEncodeMode,
-) -> Result<(), String> {
-    let full_rect = InclusiveRectangle {
-        left: 0,
-        top: 0,
-        right: image.width().saturating_sub(1),
-        bottom: image.height().saturating_sub(1),
-    };
-
-    let encode_rect = full_rect;
-    encoder_state.packet_buffer.clear();
-    encoder_state
-        .packet_buffer
-        .extend_from_slice(&image.width().to_le_bytes());
-    encoder_state
-        .packet_buffer
-        .extend_from_slice(&image.height().to_le_bytes());
-    encoder_state
-        .packet_buffer
-        .extend_from_slice(&encode_rect.left.to_le_bytes());
-    encoder_state
-        .packet_buffer
-        .extend_from_slice(&encode_rect.top.to_le_bytes());
-    encoder_state
-        .packet_buffer
-        .extend_from_slice(&rect_width(&encode_rect).to_le_bytes());
-    encoder_state
-        .packet_buffer
-        .extend_from_slice(&rect_height(&encode_rect).to_le_bytes());
-
-    match encode_mode {
-        RdpFrameEncodeMode::RawRgba => {
-            encoder_state.packet_buffer.push(0x01 | 0x02);
-            encoder_state.packet_buffer.extend_from_slice(image.data());
-        }
-        RdpFrameEncodeMode::Jpeg { quality } => {
-            let rgba = image.data();
-            let pixel_count = usize::from(image.width()) * usize::from(image.height());
-            let rgb_len = pixel_count * 3;
-            if encoder_state.rgb_buffer.len() != rgb_len {
-                encoder_state.rgb_buffer.resize(rgb_len, 0);
-            }
-
-            for (rgba_pixel, rgb_pixel) in rgba
-                .chunks_exact(4)
-                .zip(encoder_state.rgb_buffer.chunks_exact_mut(3))
-            {
-                rgb_pixel[0] = rgba_pixel[0];
-                rgb_pixel[1] = rgba_pixel[1];
-                rgb_pixel[2] = rgba_pixel[2];
-            }
-
-            encoder_state.jpeg_buffer.clear();
-            let mut encoder =
-                JpegEncoder::new_with_quality(&mut encoder_state.jpeg_buffer, quality);
-            encoder
-                .encode(
-                    &encoder_state.rgb_buffer,
-                    u32::from(rect_width(&encode_rect)),
-                    u32::from(rect_height(&encode_rect)),
-                    ExtendedColorType::Rgb8,
-                )
-                .map_err(|e| format!("encode JPEG failed: {e}"))?;
-
-            encoder_state.packet_buffer.push(0x01);
-            encoder_state
-                .packet_buffer
-                .extend_from_slice(&encoder_state.jpeg_buffer);
-        }
-    }
-
-    frame_channel
-        .send(Response::new(std::mem::take(
-            &mut encoder_state.packet_buffer,
-        )))
-        .map_err(|e| format!("send RDP frame via channel failed: {e}"))
-}
-
-pub fn flush_pending_rdp_frame(
-    image: &DecodedImage,
-    frame_channel: &Channel<Response>,
-    encoder_state: &mut RdpFrameEncoderState,
-    pending_frame: &mut PendingRdpFrame,
-    last_frame_emit_at: &mut Instant,
-    has_emitted_frame: &mut bool,
-) -> Result<(), String> {
-    if !pending_frame.dirty {
-        return Ok(());
-    }
-
-    let updated_at = match pending_frame.updated_at {
-        Some(updated_at) => updated_at,
-        None => return Ok(()),
-    };
-
-    let now = Instant::now();
-    let frame_interval = encoder_state.frame_interval();
-    let batch_window = encoder_state.batch_window();
-    let should_emit = pending_frame.force
-        || (last_frame_emit_at.elapsed() >= frame_interval
-            && now.duration_since(updated_at) >= batch_window);
-
-    if !should_emit {
-        return Ok(());
-    }
-
-    let prioritize_speed = !*has_emitted_frame || pending_frame.force;
-    let encode_mode = encoder_state.encode_mode(prioritize_speed);
-    emit_rdp_frame(frame_channel, image, encoder_state, encode_mode)?;
-    *last_frame_emit_at = Instant::now();
-    *has_emitted_frame = true;
-    match encode_mode {
-        RdpFrameEncodeMode::RawRgba => encoder_state.mark_degraded_emit(),
-        RdpFrameEncodeMode::Jpeg { quality } if quality < RDP_FULL_JPEG_QUALITY => {
-            encoder_state.mark_degraded_emit()
-        }
-        RdpFrameEncodeMode::Jpeg { .. } => encoder_state.clear_refinement(),
-    }
-    pending_frame.clear();
-
-    Ok(())
-}
-
-fn flush_rdp_refinement_frame(
-    _image: &DecodedImage,
-    _frame_channel: &Channel<Response>,
-    encoder_state: &mut RdpFrameEncoderState,
-    last_frame_emit_at: &mut Instant,
-    _has_emitted_frame: &mut bool,
-) -> Result<(), String> {
-    if !encoder_state.should_emit_refinement() || last_frame_emit_at.elapsed() < RDP_FRAME_INTERVAL
-    {
-        return Ok(());
-    }
-
-    encoder_state.clear_refinement();
-
-    Ok(())
-}
-
-// ============================================================================
-// RDP 输出处理
-// ============================================================================
-
-fn handle_rdp_outputs(
-    framed: &mut UpgradedFramed,
-    active_stage: &mut ActiveStage,
-    image: &mut DecodedImage,
-    frame_channel: &Channel<Response>,
-    encoder_state: &mut RdpFrameEncoderState,
-    outputs: Vec<ActiveStageOutput>,
-    pending_frame: &mut PendingRdpFrame,
-    last_frame_emit_at: &mut Instant,
-    has_emitted_frame: &mut bool,
-) -> Result<bool, String> {
-    let mut should_emit_frame = false;
-    let mut force_emit_frame = false;
-
-    for output in outputs {
-        match output {
-            ActiveStageOutput::ResponseFrame(frame) => {
-                framed
-                    .write_all(&frame)
-                    .map_err(|e| format!("write response failed: {e}"))?;
-            }
-            ActiveStageOutput::GraphicsUpdate(_) => {
-                should_emit_frame = true;
-            }
-            ActiveStageOutput::PointerDefault
-            | ActiveStageOutput::PointerHidden
-            | ActiveStageOutput::PointerPosition { .. }
-            | ActiveStageOutput::PointerBitmap(_) => {}
-            ActiveStageOutput::Terminate(_) => {
-                return Ok(false);
-            }
-            ActiveStageOutput::DeactivateAll(mut activation) => {
-                let mut buffer = WriteBuf::new();
-                loop {
-                    buffer.clear();
-
-                    let written = if let Some(next_pdu_hint) = activation.next_pdu_hint() {
-                        let pdu = framed
-                            .read_by_hint(next_pdu_hint)
-                            .map_err(|e| format!("connection reactivation read failed: {e}"))?;
-                        activation
-                            .step(&pdu, &mut buffer)
-                            .map_err(|e| format!("connection reactivation step failed: {e}"))?
-                    } else {
-                        activation
-                            .step_no_input(&mut buffer)
-                            .map_err(|e| format!("connection reactivation step failed: {e}"))?
-                    };
-
-                    if let Some(response_len) = written.size() {
-                        framed
-                            .write_all(&buffer[..response_len])
-                            .map_err(|e| format!("connection reactivation write failed: {e}"))?;
-                    }
-
-                    if let ConnectionActivationState::Finalized {
-                        io_channel_id,
-                        user_channel_id,
-                        desktop_size,
-                        enable_server_pointer,
-                        pointer_software_rendering,
-                    } = activation.connection_activation_state()
-                    {
-                        *image = DecodedImage::new(
-                            PixelFormat::RgbA32,
-                            desktop_size.width,
-                            desktop_size.height,
-                        );
-                        active_stage.set_fastpath_processor(
-                            fast_path::ProcessorBuilder {
-                                io_channel_id,
-                                user_channel_id,
-                                enable_server_pointer,
-                                pointer_software_rendering,
-                            }
-                            .build(),
-                        );
-                        active_stage.set_enable_server_pointer(enable_server_pointer);
-                        should_emit_frame = true;
-                        force_emit_frame = true;
-                        *has_emitted_frame = false;
-                        break;
-                    }
+        loop {
+            while let Ok(control) = control_rx.try_recv() {
+                if !handle_rdp_control(control, &mut client, &mut input_state, &mut encoder_state)?
+                {
+                    log_rdp_info(
+                        &session_id,
+                        &target,
+                        "close",
+                        "session closed by frontend request",
+                    );
+                    return Ok(());
                 }
             }
-        }
-    }
 
-    if should_emit_frame {
-        pending_frame.mark_dirty(force_emit_frame);
-    }
-
-    flush_pending_rdp_frame(
-        image,
-        frame_channel,
-        encoder_state,
-        pending_frame,
-        last_frame_emit_at,
-        has_emitted_frame,
-    )?;
-
-    Ok(true)
-}
-
-fn map_rdp_mouse_button(button: Option<u8>) -> Option<RdpMouseButton> {
-    match button {
-        Some(0) => Some(RdpMouseButton::Left),
-        Some(1) => Some(RdpMouseButton::Middle),
-        Some(2) => Some(RdpMouseButton::Right),
-        Some(3) => Some(RdpMouseButton::X1),
-        Some(4) => Some(RdpMouseButton::X2),
-        _ => None,
-    }
-}
-
-// ============================================================================
-// RDP 控制消息处理
-// ============================================================================
-
-use crate::types::RdpControlMsg;
-
-pub fn handle_rdp_control(
-    control: RdpControlMsg,
-    framed: &mut UpgradedFramed,
-    active_stage: &mut ActiveStage,
-    image: &mut DecodedImage,
-    frame_channel: &Channel<Response>,
-    input_db: &mut RdpInputDatabase,
-    encoder_state: &mut RdpFrameEncoderState,
-    pending_frame: &mut PendingRdpFrame,
-    last_frame_emit_at: &mut Instant,
-    has_emitted_frame: &mut bool,
-) -> Result<bool, String> {
-    match control {
-        RdpControlMsg::Pointer(payload) => {
-            match payload.kind.as_str() {
-                "move" => encoder_state.mark_interaction(RdpInteractionKind::PointerMove),
-                "wheel" => encoder_state.mark_interaction(RdpInteractionKind::Wheel),
-                "down" | "up" => encoder_state.mark_interaction(RdpInteractionKind::Click),
-                _ => {}
-            }
-            let mut operations = vec![Operation::MouseMove(MousePosition {
-                x: payload.x,
-                y: payload.y,
-            })];
-
-            match payload.kind.as_str() {
-                "down" => {
-                    if let Some(button) = map_rdp_mouse_button(payload.button) {
-                        operations.push(Operation::MouseButtonPressed(button));
-                    }
-                }
-                "up" => {
-                    if let Some(button) = map_rdp_mouse_button(payload.button) {
-                        operations.push(Operation::MouseButtonReleased(button));
-                    }
-                }
-                "wheel" => {
-                    let delta_y = payload.delta_y.unwrap_or_default();
-                    let delta_x = payload.delta_x.unwrap_or_default();
-
-                    if delta_x.abs() > delta_y.abs() && delta_x != 0 {
-                        operations.push(Operation::WheelRotations(WheelRotations {
-                            is_vertical: false,
-                            rotation_units: if delta_x > 0 { -120 } else { 120 },
-                        }));
-                    } else if delta_y != 0 {
-                        operations.push(Operation::WheelRotations(WheelRotations {
-                            is_vertical: true,
-                            rotation_units: if delta_y > 0 { -120 } else { 120 },
-                        }));
-                    }
-                }
-                _ => {}
-            }
-
-            let outputs = active_stage
-                .process_fastpath_input(image, &input_db.apply(operations))
-                .map_err(|e| format!("process pointer input failed: {e}"))?;
-
-            handle_rdp_outputs(
-                framed,
-                active_stage,
-                image,
-                frame_channel,
-                encoder_state,
-                outputs,
-                pending_frame,
-                last_frame_emit_at,
-                has_emitted_frame,
-            )
-        }
-        RdpControlMsg::Key(payload) => {
-            encoder_state.mark_interaction(RdpInteractionKind::Keyboard);
-            let operation = if payload.down {
-                Operation::KeyPressed(Scancode::from_u16(payload.scancode))
+            let frame_interval = if encoder_state.interaction_kind().is_some() {
+                RDP_INTERACTIVE_FRAME_INTERVAL
             } else {
-                Operation::KeyReleased(Scancode::from_u16(payload.scancode))
+                RDP_IDLE_FRAME_INTERVAL
             };
 
-            let outputs = active_stage
-                .process_fastpath_input(image, &input_db.apply([operation]))
-                .map_err(|e| format!("process keyboard input failed: {e}"))?;
+            let poll_timeout = pending_frame
+                .as_ref()
+                .and_then(|_| frame_due_in(last_frame_emitted_at, frame_interval))
+                .map(|remaining| remaining.min(RDP_POLL_TIMEOUT))
+                .unwrap_or(RDP_POLL_TIMEOUT);
 
-            handle_rdp_outputs(
-                framed,
-                active_stage,
-                image,
-                frame_channel,
-                encoder_state,
-                outputs,
-                pending_frame,
-                last_frame_emit_at,
-                has_emitted_frame,
-            )
-        }
-        RdpControlMsg::ReleaseAll => {
-            encoder_state.mark_interaction(RdpInteractionKind::Keyboard);
-            let outputs = active_stage
-                .process_fastpath_input(image, &input_db.release_all())
-                .map_err(|e| format!("release keyboard state failed: {e}"))?;
-
-            handle_rdp_outputs(
-                framed,
-                active_stage,
-                image,
-                frame_channel,
-                encoder_state,
-                outputs,
-                pending_frame,
-                last_frame_emit_at,
-                has_emitted_frame,
-            )
-        }
-        RdpControlMsg::Resize(width, height) => {
-            let (width, height) =
-                MonitorLayoutEntry::adjust_display_size(width as u32, height as u32);
-            if let Some(response_frame) = active_stage.encode_resize(width, height, None, None) {
-                let response_frame =
-                    response_frame.map_err(|e| format!("encode resize failed: {e}"))?;
-                framed
-                    .write_all(&response_frame)
-                    .map_err(|e| format!("send resize failed: {e}"))?;
-            }
-            Ok(true)
-        }
-        RdpControlMsg::Close => {
-            let outputs = active_stage
-                .graceful_shutdown()
-                .map_err(|e| format!("graceful shutdown failed: {e}"))?;
-            let _ = handle_rdp_outputs(
-                framed,
-                active_stage,
-                image,
-                frame_channel,
-                encoder_state,
-                outputs,
-                pending_frame,
-                last_frame_emit_at,
-                has_emitted_frame,
-            );
-            Ok(false)
-        }
-    }
-}
-
-// ============================================================================
-// RDP 会话运行
-// ============================================================================
-
-pub fn run_rdp_session<R: Runtime>(
-    _app: AppHandle<R>,
-    session_id: String,
-    target: String,
-    connection_context: RdpConnectionContext,
-    mut framed: UpgradedFramed,
-    frame_channel: Channel<Response>,
-    control_rx: std_mpsc::Receiver<RdpControlMsg>,
-) -> Result<(), String> {
-    let share_id = connection_context.share_id;
-    let io_channel_id = connection_context.connection_result.io_channel_id;
-    let user_channel_id = connection_context.connection_result.user_channel_id;
-    let desktop_width = connection_context.connection_result.desktop_size.width;
-    let desktop_height = connection_context.connection_result.desktop_size.height;
-
-    let mut image = DecodedImage::new(PixelFormat::RgbA32, desktop_width, desktop_height);
-    let mut active_stage = ActiveStage::new(connection_context.connection_result);
-    let mut input_db = RdpInputDatabase::new();
-    let mut encoder_state = RdpFrameEncoderState::new();
-    let mut received_server_frame = false;
-    let mut pending_frame = PendingRdpFrame::new();
-    let mut last_frame_emit_at = Instant::now() - RDP_FRAME_INTERVAL;
-    let mut has_emitted_frame = false;
-    let started_at = Instant::now();
-    let mut last_first_frame_wake_at: Option<Instant> = None;
-
-    log_rdp_info(
-        &session_id,
-        &target,
-        "stream",
-        "frontend frame channel initialized",
-    );
-
-    framed
-        .get_inner_mut()
-        .0
-        .flush()
-        .map_err(|e| format!("flush upgraded stream failed: {e}"))?;
-    log_rdp_info(
-        &session_id,
-        &target,
-        "stream",
-        "flushed upgraded stream after connect",
-    );
-
-    request_rdp_refresh(
-        &mut framed,
-        user_channel_id,
-        io_channel_id,
-        share_id,
-        &image,
-    )?;
-    log_rdp_info(
-        &session_id,
-        &target,
-        "stream",
-        "sent initial SuppressOutput + RefreshRectangle request",
-    );
-
-    loop {
-        while let Ok(control) = control_rx.try_recv() {
-            if !handle_rdp_control(
-                control,
-                &mut framed,
-                &mut active_stage,
-                &mut image,
-                &frame_channel,
-                &mut input_db,
-                &mut encoder_state,
-                &mut pending_frame,
-                &mut last_frame_emit_at,
-                &mut has_emitted_frame,
-            )? {
-                log_rdp_info(
-                    &session_id,
-                    &target,
-                    "close",
-                    "session closed by frontend request",
-                );
-                return Ok(());
-            }
-        }
-
-        if !received_server_frame {
-            let elapsed = started_at.elapsed();
-            let should_request_refresh = elapsed >= RDP_FIRST_FRAME_WAKE_DELAY
-                && last_first_frame_wake_at
-                    .is_none_or(|last| last.elapsed() >= RDP_FIRST_FRAME_WAKE_REPEAT);
-
-            if should_request_refresh {
-                last_first_frame_wake_at = Some(Instant::now());
-                log_rdp_info(
-                    &session_id,
-                    &target,
-                    "stream",
-                    format!(
-                        "no server frame after {} ms, sending refresh request",
-                        elapsed.as_millis()
-                    ),
-                );
-                let _ = request_rdp_refresh(
-                    &mut framed,
-                    user_channel_id,
-                    io_channel_id,
-                    share_id,
-                    &image,
-                );
-            }
-        }
-
-        flush_pending_rdp_frame(
-            &image,
-            &frame_channel,
-            &mut encoder_state,
-            &mut pending_frame,
-            &mut last_frame_emit_at,
-            &mut has_emitted_frame,
-        )?;
-        flush_rdp_refinement_frame(
-            &image,
-            &frame_channel,
-            &mut encoder_state,
-            &mut last_frame_emit_at,
-            &mut has_emitted_frame,
-        )?;
-
-        match framed.read_pdu() {
-            Ok((action, payload)) => {
-                if !received_server_frame {
-                    received_server_frame = true;
+            if let Some(frame) = client.poll_frame(poll_timeout)? {
+                if !has_emitted_frame {
                     log_rdp_info(
                         &session_id,
                         &target,
                         "stream",
                         format!(
-                            "received first server update after {} ms",
+                            "received first FreeRDP frame after {} ms",
                             started_at.elapsed().as_millis()
                         ),
                     );
                 }
 
-                let outputs = active_stage
-                    .process(&mut image, action, &payload)
-                    .map_err(|e| format!("process active stage failed: {e}"))?;
-
-                if !handle_rdp_outputs(
-                    &mut framed,
-                    &mut active_stage,
-                    &mut image,
-                    &frame_channel,
-                    &mut encoder_state,
-                    outputs,
-                    &mut pending_frame,
-                    &mut last_frame_emit_at,
-                    &mut has_emitted_frame,
-                )? {
-                    return Ok(());
-                }
+                pending_frame = Some(frame);
             }
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) => {}
-            Err(error) => return Err(format!("read RDP frame failed: {error}")),
+
+            if let Some(frame) = pending_frame.take() {
+                if !should_emit_frame(last_frame_emitted_at, frame_interval) {
+                    pending_frame = Some(frame);
+                    continue;
+                }
+
+                let encode_mode = encoder_state.encode_mode(!has_emitted_frame);
+                emit_rdp_frame(&frame_channel, &frame, &mut encoder_state, encode_mode)?;
+                has_emitted_frame = true;
+                last_frame_emitted_at = Some(Instant::now());
+            }
         }
     }
+
+    fn should_emit_frame(last_frame_emitted_at: Option<Instant>, interval: Duration) -> bool {
+        last_frame_emitted_at
+            .map(|emitted_at| emitted_at.elapsed() >= interval)
+            .unwrap_or(true)
+    }
+
+    fn frame_due_in(
+        last_frame_emitted_at: Option<Instant>,
+        interval: Duration,
+    ) -> Option<Duration> {
+        let elapsed = last_frame_emitted_at?.elapsed();
+        Some(interval.saturating_sub(elapsed))
+    }
+
+    fn handle_rdp_control(
+        control: RdpControlMsg,
+        client: &mut FreeRdpClient,
+        input_state: &mut RdpInputState,
+        encoder_state: &mut RdpFrameEncoderState,
+    ) -> Result<bool, String> {
+        match control {
+            RdpControlMsg::Pointer(payload) => {
+                handle_pointer(payload, client, input_state, encoder_state)?;
+                Ok(true)
+            }
+            RdpControlMsg::Key(payload) => {
+                encoder_state.mark_interaction(RdpInteractionKind::Keyboard);
+                if payload.down {
+                    input_state.pressed_keys.insert(payload.scancode);
+                } else {
+                    input_state.pressed_keys.remove(&payload.scancode);
+                }
+                client.send_key(payload.scancode, payload.down)?;
+                Ok(true)
+            }
+            RdpControlMsg::ReleaseAll => {
+                encoder_state.mark_interaction(RdpInteractionKind::Keyboard);
+                for scancode in input_state.pressed_keys.drain().collect::<Vec<_>>() {
+                    let _ = client.send_key(scancode, false);
+                }
+                for button in input_state.pressed_buttons.drain().collect::<Vec<_>>() {
+                    let _ = client.send_pointer_button(
+                        input_state.last_x,
+                        input_state.last_y,
+                        button,
+                        false,
+                    );
+                }
+                Ok(true)
+            }
+            RdpControlMsg::Resize(width, height) => {
+                let width = u32::from(width).clamp(200, 8192);
+                let height = u32::from(height).clamp(200, 8192);
+                client.resize(width, height)?;
+                Ok(true)
+            }
+            RdpControlMsg::Close => {
+                client.close();
+                Ok(false)
+            }
+        }
+    }
+
+    fn handle_pointer(
+        payload: RdpPointerEventPayload,
+        client: &mut FreeRdpClient,
+        input_state: &mut RdpInputState,
+        encoder_state: &mut RdpFrameEncoderState,
+    ) -> Result<(), String> {
+        input_state.last_x = payload.x;
+        input_state.last_y = payload.y;
+
+        match payload.kind.as_str() {
+            "move" => {
+                encoder_state.mark_interaction(RdpInteractionKind::PointerMove);
+                client.send_pointer_move(payload.x, payload.y)?;
+            }
+            "down" => {
+                encoder_state.mark_interaction(RdpInteractionKind::Click);
+                if let Some(button) = payload.button {
+                    input_state.pressed_buttons.insert(button);
+                    client.send_pointer_button(payload.x, payload.y, button, true)?;
+                } else {
+                    client.send_pointer_move(payload.x, payload.y)?;
+                }
+            }
+            "up" => {
+                encoder_state.mark_interaction(RdpInteractionKind::Click);
+                if let Some(button) = payload.button {
+                    input_state.pressed_buttons.remove(&button);
+                    client.send_pointer_button(payload.x, payload.y, button, false)?;
+                } else {
+                    client.send_pointer_move(payload.x, payload.y)?;
+                }
+            }
+            "wheel" => {
+                encoder_state.mark_interaction(RdpInteractionKind::Wheel);
+                let delta_y = payload.delta_y.unwrap_or_default();
+                let delta_x = payload.delta_x.unwrap_or_default();
+
+                if delta_x.abs() > delta_y.abs() && delta_x != 0 {
+                    client.send_pointer_wheel(
+                        payload.x,
+                        payload.y,
+                        if delta_x > 0 { -120 } else { 120 },
+                        true,
+                    )?;
+                } else if delta_y != 0 {
+                    client.send_pointer_wheel(
+                        payload.x,
+                        payload.y,
+                        if delta_y > 0 { -120 } else { 120 },
+                        false,
+                    )?;
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn emit_rdp_frame(
+        frame_channel: &Channel<Response>,
+        frame: &FreeRdpFrame,
+        encoder_state: &mut RdpFrameEncoderState,
+        encode_mode: RdpFrameEncodeMode,
+    ) -> Result<(), String> {
+        let desktop_width = u16_from_dimension("desktop width", frame.desktop_width)?;
+        let desktop_height = u16_from_dimension("desktop height", frame.desktop_height)?;
+        let region_left = u16_from_dimension("region left", frame.left)?;
+        let region_top = u16_from_dimension("region top", frame.top)?;
+        let region_width = u16_from_dimension("region width", frame.width)?;
+        let region_height = u16_from_dimension("region height", frame.height)?;
+
+        let expected_len = frame
+            .width
+            .checked_mul(frame.height)
+            .and_then(|pixels| pixels.checked_mul(4))
+            .map(|value| value as usize)
+            .ok_or_else(|| "RDP frame dimensions overflowed".to_string())?;
+        if frame.rgba.len() != expected_len {
+            return Err(format!(
+                "unexpected RDP RGBA frame length: {} != {}",
+                frame.rgba.len(),
+                expected_len
+            ));
+        }
+
+        encoder_state.packet_buffer.clear();
+        encoder_state
+            .packet_buffer
+            .extend_from_slice(&desktop_width.to_le_bytes());
+        encoder_state
+            .packet_buffer
+            .extend_from_slice(&desktop_height.to_le_bytes());
+        encoder_state
+            .packet_buffer
+            .extend_from_slice(&region_left.to_le_bytes());
+        encoder_state
+            .packet_buffer
+            .extend_from_slice(&region_top.to_le_bytes());
+        encoder_state
+            .packet_buffer
+            .extend_from_slice(&region_width.to_le_bytes());
+        encoder_state
+            .packet_buffer
+            .extend_from_slice(&region_height.to_le_bytes());
+
+        let full_frame = frame.full
+            || (frame.left == 0
+                && frame.top == 0
+                && frame.width == frame.desktop_width
+                && frame.height == frame.desktop_height);
+
+        match encode_mode {
+            RdpFrameEncodeMode::RawRgba => {
+                let mut flags = 0x02;
+                if full_frame {
+                    flags |= 0x01;
+                }
+                encoder_state.packet_buffer.push(flags);
+                encoder_state.packet_buffer.extend_from_slice(&frame.rgba);
+            }
+            RdpFrameEncodeMode::Jpeg { quality } => {
+                let pixel_count = frame.rgba.len() / 4;
+                let rgb_len = pixel_count * 3;
+                if encoder_state.rgb_buffer.len() != rgb_len {
+                    encoder_state.rgb_buffer.resize(rgb_len, 0);
+                }
+
+                for (rgba_pixel, rgb_pixel) in frame
+                    .rgba
+                    .chunks_exact(4)
+                    .zip(encoder_state.rgb_buffer.chunks_exact_mut(3))
+                {
+                    rgb_pixel[0] = rgba_pixel[0];
+                    rgb_pixel[1] = rgba_pixel[1];
+                    rgb_pixel[2] = rgba_pixel[2];
+                }
+
+                encoder_state.jpeg_buffer.clear();
+                let mut encoder =
+                    JpegEncoder::new_with_quality(&mut encoder_state.jpeg_buffer, quality);
+                encoder
+                    .encode(
+                        &encoder_state.rgb_buffer,
+                        frame.width,
+                        frame.height,
+                        ExtendedColorType::Rgb8,
+                    )
+                    .map_err(|e| format!("encode RDP JPEG failed: {e}"))?;
+
+                encoder_state
+                    .packet_buffer
+                    .push(if full_frame { 0x01 } else { 0x00 });
+                encoder_state
+                    .packet_buffer
+                    .extend_from_slice(&encoder_state.jpeg_buffer);
+            }
+        }
+
+        frame_channel
+            .send(Response::new(std::mem::take(
+                &mut encoder_state.packet_buffer,
+            )))
+            .map_err(|e| format!("send RDP frame via channel failed: {e}"))
+    }
+
+    fn u16_from_dimension(label: &str, value: u32) -> Result<u16, String> {
+        u16::try_from(value).map_err(|_| format!("RDP {label} exceeds u16 frame header: {value}"))
+    }
 }
+
+#[cfg(feature = "rdp-freerdp")]
+pub use freerdp_runtime::{build_rdp_config, connect_rdp, run_rdp_session};
+
+#[cfg(not(feature = "rdp-freerdp"))]
+mod disabled_runtime {
+    use std::sync::mpsc as std_mpsc;
+
+    use tauri::ipc::{Channel, Response};
+    use tauri::{AppHandle, Runtime};
+
+    use crate::types::{RdpConnectConfig, RdpControlMsg};
+
+    pub struct DisabledRdpConfig;
+    pub struct DisabledRdpClient;
+
+    pub fn build_rdp_config(_: &RdpConnectConfig) -> Result<DisabledRdpConfig, String> {
+        Err("RDP FreeRDP backend is disabled at compile time.".to_string())
+    }
+
+    pub fn connect_rdp(
+        _: &str,
+        _: &str,
+        _: DisabledRdpConfig,
+        _: String,
+        _: u16,
+    ) -> Result<DisabledRdpClient, String> {
+        Err("RDP FreeRDP backend is disabled at compile time.".to_string())
+    }
+
+    pub fn run_rdp_session<R: Runtime>(
+        _: AppHandle<R>,
+        _: String,
+        _: String,
+        _: DisabledRdpClient,
+        _: Channel<Response>,
+        _: std_mpsc::Receiver<RdpControlMsg>,
+    ) -> Result<(), String> {
+        Err("RDP FreeRDP backend is disabled at compile time.".to_string())
+    }
+}
+
+#[cfg(not(feature = "rdp-freerdp"))]
+pub use disabled_runtime::{build_rdp_config, connect_rdp, run_rdp_session};

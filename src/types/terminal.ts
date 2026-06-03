@@ -1,5 +1,5 @@
 export type SessionProtocol = 'ssh' | 'local' | 'rdp' | 'vnc' | 'serial' | 'telnet' | 'ai-cli';
-export type RdpBackend = 'ironrdp' | 'msrdpax' | 'mstsc-external';
+export type RdpBackend = 'freerdp' | 'ironrdp' | 'msrdpax' | 'mstsc-external';
 
 export interface ISessionConnector {
   readonly protocol: SessionProtocol;
@@ -107,7 +107,7 @@ export interface NativeRdpStatePayload {
 
 export interface IRdpConnector extends ISessionConnector {
   readonly protocol: 'rdp';
-  readonly backend: 'ironrdp';
+  readonly backend: 'freerdp';
 
   onFrame(handler: (frame: RdpFramePayload) => void): Promise<void>;
   onClose(handler: () => void): () => void;

@@ -1,13 +1,13 @@
-import { useState, useEffect } from "react";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
-import { UPDATE_SERVER_URL, UPDATE_DOWNLOAD_BASE_URL, INSTALLER_REGEX, compareVersions, IS_UPDATE_SUPPORTED } from "@/config/update-config";
 import { CloudDownload, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { IS_UPDATE_SUPPORTED } from "@/config/update-config";
 import { useI18n } from "@/i18n";
+import { notifyUpdateAvailable } from "@/hooks/useUpdateNotification";
+import { checkForUpdate, getCurrentAppVersion } from "@/services/updateService";
 
 /** 关于与更新设置 */
 export function AboutSettings() {
@@ -19,46 +19,39 @@ export function AboutSettings() {
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
 
   useEffect(() => {
-    getVersion().then(setVersion).catch(() => setVersion(null));
+    getCurrentAppVersion().then(setVersion);
     const unlisten = listen("update-progress", (event: { payload: { progress: number } }) => {
       setDownloadProgress(event.payload.progress);
     });
-    return () => { unlisten.then(f => f()); };
+    return () => {
+      unlisten.then((f) => f());
+    };
   }, []);
 
   const displayedVersion = version === undefined ? t("加载中...") : (version ?? t("未知"));
-  const currentVersion = version ?? "0.0.0";
 
   const checkUpdate = async () => {
     setIsChecking(true);
     setUpdateStatus(t("正在检查更新..."));
     setLatestUpdateUrl(null);
     setDownloadProgress(null);
+
     try {
-      const res = await tauriFetch(UPDATE_SERVER_URL, { method: "GET" });
-      if (!res.ok) throw new Error(t("HTTP 错误 {status}", { status: res.status }));
-      const htmlText = await res.text();
-      let maxVersion = "0.0.0";
-      let latestDownloadPath = "";
-      let match: RegExpExecArray | null;
-      while ((match = INSTALLER_REGEX.exec(htmlText)) !== null) {
-        const fullHref = match[1];
-        const parsedVersion = match[2];
-        if (compareVersions(parsedVersion, maxVersion) > 0) {
-          maxVersion = parsedVersion;
-          latestDownloadPath = fullHref;
-        }
+      const result = await checkForUpdate();
+
+      if (result.status === "unsupported") {
+        setUpdateStatus(t("暂不支持该平台更新"));
+        return;
       }
-      if (maxVersion === "0.0.0") throw new Error(t("未找到有效的安装包"));
-      if (compareVersions(maxVersion, currentVersion) > 0) {
-        setUpdateStatus(t("发现新版本：{version}！", { version: maxVersion }));
-        const downloadUrl = latestDownloadPath.startsWith('http') 
-          ? latestDownloadPath 
-          : `${UPDATE_DOWNLOAD_BASE_URL}${latestDownloadPath}`;
-        setLatestUpdateUrl(downloadUrl);
-      } else {
-        setUpdateStatus(t("当前已是最新版本 ({version})", { version: displayedVersion }));
+
+      if (result.status === "available") {
+        setUpdateStatus(t("发现新版本：{version}！", { version: result.latestVersion }));
+        setLatestUpdateUrl(result.downloadUrl);
+        notifyUpdateAvailable(result);
+        return;
       }
+
+      setUpdateStatus(t("当前已是最新版本 ({version})", { version: displayedVersion }));
     } catch (err: unknown) {
       setUpdateStatus(t("检查更新失败：{error}", { error: err instanceof Error ? err.message : String(err) }));
     } finally {
@@ -69,7 +62,6 @@ export function AboutSettings() {
   return (
     <div className="flex flex-col h-full relative">
       <div className="flex flex-col gap-6 pb-10 px-1">
-
         {/* 关于 */}
         <div className="flex flex-col gap-1">
           <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("关于")}</Label>
@@ -96,7 +88,7 @@ export function AboutSettings() {
                       onClick={() => {
                         setDownloadProgress(0);
                         invoke("download_and_install_update", { url: latestUpdateUrl })
-                          .catch(err => {
+                          .catch((err) => {
                             setUpdateStatus(t("下载或安装失败：{error}", { error: String(err) }));
                             setDownloadProgress(null);
                           });
@@ -124,7 +116,6 @@ export function AboutSettings() {
             )}
           </div>
         </div>
-
       </div>
     </div>
   );

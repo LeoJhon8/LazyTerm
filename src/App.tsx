@@ -4,6 +4,7 @@ import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
 import { getConnectionErrorPresentation } from "@/services/connectionErrorService";
 import { useI18n } from "@/i18n";
+import { useUpdateNotification } from "@/hooks/useUpdateNotification";
 import { useViewMode } from "@/hooks/useViewMode";
 import { countValidModules, getValidActivityModules } from "@/components/layout/activity-registry";
 
@@ -24,6 +25,8 @@ import {
 } from "@/components/ui/alert-dialog";
 
 function App() {
+  useUpdateNotification();
+
   const { locale, t } = useI18n();
   const { isImmersive, isFocus } = useViewMode();
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>

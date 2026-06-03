@@ -8,7 +8,6 @@
 // 共享模块
 pub mod sftp_utils;
 pub mod ssh_auth;
-pub mod tls;
 
 // 终端协议
 pub mod serial;
@@ -18,6 +17,10 @@ pub mod telnet;
 pub mod terminal;
 
 // RDP 协议
+#[cfg(feature = "rdp-freerdp")]
+pub mod freerdp_client;
+#[cfg(feature = "rdp-freerdp")]
+pub mod freerdp_ffi;
 pub mod mstsc;
 pub mod native_rdp;
 pub mod rdp;

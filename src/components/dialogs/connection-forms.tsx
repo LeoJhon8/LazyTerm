@@ -18,12 +18,14 @@ import {
 } from "@/components/ui/select";
 import { DialogFooter } from "@/components/ui/dialog";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { KeyRound, Settings } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Settings } from "lucide-react";
 import { invokeTauri } from "@/services/tauri";
 import { logger } from "@/lib/logger";
 import { useI18n } from "@/i18n";
 import { useCredentialsStore } from "@/store/credentials";
+import { useSettingsStore } from "@/store/settings";
 import { useSettingsDialogStore } from "@/store/settings-dialog";
+import { resolveRdpBackend } from "@/lib/rdp-backend";
 import type { Credential, CredentialType } from "@/types/credential";
 import type {
   SSHConfig,
@@ -59,6 +61,47 @@ export function FormField({
         {children}
         {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>
+    </div>
+  );
+}
+
+function PasswordInput({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: React.ChangeEventHandler<HTMLInputElement>;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+  const [visible, setVisible] = useState(false);
+  const Icon = visible ? EyeOff : Eye;
+  const label = visible ? t("隐藏密码") : t("显示密码");
+
+  return (
+    <div className="relative">
+      <Input
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        autoComplete="off"
+        disabled={disabled}
+        className="password-input-native-reveal-hidden pr-10"
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => setVisible((current) => !current)}
+        disabled={disabled}
+        title={label}
+        aria-label={label}
+      >
+        <Icon className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
@@ -140,17 +183,18 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
     if (!host || !port || !username) return;
     const usesSavedCredential = credentialId !== "manual";
     const credential = usesSavedCredential ? useCredentialsStore.getState().getCredential(credentialId) : undefined;
+    const parsedPort = parseInt(port, 10);
     onSubmit({
       host,
-      port: parseInt(port, 10),
+      port: parsedPort,
       username,
       credentialId: usesSavedCredential ? credentialId : undefined,
       authType: credential?.type === "ssh-key" || privateKeyPath ? "privateKey" : "password",
       password: usesSavedCredential ? undefined : (password || undefined),
       privateKeyPath: usesSavedCredential ? undefined : (privateKeyPath || undefined),
       nickname: nickname || undefined,
-      keepAlive: true,
-      keepAliveInterval: 60,
+      keepAlive: parsedPort === 2222 ? undefined : true,
+      keepAliveInterval: parsedPort === 2222 ? undefined : 60,
       readyTimeout: 30000,
     });
   };
@@ -188,7 +232,7 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
         />
       </FormField>
       <FormField label={t("密码")}>
-        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" disabled={credentialId !== "manual"} />
+        <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} disabled={credentialId !== "manual"} />
       </FormField>
       <FormField label={t("私钥路径")}>
         <div className="flex items-center gap-2">
@@ -206,8 +250,9 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
 /* ==================== RDP 表单 ==================== */
 export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfig) => void; submitLabel: SubmitLabel }) {
   const { t } = useI18n();
-  const isWindows = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
-  const fixedBackend = isWindows ? "msrdpax" : "ironrdp";
+  const configuredRdpBackend = useSettingsStore((state) => state.rdpBackend);
+  const fixedBackend = resolveRdpBackend(configuredRdpBackend);
+  const usesNativeRdp = fixedBackend === "msrdpax";
 
   const [host, setHost] = useState("");
   const [port, setPort] = useState("3389");
@@ -230,9 +275,9 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
       password: credentialId !== "manual" ? undefined : (password || undefined),
       domain: domain || undefined,
       nickname: nickname || undefined,
-      width: isWindows ? undefined : (parseInt(width, 10) || 1280),
-      height: isWindows ? undefined : (parseInt(height, 10) || 720),
-      autoResize: isWindows ? true : autoResize,
+      width: usesNativeRdp ? undefined : (parseInt(width, 10) || 1280),
+      height: usesNativeRdp ? undefined : (parseInt(height, 10) || 720),
+      autoResize: usesNativeRdp ? true : false,
       backend: fixedBackend,
     });
   };
@@ -266,9 +311,9 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
         />
       </FormField>
       <FormField label={t("密码")}>
-        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" disabled={credentialId !== "manual"} />
+        <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} disabled={credentialId !== "manual"} />
       </FormField>
-      {!isWindows && (
+      {!usesNativeRdp && (
         <>
           <Separator />
           <FormField label={t("初始宽度")}>
@@ -277,6 +322,7 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
           <FormField label={t("初始高度")}>
             <Input type="number" min="200" value={height} onChange={(e) => setHeight(e.target.value)} />
           </FormField>
+          <div className="hidden">
           <FormField label={t("自动跟随窗口")}>
             <div className="flex items-center gap-3">
               <Checkbox id="rdp-auto-resize-qc" checked={autoResize} onCheckedChange={(checked) => setAutoResize(checked === true)} />
@@ -285,6 +331,7 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
               </Label>
             </div>
           </FormField>
+          </div>
         </>
       )}
       <DialogFooter className="pt-2">
@@ -340,7 +387,7 @@ export function VncForm({ onSubmit, submitLabel }: { onSubmit: (config: VNCConfi
         />
       </FormField>
       <FormField label={t("密码")} description="无密码时留空">
-        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" disabled={credentialId !== "manual"} />
+        <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} disabled={credentialId !== "manual"} />
       </FormField>
       <Separator />
       <FormField label={t("渲染质量")}>

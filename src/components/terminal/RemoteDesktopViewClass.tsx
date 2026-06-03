@@ -36,40 +36,46 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
     setFrameSize,
     setConnected,
     notifyVisualReady,
-    renderRgbaFrame,
     renderBlobFrame,
   } = useBaseGraphicSessionView(props);
 
   // RDP 特有状态
   const { sessions } = useTabsStore();
   const activeSession = sessions.find((session) => session.id === sessionId);
-  const backend = activeSession?.config?.rdpConfig?.backend ?? "ironrdp";
   const connector = activeSession?.connector?.protocol === "rdp" ? activeSession.connector : null;
+  const backend = connector?.backend ?? activeSession?.config?.rdpConfig?.backend ?? "freerdp";
   const nativeConnector = activeSession && connector && backend === "msrdpax"
     ? connector as INativeRdpConnector
     : null;
-  const ironConnector = connector && backend !== "msrdpax" ? connector as IRdpConnector : null;
+  const canvasConnector = connector && backend !== "msrdpax" ? connector as IRdpConnector : null;
 
   const resizeTimerRef = useRef<number | null>(null);
   const pendingFrameRef = useRef<RdpFramePayload | null>(null);
   const decodeInFlightRef = useRef(false);
   const drawTokenRef = useRef(0);
   const everConnectedRef = useRef(false);
+  const transitionMaskVisibleRef = useRef(true);
+  const notifyVisualReadyRef = useRef(notifyVisualReady);
   const [isClosed, setIsClosed] = useState(false);
   const [transitionMaskVisible, setTransitionMaskVisible] = useState(true);
   const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
 
-  const markVisualReady = useCallback(() => {
-    if (!transitionMaskVisible) return;
-    setTransitionMaskVisible(false);
-    notifyVisualReady();
-  }, [transitionMaskVisible, notifyVisualReady]);
-
-  // IronRDP 帧处理
   useEffect(() => {
-    if (!ironConnector) {
+    notifyVisualReadyRef.current = notifyVisualReady;
+  }, [notifyVisualReady]);
+
+  const markVisualReady = useCallback(() => {
+    if (!transitionMaskVisibleRef.current) return;
+    transitionMaskVisibleRef.current = false;
+    setTransitionMaskVisible(false);
+    notifyVisualReadyRef.current();
+  }, []);
+
+  // Canvas RDP 帧处理
+  useEffect(() => {
+    if (!canvasConnector) {
       return;
     }
 
@@ -93,9 +99,14 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
       try {
         let success = false;
 
+        if (canvas.width !== frame.desktopWidth || canvas.height !== frame.desktopHeight) {
+          canvas.width = frame.desktopWidth;
+          canvas.height = frame.desktopHeight;
+        }
+
         if (frame.encoding === "rgba") {
           const rgbaBytes = new Uint8Array(frame.imageBytes);
-          const expectedLength = frame.desktopWidth * frame.desktopHeight * 4;
+          const expectedLength = frame.regionWidth * frame.regionHeight * 4;
           if (rgbaBytes.length !== expectedLength) {
             throw new Error(`Unexpected RGBA frame size: ${rgbaBytes.length} !== ${expectedLength}`);
           }
@@ -104,25 +115,86 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
             return;
           }
 
-          success = renderRgbaFrame(canvas, rgbaBytes, frame.desktopWidth, frame.desktopHeight);
+          const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
+          if (!context) {
+            return;
+          }
+
+          context.imageSmoothingEnabled = false;
+          context.putImageData(
+            new ImageData(new Uint8ClampedArray(rgbaBytes), frame.regionWidth, frame.regionHeight),
+            frame.regionLeft,
+            frame.regionTop,
+          );
+          success = true;
           if (success) markVisualReady();
         } else {
           const blob = new Blob([frame.imageBytes], { type: "image/jpeg" });
+          if (frame.fullFrame) {
+            success = await renderBlobFrame(canvas, blob, frame.desktopWidth, frame.desktopHeight, {
+              disposed,
+              token: drawToken,
+              currentToken: drawTokenRef.current,
+            });
+          } else {
+            const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
+            if (!context) {
+              return;
+            }
 
-          success = await renderBlobFrame(canvas, blob, frame.desktopWidth, frame.desktopHeight, {
-            disposed,
-            token: drawToken,
-            currentToken: drawTokenRef.current,
-          });
+            context.imageSmoothingEnabled = false;
+            let decodedSource: CanvasImageSource;
+            let decodedBitmap: ImageBitmap | null = null;
+
+            try {
+              if (typeof createImageBitmap === "function") {
+                decodedBitmap = await createImageBitmap(blob);
+                decodedSource = decodedBitmap;
+              } else {
+                decodedSource = await new Promise<HTMLImageElement>((resolve, reject) => {
+                  const objectUrl = URL.createObjectURL(blob);
+                  const image = new Image();
+                  image.onload = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    resolve(image);
+                  };
+                  image.onerror = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    reject(new Error("Image decode failed"));
+                  };
+                  image.src = objectUrl;
+                });
+              }
+
+              if (disposed || drawToken !== drawTokenRef.current) {
+                decodedBitmap?.close();
+                return;
+              }
+
+              context.drawImage(
+                decodedSource,
+                frame.regionLeft,
+                frame.regionTop,
+                frame.regionWidth,
+                frame.regionHeight,
+              );
+              decodedBitmap?.close();
+              success = true;
+            } catch (error) {
+              decodedBitmap?.close();
+              throw error;
+            }
+          }
 
           if (success) markVisualReady();
         }
 
         if (success) {
-          setFrameSize({
-            width: frame.desktopWidth,
-            height: frame.desktopHeight,
-          });
+          setFrameSize((current) => (
+            current?.width === frame.desktopWidth && current?.height === frame.desktopHeight
+              ? current
+              : { width: frame.desktopWidth, height: frame.desktopHeight }
+          ));
           setConnected(true);
         }
       } catch (error) {
@@ -137,18 +209,18 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
       }
     };
 
-    ironConnector.onFrame((nextFrame) => {
+    canvasConnector.onFrame((nextFrame) => {
       everConnectedRef.current = true;
       pendingFrameRef.current = nextFrame;
       void drawFrame();
       setConnected(true);
     }).catch((error) => {
-      if (ironConnector.isConnected) {
+      if (canvasConnector.isConnected) {
         logger.error("FE/terminal-view/rdp", "Register frame listener failed", { error });
       }
     });
 
-    const disposeClose = ironConnector.onClose(() => {
+    const disposeClose = canvasConnector.onClose(() => {
       setIsClosed(true);
       setConnected(false);
     });
@@ -158,18 +230,20 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
       disposeClose();
       pendingFrameRef.current = null;
       decodeInFlightRef.current = false;
+      transitionMaskVisibleRef.current = true;
       setTransitionMaskVisible(true);
       setFrameSize(null);
       if (cleanupCanvas) {
         const context = cleanupCanvas.getContext("2d");
         context?.clearRect(0, 0, cleanupCanvas.width, cleanupCanvas.height);
       }
-      ironConnector.releaseInputs();
+      canvasConnector.releaseInputs();
     };
-  }, [activeSession, ironConnector, markVisualReady, notifyVisualReady, renderBlobFrame, renderRgbaFrame, setConnected, setFrameSize, canvasRef]);
+  }, [canvasConnector, markVisualReady, renderBlobFrame, setConnected, setFrameSize, canvasRef]);
 
   // 重置视觉就绪状态
   useEffect(() => {
+    transitionMaskVisibleRef.current = true;
     setTransitionMaskVisible(true);
   }, [activeSession?.id]);
 
@@ -211,13 +285,17 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
 
   // 自动调整大小
   useEffect(() => {
-    if (!ironConnector || !containerRef.current || !frameSize || !(activeSession?.config?.rdpConfig?.autoResize ?? true)) {
+    if (!canvasConnector || backend === "freerdp" || !containerRef.current || !frameSize || !(activeSession?.config?.rdpConfig?.autoResize ?? true)) {
       return;
     }
 
     const resizeObserver = new ResizeObserver(([entry]) => {
       const nextWidth = Math.max(200, Math.floor(entry.contentRect.width));
       const nextHeight = Math.max(200, Math.floor(entry.contentRect.height));
+
+      if (nextWidth === frameSize.width && nextHeight === frameSize.height) {
+        return;
+      }
 
       if (resizeTimerRef.current) {
         window.clearTimeout(resizeTimerRef.current);
@@ -232,7 +310,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
       }, 2000);
 
       resizeTimerRef.current = window.setTimeout(() => {
-        ironConnector.resize(nextWidth, nextHeight);
+        canvasConnector.resize(nextWidth, nextHeight);
       }, 250);
     });
 
@@ -248,7 +326,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
         resizeTimerRef.current = null;
       }
     };
-  }, [activeSession?.config?.rdpConfig?.autoResize, ironConnector, frameSize, containerRef]);
+  }, [activeSession?.config?.rdpConfig?.autoResize, backend, canvasConnector, frameSize, containerRef]);
 
   // Native RDP 渲染
   if (activeSession && nativeConnector) {
@@ -268,7 +346,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
     );
   }
 
-  if (!activeSession || !ironConnector) {
+  if (!activeSession || !canvasConnector) {
     return null;
   }
 
@@ -288,7 +366,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
       event.clientY,
     );
 
-    ironConnector.sendPointer({
+    canvasConnector.sendPointer({
       kind,
       x: point.x,
       y: point.y,
@@ -313,7 +391,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
       event.clientY,
     );
 
-    ironConnector.sendPointer({
+    canvasConnector.sendPointer({
       kind: "wheel",
       x: point.x,
       y: point.y,
@@ -329,7 +407,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
     }
 
     event.preventDefault();
-    ironConnector.sendKey({ scancode, down });
+    canvasConnector.sendKey({ scancode, down });
   };
 
   // 渲染内容
@@ -351,7 +429,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
         onWheel={handleWheel}
         onKeyDown={(event) => handleKey(event, true)}
         onKeyUp={(event) => handleKey(event, false)}
-        onBlur={() => ironConnector.releaseInputs()}
+        onBlur={() => canvasConnector.releaseInputs()}
       >
         <canvas
           ref={canvasRef}
@@ -359,13 +437,13 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
         />
 
         <GraphicalSessionOverlay
-          mode={!ironConnector.isConnected 
+          mode={!canvasConnector.isConnected 
             ? (isClosed ? (everConnectedRef.current ? "disconnected" : "failed") : "connecting") 
             : (!frameSize ? "connecting" : "none")}
-          titleText={!ironConnector.isConnected 
+          titleText={!canvasConnector.isConnected 
             ? (isClosed ? (everConnectedRef.current ? t("连接断开") : t("连接失败")) : t("正在建立连接")) 
             : t("正在建立连接")}
-          description={!ironConnector.isConnected
+          description={!canvasConnector.isConnected
             ? (isClosed ? (everConnectedRef.current ? t("与远程主机的连接已意外中止。") : t("建立 RDP 连接失败，请检查配置信息或目标状态。")) : t("正在初始化连接..."))
             : t("正在尝试建立 RDP 连接并进行首帧解码...")}
           protocol="Windows"
@@ -378,7 +456,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
             setRetrying(true);
             reconnectSession(activeSession.id);
           }}
-          interactive={!ironConnector.isConnected}
+          interactive={!canvasConnector.isConnected}
           zIndexClass="z-30"
         />
 

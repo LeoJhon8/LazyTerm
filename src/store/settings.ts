@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { TerminalColorScheme } from "@/config/themes";
 import { DEFAULT_LANGUAGE_SETTING, type AppLanguageSetting } from "@/i18n/config";
+import type { ConfigurableRdpBackend } from "@/lib/rdp-backend";
 import { gitAwareStorage } from "@/store/git-aware-storage";
 
 export type BackgroundImageUiMode = "frosted" | "clear";
@@ -38,6 +39,7 @@ interface SettingsData {
   tabStopWidth: number;
   defaultShell: string;
   confirmCloseNonDefaultTabs: boolean;
+  rdpBackend: ConfigurableRdpBackend;
   terminalAutocomplete: boolean;
   autocompleteSource: ('history' | 'quick')[];  // 自动补全数据源（多选）
   // 外观自定义
@@ -91,6 +93,7 @@ const defaultSettings: SettingsData = {
   tabStopWidth: 4,
   defaultShell: "powershell.exe",
   confirmCloseNonDefaultTabs: false,
+  rdpBackend: "freerdp",
   terminalAutocomplete: true,
   autocompleteSource: ['history', 'quick'],  // 默认从所有数据源进行自动补全
   // 外观自定义默认值

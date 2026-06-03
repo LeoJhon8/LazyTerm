@@ -37,6 +37,7 @@ pub enum SshControlMsg {
 /// SSH 终端会话
 pub struct SshTerminalSession {
     pub control_tx: mpsc::UnboundedSender<SshControlMsg>,
+    pub handle: russh::client::Handle<crate::protocol::ssh_auth::SshClientHandler>,
 }
 
 // ==================== RDP 相关类型 ====================

@@ -1,8 +1,8 @@
 #[cfg(windows)]
 use super::rdp_core::build_rdp_full_address;
-use crate::RdpConnectConfig;
 #[cfg(windows)]
 use crate::utils::create_hidden_command;
+use crate::RdpConnectConfig;
 #[cfg(windows)]
 use std::process::Command;
 #[cfg(windows)]

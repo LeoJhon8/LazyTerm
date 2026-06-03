@@ -96,6 +96,7 @@ export function NativeRdpHostView({
   const [state, setState] = useState<NativeRdpStatePayload>(initialState);
   const stateRef = useRef(state);
   const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
+  const [hostRectMounted, setHostRectMounted] = useState(false);
   const resizeMaskTimerRef = useRef<number | null>(null);
   const visualReadyNotifiedRef = useRef(false);
   const lastMountedRectRef = useRef<NativeHostRect | null>(null);
@@ -195,6 +196,9 @@ export function NativeRdpHostView({
     let disposed = false;
     let initialMountDone = false;
     let resizeObserver: ResizeObserver | null = null;
+    let scheduledPushTimer: ReturnType<typeof setTimeout> | null = null;
+    let scheduledPushFrame: number | null = null;
+    setHostRectMounted(false);
 
     const pushRect = async (initial: boolean = false) => {
       const rect = await readHostRect(element);
@@ -211,6 +215,7 @@ export function NativeRdpHostView({
         lastMountedRectRef.current = rect;
         if (initial && !initialMountDone && !disposed) {
           initialMountDone = true;
+          setHostRectMounted(true);
           // Now that initial mount succeeded, enable ResizeObserver to track
           // future layout changes. This prevents ResizeObserver from triggering
           // during the initial mount + CSS transition sequence.
@@ -226,6 +231,43 @@ export function NativeRdpHostView({
       }
     };
 
+    const showResizeMask = () => {
+      setResizeMaskVisible(true);
+      if (resizeMaskTimerRef.current !== null) {
+        window.clearTimeout(resizeMaskTimerRef.current);
+      }
+      resizeMaskTimerRef.current = window.setTimeout(() => {
+        setResizeMaskVisible(false);
+      }, 1200);
+    };
+
+    const schedulePushRect = (delayMs: number, showMask: boolean) => {
+      if (!initialMountDone || disposed) {
+        return;
+      }
+
+      if (showMask) {
+        showResizeMask();
+      }
+
+      if (scheduledPushTimer !== null) {
+        clearTimeout(scheduledPushTimer);
+        scheduledPushTimer = null;
+      }
+      if (scheduledPushFrame !== null) {
+        cancelAnimationFrame(scheduledPushFrame);
+        scheduledPushFrame = null;
+      }
+
+      scheduledPushTimer = setTimeout(() => {
+        scheduledPushTimer = null;
+        scheduledPushFrame = requestAnimationFrame(() => {
+          scheduledPushFrame = null;
+          void pushRect(false);
+        });
+      }, delayMs);
+    };
+
     // Delay the initial pushRect by one macrotask (setTimeout 0) so that all
     // React effects — including App.tsx updating CSS variables like --bh (which
     // collapses the bottom bar when switching to an RDP tab) — have fully run
@@ -234,9 +276,13 @@ export function NativeRdpHostView({
     // and the window visibly jumps after the layout settles → two flashes.
     // Calling getBoundingClientRect() inside the setTimeout also forces a
     // synchronous reflow, so we always get the final stable layout values.
+    let initialPushFrame: number | null = null;
     let initialPushTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
       initialPushTimer = null;
-      void pushRect(true);
+      initialPushFrame = requestAnimationFrame(() => {
+        initialPushFrame = null;
+        void pushRect(true);
+      });
     }, 0);
 
     // Create ResizeObserver but do NOT observe yet; only observe after the
@@ -250,37 +296,51 @@ export function NativeRdpHostView({
       if (resizeTimeoutId !== null) {
         clearTimeout(resizeTimeoutId);
       }
-      setResizeMaskVisible(true);
-      if (resizeMaskTimerRef.current !== null) {
-        window.clearTimeout(resizeMaskTimerRef.current);
-      }
-      resizeMaskTimerRef.current = window.setTimeout(() => {
-        setResizeMaskVisible(false);
-      }, 2000);
-
       resizeTimeoutId = setTimeout(() => {
         resizeTimeoutId = null;
-        void pushRect(false);
-      }, 200);
+        schedulePushRect(0, true);
+      }, 160);
     });
 
-    // Also re-push on window move so the sidecar follows screen position.
+    // Also re-push on window changes so the sidecar follows screen position,
+    // maximize/restore changes, and DPI/viewport changes.
     let moveUnlisten: (() => void) | null = null;
+    let resizedUnlisten: (() => void) | null = null;
     void getCurrentWindow().onMoved(() => {
-      if (initialMountDone) {
-        void pushRect(false);
-      }
+      schedulePushRect(0, false);
     }).then((fn) => {
       moveUnlisten = fn;
     });
+    void getCurrentWindow().onResized(() => {
+      schedulePushRect(80, false);
+    }).then((fn) => {
+      resizedUnlisten = fn;
+    });
+
+    const handleViewportChange = () => {
+      schedulePushRect(80, false);
+    };
+    window.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("scroll", handleViewportChange);
 
     return () => {
       disposed = true;
+      setHostRectMounted(false);
       lastMountedRectRef.current = null;
       if (initialPushTimer !== null) {
         clearTimeout(initialPushTimer);
       }
+      if (initialPushFrame !== null) {
+        cancelAnimationFrame(initialPushFrame);
+      }
       if (resizeTimeoutId !== null) clearTimeout(resizeTimeoutId);
+      if (scheduledPushTimer !== null) {
+        clearTimeout(scheduledPushTimer);
+      }
+      if (scheduledPushFrame !== null) {
+        cancelAnimationFrame(scheduledPushFrame);
+      }
       if (resizeObserver) {
         resizeObserver.disconnect();
       }
@@ -288,6 +348,10 @@ export function NativeRdpHostView({
         window.clearTimeout(resizeMaskTimerRef.current);
       }
       moveUnlisten?.();
+      resizedUnlisten?.();
+      window.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
       void connector.setVisible(false);
     };
   }, [connector]);
@@ -343,13 +407,17 @@ export function NativeRdpHostView({
   }, [connector, initialHasConnectionHistory]);
 
   useEffect(() => {
+    if (!hostRectMounted) {
+      return;
+    }
+
     const hasOverlay = menuMaskVisible || resizeMaskVisible;
     if (hasOverlay) {
       void connector.setVisible(false);
     } else {
       void connector.setVisible(true);
     }
-  }, [menuMaskVisible, resizeMaskVisible, connector]);
+  }, [hostRectMounted, menuMaskVisible, resizeMaskVisible, connector]);
 
   useEffect(() => {
     const applyMenuOverlay = (active: boolean) => {

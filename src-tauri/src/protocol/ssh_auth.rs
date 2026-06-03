@@ -1,9 +1,9 @@
 //! SSH 认证模块
 //! 提供共享的 SSH 认证函数，消除 commands.rs 中的重复代码
 
-use async_trait::async_trait;
 use russh::client;
-use russh_keys::key;
+use russh::keys::known_hosts::{check_known_hosts, known_host_keys, learn_known_hosts};
+use russh::keys::{self, PrivateKey, PrivateKeyWithHashAlg, PublicKey};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,19 +11,35 @@ use std::time::Duration;
 use crate::types::SshConnectConfig;
 
 pub fn build_ssh_client_config(config: &SshConnectConfig) -> client::Config {
-    let keepalive_interval = if config.keep_alive.unwrap_or(true) {
-        Some(Duration::from_secs(
-            config.keep_alive_interval.unwrap_or(60).max(1),
-        ))
-    } else {
-        None
-    };
+    let keepalive_interval = effective_keepalive_interval(config);
+
+    crate::logging::info(
+        "SSH/config",
+        format!(
+            "{}:{} effective keepalive interval: {}",
+            config.host,
+            config.port,
+            keepalive_interval
+                .map(|duration| format!("{}s", duration.as_secs()))
+                .unwrap_or_else(|| "disabled".to_string())
+        ),
+    );
 
     client::Config {
         inactivity_timeout: None,
         keepalive_interval,
         ..Default::default()
     }
+}
+
+fn effective_keepalive_interval(config: &SshConnectConfig) -> Option<Duration> {
+    if config.keep_alive != Some(true) {
+        return None;
+    }
+
+    Some(Duration::from_secs(
+        config.keep_alive_interval.unwrap_or(60).max(1),
+    ))
 }
 
 /// SSH 客户端处理器
@@ -44,10 +60,10 @@ impl SshClientHandler {
     /// 1. 密钥匹配 → 接受
     /// 2. 首次连接（未记录）→ 记录密钥并接受（Trust On First Use）
     /// 3. 密钥变更 → 自动移除旧记录，写入新密钥，接受
-    fn verify_and_update_known_hosts(&self, server_key: &key::PublicKey) {
+    fn verify_and_update_known_hosts(&self, server_key: &PublicKey) {
         use crate::logging;
 
-        match russh_keys::check_known_hosts(&self.host, self.port, server_key) {
+        match check_known_hosts(&self.host, self.port, server_key) {
             Ok(true) => {
                 logging::info(
                     "SSH/hostkey",
@@ -63,11 +79,11 @@ impl SshClientHandler {
                         self.host, self.port
                     ),
                 );
-                if let Err(e) = russh_keys::learn_known_hosts(&self.host, self.port, server_key) {
+                if let Err(e) = learn_known_hosts(&self.host, self.port, server_key) {
                     logging::warn("SSH/hostkey", format!("写入 known_hosts 失败: {}", e));
                 }
             }
-            Err(russh_keys::Error::KeyChanged { line }) => {
+            Err(keys::Error::KeyChanged { line }) => {
                 // 密钥已变更！自动移除旧记录并写入新密钥
                 logging::warn(
                     "SSH/hostkey",
@@ -84,7 +100,7 @@ impl SshClientHandler {
                     "SSH/hostkey",
                     format!("known_hosts 检查出错: {}，尝试记录新密钥", e),
                 );
-                if let Err(e2) = russh_keys::learn_known_hosts(&self.host, self.port, server_key) {
+                if let Err(e2) = learn_known_hosts(&self.host, self.port, server_key) {
                     logging::warn("SSH/hostkey", format!("写入 known_hosts 失败: {}", e2));
                 }
             }
@@ -92,25 +108,24 @@ impl SshClientHandler {
     }
 
     /// 从 known_hosts 中移除该主机的所有旧记录，然后写入新密钥
-    fn remove_and_relearn(&self, server_key: &key::PublicKey) {
+    fn remove_and_relearn(&self, server_key: &PublicKey) {
         use crate::logging;
 
-        // 利用 russh_keys::known_host_keys 获取该主机在 known_hosts 中所有匹配条目的行号
-        let lines_to_remove: HashSet<usize> =
-            match russh_keys::known_host_keys(&self.host, self.port) {
-                Ok(entries) => entries.into_iter().map(|(line, _)| line).collect(),
-                Err(e) => {
-                    logging::warn(
-                        "SSH/hostkey",
-                        format!("读取 known_hosts 条目失败: {}，跳过自动更新", e),
-                    );
-                    return;
-                }
-            };
+        // 利用 keys::known_host_keys 获取该主机在 known_hosts 中所有匹配条目的行号
+        let lines_to_remove: HashSet<usize> = match known_host_keys(&self.host, self.port) {
+            Ok(entries) => entries.into_iter().map(|(line, _)| line).collect(),
+            Err(e) => {
+                logging::warn(
+                    "SSH/hostkey",
+                    format!("读取 known_hosts 条目失败: {}，跳过自动更新", e),
+                );
+                return;
+            }
+        };
 
         if lines_to_remove.is_empty() {
             // 没有匹配的行（理论上不应进入此分支，但防御性处理）
-            if let Err(e) = russh_keys::learn_known_hosts(&self.host, self.port, server_key) {
+            if let Err(e) = learn_known_hosts(&self.host, self.port, server_key) {
                 logging::warn(
                     "SSH/hostkey",
                     format!("写入新密钥到 known_hosts 失败: {}", e),
@@ -161,7 +176,7 @@ impl SshClientHandler {
         );
 
         // 写入新密钥
-        if let Err(e) = russh_keys::learn_known_hosts(&self.host, self.port, server_key) {
+        if let Err(e) = learn_known_hosts(&self.host, self.port, server_key) {
             logging::warn(
                 "SSH/hostkey",
                 format!("写入新密钥到 known_hosts 失败: {}", e),
@@ -172,7 +187,7 @@ impl SshClientHandler {
     }
 }
 
-/// 获取 known_hosts 文件路径（与 russh_keys 内部逻辑一致）
+/// 获取 known_hosts 文件路径（与 russh keys 内部逻辑一致）
 fn get_known_hosts_path() -> Option<std::path::PathBuf> {
     let home = home::home_dir()?;
     #[cfg(target_os = "windows")]
@@ -185,13 +200,12 @@ fn get_known_hosts_path() -> Option<std::path::PathBuf> {
     }
 }
 
-#[async_trait]
 impl client::Handler for SshClientHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &key::PublicKey,
+        server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
         // 验证并管理 known_hosts，始终接受密钥（自动信任策略）
         self.verify_and_update_known_hosts(server_public_key);
@@ -200,17 +214,50 @@ impl client::Handler for SshClientHandler {
 
     async fn disconnected(
         &mut self,
-        _reason: client::DisconnectReason<Self::Error>,
+        reason: client::DisconnectReason<Self::Error>,
     ) -> Result<(), Self::Error> {
-        // 连接断开处理
+        crate::logging::warn(
+            "SSH/client",
+            format!("{}:{} disconnected: {reason:?}", self.host, self.port),
+        );
+        Ok(())
+    }
+
+    async fn channel_close(
+        &mut self,
+        channel: russh::ChannelId,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        crate::logging::warn(
+            "SSH/client",
+            format!(
+                "{}:{} received channel_close for {channel:?}",
+                self.host, self.port
+            ),
+        );
+        Ok(())
+    }
+
+    async fn channel_eof(
+        &mut self,
+        channel: russh::ChannelId,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        crate::logging::warn(
+            "SSH/client",
+            format!(
+                "{}:{} received channel_eof for {channel:?}",
+                self.host, self.port
+            ),
+        );
         Ok(())
     }
 }
 
 /// 加载 SSH 私钥
 ///
-/// 注意：russh_keys 0.45+ 使用 decode_secret_key 而不是 from_openssh
-pub async fn load_ssh_key(path: &str, passphrase: Option<String>) -> Result<key::KeyPair, String> {
+/// 注意：russh keys 使用 decode_secret_key 而不是 from_openssh
+pub async fn load_ssh_key(path: &str, passphrase: Option<String>) -> Result<PrivateKey, String> {
     let path = std::path::Path::new(path);
 
     if !path.exists() {
@@ -222,15 +269,15 @@ pub async fn load_ssh_key(path: &str, passphrase: Option<String>) -> Result<key:
         .map_err(|e| format!("读取私钥文件失败: {}", e))?;
 
     // decode_secret_key 支持: OpenSSH, PKCS#1, PKCS#8 以及多种加密算法
-    russh_keys::decode_secret_key(&key_content, passphrase.as_deref())
+    keys::decode_secret_key(&key_content, passphrase.as_deref())
         .map_err(|e| format!("私钥解析失败: {:?}. 请检查格式或密码。", e))
 }
 
 pub fn load_ssh_key_content(
     key_content: &str,
     passphrase: Option<String>,
-) -> Result<key::KeyPair, String> {
-    russh_keys::decode_secret_key(key_content, passphrase.as_deref())
+) -> Result<PrivateKey, String> {
+    keys::decode_secret_key(key_content, passphrase.as_deref())
         .map_err(|e| format!("私钥解析失败: {:?}. 请检查格式或密码。", e))
 }
 
@@ -241,14 +288,22 @@ async fn authenticate_with_key(
     key_path: &str,
     passphrase: Option<String>,
 ) -> Result<(), String> {
-    let key_pair = load_ssh_key(key_path, passphrase).await?;
+    let key_pair = Arc::new(load_ssh_key(key_path, passphrase).await?);
+    let hash_alg = handle
+        .best_supported_rsa_hash()
+        .await
+        .map_err(|e| format!("查询 RSA 签名算法失败: {}", e))?
+        .flatten();
 
     let auth_result = handle
-        .authenticate_publickey(username.to_string(), Arc::new(key_pair))
+        .authenticate_publickey(
+            username.to_string(),
+            PrivateKeyWithHashAlg::new(key_pair, hash_alg),
+        )
         .await
         .map_err(|e| format!("私钥认证请求失败: {}", e))?;
 
-    if auth_result {
+    if auth_result.success() {
         Ok(())
     } else {
         Err("私钥认证被拒绝".to_string())
@@ -261,14 +316,22 @@ async fn authenticate_with_key_content(
     key_content: &str,
     passphrase: Option<String>,
 ) -> Result<(), String> {
-    let key_pair = load_ssh_key_content(key_content, passphrase)?;
+    let key_pair = Arc::new(load_ssh_key_content(key_content, passphrase)?);
+    let hash_alg = handle
+        .best_supported_rsa_hash()
+        .await
+        .map_err(|e| format!("查询 RSA 签名算法失败: {}", e))?
+        .flatten();
 
     let auth_result = handle
-        .authenticate_publickey(username.to_string(), Arc::new(key_pair))
+        .authenticate_publickey(
+            username.to_string(),
+            PrivateKeyWithHashAlg::new(key_pair, hash_alg),
+        )
         .await
         .map_err(|e| format!("私钥认证请求失败: {}", e))?;
 
-    if auth_result {
+    if auth_result.success() {
         Ok(())
     } else {
         Err("私钥认证被拒绝".to_string())
@@ -288,7 +351,7 @@ async fn authenticate_with_password(
         .await
         .map_err(|e| format!("密码认证请求失败: {}", e))?;
 
-    if auth_result {
+    if auth_result.success() {
         Ok(())
     } else {
         Err("密码认证被拒绝".to_string())
@@ -448,7 +511,7 @@ async fn authenticate_keyboard_interactive_then_password(
                         .authenticate_keyboard_interactive_respond(responses)
                         .await;
                 }
-                Ok(client::KeyboardInteractiveAuthResponse::Failure) => {
+                Ok(client::KeyboardInteractiveAuthResponse::Failure { .. }) => {
                     logging::warn("SSH/auth", "Keyboard-Interactive 被拒绝，切换密码认证");
                     should_fallback_to_password = true;
                     break;
@@ -476,11 +539,11 @@ async fn authenticate_keyboard_interactive_then_password(
             .authenticate_password(username.to_string(), password.to_string())
             .await
         {
-            Ok(true) => {
+            Ok(auth_result) if auth_result.success() => {
                 logging::info("SSH/auth", "标准密码认证成功");
                 Ok(true)
             }
-            Ok(false) => {
+            Ok(_) => {
                 logging::warn("SSH/auth", "标准密码认证被服务器拒绝");
                 Ok(false)
             }
@@ -511,7 +574,13 @@ pub async fn connect_and_authenticate(
     .await
     .map_err(|e| format!("连接失败: {}", e))?;
 
+    crate::logging::info(
+        "SSH/connect",
+        format!("ssh connected: {}:{}", config.host, config.port),
+    );
+
     authenticate_ssh(&mut handle, config).await?;
+    crate::logging::info("SSH/auth", "auth success");
 
     Ok(handle)
 }

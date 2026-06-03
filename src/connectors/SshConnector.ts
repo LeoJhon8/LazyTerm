@@ -87,6 +87,7 @@ export class SshConnector implements ITerminalConnector {
 
     try {
       const initialSize = estimateInitialPtySize(this.fontConfig);
+      const shouldSendKeepAlive = this.config.port !== 2222;
       const keepAlive = this.config.keepAlive ?? true;
       const keepAliveInterval = Math.max(1, Math.floor(this.config.keepAliveInterval ?? 60));
 
@@ -99,8 +100,8 @@ export class SshConnector implements ITerminalConnector {
           private_key_path: this.config.authType === "privateKey" ? this.config.privateKeyPath : undefined,
           private_key: this.config.authType === "privateKey" ? this.config.privateKey : undefined,
           private_key_passphrase: this.config.authType === "privateKey" ? this.config.privateKeyPassphrase : undefined,
-          keep_alive: keepAlive,
-          keep_alive_interval: keepAliveInterval,
+          keep_alive: shouldSendKeepAlive ? keepAlive : undefined,
+          keep_alive_interval: shouldSendKeepAlive ? keepAliveInterval : undefined,
           ready_timeout: this.config.readyTimeout,
           initial_cols: initialSize.cols,
           initial_rows: initialSize.rows,
@@ -173,9 +174,10 @@ export class SshConnector implements ITerminalConnector {
     logger.debug("FE/connector/ssh/listen", "Event listener registered");
     
     const closeEventName = `terminal-close-${this.sessionId}`;
-    const closeUnlisten = await listen(closeEventName, () => {
-      logger.info("FE/connector/ssh/listen", "Connection closed event received");
-      this.handleDisconnect();
+    const closeUnlisten = await listen<string>(closeEventName, (event) => {
+      const reason = event.payload || "unknown";
+      logger.info("FE/connector/ssh/listen", `Connection closed event received: ${reason}`);
+      this.handleDisconnect(reason);
     });
     
     const originalUnlistenFn = this.unlistenFn;
@@ -187,8 +189,8 @@ export class SshConnector implements ITerminalConnector {
 
 
 
-  private handleDisconnect(): void {
-    logger.info("FE/connector/ssh/disconnect", "Handling disconnection");
+  private handleDisconnect(reason: string = "unknown"): void {
+    logger.info("FE/connector/ssh/disconnect", `Handling disconnection: ${reason}`);
     this.sessionId = null;
     if (this.onDisconnectCallback) {
       this.onDisconnectCallback();

@@ -16,6 +16,7 @@ import { VncConnector } from "@/connectors/VncConnector";
 import { SerialConnector } from "@/connectors/SerialConnector";
 import { TelnetConnector } from "@/connectors/TelnetConnector";
 import { AiCliConnector } from "@/connectors/AiCliConnector";
+import { resolveRdpBackend } from "@/lib/rdp-backend";
 import { resolveRdpCredential, resolveSshCredential, resolveVncCredential } from "@/store/credentials";
 
 export interface SessionCreationData {
@@ -71,15 +72,18 @@ export function createConnector(
         throw new Error("SSH 配置不能为空");
       }
 
-      return new SshConnector({
-        config: resolveSshCredential(sessionData.config.sshConfig),
-        fontConfig: getCurrentFontConfig(),
-        onDisconnect: () => {
-          if (onDisconnect) {
-            onDisconnect(sessionId);
-          }
-        },
-      });
+      {
+        const config = resolveSshCredential(sessionData.config.sshConfig);
+        return new SshConnector({
+          config,
+          fontConfig: getCurrentFontConfig(),
+          onDisconnect: () => {
+            if (onDisconnect) {
+              onDisconnect(sessionId);
+            }
+          },
+        });
+      }
     case "rdp":
       if (!sessionData.config?.rdpConfig) {
         throw new Error("RDP 配置不能为空");
@@ -87,9 +91,15 @@ export function createConnector(
 
       {
         const config = resolveRdpCredential(sessionData.config.rdpConfig);
-        return config.backend === "msrdpax"
-          ? new NativeRdpConnector(config)
-          : new RdpConnector(config);
+        const backend = resolveRdpBackend(useSettingsStore.getState().rdpBackend);
+        const normalizedConfig = {
+          ...config,
+          backend,
+          autoResize: backend === "msrdpax" ? true : false,
+        };
+        return backend === "msrdpax"
+          ? new NativeRdpConnector(normalizedConfig)
+          : new RdpConnector(normalizedConfig);
       }
     case "vnc":
       if (!sessionData.config?.vncConfig) {

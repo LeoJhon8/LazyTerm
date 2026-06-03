@@ -18,7 +18,7 @@ export interface BaseGraphicSessionViewResult extends Pick<ConnectionState, "set
   /** 帧尺寸 */
   frameSize: { width: number; height: number } | null;
   /** 设置帧尺寸 */
-  setFrameSize: (size: { width: number; height: number } | null) => void;
+  setFrameSize: React.Dispatch<React.SetStateAction<{ width: number; height: number } | null>>;
   /** 视觉就绪通知 */
   notifyVisualReady: () => void;
   /** 渲染 RGBA 帧到 Canvas */

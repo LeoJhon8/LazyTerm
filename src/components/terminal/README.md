@@ -105,7 +105,7 @@ BaseSessionView (基础抽象类)
 |------|------|
 | `BaseSessionView.tsx` | 抽象基类，定义模板方法、公共 Hook、共享组件和工具函数 |
 | `TerminalViewClass.tsx` | 终端视图，使用 xterm.js 渲染 SSH/本地终端 |
-| `RemoteDesktopViewClass.tsx` | RDP 视图，使用 Canvas 渲染远程桌面（IronRDP + Native） |
+| `RemoteDesktopViewClass.tsx` | RDP 视图，使用 Canvas 渲染远程桌面（FreeRDP + Native） |
 | `VncViewClass.tsx` | VNC 视图，使用 Canvas 渲染 VNC 桌面 |
 | `NativeRdpHostView.tsx` | Native RDP 宿主视图，用于托管 Win32 sidecar 窗口 |
 | `index.ts` | 统一导出所有组件和工具 |

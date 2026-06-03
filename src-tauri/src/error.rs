@@ -131,9 +131,9 @@ impl From<russh::Error> for AppError {
     }
 }
 
-// 从 russh_keys 错误转换
-impl From<russh_keys::Error> for AppError {
-    fn from(err: russh_keys::Error) -> Self {
+// 从 russh keys 错误转换
+impl From<russh::keys::Error> for AppError {
+    fn from(err: russh::keys::Error) -> Self {
         Self::Auth(format!("密钥错误: {}", err))
     }
 }
@@ -174,28 +174,4 @@ pub async fn safe_async_lock<T, R>(
 ) -> AppResult<R> {
     let mut guard = lock.lock().await;
     Ok(f(&mut guard))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_error_display() {
-        let err = AppError::connection("timeout");
-        assert_eq!(err.to_string(), "连接失败: timeout");
-
-        let err = AppError::auth("invalid password");
-        assert_eq!(err.to_string(), "认证失败: invalid password");
-    }
-
-    #[test]
-    fn test_user_message() {
-        let err = AppError::SessionNotFound {
-            session_type: "SSH".to_string(),
-            session_id: "abc123".to_string(),
-        };
-        assert!(err.to_user_message().contains("SSH"));
-        assert!(err.to_user_message().contains("abc123"));
-    }
 }

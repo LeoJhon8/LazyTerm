@@ -18,6 +18,7 @@ import {
 import { Terminal as TerminalIcon } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
+import { normalizePasteTextForConnector } from "@/lib/terminal-paste";
 import { TerminalAutocompleteUI } from "./TerminalAutocompleteUI";
 import { AutocompleteTerminalAddon } from "./AutocompleteTerminalAddon";
 import { extractTerminalCommand } from "./terminal-command-line";
@@ -40,6 +41,8 @@ interface TerminalInstance {
   inputDisposable?: { dispose(): void };
   parserDisposables?: Array<{ dispose(): void }>;
   dataUnsubscribe?: () => void;
+  pasteElement?: HTMLTextAreaElement;
+  pasteHandler?: (event: ClipboardEvent) => void;
   dispose: () => void;
   webglAddon?: WebglAddon | null;
   acAddon?: AutocompleteTerminalAddon | null;
@@ -499,6 +502,20 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
       term.open(containerEl);
 
+      const pasteElement = term.textarea;
+      const pasteHandler = (event: ClipboardEvent) => {
+        const currentProtocol = terminalMap.current.get(sessionId)?.connector?.protocol;
+        if (currentProtocol !== "ssh") return;
+
+        const text = event.clipboardData?.getData("text/plain");
+        if (!text) return;
+
+        event.preventDefault();
+        term.paste(normalizePasteTextForConnector(text, currentProtocol));
+      };
+
+      pasteElement?.addEventListener("paste", pasteHandler);
+
       try {
         syncTerminalDimensions(term, fitAddon, connector);
       } catch (e) {
@@ -568,6 +585,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         inputDisposable,
         parserDisposables,
         dataUnsubscribe,
+        pasteElement,
+        pasteHandler,
         termState,
         webglAddon,
         acAddon,
@@ -576,6 +595,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           dataUnsubscribe();
           connector?.close();
           containerEl.removeEventListener("wheel", handleWheel, { capture: true });
+          pasteElement?.removeEventListener("paste", pasteHandler);
           inputDisposable.dispose();
           parserDisposables.forEach((disposable) => disposable.dispose());
           keyDisposable.dispose();
@@ -763,7 +783,11 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     } else {
       try {
         const text = await readText();
-        if (text) activeSession.connector.write(text);
+        if (text) {
+          activeSession.connector.write(
+            normalizePasteTextForConnector(text, activeSession.connector.protocol)
+          );
+        }
       } catch (error) {
         logger.error("FE/terminal-view/clipboard", "Failed to read clipboard", { error });
       }

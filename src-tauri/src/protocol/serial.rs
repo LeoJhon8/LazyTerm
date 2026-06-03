@@ -45,11 +45,8 @@ pub async fn list_serial_ports() -> Result<Vec<String>, String> {
         ];
 
         for query in queries {
-            if let Ok(output) = create_hidden_command("cmd")
-                .arg("/c")
-                .arg(query)
-                .output()
-            {                if output.status.success() {
+            if let Ok(output) = create_hidden_command("cmd").arg("/c").arg(query).output() {
+                if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     for line in stdout.lines() {
                         let line_trimmed = line.trim();

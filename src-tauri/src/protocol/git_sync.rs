@@ -1,5 +1,5 @@
-use std::path::Path;
 use crate::utils::create_hidden_command;
+use std::path::Path;
 
 #[tauri::command]
 pub async fn git_check_repo(path: String) -> Result<bool, String> {
@@ -7,7 +7,7 @@ pub async fn git_check_repo(path: String) -> Result<bool, String> {
     if !repo_path.exists() || !repo_path.is_dir() {
         return Ok(false);
     }
-    
+
     let output = create_hidden_command("git")
         .arg("status")
         .current_dir(repo_path)
