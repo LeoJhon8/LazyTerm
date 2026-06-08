@@ -78,6 +78,7 @@ pub struct RdpKeyboardEventPayload {
 pub enum RdpControlMsg {
     Pointer(RdpPointerEventPayload),
     Key(RdpKeyboardEventPayload),
+    Refresh,
     ReleaseAll,
     Resize(u16, u16),
     Close,

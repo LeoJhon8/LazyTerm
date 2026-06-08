@@ -115,6 +115,7 @@ export interface IRdpConnector extends ISessionConnector {
   sendKey(payload: RdpKeyboardPayload): void;
   releaseInputs(): void;
   resize(width: number, height: number): void;
+  requestFrame(): void;
   getFrameSize(): { width: number; height: number } | null;
 }
 

@@ -83,6 +83,20 @@ export class RdpConnector
     });
   }
 
+  requestFrame(): void {
+    if (!this.sessionId) {
+      return;
+    }
+
+    invokeTauri(
+      "request_rdp_refresh",
+      { sessionId: this.sessionId },
+      { scope: "FE/connector/rdp/refresh" },
+    ).catch((error) => {
+      logger.error("FE/connector/rdp/refresh", "Refresh request failed", error);
+    });
+  }
+
   protected buildCreateSessionArgs(): Record<string, unknown> {
     return {
       config: {

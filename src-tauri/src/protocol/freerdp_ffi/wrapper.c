@@ -644,6 +644,22 @@ int lazy_freerdp_client_resize(LazyFreeRdpClient* client, uint32_t width, uint32
     return 1;
 }
 
+int lazy_freerdp_client_request_refresh(LazyFreeRdpClient* client)
+{
+    rdpGdi* gdi = client && client->context ? client->context->gdi : NULL;
+
+    if (!client || !client->connected || !gdi || gdi->width <= 0 || gdi->height <= 0)
+        return 0;
+
+    if (!lazy_capture_region(client, gdi, 0, 0, (uint32_t)gdi->width, (uint32_t)gdi->height, TRUE))
+    {
+        lazy_set_error(client, "failed to capture FreeRDP refresh frame");
+        return 0;
+    }
+
+    return 1;
+}
+
 void lazy_freerdp_client_close(LazyFreeRdpClient* client)
 {
     if (!client)

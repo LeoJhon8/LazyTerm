@@ -214,6 +214,10 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
       pendingFrameRef.current = nextFrame;
       void drawFrame();
       setConnected(true);
+    }).then(() => {
+      if (!disposed) {
+        canvasConnector.requestFrame();
+      }
     }).catch((error) => {
       if (canvasConnector.isConnected) {
         logger.error("FE/terminal-view/rdp", "Register frame listener failed", { error });

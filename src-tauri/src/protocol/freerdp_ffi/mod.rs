@@ -87,6 +87,7 @@ unsafe extern "C" {
         width: c_uint,
         height: c_uint,
     ) -> c_int;
+    pub fn lazy_freerdp_client_request_refresh(client: *mut LazyFreeRdpClient) -> c_int;
     pub fn lazy_freerdp_client_close(client: *mut LazyFreeRdpClient);
     pub fn lazy_freerdp_client_free(client: *mut LazyFreeRdpClient);
     pub fn lazy_freerdp_client_last_error(client: *mut LazyFreeRdpClient) -> *const c_char;

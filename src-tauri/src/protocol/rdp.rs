@@ -178,6 +178,21 @@ pub fn resize_rdp_session(
     }
 }
 
+/// 请求 RDP 会话重新发送完整画面
+#[tauri::command]
+pub fn request_rdp_refresh(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    let sessions = state.rdp_sessions.lock().unwrap();
+    if let Some(session) = sessions.get(&session_id) {
+        session
+            .control_tx
+            .send(RdpControlMsg::Refresh)
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("RDP 会话不存在".to_string())
+    }
+}
+
 /// 关闭 RDP 会话
 #[tauri::command]
 pub fn close_rdp_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {

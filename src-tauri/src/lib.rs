@@ -93,6 +93,7 @@ pub fn run() {
             protocol::resize_terminal,
             protocol::resize_ssh_session,
             protocol::resize_rdp_session,
+            protocol::request_rdp_refresh,
             protocol::close_terminal,
             protocol::close_ssh_session,
             protocol::close_rdp_session,

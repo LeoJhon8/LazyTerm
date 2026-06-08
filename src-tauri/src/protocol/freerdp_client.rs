@@ -150,6 +150,14 @@ impl FreeRdpClient {
         Ok(())
     }
 
+    pub fn request_refresh(&mut self) -> Result<(), String> {
+        let result = unsafe { ffi::lazy_freerdp_client_request_refresh(self.raw) };
+        if result == 0 {
+            return Err(self.last_error());
+        }
+        Ok(())
+    }
+
     pub fn close(&mut self) {
         if !self.raw.is_null() {
             unsafe { ffi::lazy_freerdp_client_close(self.raw) };

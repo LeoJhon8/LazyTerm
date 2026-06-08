@@ -323,6 +323,10 @@ mod freerdp_runtime {
                 }
                 Ok(true)
             }
+            RdpControlMsg::Refresh => {
+                client.request_refresh()?;
+                Ok(true)
+            }
             RdpControlMsg::Resize(width, height) => {
                 let width = u32::from(width).clamp(200, 8192);
                 let height = u32::from(height).clamp(200, 8192);
