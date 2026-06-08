@@ -134,8 +134,9 @@ impl FreeRdpClient {
     }
 
     pub fn send_key(&mut self, scancode: u16, down: bool) -> Result<(), String> {
+        let scancode = normalize_rdp_scancode_for_freerdp(scancode);
         let result =
-            unsafe { ffi::lazy_freerdp_client_send_key(self.raw, u32::from(scancode), down as u8) };
+            unsafe { ffi::lazy_freerdp_client_send_key(self.raw, scancode, down as u8) };
         if result == 0 {
             return Err(self.last_error());
         }
@@ -239,4 +240,33 @@ impl Drop for FreeRdpClient {
 
 fn cstring(label: &str, value: &str) -> Result<CString, String> {
     CString::new(value).map_err(|_| format!("RDP {label} contains an invalid NUL byte"))
+}
+
+fn normalize_rdp_scancode_for_freerdp(scancode: u16) -> u32 {
+    const FREERDP_KBDEXT: u32 = 0x0100;
+
+    if (scancode & 0xff00) == 0xe000 {
+        u32::from(scancode & 0x00ff) | FREERDP_KBDEXT
+    } else {
+        u32::from(scancode)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_e0_prefixed_scancodes_to_freerdp_extended_scancodes() {
+        assert_eq!(normalize_rdp_scancode_for_freerdp(0xe048), 0x0148);
+        assert_eq!(normalize_rdp_scancode_for_freerdp(0xe053), 0x0153);
+        assert_eq!(normalize_rdp_scancode_for_freerdp(0xe01d), 0x011d);
+        assert_eq!(normalize_rdp_scancode_for_freerdp(0xe01c), 0x011c);
+    }
+
+    #[test]
+    fn leaves_regular_rdp_scancodes_unchanged_for_freerdp() {
+        assert_eq!(normalize_rdp_scancode_for_freerdp(0x1e), 0x1e);
+        assert_eq!(normalize_rdp_scancode_for_freerdp(0x48), 0x48);
+    }
 }
