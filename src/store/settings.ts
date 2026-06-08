@@ -4,6 +4,7 @@ import type { TerminalColorScheme } from "@/config/themes";
 import { DEFAULT_LANGUAGE_SETTING, type AppLanguageSetting } from "@/i18n/config";
 import type { ConfigurableRdpBackend } from "@/lib/rdp-backend";
 import { gitAwareStorage } from "@/store/git-aware-storage";
+import { DEFAULT_QUICK_COMMAND_FONT_SIZE, normalizeQuickCommandFontSize } from "@/store/settings-values";
 
 export type BackgroundImageUiMode = "frosted" | "clear";
 export type QuickCommandDisplayMode = "bar" | "panel";
@@ -59,6 +60,7 @@ interface SettingsData {
   immersiveHoverBarDelay: number;      // 悬浮标题栏消失延迟 (ms)
   immersiveShowTabStrip: boolean;      // 沉浸模式下是否显示悬浮标签条
   quickCommandDisplayMode: QuickCommandDisplayMode; // 快捷命令显示方式
+  quickCommandFontSize: number;
 }
 
 interface SettingsActions {
@@ -79,8 +81,8 @@ const defaultSettings: SettingsData = {
   boldFontWeight: 550,
   terminalNormalFontWeight: 400,
   terminalBoldFontWeight: 700,
-  leftPanelWidth: 200,
-  rightPanelWidth: 200,
+  leftPanelWidth: 220,
+  rightPanelWidth: 220,
   topPanelHeight: 40,
   bottomPanelHeight: 40,
   leftPanelCollapsed: false,
@@ -112,13 +114,20 @@ const defaultSettings: SettingsData = {
   immersiveHoverBarDelay: 800,
   immersiveShowTabStrip: true,
   quickCommandDisplayMode: "bar",
+  quickCommandFontSize: DEFAULT_QUICK_COMMAND_FONT_SIZE,
 };
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       ...defaultSettings,
-      setSettings: (newSettings) => set((state) => ({ ...state, ...newSettings })),
+      setSettings: (newSettings) => set((state) => ({
+        ...state,
+        ...newSettings,
+        ...(newSettings.quickCommandFontSize !== undefined
+          ? { quickCommandFontSize: normalizeQuickCommandFontSize(newSettings.quickCommandFontSize) }
+          : {}),
+      })),
       resetSettings: () => set(defaultSettings),
     }),
     {

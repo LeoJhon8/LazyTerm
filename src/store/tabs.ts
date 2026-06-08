@@ -113,6 +113,9 @@ interface TabsState {
   focusSessionId: string | null;
   connectionError: SessionConnectionError | null;
 
+  /** 串口断开连接的会话 ID 集合（仅运行时，不持久化） */
+  serialDisconnectedSessionIds: Set<string>;
+
   /** 主动创建新会话（带连接器） */
   addSession: (sessionData: Omit<TerminalSession, "id" | "connector">) => string;
   removeSession: (id: string) => void;
@@ -127,6 +130,10 @@ interface TabsState {
   reconnectSession: (sessionId: string) => void;
   /** 清除最近一次连接失败提示 */
   clearConnectionError: () => void;
+  /** 标记串口会话断开 */
+  markSerialDisconnected: (sessionId: string) => void;
+  /** 清除串口会话断开标记 */
+  clearSerialDisconnected: (sessionId: string) => void;
 }
 
 export const useTabsStore = create<TabsState>()(
@@ -146,6 +153,11 @@ export const useTabsStore = create<TabsState>()(
         get().switchConnector(targetSessionId, "local");
       };
 
+      const handleSerialDisconnect = (targetSessionId: string) => {
+        logger.info("FE/store/tabs/serial-disconnect", `Serial disconnected for session ${targetSessionId}`);
+        get().markSerialDisconnected(targetSessionId);
+      };
+
       return {
         tabs: [],
         activeTabId: null,
@@ -153,6 +165,7 @@ export const useTabsStore = create<TabsState>()(
         sessions: [],
         focusSessionId: null,
         connectionError: null,
+        serialDisconnectedSessionIds: new Set<string>(),
 
         addSession: (sessionData) => {
           // 生成随机 ID
@@ -165,7 +178,9 @@ export const useTabsStore = create<TabsState>()(
               ? handleLocalDisconnect
               : sessionData.type === "ssh"
                 ? handleSshDisconnect
-                : undefined,
+                : sessionData.type === "serial"
+                  ? handleSerialDisconnect
+                  : undefined,
           );
 
           const newSession: TerminalSession = {
@@ -446,13 +461,19 @@ export const useTabsStore = create<TabsState>()(
                 ? handleLocalDisconnect
                 : currentSession.type === "ssh"
                   ? handleSshDisconnect
-                  : undefined,
+                  : currentSession.type === "serial"
+                    ? handleSerialDisconnect
+                    : undefined,
             );
             const newSessions = [...state.sessions];
             newSessions[sessionIndex] = {
               ...currentSession,
               connector: newConnector,
             };
+
+            // 清除串口断开标记
+            const nextDisconnected = new Set(state.serialDisconnectedSessionIds);
+            nextDisconnected.delete(sessionId);
 
             newConnector.open().catch((error: unknown) => {
               logger.error("FE/store/tabs/reconnect", "Failed to reconnect session", {error});
@@ -461,12 +482,29 @@ export const useTabsStore = create<TabsState>()(
             return {
               sessions: newSessions,
               connectionError: null,
+              serialDisconnectedSessionIds: nextDisconnected,
             };
           });
         },
 
         clearConnectionError: () => {
           set({ connectionError: null });
+        },
+
+        markSerialDisconnected: (sessionId) => {
+          set((state) => {
+            const next = new Set(state.serialDisconnectedSessionIds);
+            next.add(sessionId);
+            return { serialDisconnectedSessionIds: next };
+          });
+        },
+
+        clearSerialDisconnected: (sessionId) => {
+          set((state) => {
+            const next = new Set(state.serialDisconnectedSessionIds);
+            next.delete(sessionId);
+            return { serialDisconnectedSessionIds: next };
+          });
         },
       };
     }

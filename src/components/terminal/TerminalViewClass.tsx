@@ -178,6 +178,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
   // Terminal 特有状态
   const { sessions } = useTabsStore();
+  const serialDisconnectedSessionIds = useTabsStore((s) => s.serialDisconnectedSessionIds);
+  const reconnectSession = useTabsStore((s) => s.reconnectSession);
   const { addCommand: addHistoryCommand } = useHistoryStore();
   const fontSize = useSettingsStore((state) => state.fontSize);
   const fontFamily = useSettingsStore((state) => state.fontFamily);
@@ -368,12 +370,18 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         }, 2000);
 
         existingInstance.terminal.write(
-          [
-            "\r\n",
-            `\x1b[33m${t("SSH 连接已断开，已降级到本地终端。")}\x1b[0m`,
-            `\r\n\x1b[90m${t("之前的 SSH 输出已保留。")}\x1b[0m`,
-            "\r\n\r\n",
-          ].join("")
+          connector.protocol === "serial"
+            ? [
+                "\r\n",
+                `\x1b[33m${t("串口正在重新连接...")}\x1b[0m`,
+                "\r\n\r\n",
+              ].join("")
+            : [
+                "\r\n",
+                `\x1b[33m${t("SSH 连接已断开，已降级到本地终端。")}\x1b[0m`,
+                `\r\n\x1b[90m${t("之前的 SSH 输出已保留。")}\x1b[0m`,
+                "\r\n\r\n",
+              ].join("")
         );
 
         currentTermInstance = existingInstance;
@@ -722,6 +730,37 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     });
   }, [sessions]);
 
+  // 串口断开检测：当串口会话断开时，写入提示消息
+  const serialDisconnectedWrittenRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!sessionId || !activeSession || activeSession.type !== "serial") return;
+    if (!serialDisconnectedSessionIds.has(sessionId)) return;
+    if (serialDisconnectedWrittenRef.current.has(sessionId)) return;
+
+    const instance = terminalMap.current.get(sessionId);
+    if (!instance) return;
+
+    serialDisconnectedWrittenRef.current.add(sessionId);
+    instance.terminal.write(
+      [
+        "\r\n",
+        `\x1b[33m${t("串口连接已断开。")}\x1b[0m`,
+        `\r\n\x1b[90m${t("之前的输出已保留，点击上方按钮可重新连接。")}\x1b[0m`,
+        "\r\n\r\n",
+      ].join("")
+    );
+  }, [sessionId, activeSession, serialDisconnectedSessionIds, t]);
+
+  // 清理已关闭会话的断开标记
+  useEffect(() => {
+    const currentIds = new Set(sessions.map((s) => s.id));
+    serialDisconnectedWrittenRef.current.forEach((id) => {
+      if (!currentIds.has(id)) {
+        serialDisconnectedWrittenRef.current.delete(id);
+      }
+    });
+  }, [sessions]);
+
   // 标签页切换激活
   useEffect(() => {
     activateTerminal(sessionId);
@@ -885,6 +924,24 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           className="terminal-xterm-wrapper h-full w-full overflow-hidden"
         />
       </div>
+      {/* 串口断开重连覆盖层 */}
+      {activeSession.type === "serial" && sessionId && serialDisconnectedSessionIds.has(sessionId) && (
+        <div className="pointer-events-auto absolute inset-x-0 top-0 z-20 flex items-start justify-center pt-6">
+          <div className="flex items-center gap-3 rounded-full border border-white/10 bg-black/50 px-4 py-2 text-sm text-white/90 shadow-lg backdrop-blur-md">
+            <span className="h-2 w-2 rounded-full bg-amber-400" />
+            <span>{t("串口连接已断开")}</span>
+            <button
+              className="pointer-events-auto ml-1 rounded-md bg-sky-500 px-2.5 py-1 text-xs font-medium text-white shadow hover:bg-sky-400 active:scale-95 transition-all"
+              onClick={(e) => {
+                e.stopPropagation();
+                reconnectSession(sessionId);
+              }}
+            >
+              {t("重新连接")}
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

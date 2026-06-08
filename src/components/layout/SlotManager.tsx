@@ -9,6 +9,7 @@ import { countValidModules } from "@/components/layout/SideSlot";
 import { getValidActivityModules } from "@/components/layout/activity-registry";
 import { useTabsStore } from "@/store/tabs";
 import { useViewMode } from "@/hooks/useViewMode";
+import { ResizeHandle } from "@/components/layout/ResizeHandle";
 import { cn } from "@/lib/utils";
 
 export function SlotManager() {
@@ -108,6 +109,7 @@ export function SlotManager() {
           <X className="h-4 w-4" />
         </Button>
         <Component />
+        <ResizeHandle side={side} />
       </aside>
     );
   };

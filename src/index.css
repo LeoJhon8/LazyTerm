@@ -458,8 +458,8 @@
     top: 0;
     bottom: 0;
     z-index: 24;
-    min-width: 180px;
-    max-width: min(360px, calc(100vw - 48px));
+    min-width: 220px;
+    max-width: 400px;
     overflow: hidden;
   }
 
@@ -1027,6 +1027,7 @@
   }
 
   .quickcmd-surface {
+    --quick-command-font-size: 12px;
     display: flex;
     height: 100%;
     width: 100%;
@@ -1114,7 +1115,7 @@
     margin-right: -1px;
     background: color-mix(in srgb, var(--panel) 18%, transparent);
     padding: 0 7px;
-    font-size: 0.7rem;
+    font-size: var(--quick-command-font-size);
     color: color-mix(in srgb, var(--foreground) 84%, transparent);
     transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
   }
@@ -1153,7 +1154,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     text-align: left;
-    font-size: 0.7rem;
+    font-size: var(--quick-command-font-size);
     font-weight: var(--app-font-weight-bold);
   }
 
@@ -1188,7 +1189,7 @@
     align-items: center;
     border: 1px dashed color-mix(in srgb, var(--border) 70%, transparent);
     padding: 0 16px;
-    font-size: 0.75rem;
+    font-size: var(--quick-command-font-size);
     color: var(--muted-foreground);
   }
 

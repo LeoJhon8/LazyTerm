@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, type WheelEvent } from "react";
+import { useState, useMemo, useRef, type CSSProperties, type WheelEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Play, Plus, Trash2, Pencil, Send } from "lucide-react";
 import { useQuickCommandsStore, type QuickCommand } from "@/store/quick-commands";
@@ -78,7 +78,7 @@ function SortableQuickCommand({
           <Button
             variant="outline"
             size="sm"
-            className="command-card rounded-none px-3 text-xs shadow-none"
+            className="command-card rounded-none px-3 shadow-none"
             onClick={onClick}
             title={t("命令：{command}", {
               command: `${cmd.command.split("\n")[0].substring(0, 30)}${cmd.command.length > 30 ? "..." : ""}`,
@@ -114,12 +114,15 @@ function SortableQuickCommand({
 export function QuickCmdBar() {
   const { t } = useI18n();
   const { commands, addCommand, removeCommand, updateCommand, reorderCommands } = useQuickCommandsStore();
-  const { quickCommandDisplayMode } = useSettingsStore();
+  const { quickCommandDisplayMode, quickCommandFontSize } = useSettingsStore();
   const { focusSessionId, sessions, getAllConnectors } = useTabsStore();
   const [configOpen, setConfigOpen] = useState(false);
   const [editingCmd, setEditingCmd] = useState<QuickCommand | null>(null);
   const commandsContainerRef = useRef<HTMLDivElement>(null);
   const isPanelMode = quickCommandDisplayMode === "panel";
+  const quickCommandStyle = {
+    "--quick-command-font-size": `${quickCommandFontSize}px`,
+  } as CSSProperties;
 
   const restoreTerminalFocus = () => {
     requestAnimationFrame(() => {
@@ -224,7 +227,7 @@ export function QuickCmdBar() {
   };
 
   return (
-    <div className="quickcmd-surface" data-mode={quickCommandDisplayMode}>
+    <div className="quickcmd-surface" data-mode={quickCommandDisplayMode} style={quickCommandStyle}>
       <div className="quickcmd-leading-icon" aria-label={t("快捷命令")} title={t("快捷命令")}>
         <Play className="h-3 w-3 fill-current" />
       </div>

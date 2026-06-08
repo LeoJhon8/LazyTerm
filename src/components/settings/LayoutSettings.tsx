@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -13,6 +14,11 @@ import { cn } from "@/lib/utils";
 import { AVAILABLE_MODULES, LOCKED_MODULES } from "@/config/default-slot-config";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useSettingsStore } from "@/store/settings";
+import {
+  MAX_QUICK_COMMAND_FONT_SIZE,
+  MIN_QUICK_COMMAND_FONT_SIZE,
+  normalizeQuickCommandFontSize,
+} from "@/store/settings-values";
 import { getModuleDisplayName, useI18n } from "@/i18n";
 import { PanelLeft, PanelRight } from "lucide-react";
 
@@ -33,7 +39,7 @@ function getModuleSide(
 export function LayoutSettings() {
   const { locale, t } = useI18n();
   const { currentConfig, updateSlotConfig, resetToDefault } = useSlotConfigStore();
-  const { quickCommandDisplayMode, setSettings } = useSettingsStore();
+  const { quickCommandDisplayMode, quickCommandFontSize, setSettings } = useSettingsStore();
 
   // 过滤掉锁定的模块（TabModule、QuickCmdModule 等固定位置）
   const displayModules = AVAILABLE_MODULES.filter(
@@ -204,6 +210,30 @@ export function LayoutSettings() {
                   <SelectItem value="panel">{t("多行面板")}</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex-1 min-w-0 mr-4">
+                <Label className="text-sm font-medium">{t("快捷命令字体大小")}</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {t("调整快捷命令按钮文字大小。")}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Input
+                  type="number"
+                  min={MIN_QUICK_COMMAND_FONT_SIZE}
+                  max={MAX_QUICK_COMMAND_FONT_SIZE}
+                  step={1}
+                  value={quickCommandFontSize}
+                  onChange={(event) =>
+                    setSettings({
+                      quickCommandFontSize: normalizeQuickCommandFontSize(event.target.valueAsNumber),
+                    })
+                  }
+                  className="h-8 w-20 rounded-lg text-right"
+                />
+                <span className="text-xs text-muted-foreground">px</span>
+              </div>
             </div>
           </div>
         </div>
