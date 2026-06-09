@@ -21,7 +21,6 @@ pub mod terminal;
 pub mod freerdp_client;
 #[cfg(feature = "rdp-freerdp")]
 pub mod freerdp_ffi;
-pub mod mstsc;
 pub mod native_rdp;
 pub mod rdp;
 pub mod rdp_core;
@@ -33,7 +32,6 @@ pub mod vnc_core;
 pub mod vnc_ffi;
 
 // 导出常用命令
-pub use mstsc::*;
 pub use native_rdp::*;
 pub use rdp::*;
 pub use serial::*;

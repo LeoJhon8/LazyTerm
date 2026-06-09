@@ -77,7 +77,6 @@ pub fn run() {
             protocol::set_native_rdp_session_visible,
             protocol::focus_native_rdp_session,
             protocol::close_native_rdp_session,
-            protocol::launch_mstsc_rdp,
             protocol::sftp_upload_file,
             protocol::sftp_upload_files,
             protocol::cancel_sftp_upload,

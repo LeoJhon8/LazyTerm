@@ -1,15 +1,5 @@
 //! RDP runtime backed by FreeRDP.
 
-use crate::types::RdpConnectConfig;
-
-pub fn build_rdp_full_address(config: &RdpConnectConfig) -> String {
-    if config.port == 3389 {
-        config.host.clone()
-    } else {
-        format!("{}:{}", config.host, config.port)
-    }
-}
-
 #[cfg(feature = "rdp-freerdp")]
 mod freerdp_runtime {
     use std::collections::HashSet;

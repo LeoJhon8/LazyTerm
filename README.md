@@ -5,10 +5,10 @@ LazyTerm 是一款基于 Tauri 2、React 19、TypeScript 和 Rust 构建的现�
 ## 特性
 
 - 多协议连接：支持本地 PTY、SSH、AI CLI、RDP、VNC、串口和 Telnet。
-- 图形远程桌面：RDP 支持 IronRDP 内嵌渲染、Windows MsTscAx sidecar 和系统 mstsc 外部启动；VNC 支持画面渲染、输入转发和光标同步。
+- 图形远程桌面：RDP 支持 FreeRDP 内嵌渲染和 Windows MsTscAx sidecar；VNC 支持画面渲染、输入转发和光标同步。
 - 会话树管理：以文件夹和连接节点组织配置，支持新增、编辑、删除、排序、导入和导出。
 - SFTP 上传：可对 SSH 会话执行文件上传，并显示整体和单文件进度。
-- 多面板工作区：中心工作区支持标签页和分屏，周围插槽可放置会话、历史、快捷命令等模块。
+- 多面板工作区：中心工作区支持标签页和树形多面板分屏，周围插槽可放置会话、历史、快捷命令等模块。
 - 终端体验：基于 xterm.js，支持主题、字体、透明度、背景图、历史命令和快捷命令。
 - 配置同步：支持将主要配置同步到 Git 目录，并在设置中执行同步、提交和拉取。
 - 自动更新：内置更新检查与下载配置。
@@ -25,7 +25,7 @@ LazyTerm 是一款基于 Tauri 2、React 19、TypeScript 和 Rust 构建的现�
 | 后端 | Rust |
 | 本地终端 | portable-pty |
 | SSH / SFTP | russh、russh-sftp |
-| RDP | IronRDP、MsTscAx sidecar、mstsc |
+| RDP | FreeRDP、MsTscAx sidecar |
 | VNC | LibVNCClient FFI |
 | 串口 | serialport |
 
@@ -52,12 +52,12 @@ sudo apt update
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
-更多 Windows 新机器配置步骤见 [docs/windows-new-machine-setup.md](./docs/windows-new-machine-setup.md)。
+更多文档见 [docs/README.md](./docs/README.md)，Windows 开发环境配置见 [docs/developer/development-setup-windows.md](./docs/developer/development-setup-windows.md)。
 
 ### 安装依赖
 
 ```bash
-npm install
+npm ci
 ```
 
 ### 开发运行
@@ -97,7 +97,7 @@ npm run build:msrdpax-sidecar:release
 
 1. 启动应用后，可从快速连接或会话树创建本地终端、SSH、RDP、VNC、串口、Telnet 或 AI CLI 会话。
 2. 在会话树中维护常用连接配置，按文件夹组织不同环境。
-3. 在工作区中使用标签页和分屏同时查看多个会话。
+3. 在工作区中使用标签页和树形分屏同时查看多个会话。
 4. 在设置中调整终端主题、字体、透明度、背景图、布局插槽和数据同步。
 5. 对 SSH 节点可使用 SFTP 上传文件；对 Git 同步目录可执行配置同步、提交和拉取。
 
@@ -112,6 +112,19 @@ npm run build:msrdpax-sidecar:release
 | `Ctrl + 鼠标滚轮` | 调整终端字体大小 |
 | `Ctrl + Shift + C` | 复制终端选中内容 |
 | `Ctrl + Shift + V` | 粘贴到终端 |
+| `Ctrl + Shift + F` | 切换专注模式 |
+| `F11` | 切换沉浸模式 |
+
+完整快捷键说明见 [docs/user/shortcuts.md](./docs/user/shortcuts.md)。
+
+## 文档
+
+项目文档按读者分为两类：
+
+- 面向终端用户：[docs/user/](./docs/user/)
+- 面向开发维护者：[docs/developer/](./docs/developer/)
+
+文档索引见 [docs/README.md](./docs/README.md)。
 
 ## 项目结构
 
@@ -160,12 +173,7 @@ React UI -> Zustand stores -> Connector -> Tauri IPC -> Rust backend
 - Rust 后端负责 PTY、SSH、SFTP、RDP、VNC、串口、Telnet、更新和 Git 操作。
 - 图形协议通过 Tauri Channel 或事件把帧数据传回前端，由 Canvas/宿主视图渲染。
 
-更完整的设计说明见：
-
-- [docs/architecture.md](./docs/architecture.md)
-- [docs/rdp-pipeline-comparison.md](./docs/rdp-pipeline-comparison.md)
-- [docs/msrdpax-native-host-design.md](./docs/msrdpax-native-host-design.md)
-- [docs/immersive-mode.md](./docs/immersive-mode.md)
+更完整的设计说明见 [docs/developer/architecture.md](./docs/developer/architecture.md)。
 
 ## 数据与配置
 
@@ -207,9 +215,8 @@ React UI -> Zustand stores -> Connector -> Tauri IPC -> Rust backend
 
 ### RDP 连接异常
 
-- IronRDP 适合内嵌渲染标准 RDP 服务。
+- FreeRDP 适合内嵌渲染标准 RDP 服务。
 - MsTscAx sidecar 需要 Windows 和 .NET 运行环境。
-- mstsc 模式会启动系统自带远程桌面客户端。
 
 ### VNC 构建或连接失败
 
@@ -223,9 +230,9 @@ Windows 下需要先准备 LibVNCClient，可使用 `scripts/setup-libvncserver-
 
 欢迎提交 Issue 和 Pull Request。建议在提交前执行：
 
-```bash
+```powershell
 npm run lint
-npm run build
+.\node_modules\.bin\tsc -p tsconfig.app.json --noEmit
 ```
 
 ## 许可
@@ -245,7 +252,6 @@ Copyright (c) 2025-present LazyTerm Contributors
 - [xterm.js](https://xtermjs.org/)
 - [shadcn/ui](https://ui.shadcn.com/)
 - [russh](https://github.com/warp-tech/russh)
-- [IronRDP](https://github.com/Devolutions/IronRDP)
 - [LibVNCClient](https://github.com/LibVNC/libvncserver)
 
 排名区分先后，感谢以下AI工具对当前项目的贡献

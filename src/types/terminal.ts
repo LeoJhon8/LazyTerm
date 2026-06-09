@@ -1,5 +1,5 @@
 export type SessionProtocol = 'ssh' | 'local' | 'rdp' | 'vnc' | 'serial' | 'telnet' | 'ai-cli';
-export type RdpBackend = 'freerdp' | 'ironrdp' | 'msrdpax' | 'mstsc-external';
+export type RdpBackend = 'freerdp' | 'msrdpax';
 
 export interface ISessionConnector {
   readonly protocol: SessionProtocol;

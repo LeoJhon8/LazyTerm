@@ -1,6 +1,6 @@
 import type { RdpBackend } from "@/types/terminal";
 
-export type ConfigurableRdpBackend = Extract<RdpBackend, "freerdp" | "msrdpax">;
+export type ConfigurableRdpBackend = RdpBackend;
 
 export function isWindowsPlatform(): boolean {
   return typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
