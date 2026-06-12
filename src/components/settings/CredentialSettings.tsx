@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { KeyRound, Plus, Save, Trash2 } from "lucide-react";
+import { KeyRound, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,13 +73,26 @@ function CredentialFormField({
 }
 
 export function CredentialSettings() {
-  const { credentials, addCredential, updateCredential, removeCredential } = useCredentialsStore();
+  const {
+    credentials,
+    vault,
+    addCredential,
+    updateCredential,
+    removeCredential,
+    enableMasterPassword,
+    changeMasterPassword,
+    disableMasterPassword,
+  } = useCredentialsStore();
   const [selectedId, setSelectedId] = useState<string | null>(credentials[0]?.id ?? null);
   const selectedCredential = useMemo(
     () => credentials.find((credential) => credential.id === selectedId) ?? null,
     [credentials, selectedId],
   );
   const [form, setForm] = useState<CredentialInput>(() => selectedCredential ? toForm(selectedCredential) : EMPTY_FORM);
+  const [masterPassword, setMasterPassword] = useState("");
+  const [masterPasswordConfirm, setMasterPasswordConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const canSave = form.name.trim().length > 0
     && (form.type !== "ssh-key" || Boolean(form.privateKeyPath?.trim() || form.privateKey?.trim()));
 
@@ -113,23 +126,80 @@ export function CredentialSettings() {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!canSave) return;
-    if (selectedId) {
-      updateCredential(selectedId, form);
-      return;
-    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      if (selectedId) {
+        await updateCredential(selectedId, form);
+        setMessage({ type: "success", text: "凭据已加密保存" });
+        return;
+      }
 
-    const id = addCredential(form);
-    setSelectedId(id);
+      const id = await addCredential(form);
+      setSelectedId(id);
+      setMessage({ type: "success", text: "凭据已加密保存" });
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!selectedId) return;
-    removeCredential(selectedId);
-    const next = credentials.find((credential) => credential.id !== selectedId) ?? null;
-    setSelectedId(next?.id ?? null);
-    setForm(next ? toForm(next) : EMPTY_FORM);
+    setBusy(true);
+    try {
+      await removeCredential(selectedId);
+      const next = credentials.find((credential) => credential.id !== selectedId) ?? null;
+      setSelectedId(next?.id ?? null);
+      setForm(next ? toForm(next) : EMPTY_FORM);
+      setMessage({ type: "success", text: "凭据已删除" });
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleMasterPassword = async () => {
+    if (!masterPassword || masterPassword !== masterPasswordConfirm) {
+      setMessage({ type: "error", text: "两次输入的主密码不一致" });
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      if (vault?.mode === "master") {
+        await changeMasterPassword(masterPassword);
+        setMessage({ type: "success", text: "主密码已修改，全部凭据已重新加密" });
+      } else {
+        await enableMasterPassword(masterPassword);
+        setMessage({ type: "success", text: "主密码保护已启用" });
+      }
+      setMasterPassword("");
+      setMasterPasswordConfirm("");
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDisableMasterPassword = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await disableMasterPassword();
+      setMessage({ type: "success", text: "已切换到默认无感加密模式" });
+      setMasterPassword("");
+      setMasterPasswordConfirm("");
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -220,19 +290,77 @@ export function CredentialSettings() {
 
         <div className="flex justify-end gap-2">
           {selectedId && (
-            <Button variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={handleDelete}>
+            <Button variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => void handleDelete()} disabled={busy}>
               <Trash2 className="h-4 w-4 mr-2" />
               删除
             </Button>
           )}
-          <Button onClick={handleSave} disabled={!canSave}>
+          <Button onClick={() => void handleSave()} disabled={!canSave || busy}>
             <Save className="h-4 w-4 mr-2" />
             保存
           </Button>
         </div>
 
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">
+            凭据保护
+          </Label>
+          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
+            <div className="flex items-start gap-3 px-4 py-3">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <div>
+                <div className="text-sm font-medium">
+                  {vault?.mode === "master" ? "主密码加密" : "默认无感加密"}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {vault?.mode === "master"
+                    ? "凭据可随 Git 和备份迁移；新设备或重启后输入主密码解锁。"
+                    : "凭据以密文随 Git 和备份迁移，无需额外输入；该模式用于避免配置被直接查看。"}
+                </p>
+              </div>
+            </div>
+            <CredentialFormField label={vault?.mode === "master" ? "新主密码" : "主密码"}>
+              <Input
+                type="password"
+                value={masterPassword}
+                onChange={(event) => setMasterPassword(event.target.value)}
+                autoComplete="new-password"
+              />
+            </CredentialFormField>
+            <CredentialFormField label="确认主密码">
+              <Input
+                type="password"
+                value={masterPasswordConfirm}
+                onChange={(event) => setMasterPasswordConfirm(event.target.value)}
+                autoComplete="new-password"
+              />
+            </CredentialFormField>
+            <div className="flex justify-end gap-2 px-4 py-3">
+              {vault?.mode === "master" && (
+                <Button variant="outline" onClick={() => void handleDisableMasterPassword()} disabled={busy}>
+                  关闭主密码
+                </Button>
+              )}
+              <Button onClick={() => void handleMasterPassword()} disabled={!masterPassword || !masterPasswordConfirm || busy}>
+                {vault?.mode === "master" ? "修改主密码" : "启用主密码"}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {message && (
+          <div className={cn(
+            "rounded-xl border px-4 py-3 text-sm",
+            message.type === "error"
+              ? "border-destructive/20 bg-destructive/8 text-destructive"
+              : "border-border/40 bg-muted/20 text-foreground",
+          )}>
+            {message.text}
+          </div>
+        )}
+
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-xs text-muted-foreground">
-          当前凭据保存在本机独立存储中，不会写入现有 Git 同步配置。后续可以再接入系统凭据库来进一步增强安全性。
+          默认模式参考 Xshell 的无感加密思路，重点是避免配置文件直接暴露明文；需要更强保护时请启用主密码。
         </div>
       </div>
     </div>

@@ -10,10 +10,8 @@ import type {
   NativeHostRect,
   NativeRdpStatePayload,
 } from "@/types/terminal";
-import {
-  TransitionMask,
-  GraphicalSessionOverlay,
-} from "./BaseSessionView";
+import { ConnectionStatusOverlay } from "./ConnectionStatusOverlay";
+import { SessionTransitionMask } from "./SessionTransitionMask";
 import { useI18n } from "@/i18n";
 
 const NATIVE_RDP_OVERLAY_EVENT = "lazy-native-rdp-overlay";
@@ -83,6 +81,8 @@ export function NativeRdpHostView({
   const initialHasConnectionHistory = connector.hasEverConnected() || HISTORY_READY_STATES.includes(initialState.state);
   const initialOverlayMode = resolveOverlayMode(initialState, initialHasConnectionHistory);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
+  const session = useTabsStore((store) => store.sessions.find((item) => item.id === sessionId));
+  const connectionStatus = session?.connectionStatus;
   const hasBackgroundImage = useSettingsStore((state) => state.backgroundImageEnabled && !!state.backgroundImage);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const menuOverlayActiveRef = useRef(false);
@@ -411,13 +411,16 @@ export function NativeRdpHostView({
       return;
     }
 
-    const hasOverlay = menuMaskVisible || resizeMaskVisible;
+    const hasOverlay = menuMaskVisible
+      || resizeMaskVisible
+      || overlayMode !== "none"
+      || connectionStatus?.phase !== "connected";
     if (hasOverlay) {
       void connector.setVisible(false);
     } else {
       void connector.setVisible(true);
     }
-  }, [hostRectMounted, menuMaskVisible, resizeMaskVisible, connector]);
+  }, [connectionStatus?.phase, hostRectMounted, menuMaskVisible, overlayMode, resizeMaskVisible, connector]);
 
   useEffect(() => {
     const applyMenuOverlay = (active: boolean) => {
@@ -465,10 +468,14 @@ export function NativeRdpHostView({
     };
   }, [connector]);
 
-  const isFailed = overlayMode === "failed";
-  const isDisconnected = overlayMode === "disconnected";
-  const showMenuMask = menuMaskVisible && overlayMode === "connecting";
-  const showStatusOverlay = !showMenuMask && overlayMode !== "none";
+  const showMenuMask = menuMaskVisible && connectionStatus?.phase === "connected";
+  const showTransitionMask = connectionStatus?.phase === "connected"
+    && (showMenuMask || resizeMaskVisible || overlayMode !== "none");
+  const transitionText = showMenuMask
+    ? t("系统菜单已打开，正在临时隐藏 Windows 远程桌面画面...")
+    : resizeMaskVisible
+      ? t("正在调整会话尺寸...")
+      : t("正在同步 Windows 远程桌面画面...");
 
   const handleReconnect = () => {
     if (retrying) {
@@ -492,10 +499,6 @@ export function NativeRdpHostView({
         backgroundColor: hasBackgroundImage ? "transparent" : undefined,
       }}
     >
-      <TransitionMask 
-        visible={resizeMaskVisible} 
-        text={t("正在调整会话尺寸...")}
-      />
       <div
         ref={containerRef}
         className="absolute inset-0 z-0 overflow-hidden outline-none"
@@ -503,33 +506,22 @@ export function NativeRdpHostView({
         onClick={() => void connector.focus()}
       />
 
-      {showStatusOverlay ? (
-        <GraphicalSessionOverlay
-          mode={isFailed ? "failed" : (isDisconnected ? "disconnected" : "connecting")}
-          titleText={isFailed ? t("连接失败") : (isDisconnected ? t("连接断开") : t("正在建立连接"))}
-          description={(state.detail?.replace(/MsTscAx\s*/gi, "Windows ") ?? (isFailed
-            ? t("无法与 Windows 远程桌面建立连接，请检查目标主机或网络设置。")
-            : (isDisconnected ? t("与远程主机的连接已意外中止。") : t("正在初始化连接..."))))}
+      {connectionStatus ? (
+        <ConnectionStatusOverlay
+          status={connectionStatus}
           protocol="Windows"
-          sessionConfigDetails={[
-            { label: t("目标地址"), value: useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.host ? `${useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.host}:${useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.port || 3389}` : hostLabel },
-            { label: t("身份凭据"), value: useTabsStore.getState().sessions.find(s => s.id === sessionId)?.config?.rdpConfig?.username || t("交互式登录") }
+          target={session?.config?.rdpConfig?.host
+            ? `${session.config.rdpConfig.host}:${session.config.rdpConfig.port || 3389}`
+            : hostLabel}
+          details={[
+            { label: t("身份凭据"), value: session?.config?.rdpConfig?.username || t("交互式登录") }
           ]}
+          description={state.detail?.replace(/MsTscAx\s*/gi, "Windows ")}
           onReconnect={handleReconnect}
-          interactive={isDisconnected || isFailed}
-          zIndexClass="z-30"
         />
       ) : null}
 
-      {showMenuMask ? (
-        <GraphicalSessionOverlay
-          mode="connecting"
-          titleText={t("系统菜单激活")}
-          description={t("应用菜单已打开。为避免原生 ActiveX 组件抢占菜单焦点，当前临时屏蔽原生画面。关闭菜单后将自动恢复。")}
-          protocol="Focus Mask"
-          zIndexClass="z-30"
-        />
-      ) : null}
+      <SessionTransitionMask visible={showTransitionMask} text={transitionText} />
     </main>
   );
 }

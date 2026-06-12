@@ -139,6 +139,12 @@ src-tauri/
 帧数据 -> Rust protocol -> Tauri channel/event -> Canvas 或原生宿主 -> 屏幕
 ```
 
+## 统一连接状态
+
+所有 Connector 通过 `onConnectionState` 上报 `idle`、`connecting`、`authenticating`、`connected`、`reconnecting`、`disconnected`、`failed` 和 `closing`。`src/store/tabs.ts` 是会话连接状态的唯一数据源，视图组件不得再根据 `isConnected`、是否收到首帧或协议专用集合推断连接结果。
+
+本地终端异常退出后由 Store 自动重建 Connector。SSH、Telnet、串口、AI CLI、RDP 和 VNC 断开后保留现有输出或最后画面，等待用户手动重新连接。首帧等待、画面同步和尺寸调整属于视觉状态，不写入连接状态。
+
 ## 维护约定
 
 - UI 层只负责交互和展示。

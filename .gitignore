@@ -28,3 +28,6 @@ src-tauri/target
 src-tauri/native/msrdpax-host/bin/
 src-tauri/native/msrdpax-host/obj/
 src-tauri/native/msrdpax-host/.vs/
+
+# Local Superpowers design previews
+.superpowers/

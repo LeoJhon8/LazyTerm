@@ -1,12 +1,35 @@
 export type SessionProtocol = 'ssh' | 'local' | 'rdp' | 'vnc' | 'serial' | 'telnet' | 'ai-cli';
 export type RdpBackend = 'freerdp' | 'msrdpax';
 
+export type SessionConnectionPhase =
+  | 'idle'
+  | 'connecting'
+  | 'authenticating'
+  | 'connected'
+  | 'reconnecting'
+  | 'disconnected'
+  | 'failed'
+  | 'closing';
+
+export interface ConnectionStateEvent {
+  phase: SessionConnectionPhase;
+  reason?: string;
+  technicalDetails?: string;
+}
+
+export interface SessionConnectionStatus extends ConnectionStateEvent {
+  changedAt: number;
+  connectedAt?: number;
+  attempt: number;
+}
+
 export interface ISessionConnector {
   readonly protocol: SessionProtocol;
   readonly isConnected: boolean;
 
   open(): Promise<void>;
   close(): void;
+  onConnectionState(handler: (event: ConnectionStateEvent) => void): () => void;
 }
 
 // 终端连接器接口定义

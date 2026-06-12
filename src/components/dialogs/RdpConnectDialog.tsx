@@ -75,6 +75,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       host,
       port: parseInt(port, 10) || 3389,
       username,
+      credentialId: initialConfig?.credentialId,
       password: password || undefined,
       domain: domain || undefined,
       nickname: nickname || undefined,

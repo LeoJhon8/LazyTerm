@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useSshProfilesStore, type SessionNode } from "@/store/ssh-profiles";
+import { secureConnectionConfig } from "@/store/credentials";
 import { useI18n } from "@/i18n";
 import { useTabsStore } from "@/store/tabs";
 import { usePanesStore } from "@/store/panes";
@@ -37,6 +38,7 @@ import { useDialogState } from "@/hooks/useDialogState";
 import { resolveRdpBackend } from "@/lib/rdp-backend";
 import { onNewConnection, onQuickConnect } from "@/lib/quick-connect-event";
 import { useSettingsStore } from "@/store/settings";
+import { logger } from "@/lib/logger";
 
 type DropPosition = 'before' | 'after' | 'inside';
 
@@ -283,6 +285,25 @@ export function SessionModule() {
   const [tempName, setTempName] = useState("");
   const [targetNode, setTargetNode] = useState<SessionNode | null>(null);
   const [editNode, setEditNode] = useState<SessionNode | null>(null);
+
+  const saveRemoteProfile = async (
+    type: "ssh" | "rdp" | "vnc",
+    config: SSHConfig | RDPConfig | VNCConfig,
+    parentId: string | null,
+    editing: SessionNode | null,
+  ) => {
+    try {
+      const secured = await secureConnectionConfig(type, config);
+      if (editing) {
+        updateNode(editing.id, { config: secured, name: config.nickname || config.host });
+      } else if (parentId) {
+        addProfile(type, secured, parentId);
+      }
+      dialog.close();
+    } catch (error) {
+      logger.error("FE/session/save-profile", "保存远程会话凭据失败", { error });
+    }
+  };
   const [sftpNode, setSftpNode] = useState<SessionNode | null>(null);
   const [initialQuickConnectType, setInitialQuickConnectType] = useState<string | null>(null);
 
@@ -485,7 +506,11 @@ export function SessionModule() {
         onOpenChange={() => dialog.close()}
         onSave={(type, cfg) => {
           const parentId = targetNode?.id ?? "root-folder";
-          addProfile(type as any, cfg, parentId);
+          if (type === "ssh" || type === "rdp" || type === "vnc") {
+            void saveRemoteProfile(type, cfg as SSHConfig | RDPConfig | VNCConfig, parentId, null);
+            return;
+          }
+          addProfile(type, cfg, parentId);
           dialog.close();
         }}
       />
@@ -518,9 +543,7 @@ export function SessionModule() {
         onOpenChange={() => dialog.close()} 
         initialConfig={editNode?.type === "ssh" ? editNode.config as SSHConfig : undefined} 
         onSave={(cfg) => {
-          if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
-          else if (targetNode) addProfile("ssh", cfg, targetNode.id);
-          dialog.close();
+          void saveRemoteProfile("ssh", cfg, targetNode?.id ?? null, editNode);
         }} 
       />
 
@@ -530,9 +553,7 @@ export function SessionModule() {
         onOpenChange={() => dialog.close()} 
         initialConfig={editNode?.type === "rdp" ? editNode.config as RDPConfig : undefined} 
         onSave={(cfg) => {
-          if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
-          else if (targetNode) addProfile("rdp", cfg, targetNode.id);
-          dialog.close();
+          void saveRemoteProfile("rdp", cfg, targetNode?.id ?? null, editNode);
         }} 
       />
 
@@ -542,9 +563,7 @@ export function SessionModule() {
         onOpenChange={() => dialog.close()} 
         initialConfig={editNode?.type === "vnc" ? editNode.config as VNCConfig : undefined} 
         onSave={(cfg) => {
-          if (editNode) updateNode(editNode.id, { config: cfg, name: cfg.nickname || cfg.host });
-          else if (targetNode) addProfile("vnc", cfg, targetNode.id);
-          dialog.close();
+          void saveRemoteProfile("vnc", cfg, targetNode?.id ?? null, editNode);
         }} 
       />
 

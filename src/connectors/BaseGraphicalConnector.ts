@@ -1,6 +1,8 @@
 import { Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
+import type { ConnectionStateEvent } from "@/types/terminal";
+import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 
 /**
  * 图形协议连接器的基础抽象类
@@ -24,6 +26,7 @@ export abstract class BaseGraphicalConnector<
   protected frameHandler: ((frame: TFramePayload) => void) | null = null;
   protected frameSize: { width: number; height: number } | null = null;
   protected latestFrame: TFramePayload | null = null;
+  private readonly stateEmitter: ConnectionStateEmitter;
 
   private readonly protocolName: string;
   private readonly createSessionCommand: string;
@@ -42,6 +45,7 @@ export abstract class BaseGraphicalConnector<
     this.createSessionCommand = createSessionCommand;
     this.closeSessionCommand = closeSessionCommand;
     this.closeEventPrefix = closeEventPrefix;
+    this.stateEmitter = new ConnectionStateEmitter(`FE/connector/${protocolName}/state`);
     this.config = config;
     this.frameChannel = new Channel<ArrayBuffer>((packet) => {
       const frame = frameParser(packet);
@@ -64,6 +68,7 @@ export abstract class BaseGraphicalConnector<
     }
 
     if (!this.connectPromise) {
+      this.stateEmitter.emit({ phase: "connecting" });
       this.closedBeforeConnect = false;
       this.connectPromise = invokeTauri<string>(
         this.createSessionCommand,
@@ -86,13 +91,26 @@ export abstract class BaseGraphicalConnector<
         }
 
         this.sessionId = sessionId;
+        void this.ensureCloseListener(sessionId);
+        this.stateEmitter.emit({ phase: "connected" });
         return sessionId;
+      }).catch((error) => {
+        this.stateEmitter.emit({
+          phase: "failed",
+          reason: `${this.protocolName.toUpperCase()} 连接失败`,
+          technicalDetails: String(error),
+        });
+        throw error;
       }).finally(() => {
         this.connectPromise = null;
       });
     }
 
     await this.connectPromise;
+  }
+
+  onConnectionState(handler: (event: ConnectionStateEvent) => void): () => void {
+    return this.stateEmitter.subscribe(handler);
   }
 
   /**
@@ -145,6 +163,7 @@ export abstract class BaseGraphicalConnector<
    * 关闭连接
    */
   close(): void {
+    this.stateEmitter.emit({ phase: "closing" });
     this.closedBeforeConnect = true;
 
     if (this.sessionId) {
@@ -197,6 +216,10 @@ export abstract class BaseGraphicalConnector<
     this.cleanupListeners();
     this.latestFrame = null;
     this.sessionId = null;
+    this.stateEmitter.emit({
+      phase: "disconnected",
+      reason: `${this.protocolName.toUpperCase()} 连接已断开`,
+    });
     this.closeHandlers.forEach((handler) => handler());
   }
 

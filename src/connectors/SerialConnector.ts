@@ -1,4 +1,5 @@
-import type { ITerminalConnector, SerialConfig } from "@/types/terminal";
+import type { ConnectionStateEvent, ITerminalConnector, SerialConfig } from "@/types/terminal";
+import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
@@ -8,11 +9,10 @@ export class SerialConnector implements ITerminalConnector {
   private config: SerialConfig;
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
-  private onDisconnectCallback?: () => void;
+  private readonly stateEmitter = new ConnectionStateEmitter("FE/connector/serial/state");
 
-  constructor(config: SerialConfig, onDisconnect?: () => void) {
+  constructor(config: SerialConfig) {
     this.config = config;
-    this.onDisconnectCallback = onDisconnect;
   }
 
   get isConnected(): boolean {
@@ -20,6 +20,7 @@ export class SerialConnector implements ITerminalConnector {
   }
 
   async open(): Promise<void> {
+    this.stateEmitter.emit({ phase: "connecting" });
     try {
       this.sessionId = `serial-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       
@@ -31,10 +32,17 @@ export class SerialConnector implements ITerminalConnector {
         logStart: true,
         logSuccess: true,
       });
+      this.stateEmitter.emit({ phase: "connected" });
     } catch (error) {
+      this.sessionId = null;
       logger.error("FE/connector/serial/open", "Failed to open serial port via Rust", error);
+      this.stateEmitter.emit({ phase: "failed", reason: "串口连接失败", technicalDetails: String(error) });
       throw error;
     }
+  }
+
+  onConnectionState(handler: (event: ConnectionStateEvent) => void): () => void {
+    return this.stateEmitter.subscribe(handler);
   }
 
   async onData(handler: (data: string) => void): Promise<void> {
@@ -105,6 +113,7 @@ export class SerialConnector implements ITerminalConnector {
   }
 
   close(): void {
+    this.stateEmitter.emit({ phase: "closing" });
     if (this.sessionId) {
       invokeTauriBackground("close_serial", { sessionId: this.sessionId }, { scope: "FE/connector/serial/close" });
       this.sessionId = null;
@@ -118,10 +127,10 @@ export class SerialConnector implements ITerminalConnector {
   private handleDisconnect(): void {
     if (!this.sessionId) return;
     this.sessionId = null;
+    this.stateEmitter.emit({ phase: "disconnected", reason: "串口连接已断开" });
     if (this.unlistenFn) {
       this.unlistenFn();
       this.unlistenFn = null;
     }
-    this.onDisconnectCallback?.();
   }
 }

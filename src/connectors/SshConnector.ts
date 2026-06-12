@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { ITerminalConnector, SSHConfig } from "@/types/terminal";
+import type { ConnectionStateEvent, ITerminalConnector, SSHConfig } from "@/types/terminal";
+import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { logger } from "@/lib/logger";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
 
@@ -59,7 +60,6 @@ function estimateInitialPtySize(fontConfig?: PtyFontConfig): { cols: number; row
 export interface SshConnectorOptions {
   config: SSHConfig;
   fontConfig?: PtyFontConfig;
-  onDisconnect?: () => void;
 }
 
 export class SshConnector implements ITerminalConnector {
@@ -68,12 +68,11 @@ export class SshConnector implements ITerminalConnector {
   private fontConfig?: PtyFontConfig;
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
-  private onDisconnectCallback?: () => void;
+  private readonly stateEmitter = new ConnectionStateEmitter("FE/connector/ssh/state");
 
   constructor(options: SshConnectorOptions) {
     this.config = options.config;
     this.fontConfig = options.fontConfig;
-    this.onDisconnectCallback = options.onDisconnect;
   }
 
   get isConnected(): boolean {
@@ -85,12 +84,14 @@ export class SshConnector implements ITerminalConnector {
       throw new Error("SSH 连接已建立");
     }
 
+    this.stateEmitter.emit({ phase: "connecting" });
     try {
       const initialSize = estimateInitialPtySize(this.fontConfig);
       const shouldSendKeepAlive = this.config.port !== 2222;
       const keepAlive = this.config.keepAlive ?? true;
       const keepAliveInterval = Math.max(1, Math.floor(this.config.keepAliveInterval ?? 60));
 
+      this.stateEmitter.emit({ phase: "authenticating" });
       this.sessionId = await invokeTauri<string>("create_ssh_session", {
         config: {
           host: this.config.host,
@@ -113,13 +114,20 @@ export class SshConnector implements ITerminalConnector {
       });
 
       logger.info("FE/connector/ssh/open", `成功连接到 ${this.config.host}:${this.config.port}`);
+      this.stateEmitter.emit({ phase: "connected" });
     } catch (error) {
       logger.error("FE/connector/ssh/open", "连接失败", error);
+      this.stateEmitter.emit({ phase: "failed", reason: "SSH 连接失败", technicalDetails: String(error) });
       throw error;
     }
   }
 
+  onConnectionState(handler: (event: ConnectionStateEvent) => void): () => void {
+    return this.stateEmitter.subscribe(handler);
+  }
+
   close(): void {
+    this.stateEmitter.emit({ phase: "closing" });
     if (!this.sessionId) return;
 
     try {
@@ -137,10 +145,6 @@ export class SshConnector implements ITerminalConnector {
       }
       this.sessionId = null;
     }
-  }
-
-  setOnDisconnect(callback: () => void): void {
-    this.onDisconnectCallback = callback;
   }
 
   async onData(handler: (data: string) => void): Promise<void> {
@@ -192,9 +196,7 @@ export class SshConnector implements ITerminalConnector {
   private handleDisconnect(reason: string = "unknown"): void {
     logger.info("FE/connector/ssh/disconnect", `Handling disconnection: ${reason}`);
     this.sessionId = null;
-    if (this.onDisconnectCallback) {
-      this.onDisconnectCallback();
-    }
+    this.stateEmitter.emit({ phase: "disconnected", reason: "SSH 连接已断开", technicalDetails: reason });
   }
 
   write(data: string | Uint8Array): void {

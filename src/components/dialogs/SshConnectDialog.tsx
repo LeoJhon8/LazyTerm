@@ -70,6 +70,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       host,
       port: parsedPort,
       username,
+      credentialId: initialConfig?.credentialId,
       authType: privateKeyPath ? "privateKey" : "password",
       password: password || undefined,
       privateKeyPath: privateKeyPath || undefined,

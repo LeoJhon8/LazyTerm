@@ -20,6 +20,7 @@ const SYNC_KEYS = [
   "terminal-sessions-v10",
   "lazy-term-quick-commands",
   "lazy-term-slot-config",
+  "lazy-term-credentials",
 ];
 
 /** 需要忽略的 store key（git-sync 自身存 localStorage，避免循环） */

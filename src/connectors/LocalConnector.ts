@@ -1,4 +1,5 @@
-import type { ITerminalConnector } from "@/types/terminal";
+import type { ConnectionStateEvent, ITerminalConnector } from "@/types/terminal";
+import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
@@ -8,11 +9,10 @@ export class LocalConnector implements ITerminalConnector {
   private config: { cwd?: string; shell?: string; admin?: boolean };
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
-  private onDisconnectCallback?: () => void;
+  private readonly stateEmitter = new ConnectionStateEmitter("FE/connector/local/state");
 
-  constructor(config: { cwd?: string; shell?: string; admin?: boolean }, onDisconnect?: () => void) {
+  constructor(config: { cwd?: string; shell?: string; admin?: boolean }) {
     this.config = config;
-    this.onDisconnectCallback = onDisconnect;
   }
 
   get isConnected(): boolean {
@@ -20,6 +20,7 @@ export class LocalConnector implements ITerminalConnector {
   }
 
   async open(): Promise<void> {
+    this.stateEmitter.emit({ phase: "connecting" });
     try {
       // 1. 调用 Rust 创建 PTY 进程，并返回一个唯一的会话 ID
       this.sessionId = await invokeTauri<string>("create_terminal", {
@@ -31,10 +32,16 @@ export class LocalConnector implements ITerminalConnector {
         logStart: true,
         logSuccess: true,
       });
+      this.stateEmitter.emit({ phase: "connected" });
     } catch (error) {
       logger.error("FE/connector/local/open", "Failed to spawn terminal via Rust", error);
+      this.stateEmitter.emit({ phase: "failed", reason: "本地终端启动失败", technicalDetails: String(error) });
       throw error;
     }
+  }
+
+  onConnectionState(handler: (event: ConnectionStateEvent) => void): () => void {
+    return this.stateEmitter.subscribe(handler);
   }
 
   // 修改 onData 以监听来自 Rust 的事件
@@ -114,6 +121,7 @@ export class LocalConnector implements ITerminalConnector {
   }
 
   close(): void {
+    this.stateEmitter.emit({ phase: "closing" });
     if (this.sessionId) {
       invokeTauriBackground("close_terminal", { sessionId: this.sessionId }, { scope: "FE/connector/local/close" });
       this.sessionId = null;
@@ -130,12 +138,12 @@ export class LocalConnector implements ITerminalConnector {
     }
 
     this.sessionId = null;
+    this.stateEmitter.emit({ phase: "disconnected", reason: "本地终端进程已退出" });
 
     if (this.unlistenFn) {
       this.unlistenFn();
       this.unlistenFn = null;
     }
 
-    this.onDisconnectCallback?.();
   }
 }

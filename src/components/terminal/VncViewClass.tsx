@@ -5,13 +5,13 @@ import { useTabsStore } from "@/store/tabs";
 import type { IVncConnector, VncFramePayload } from "@/types/terminal";
 import {
   type BaseSessionViewProps,
-  TransitionMask,
-  GraphicalSessionOverlay,
   VIEW_CONTAINER_CLASSNAME,
   CANVAS_CLASSNAME,
   HIDDEN_CLASSNAME,
   INTERACTIVE_CONTAINER_CLASSNAME,
 } from "./BaseSessionView";
+import { ConnectionStatusOverlay } from "./ConnectionStatusOverlay";
+import { SessionTransitionMask } from "./SessionTransitionMask";
 import {
   useBaseGraphicSessionView,
   getPointerPositionScaled,
@@ -34,7 +34,6 @@ export function VncViewClass(props: BaseSessionViewProps) {
     containerRef,
     frameSize,
     setFrameSize,
-    setConnected,
     notifyVisualReady,
     renderBlobFrame,
   } = useBaseGraphicSessionView(props);
@@ -55,10 +54,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
   const frameSeqRef = useRef(0);
   const inputSeqRef = useRef(0);
   const lastPointerMoveLogAtRef = useRef(0);
-  const everConnectedRef = useRef(false);
-  const [isClosed, setIsClosed] = useState(false);
   const [cursorStyle, setCursorStyle] = useState("default");
-  const [retrying, setRetrying] = useState(false);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
 
   const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
@@ -197,7 +193,6 @@ export function VncViewClass(props: BaseSessionViewProps) {
             width: frame.desktopWidth,
             height: frame.desktopHeight,
           });
-          setConnected(true);
           notifyVisualReady();
         }
       } catch (error) {
@@ -213,7 +208,6 @@ export function VncViewClass(props: BaseSessionViewProps) {
     };
 
     connector.onFrame((nextFrame) => {
-      everConnectedRef.current = true;
       const frameSeq = ++frameSeqRef.current;
       pendingFrameSeqRef.current = frameSeq;
       if (inStartupTraceWindow() || nextFrame.fullFrame || decodeInFlightRef.current) {
@@ -223,6 +217,10 @@ export function VncViewClass(props: BaseSessionViewProps) {
       }
       pendingFrameRef.current = nextFrame;
       void drawLatestFrame();
+    }).then(() => {
+      if (!disposed) {
+        connector.requestFrame(true);
+      }
     }).catch((error) => {
       if (connector.isConnected) {
         logger.error("FE/terminal-view/vnc", "Register frame listener failed", { error });
@@ -244,17 +242,9 @@ export function VncViewClass(props: BaseSessionViewProps) {
       }
     });
 
-    connector.requestFrame(true);
-
-    const disposeClose = connector.onClose(() => {
-      setIsClosed(true);
-      setConnected(false);
-    });
-
     return () => {
       disposed = true;
       drawTokenRef.current += 1;
-      disposeClose();
       pointerMaskRef.current = 0;
       pointerTargetRef.current = null;
       pendingFrameRef.current = null;
@@ -267,7 +257,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
         context?.clearRect(0, 0, cleanupCanvas.width, cleanupCanvas.height);
       }
     };
-  }, [connector, notifyVisualReady, renderBlobFrame, setConnected, setFrameSize, canvasRef]);
+  }, [connector, notifyVisualReady, renderBlobFrame, setFrameSize, canvasRef]);
 
   useEffect(() => {
     pointerMaskRef.current = 0;
@@ -418,37 +408,25 @@ export function VncViewClass(props: BaseSessionViewProps) {
           pointerTargetRef.current = null;
         }}
       >
-        <TransitionMask 
-          visible={resizeMaskVisible} 
-          text={t("正在调整画面比例...")}
+        <SessionTransitionMask
+          visible={activeSession.connectionStatus.phase === "connected" && (!frameSize || resizeMaskVisible)}
+          text={!frameSize ? t("正在同步 VNC 画面...") : t("正在调整画面比例...")}
         />
         <canvas
           ref={canvasRef}
           className={frameSize ? CANVAS_CLASSNAME : HIDDEN_CLASSNAME}
         />
 
-        <GraphicalSessionOverlay
-          mode={!connector.isConnected 
-            ? (isClosed ? (everConnectedRef.current ? "disconnected" : "failed") : "connecting") 
-            : (!frameSize ? "connecting" : "none")}
-          titleText={!connector.isConnected 
-            ? (isClosed ? (everConnectedRef.current ? t("连接断开") : t("连接失败")) : t("正在建立连接"))
-            : t("正在建立连接")}
-          description={!connector.isConnected 
-            ? (isClosed ? (everConnectedRef.current ? t("与远程主机的 VNC 连接已终止。") : t("无法与 VNC 服务器建立连接，请检查配置。")) : t("正在初始化连接..."))
-            : t("正在尝试与目标主机建立 RFB 协议通信并解码首帧画面...")}
+        <ConnectionStatusOverlay
+          status={activeSession.connectionStatus}
           protocol="VNC"
-          sessionConfigDetails={[
-            { label: t("目标地址"), value: activeSession.config?.vncConfig?.host ? `${activeSession.config.vncConfig.host}:${activeSession.config.vncConfig.port || 5900}` : activeSession.title },
+          target={activeSession.config?.vncConfig?.host
+            ? `${activeSession.config.vncConfig.host}:${activeSession.config.vncConfig.port || 5900}`
+            : activeSession.title}
+          details={[
             { label: t("颜色深度"), value: t("真彩色 (24-bit)") }
           ]}
-          onReconnect={() => {
-            if (retrying) return;
-            setRetrying(true);
-            reconnectSession(activeSession.id);
-          }}
-          interactive={!connector.isConnected}
-          zIndexClass="z-30"
+          onReconnect={() => reconnectSession(activeSession.id)}
         />
       </div>
     </main>

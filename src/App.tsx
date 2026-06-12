@@ -13,6 +13,9 @@ import { SlotManager } from "@/components/layout/SlotManager";
 import { CustomTitleBar } from "@/components/layout/CustomTitleBar";
 import { ImmersiveHoverBar } from "@/components/layout/ImmersiveHoverBar";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { CredentialVaultUnlockDialog } from "@/components/dialogs/CredentialVaultUnlockDialog";
+import { useCredentialsStore } from "@/store/credentials";
+import { migrateProfileCredentials } from "@/services/credentialProfileMigration";
 import { ToastContainer } from "@/components/ui/toast";
 import {
   AlertDialog,
@@ -26,6 +29,8 @@ import {
 
 function App() {
   useUpdateNotification();
+  const initializeCredentialVault = useCredentialsStore((state) => state.initialize);
+  const credentialVaultStatus = useCredentialsStore((state) => state.status);
 
   const { locale, t } = useI18n();
   const { isImmersive, isFocus } = useViewMode();
@@ -95,6 +100,16 @@ function App() {
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
+
+  useEffect(() => {
+    void initializeCredentialVault();
+  }, [initializeCredentialVault]);
+
+  useEffect(() => {
+    if (credentialVaultStatus === "unlocked") {
+      void migrateProfileCredentials();
+    }
+  }, [credentialVaultStatus]);
 
   // 应用关闭时清空所有会话
   useEffect(() => {
@@ -304,6 +319,7 @@ function App() {
 
         {/* 全局设置弹窗 */}
         <SettingsDialog />
+        <CredentialVaultUnlockDialog />
 
         {/* 全局 Toast 通知 */}
         <ToastContainer />

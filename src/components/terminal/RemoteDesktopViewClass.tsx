@@ -5,13 +5,13 @@ import { NativeRdpHostView } from "@/components/terminal/NativeRdpHostView";
 import type { INativeRdpConnector, IRdpConnector, RdpFramePayload } from "@/types/terminal";
 import {
   type BaseSessionViewProps,
-  GraphicalSessionOverlay,
-  TransitionMask,
   VIEW_CONTAINER_CLASSNAME,
   CANVAS_CLASSNAME,
   HIDDEN_CLASSNAME,
   INTERACTIVE_CONTAINER_CLASSNAME,
 } from "./BaseSessionView";
+import { ConnectionStatusOverlay } from "./ConnectionStatusOverlay";
+import { SessionTransitionMask } from "./SessionTransitionMask";
 import {
   useBaseGraphicSessionView,
   getPointerPositionCentered,
@@ -34,7 +34,6 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
     containerRef,
     frameSize,
     setFrameSize,
-    setConnected,
     notifyVisualReady,
     renderBlobFrame,
   } = useBaseGraphicSessionView(props);
@@ -53,13 +52,10 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   const pendingFrameRef = useRef<RdpFramePayload | null>(null);
   const decodeInFlightRef = useRef(false);
   const drawTokenRef = useRef(0);
-  const everConnectedRef = useRef(false);
   const transitionMaskVisibleRef = useRef(true);
   const notifyVisualReadyRef = useRef(notifyVisualReady);
-  const [isClosed, setIsClosed] = useState(false);
   const [transitionMaskVisible, setTransitionMaskVisible] = useState(true);
   const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
-  const [retrying, setRetrying] = useState(false);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
 
   useEffect(() => {
@@ -195,7 +191,6 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
               ? current
               : { width: frame.desktopWidth, height: frame.desktopHeight }
           ));
-          setConnected(true);
         }
       } catch (error) {
         if (!disposed) {
@@ -210,10 +205,8 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
     };
 
     canvasConnector.onFrame((nextFrame) => {
-      everConnectedRef.current = true;
       pendingFrameRef.current = nextFrame;
       void drawFrame();
-      setConnected(true);
     }).then(() => {
       if (!disposed) {
         canvasConnector.requestFrame();
@@ -224,14 +217,8 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
       }
     });
 
-    const disposeClose = canvasConnector.onClose(() => {
-      setIsClosed(true);
-      setConnected(false);
-    });
-
     return () => {
       disposed = true;
-      disposeClose();
       pendingFrameRef.current = null;
       decodeInFlightRef.current = false;
       transitionMaskVisibleRef.current = true;
@@ -243,7 +230,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
       }
       canvasConnector.releaseInputs();
     };
-  }, [canvasConnector, markVisualReady, renderBlobFrame, setConnected, setFrameSize, canvasRef]);
+  }, [canvasConnector, markVisualReady, renderBlobFrame, setFrameSize, canvasRef]);
 
   // 重置视觉就绪状态
   useEffect(() => {
@@ -268,24 +255,16 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
         markVisualReady();
       }
 
-      if (payload.state === "disconnected" || payload.state === "closed" || payload.state === "error") {
-        setConnected(false);
-      }
     }).catch((error) => {
       if (!disposed) {
         logger.error("FE/terminal-view/native-rdp", "Register native state listener failed", { error });
       }
     });
 
-    const disposeClose = nativeConnector.onClose(() => {
-      setConnected(false);
-    });
-
     return () => {
       disposed = true;
-      disposeClose();
     };
-  }, [markVisualReady, nativeConnector, setConnected]);
+  }, [markVisualReady, nativeConnector]);
 
   // 自动调整大小
   useEffect(() => {
@@ -440,32 +419,20 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
           className={frameSize ? CANVAS_CLASSNAME : HIDDEN_CLASSNAME}
         />
 
-        <GraphicalSessionOverlay
-          mode={!canvasConnector.isConnected 
-            ? (isClosed ? (everConnectedRef.current ? "disconnected" : "failed") : "connecting") 
-            : (!frameSize ? "connecting" : "none")}
-          titleText={!canvasConnector.isConnected 
-            ? (isClosed ? (everConnectedRef.current ? t("连接断开") : t("连接失败")) : t("正在建立连接")) 
-            : t("正在建立连接")}
-          description={!canvasConnector.isConnected
-            ? (isClosed ? (everConnectedRef.current ? t("与远程主机的连接已意外中止。") : t("建立 RDP 连接失败，请检查配置信息或目标状态。")) : t("正在初始化连接..."))
-            : t("正在尝试建立 RDP 连接并进行首帧解码...")}
+        <ConnectionStatusOverlay
+          status={activeSession.connectionStatus}
           protocol="Windows"
-          sessionConfigDetails={[
-            { label: t("目标地址"), value: activeSession.config?.rdpConfig?.host ? `${activeSession.config.rdpConfig.host}:${activeSession.config.rdpConfig.port || 3389}` : activeSession.title },
+          target={activeSession.config?.rdpConfig?.host
+            ? `${activeSession.config.rdpConfig.host}:${activeSession.config.rdpConfig.port || 3389}`
+            : activeSession.title}
+          details={[
             { label: t("验证凭据"), value: activeSession.config?.rdpConfig?.username || t("交互式登录") }
           ]}
-          onReconnect={() => {
-            if (retrying) return;
-            setRetrying(true);
-            reconnectSession(activeSession.id);
-          }}
-          interactive={!canvasConnector.isConnected}
-          zIndexClass="z-30"
+          onReconnect={() => reconnectSession(activeSession.id)}
         />
 
-        <TransitionMask
-          visible={transitionMaskVisible || resizeMaskVisible}
+        <SessionTransitionMask
+          visible={activeSession.connectionStatus.phase === "connected" && (transitionMaskVisible || resizeMaskVisible)}
           text={transitionMaskVisible ? t("正在同步 Windows 远程桌面画面...") : t("正在调整会话尺寸...")}
         />
       </div>

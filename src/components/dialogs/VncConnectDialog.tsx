@@ -57,6 +57,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
     onSave({
       host,
       port: parseInt(port, 10) || 5900,
+      credentialId: initialConfig?.credentialId,
       password: password || undefined,
       nickname: nickname || undefined,
       shared: true,

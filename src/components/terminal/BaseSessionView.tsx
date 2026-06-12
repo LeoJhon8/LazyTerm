@@ -1,11 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
 import type { TerminalSession } from "@/store/tabs";
-import { Button } from "@/components/ui/button";
-import { LoaderCircle, RefreshCcw, Monitor } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useI18n } from "@/i18n";
 
 /**
  * 视图基类 props
@@ -20,14 +16,6 @@ export interface BaseSessionViewProps {
 }
 
 /**
- * 连接状态
- */
-export interface ConnectionState {
-  connected: boolean;
-  setConnected: (value: boolean) => void;
-}
-
-/**
  * 视图容器 ref
  */
 export interface ViewContainerRef {
@@ -37,7 +25,7 @@ export interface ViewContainerRef {
 /**
  * 基础会话视图 Hook 返回类型
  */
-export interface BaseSessionViewResult extends ConnectionState, ViewContainerRef {
+export interface BaseSessionViewResult extends ViewContainerRef {
   /** 当前会话 */
   session: TerminalSession | undefined;
   /** 会话标题 */
@@ -56,7 +44,6 @@ export function useBaseSessionView(props: BaseSessionViewProps): BaseSessionView
   const { sessionId, onVisualReady } = props;
   const { sessions } = useTabsStore();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [connected, setConnected] = useState(true);
   const visualReadyNotifiedRef = useRef(false);
 
   const session = sessions.find((s) => s.id === sessionId);
@@ -81,11 +68,11 @@ export function useBaseSessionView(props: BaseSessionViewProps): BaseSessionView
   const notifyVisualReady = useCallback(() => {
     if (!visualReadyNotifiedRef.current) {
       visualReadyNotifiedRef.current = true;
-      if (session && onVisualReady) {
-        onVisualReady(session.id);
+      if (onVisualReady) {
+        onVisualReady(sessionId);
       }
     }
-  }, [session, onVisualReady]);
+  }, [sessionId, onVisualReady]);
 
   /**
    * 会话切换时重置视觉就绪状态
@@ -97,8 +84,6 @@ export function useBaseSessionView(props: BaseSessionViewProps): BaseSessionView
   return {
     session,
     sessionTitle,
-    connected,
-    setConnected,
     containerRef,
     requestAnimation,
     notifyVisualReady,
@@ -201,116 +186,6 @@ export function ConnectionStatusBadge({
 }
 
 
-
-/**
- * 图形化连接界面覆盖层
- * 统一 VNC 和 Windows 远程连接的等待、错误、断开界面
- */
-export interface GraphicalSessionOverlayProps {
-  mode: "connecting" | "failed" | "disconnected" | "none";
-  titleText: string;
-  description: string;
-  onReconnect?: () => void;
-  interactive?: boolean;
-  zIndexClass?: string;
-  protocol?: string;
-  sessionConfigDetails?: Array<{ label: string; value: string }>;
-}
-
-export function GraphicalSessionOverlay({
-  mode,
-  titleText,
-  description,
-  onReconnect,
-  interactive = false,
-  zIndexClass = "z-20",
-  protocol,
-  sessionConfigDetails,
-}: GraphicalSessionOverlayProps) {
-  const { t } = useI18n();
-  if (mode === "none") return null;
-
-  const isFailed = mode === "failed";
-  const isDisconnected = mode === "disconnected";
-  const isConnecting = mode === "connecting";
-
-  return (
-    <div className={`absolute inset-0 flex items-center justify-center ${zIndexClass} ${interactive ? "pointer-events-auto" : "pointer-events-none"}`}>
-      <div className="flex w-[460px] flex-col overflow-hidden rounded-2xl border border-border/50 bg-background/60 shadow-2xl backdrop-blur-3xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border/50 bg-muted/40 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Monitor className="h-5 w-5 text-sky-500" />
-            <span className="font-semibold text-foreground/90">{titleText}</span>
-          </div>
-          {protocol && (
-            <span className="rounded-md border border-border/50 bg-background/50 px-2.5 py-1 text-xs font-semibold text-muted-foreground shadow-sm">
-              {protocol}
-            </span>
-          )}
-        </div>
-
-        {/* Body */}
-        <div className="flex flex-col px-6 py-5">
-          <p className="mb-5 text-sm leading-relaxed text-muted-foreground">{description}</p>
-          
-          {sessionConfigDetails && sessionConfigDetails.length > 0 && (
-            <div className="mb-5 grid grid-cols-2 gap-y-4 rounded-xl border border-border/30 bg-muted/30 p-4 shadow-inner">
-              {sessionConfigDetails.map((d) => (
-                <div key={d.label} className="flex flex-col gap-1.5 overflow-hidden pr-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">{d.label}</span>
-                  <span className="truncate text-sm font-medium text-foreground/90" title={d.value}>
-                    {d.value || "-"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Footer / Actions */}
-          {(isConnecting || ((isFailed || isDisconnected) && onReconnect)) && (
-            <div className="mt-4 flex w-full items-center justify-center">
-              {isConnecting ? (
-                <div className="flex items-center gap-2.5">
-                  <LoaderCircle className="h-4 w-4 animate-spin text-sky-500" />
-                  <span className="text-sm font-medium text-sky-500/90">{t("正在建立连接...")}</span>
-                </div>
-              ) : (
-                <Button 
-                  onClick={onReconnect} 
-                  size="sm"
-                  className="h-9 w-40 rounded-xl bg-sky-500 hover:bg-sky-400 text-white shadow-md active:scale-95 text-sm font-medium"
-                >
-                  <RefreshCcw className="mr-2 h-4 w-4" />
-                  {t("重新连接")}
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * 过渡遮罩组件
- */
-export function TransitionMask({ visible, text }: { visible: boolean; text: string }) {
-  return (
-    <div
-      className={cn(
-        "pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/60 backdrop-blur-md transition-opacity duration-300",
-        visible ? "opacity-100" : "opacity-0"
-      )}
-    >
-      <div className="flex items-center gap-3 rounded-2xl border border-border bg-popover/80 px-5 py-3 text-sm text-foreground shadow-2xl backdrop-blur-md">
-        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-500" />
-        <span>{text}</span>
-      </div>
-    </div>
-  );
-}
 
 /**
  * 通用工具函数：限制数值范围

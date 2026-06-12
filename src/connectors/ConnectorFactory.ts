@@ -54,7 +54,6 @@ function getCurrentFontConfig(): PtyFontConfig {
 export function createConnector(
   sessionData: SessionCreationData,
   sessionId: string,
-  onDisconnect?: (sessionId: string) => void,
 ): SessionConnector {
   switch (sessionData.type) {
     case "local":
@@ -62,10 +61,6 @@ export function createConnector(
         cwd: sessionData.cwd,
         shell: sessionData.config?.shell,
         admin: sessionData.config?.admin,
-      }, () => {
-        if (onDisconnect) {
-          onDisconnect(sessionId);
-        }
       });
     case "ssh":
       if (!sessionData.config?.sshConfig) {
@@ -77,11 +72,6 @@ export function createConnector(
         return new SshConnector({
           config,
           fontConfig: getCurrentFontConfig(),
-          onDisconnect: () => {
-            if (onDisconnect) {
-              onDisconnect(sessionId);
-            }
-          },
         });
       }
     case "rdp":
@@ -111,37 +101,18 @@ export function createConnector(
       if (!sessionData.config?.serialConfig) {
         throw new Error("Serial 配置不能为空");
       }
-      return new SerialConnector(
-        sessionData.config.serialConfig,
-        () => {
-          if (onDisconnect) {
-            onDisconnect(sessionId);
-          }
-        }
-      );
+      return new SerialConnector(sessionData.config.serialConfig);
     case "telnet":
       if (!sessionData.config?.telnetConfig) {
         throw new Error("Telnet 配置不能为空");
       }
-      return new TelnetConnector(
-        sessionData.config.telnetConfig,
-        () => {
-          if (onDisconnect) {
-            onDisconnect(sessionId);
-          }
-        }
-      );
+      return new TelnetConnector(sessionData.config.telnetConfig);
     case "ai-cli":
       if (!sessionData.config?.aiCliConfig) {
         throw new Error("AI CLI 配置不能为空");
       }
       return new AiCliConnector(
         sessionData.config.aiCliConfig,
-        () => {
-          if (onDisconnect) {
-            onDisconnect(sessionId);
-          }
-        },
         sessionId
       );
     default:

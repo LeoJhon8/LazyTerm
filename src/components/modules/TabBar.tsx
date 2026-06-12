@@ -52,6 +52,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { ShellInfo } from "@/types/shell";
+import type { SessionConnectionPhase } from "@/types/terminal";
 import { getAvailableShells } from "@/services/shellService";
 import { startTabDrag, endTabDrag } from "@/lib/tab-drag-state";
 import { createPortal } from "react-dom";
@@ -116,6 +117,7 @@ function SortableTab({
   canDuplicate,
   isSplit,
   sessionType,
+  connectionPhase,
   onSwitch,
   onClose,
   onDuplicate,
@@ -131,6 +133,7 @@ function SortableTab({
   canCloseRight: boolean;
   canDuplicate: boolean;
   sessionType?: TerminalSession["type"];
+  connectionPhase?: SessionConnectionPhase;
   onSwitch: (id: string) => void;
   onClose: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
   onDuplicate: (id: string) => void;
@@ -191,6 +194,15 @@ function SortableTab({
           >
             <span className="pointer-events-none min-w-0 truncate text-[13px] flex items-center justify-center gap-1.5 leading-none">
               {tabIcon}
+              {connectionPhase && (
+                <span className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full",
+                  connectionPhase === "connected" ? "bg-emerald-400" :
+                    connectionPhase === "failed" ? "bg-red-400" :
+                      connectionPhase === "disconnected" ? "bg-amber-400" :
+                        connectionPhase === "closing" || connectionPhase === "idle" ? "bg-muted-foreground/50" : "bg-sky-400 animate-pulse",
+                )} />
+              )}
               <span className="min-w-0 truncate">{title}</span>
             </span>
 
@@ -681,6 +693,13 @@ export function TabBar() {
                 const singleSession = !isSplit && leaves[0]?.sessionId
                   ? sessions.find((session) => session.id === leaves[0].sessionId)
                   : undefined;
+                const tabSessions = leaves
+                  .map((leaf) => sessions.find((session) => session.id === leaf.sessionId))
+                  .filter((session): session is TerminalSession => Boolean(session));
+                const connectionPhase = tabSessions.find((session) => session.connectionStatus.phase === "failed")?.connectionStatus.phase
+                  ?? tabSessions.find((session) => session.connectionStatus.phase === "disconnected")?.connectionStatus.phase
+                  ?? tabSessions.find((session) => ["connecting", "authenticating", "reconnecting"].includes(session.connectionStatus.phase))?.connectionStatus.phase
+                  ?? tabSessions[0]?.connectionStatus.phase;
 
                 let displayTitle = tab.title;
                 if (isSplit) {
@@ -699,6 +718,7 @@ export function TabBar() {
                     canCloseRight={tabs[tabs.length - 1]?.id !== tab.id}
                     canDuplicate={canDuplicate}
                     sessionType={singleSession?.type}
+                    connectionPhase={connectionPhase}
                     onSwitch={handleTabSwitch}
                     onClose={handleCloseTab}
                     onDuplicate={handleDuplicateSession}

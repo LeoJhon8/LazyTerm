@@ -1,4 +1,5 @@
-import type { AiCliConfig, ITerminalConnector } from "@/types/terminal";
+import type { AiCliConfig, ConnectionStateEvent, ITerminalConnector } from "@/types/terminal";
+import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
@@ -46,7 +47,7 @@ export class AiCliConnector implements ITerminalConnector {
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
   private appSessionId: string | null = null;
-  private onDisconnectCallback?: () => void;
+  private readonly stateEmitter = new ConnectionStateEmitter("FE/connector/ai-cli/state");
   private dataHandler: ((data: string) => void) | null = null;
   private lastWriteDedup: { data: string; at: number } | null = null;
   private lastReadDedup: { data: string; at: number } | null = null;
@@ -58,9 +59,8 @@ export class AiCliConnector implements ITerminalConnector {
     confirmationNotified: false,
   };
 
-  constructor(config: AiCliConfig, onDisconnect?: () => void, appSessionId?: string) {
+  constructor(config: AiCliConfig, appSessionId?: string) {
     this.config = config;
-    this.onDisconnectCallback = onDisconnect;
     this.appSessionId = appSessionId ?? null;
   }
 
@@ -69,6 +69,7 @@ export class AiCliConnector implements ITerminalConnector {
   }
 
   async open(): Promise<void> {
+    this.stateEmitter.emit({ phase: "connecting" });
     try {
       const fullCommand = [
         this.config.command,
@@ -89,10 +90,16 @@ export class AiCliConnector implements ITerminalConnector {
 
       logger.info("FE/connector/ai-cli/open", `AI CLI 启动成功，sessionId=${this.sessionId}`);
       await this.ensureListeners();
+      this.stateEmitter.emit({ phase: "connected" });
     } catch (error) {
       logger.error("FE/connector/ai-cli/open", "Failed to spawn AI CLI via Rust", error);
+      this.stateEmitter.emit({ phase: "failed", reason: "AI CLI 启动失败", technicalDetails: String(error) });
       throw error;
     }
+  }
+
+  onConnectionState(handler: (event: ConnectionStateEvent) => void): () => void {
+    return this.stateEmitter.subscribe(handler);
   }
 
   async onData(handler: (data: string) => void): Promise<() => void> {
@@ -174,6 +181,7 @@ export class AiCliConnector implements ITerminalConnector {
   }
 
   close(): void {
+    this.stateEmitter.emit({ phase: "closing" });
     if (this.sessionId) {
       invokeTauriBackground("close_terminal", { sessionId: this.sessionId }, { scope: "FE/connector/ai-cli/close" });
       this.sessionId = null;
@@ -300,6 +308,7 @@ export class AiCliConnector implements ITerminalConnector {
     }
 
     this.sessionId = null;
+    this.stateEmitter.emit({ phase: "disconnected", reason: "AI CLI 进程已退出" });
 
     if (this.unlistenFn) {
       this.unlistenFn();
@@ -308,6 +317,5 @@ export class AiCliConnector implements ITerminalConnector {
     this.dataHandler = null;
     this.clearPromptTimer();
 
-    this.onDisconnectCallback?.();
   }
 }

@@ -7,6 +7,7 @@ import { invokeTauri } from "@/services/tauri";
 import { logger } from "@/lib/logger";
 import type { SessionNode } from "@/store/ssh-profiles";
 import type { SSHConfig } from "@/types/terminal";
+import { resolveSshCredential } from "@/store/credentials";
 import { useI18n } from "@/i18n";
 
 interface SftpFileEntry {
@@ -36,7 +37,7 @@ export function RemoteDirSelector({ open, onOpenChange, targetNode, initialPath,
     setLoading(true);
     setError(null);
     try {
-      const config = targetNode.config as SSHConfig;
+      const config = resolveSshCredential(targetNode.config as SSHConfig);
       const result: SftpFileEntry[] = await invokeTauri(
         "sftp_list_dir",
         {

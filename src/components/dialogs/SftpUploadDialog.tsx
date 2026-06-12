@@ -14,6 +14,7 @@ import { logger } from "@/lib/logger";
 import { RemoteDirSelector } from "./RemoteDirSelector";
 import type { SessionNode } from "@/store/ssh-profiles";
 import type { SSHConfig } from "@/types/terminal";
+import { resolveSshCredential } from "@/store/credentials";
 import { useI18n } from "@/i18n";
 import { useNotificationsStore } from "@/store/notifications";
 
@@ -215,7 +216,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
   const handleUpload = async () => {
     if (!targetNode || files.length === 0) return;
 
-    const config = targetNode.config as SSHConfig;
+      const config = resolveSshCredential(targetNode.config as SSHConfig);
     const uploadId = `${targetNode.id}-${Date.now()}`;
     currentUploadIdRef.current = uploadId;
 

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
+import type { ConnectionStateEvent, ITerminalConnector, SessionConnectionStatus, SessionConnector } from "@/types/terminal";
 import { logger } from "@/lib/logger";
 import { createConnector, type SessionCreationData } from "@/connectors/ConnectorFactory";
 import {
@@ -8,7 +8,6 @@ import {
   getSessionTargetLabel,
   type SessionConnectionError,
 } from "@/services/connectionErrorService";
-import { useSettingsStore } from "@/store/settings";
 
 /**
  * Session 生命周期回调接口
@@ -64,6 +63,7 @@ export interface TerminalSession {
   cwd?: string;
   host?: string;
   config?: SessionConfig;
+  connectionStatus: SessionConnectionStatus;
 }
 
 // SessionConnectionError 类型从 connectionErrorService 导入
@@ -77,15 +77,6 @@ export interface TabWorkspace {
 function getNextTabId(tabs: TabWorkspace[], removedId: string): string | null {
   const remainingTabs = tabs.filter((tab) => tab.id !== removedId);
   return remainingTabs.length > 0 ? remainingTabs[remainingTabs.length - 1].id : null;
-}
-
-function getNextFocusSessionId(sessions: TerminalSession[], removedId: string): string | null {
-  const remainingSessions = sessions.filter((session) => session.id !== removedId);
-  return remainingSessions.length > 0 ? remainingSessions[remainingSessions.length - 1].id : null;
-}
-
-function shouldReconnectLocalSession(session: TerminalSession | undefined): boolean {
-  return !!session && session.type === "local";
 }
 
 /**
@@ -113,49 +104,68 @@ interface TabsState {
   focusSessionId: string | null;
   connectionError: SessionConnectionError | null;
 
-  /** 串口断开连接的会话 ID 集合（仅运行时，不持久化） */
-  serialDisconnectedSessionIds: Set<string>;
-
   /** 主动创建新会话（带连接器） */
-  addSession: (sessionData: Omit<TerminalSession, "id" | "connector">) => string;
+  addSession: (sessionData: Omit<TerminalSession, "id" | "connector" | "connectionStatus">) => string;
   removeSession: (id: string) => void;
   setFocusSession: (id: string | null) => void;
   updateSession: (id: string, updates: Partial<Omit<TerminalSession, "id" | "connector">>) => void;
   
   /** 获取所有会话的连接器 */
   getAllConnectors: () => ITerminalConnector[];
-  /** 切换会话的连接器（用于 SSH 超时后切换到本地） */
-  switchConnector: (sessionId: string, newType: "local" | "ssh") => void;
   /** 在当前标签内重新建立连接 */
   reconnectSession: (sessionId: string) => void;
   /** 清除最近一次连接失败提示 */
   clearConnectionError: () => void;
-  /** 标记串口会话断开 */
-  markSerialDisconnected: (sessionId: string) => void;
-  /** 清除串口会话断开标记 */
-  clearSerialDisconnected: (sessionId: string) => void;
 }
 
 export const useTabsStore = create<TabsState>()(
   (set, get) => {
-      const handleLocalDisconnect = (targetSessionId: string) => {
-        const targetSession = get().sessions.find((session) => session.id === targetSessionId);
-        if (!shouldReconnectLocalSession(targetSession)) {
-          return;
-        }
+      const stateUnsubscribers = new Map<string, () => void>();
+      const reconnectingSessions = new Set<string>();
 
-        logger.info("FE/store/tabs/local-reconnect", `Local session ${targetSessionId} disconnected, recreating`);
-        get().switchConnector(targetSessionId, "local");
-      };
+      const attachConnectionState = (sessionId: string, connector: SessionConnector) => {
+        stateUnsubscribers.get(sessionId)?.();
+        const unsubscribe = connector.onConnectionState((event: ConnectionStateEvent) => {
+          if (event.phase === "idle" && reconnectingSessions.has(sessionId)) {
+            return;
+          }
+          const now = Date.now();
+          let shouldReconnectLocal = false;
+          set((state) => ({
+            sessions: state.sessions.map((session) => {
+              if (session.id !== sessionId) return session;
+              const isReconnectTransition = reconnectingSessions.has(sessionId)
+                && (event.phase === "connecting" || event.phase === "authenticating");
+              const phase = isReconnectTransition ? "reconnecting" : event.phase;
+              const attempt = event.phase === "connecting"
+                ? session.connectionStatus.attempt + 1
+                : session.connectionStatus.attempt;
+              if (event.phase === "connected" || event.phase === "failed" || event.phase === "disconnected") {
+                reconnectingSessions.delete(sessionId);
+              }
+              shouldReconnectLocal = session.type === "local" && event.phase === "disconnected";
+              return {
+                ...session,
+                connectionStatus: {
+                  phase,
+                  reason: event.reason,
+                  technicalDetails: event.technicalDetails,
+                  changedAt: now,
+                  connectedAt: event.phase === "connected"
+                    ? (session.connectionStatus.connectedAt ?? now)
+                    : session.connectionStatus.connectedAt,
+                  attempt,
+                },
+              };
+            }),
+          }));
 
-      const handleSshDisconnect = (targetSessionId: string) => {
-        logger.info("FE/store/tabs/ssh-fallback", `SSH disconnected for session ${targetSessionId}, switching to local`);
-        get().switchConnector(targetSessionId, "local");
-      };
-
-      const handleSerialDisconnect = (targetSessionId: string) => {
-        logger.info("FE/store/tabs/serial-disconnect", `Serial disconnected for session ${targetSessionId}`);
-        get().markSerialDisconnected(targetSessionId);
+          if (shouldReconnectLocal) {
+            logger.info("FE/store/tabs/local-reconnect", `Local session ${sessionId} disconnected, recreating`);
+            window.setTimeout(() => get().reconnectSession(sessionId), 0);
+          }
+        });
+        stateUnsubscribers.set(sessionId, unsubscribe);
       };
 
       return {
@@ -165,28 +175,22 @@ export const useTabsStore = create<TabsState>()(
         sessions: [],
         focusSessionId: null,
         connectionError: null,
-        serialDisconnectedSessionIds: new Set<string>(),
 
         addSession: (sessionData) => {
           // 生成随机 ID
           const id = Math.random().toString(36).substring(2, 11);
 
-          const connector = createConnector(
-            sessionData as SessionCreationData,
-            id,
-            sessionData.type === "local"
-              ? handleLocalDisconnect
-              : sessionData.type === "ssh"
-                ? handleSshDisconnect
-                : sessionData.type === "serial"
-                  ? handleSerialDisconnect
-                  : undefined,
-          );
+          const connector = createConnector(sessionData as SessionCreationData, id);
 
           const newSession: TerminalSession = {
             ...sessionData,
             id,
             connector,
+            connectionStatus: {
+              phase: "idle",
+              changedAt: Date.now(),
+              attempt: 0,
+            },
           };
 
           // 更新状态机
@@ -195,6 +199,7 @@ export const useTabsStore = create<TabsState>()(
             focusSessionId: id,
             connectionError: null,
           }));
+          attachConnectionState(id, connector);
 
           // 通知生命周期回调（由 TabBar 处理 pane 创建）
           if (sessionLifecycleCallbacks) {
@@ -213,17 +218,17 @@ export const useTabsStore = create<TabsState>()(
                 return state;
               }
 
-              const newSessions = state.sessions.filter((session) => session.id !== id);
-              const wasFocus = state.focusSessionId === id;
-
-              // 通知生命周期回调（由 TabBar 处理 pane 移除）
-              if (sessionLifecycleCallbacks) {
-                sessionLifecycleCallbacks.onSessionRemoved(id);
-              }
-
               return {
-                sessions: newSessions,
-                focusSessionId: wasFocus ? getNextFocusSessionId(state.sessions, id) : state.focusSessionId,
+                sessions: state.sessions.map((session) => session.id === id ? {
+                  ...session,
+                  connectionStatus: {
+                    ...session.connectionStatus,
+                    phase: "failed",
+                    reason: errorPresentation.summary,
+                    technicalDetails: errorPresentation.technicalDetails,
+                    changedAt: Date.now(),
+                  },
+                } : session),
                 connectionError: {
                   sessionId: id,
                   sessionTitle: sessionData.title,
@@ -244,6 +249,9 @@ export const useTabsStore = create<TabsState>()(
         removeSession: (id) => {
           const targetSession = get().sessions.find(s => s.id === id);
           const remainingCount = get().sessions.length - 1;
+          stateUnsubscribers.get(id)?.();
+          stateUnsubscribers.delete(id);
+          reconnectingSessions.delete(id);
           
           // 1. 先触发连接器的资源回收逻辑（通知 Rust 关闭进程）
           if (targetSession?.connector) {
@@ -388,102 +396,34 @@ export const useTabsStore = create<TabsState>()(
             .filter((connector): connector is ITerminalConnector => connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc");
         },
 
-        switchConnector: (sessionId, newType) => {
-          set((state) => {
-            const sessionIndex = state.sessions.findIndex(s => s.id === sessionId);
-            if (sessionIndex === -1) {
-              logger.error("FE/store/tabs/switch", `Session ${sessionId} not found`);
-              return state;
-            }
-
-            const oldSession = state.sessions[sessionIndex];
-            
-            if (oldSession.connector) {
-              logger.debug("FE/store/tabs/switch", `Closing old connector for session ${sessionId}`);
-              oldSession.connector.close();
-            }
-
-            const { defaultShell } = useSettingsStore.getState();
-            const nextConfig = newType === "local" 
-              ? { ...oldSession.config, shell: defaultShell }
-              : oldSession.config;
-
-            const nextSession: Omit<TerminalSession, "id" | "connector"> = {
-              ...oldSession,
-              type: newType,
-              config: nextConfig,
-            };
-            const nextConnector = createConnector(
-              nextSession as SessionCreationData,
-              sessionId,
-              nextSession.type === "local" ? handleLocalDisconnect : nextSession.type === "ssh" ? handleSshDisconnect : undefined,
-            );
-            if (nextConnector.protocol === "rdp" || nextConnector.protocol === "vnc") {
-              throw new Error(`不支持的连接类型：${newType}`);
-            }
-            const newConnector: ITerminalConnector = nextConnector;
-
-            const newSessions = [...state.sessions];
-            newSessions[sessionIndex] = {
-              ...oldSession,
-              type: newType,
-              config: nextConfig,
-              connector: newConnector,
-            };
-
-            logger.info("FE/store/tabs/switch", `Switched session ${sessionId} from ${oldSession.type} to ${newType}`);
-
-            newConnector.open().catch((error: unknown) => {
-              logger.error("FE/store/tabs/switch", "Failed to open new connector", {error});
-            });
-
-            return {
-              sessions: newSessions,
-            };
-          });
-        },
-
         reconnectSession: (sessionId) => {
-          set((state) => {
-            const sessionIndex = state.sessions.findIndex((session) => session.id === sessionId);
-            if (sessionIndex === -1) {
-              logger.error("FE/store/tabs/reconnect", `Session ${sessionId} not found`);
-              return state;
-            }
+          const currentSession = get().sessions.find((session) => session.id === sessionId);
+          if (!currentSession) {
+            logger.error("FE/store/tabs/reconnect", `Session ${sessionId} not found`);
+            return;
+          }
 
-            const currentSession = state.sessions[sessionIndex];
-            currentSession.connector?.close();
-
-            const newConnector = createConnector(
-              currentSession as SessionCreationData,
-              sessionId,
-              currentSession.type === "local"
-                ? handleLocalDisconnect
-                : currentSession.type === "ssh"
-                  ? handleSshDisconnect
-                  : currentSession.type === "serial"
-                    ? handleSerialDisconnect
-                    : undefined,
-            );
-            const newSessions = [...state.sessions];
-            newSessions[sessionIndex] = {
-              ...currentSession,
+          stateUnsubscribers.get(sessionId)?.();
+          currentSession.connector?.close();
+          reconnectingSessions.add(sessionId);
+          const newConnector = createConnector(currentSession as SessionCreationData, sessionId);
+          set((state) => ({
+            sessions: state.sessions.map((session) => session.id === sessionId ? {
+              ...session,
               connector: newConnector,
-            };
-
-            // 清除串口断开标记
-            const nextDisconnected = new Set(state.serialDisconnectedSessionIds);
-            nextDisconnected.delete(sessionId);
-
-            newConnector.open().catch((error: unknown) => {
-              logger.error("FE/store/tabs/reconnect", "Failed to reconnect session", {error});
-            });
-
-            return {
-              sessions: newSessions,
-              connectionError: null,
-              serialDisconnectedSessionIds: nextDisconnected,
-            };
+              connectionStatus: {
+                ...session.connectionStatus,
+                phase: "reconnecting",
+                reason: undefined,
+                technicalDetails: undefined,
+                changedAt: Date.now(),
+              },
+            } : session),
+            connectionError: null,
+          }));
+          attachConnectionState(sessionId, newConnector);
+          newConnector.open().catch((error: unknown) => {
+            logger.error("FE/store/tabs/reconnect", "Failed to reconnect session", { error });
           });
         },
 
@@ -491,21 +431,6 @@ export const useTabsStore = create<TabsState>()(
           set({ connectionError: null });
         },
 
-        markSerialDisconnected: (sessionId) => {
-          set((state) => {
-            const next = new Set(state.serialDisconnectedSessionIds);
-            next.add(sessionId);
-            return { serialDisconnectedSessionIds: next };
-          });
-        },
-
-        clearSerialDisconnected: (sessionId) => {
-          set((state) => {
-            const next = new Set(state.serialDisconnectedSessionIds);
-            next.delete(sessionId);
-            return { serialDisconnectedSessionIds: next };
-          });
-        },
       };
     }
 );

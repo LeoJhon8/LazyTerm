@@ -161,7 +161,8 @@ export function SftpViewClass(props: BaseSessionViewProps) {
 - `ConnectionStatusBadge`: 连接状态徽章
 - `DisconnectedBanner`: 断开连接提示横幅
 - `LoadingPlaceholder`: 加载中占位组件
-- `TransitionMask`: 过渡遮罩
+- `ConnectionStatusOverlay`: 统一连接中、认证中、重连、失败和断开遮罩
+- `SessionTransitionMask`: 首帧同步、尺寸调整和原生窗口避让过渡遮罩
 
 ## 共享工具函数和常量
 

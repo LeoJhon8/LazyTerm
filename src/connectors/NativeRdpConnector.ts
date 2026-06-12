@@ -1,10 +1,12 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  ConnectionStateEvent,
   INativeRdpConnector,
   NativeHostRect,
   NativeRdpStatePayload,
   RDPConfig,
 } from "@/types/terminal";
+import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { logger } from "@/lib/logger";
 import { getErrorMessage } from "@/lib/errorUtils";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
@@ -22,6 +24,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
   private closeUnlisten: UnlistenFn | null = null;
   private stateUnlisten: UnlistenFn | null = null;
   private closeHandlers = new Set<() => void>();
+  private readonly connectionStateEmitter = new ConnectionStateEmitter("FE/connector/native-rdp/connection-state");
   private stateHandlers = new Set<(payload: NativeRdpStatePayload) => void>();
   private listenersReady = false;
   private visibilityRefCount = 0;
@@ -55,6 +58,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
     }
 
     if (!this.connectPromise) {
+      this.connectionStateEmitter.emit({ phase: "connecting" });
       this.closedBeforeConnect = false;
       this.finalStateLocked = false;
       this.everConnected = false;
@@ -88,12 +92,19 @@ export class NativeRdpConnector implements INativeRdpConnector {
           detail: "MsTscAx sidecar 已启动，等待原生宿主状态。",
         });
         return sessionId;
+      }).catch((error) => {
+        this.connectionStateEmitter.emit({ phase: "failed", reason: "RDP 连接失败", technicalDetails: String(error) });
+        throw error;
       }).finally(() => {
         this.connectPromise = null;
       });
     }
 
     await this.connectPromise;
+  }
+
+  onConnectionState(handler: (event: ConnectionStateEvent) => void): () => void {
+    return this.connectionStateEmitter.subscribe(handler);
   }
 
   async onState(handler: (payload: NativeRdpStatePayload) => void): Promise<void> {
@@ -169,6 +180,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
   }
 
   close(): void {
+    this.connectionStateEmitter.emit({ phase: "closing" });
     this.closedBeforeConnect = true;
     this.finalStateLocked = true;
     this.latestState = {
@@ -209,6 +221,15 @@ export class NativeRdpConnector implements INativeRdpConnector {
     }
 
     this.latestState = payload;
+    if (["connected", "visible", "hidden", "focused"].includes(payload.state)) {
+      this.connectionStateEmitter.emit({ phase: "connected" });
+    } else if (["launching", "ready", "host-ready", "control-created", "mounted", "connecting"].includes(payload.state)) {
+      this.connectionStateEmitter.emit({ phase: "connecting", reason: payload.detail });
+    } else if (payload.state === "error") {
+      this.connectionStateEmitter.emit({ phase: "failed", reason: "RDP 连接失败", technicalDetails: payload.detail });
+    } else if (payload.state === "disconnected" || payload.state === "closed") {
+      this.connectionStateEmitter.emit({ phase: "disconnected", reason: payload.detail || "RDP 连接已断开" });
+    }
     this.stateHandlers.forEach((handler) => {
       try {
         handler(payload);

@@ -5,8 +5,10 @@ import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { useSshProfilesStore } from "@/store/ssh-profiles";
 import { useQuickCommandsStore } from "@/store/quick-commands";
-import { useTabsStore } from "@/store/tabs";
 import { useGitSyncStore } from "@/store/git-sync";
+import { exportCredentialVault, useCredentialsStore } from "@/store/credentials";
+import type { CredentialVaultDocument } from "@/types/credential";
+import { migrateProfileCredentials } from "@/services/credentialProfileMigration";
 import { syncToGitDir, syncFromGitDir } from "@/store/git-aware-storage";
 import { checkGitRepo, commitAndPushGitRepo, pullGitRepo } from "@/services/gitService";
 import {
@@ -22,7 +24,6 @@ export function DataSettings() {
   const { t } = useI18n();
   const { importProfiles, exportProfiles } = useSshProfilesStore();
   const { commands } = useQuickCommandsStore();
-  const { sessions } = useTabsStore();
 
   const [selectedImportFile, setSelectedImportFile] = useState<string | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
@@ -40,7 +41,7 @@ export function DataSettings() {
     exportDate: new Date().toISOString(),
     sshProfiles: exportProfiles(),
     quickCommands: commands,
-    sessions: sessions.map(s => ({ title: s.title, type: s.type, cwd: s.cwd, host: s.host, config: s.config })),
+    credentialVault: exportCredentialVault(),
   });
 
   const handleExportAll = async () => {
@@ -80,6 +81,17 @@ export function DataSettings() {
     let importedCount = 0;
     if (data.sshProfiles && Array.isArray(data.sshProfiles)) { importProfiles(data.sshProfiles); importedCount += data.sshProfiles.length; }
     if (data.quickCommands && Array.isArray(data.quickCommands)) { useQuickCommandsStore.setState({ commands: data.quickCommands }); importedCount += data.quickCommands.length; }
+    if (data.credentialVault && typeof data.credentialVault === "object") {
+      const credentialVault = data.credentialVault as CredentialVaultDocument;
+      if (credentialVault.version !== 1 || !Array.isArray(credentialVault.credentials)) {
+        throw new Error("备份中的凭据保险库格式无效");
+      }
+      await useCredentialsStore.getState().importVault(credentialVault);
+      importedCount += credentialVault.credentials.length;
+    }
+    if (useCredentialsStore.getState().status === "unlocked") {
+      await migrateProfileCredentials();
+    }
     setPendingRestoreData(null);
     setRestoreConfirmOpen(false);
 
@@ -114,9 +126,10 @@ export function DataSettings() {
   };
 
 
-  const handleConfirmClear = () => {
+  const handleConfirmClear = async () => {
     useSshProfilesStore.setState({ nodes: [{ id: "root-folder", type: "folder", name: t("我的会话"), parentId: null, isExpanded: true, isRoot: true, order: 0 }] });
     useQuickCommandsStore.setState({ commands: [] });
+    await useCredentialsStore.getState().clearVault();
     setSelectedImportFile(null);
     setImportMessage(t("所有配置数据已清空！"));
     setMessageType("success");
@@ -306,7 +319,7 @@ export function DataSettings() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setClearConfirmOpen(false)}>{t("取消")}</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive" onClick={handleConfirmClear}>{t("确认清空")}</AlertDialogAction>
+            <AlertDialogAction className="bg-destructive" onClick={() => void handleConfirmClear()}>{t("确认清空")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -1,4 +1,5 @@
-import type { ITerminalConnector, TelnetConfig } from "@/types/terminal";
+import type { ConnectionStateEvent, ITerminalConnector, TelnetConfig } from "@/types/terminal";
+import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
@@ -8,11 +9,10 @@ export class TelnetConnector implements ITerminalConnector {
   private config: TelnetConfig;
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
-  private onDisconnectCallback?: () => void;
+  private readonly stateEmitter = new ConnectionStateEmitter("FE/connector/telnet/state");
 
-  constructor(config: TelnetConfig, onDisconnect?: () => void) {
+  constructor(config: TelnetConfig) {
     this.config = config;
-    this.onDisconnectCallback = onDisconnect;
   }
 
   get isConnected(): boolean {
@@ -20,6 +20,7 @@ export class TelnetConnector implements ITerminalConnector {
   }
 
   async open(): Promise<void> {
+    this.stateEmitter.emit({ phase: "connecting" });
     try {
       this.sessionId = `telnet-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       
@@ -31,10 +32,17 @@ export class TelnetConnector implements ITerminalConnector {
         logStart: true,
         logSuccess: true,
       });
+      this.stateEmitter.emit({ phase: "connected" });
     } catch (error) {
+      this.sessionId = null;
       logger.error("FE/connector/telnet/open", "Failed to open telnet connection via Rust", error);
+      this.stateEmitter.emit({ phase: "failed", reason: "Telnet 连接失败", technicalDetails: String(error) });
       throw error;
     }
+  }
+
+  onConnectionState(handler: (event: ConnectionStateEvent) => void): () => void {
+    return this.stateEmitter.subscribe(handler);
   }
 
   async onData(handler: (data: string) => void): Promise<void> {
@@ -113,6 +121,7 @@ export class TelnetConnector implements ITerminalConnector {
   }
 
   close(): void {
+    this.stateEmitter.emit({ phase: "closing" });
     if (this.sessionId) {
       invokeTauriBackground("close_telnet", { sessionId: this.sessionId }, { scope: "FE/connector/telnet/close" });
       this.sessionId = null;
@@ -126,10 +135,10 @@ export class TelnetConnector implements ITerminalConnector {
   private handleDisconnect(): void {
     if (!this.sessionId) return;
     this.sessionId = null;
+    this.stateEmitter.emit({ phase: "disconnected", reason: "Telnet 连接已断开" });
     if (this.unlistenFn) {
       this.unlistenFn();
       this.unlistenFn = null;
     }
-    this.onDisconnectCallback?.();
   }
 }

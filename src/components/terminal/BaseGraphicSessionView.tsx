@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { logger } from "@/lib/logger";
 import {
   type BaseSessionViewProps,
-  type ConnectionState,
   useBaseSessionView,
   clamp,
 } from "./BaseSessionView";
@@ -10,7 +9,7 @@ import {
 /**
  * 图形化会话视图的通用 Hook 返回类型
  */
-export interface BaseGraphicSessionViewResult extends Pick<ConnectionState, "setConnected"> {
+export interface BaseGraphicSessionViewResult {
   /** Canvas 引用 */
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   /** 容器引用 */
@@ -40,7 +39,7 @@ export interface BaseGraphicSessionViewResult extends Pick<ConnectionState, "set
 export function useBaseGraphicSessionView(
   props: BaseSessionViewProps
 ): BaseGraphicSessionViewResult {
-  const { notifyVisualReady: baseNotifyVisualReady, setConnected } = useBaseSessionView(props);
+  const { notifyVisualReady: baseNotifyVisualReady } = useBaseSessionView(props);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(null);
@@ -154,7 +153,6 @@ export function useBaseGraphicSessionView(
     containerRef,
     frameSize,
     setFrameSize,
-    setConnected,
     notifyVisualReady,
     renderRgbaFrame,
     renderBlobFrame,
