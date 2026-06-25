@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { logger } from "@/lib/logger";
 import { useSettingsStore } from "@/store/settings";
 import { useTabsStore } from "@/store/tabs";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { currentMonitor, getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
 
 import type {
   INativeRdpConnector,
@@ -20,6 +20,24 @@ const FAILED_STATES: NativeRdpStatePayload["state"][] = ["error"];
 const DISCONNECTED_STATES: NativeRdpStatePayload["state"][] = ["disconnected", "closed"];
 const HISTORY_READY_STATES: NativeRdpStatePayload["state"][] = ["hidden", "visible", "focused", "connected"];
 const REACTIVATION_GRACE_MS = 700;
+
+async function resolveDpiVirtualizationScale(): Promise<number> {
+  const [current, primary] = await Promise.all([
+    currentMonitor(),
+    primaryMonitor(),
+  ]);
+
+  if (!current || !primary) {
+    return 1;
+  }
+
+  const onPrimary = current.position.x === primary.position.x
+    && current.position.y === primary.position.y
+    && current.size.width === primary.size.width
+    && current.size.height === primary.size.height;
+
+  return onPrimary ? 1 : Math.max(1, primary.scaleFactor || 1);
+}
 
 function resolveOverlayMode(
   payload: NativeRdpStatePayload,
@@ -47,12 +65,20 @@ async function readHostRect(element: HTMLDivElement): Promise<NativeHostRect> {
   const scaleFactor = window.devicePixelRatio || 1;
   // innerPosition() gives the content-area origin in physical screen pixels.
   const winPos = await getCurrentWindow().innerPosition();
+  const rect = {
+    x: winPos.x + viewportRect.left * scaleFactor,
+    y: winPos.y + viewportRect.top * scaleFactor,
+    width: Math.max(0, viewportRect.width * scaleFactor),
+    height: Math.max(0, viewportRect.height * scaleFactor),
+  };
+  const virtualizationScale = await resolveDpiVirtualizationScale();
+
   return {
-    x: Math.round(winPos.x + viewportRect.left * scaleFactor),
-    y: Math.round(winPos.y + viewportRect.top * scaleFactor),
-    width: Math.max(0, Math.round(viewportRect.width * scaleFactor)),
-    height: Math.max(0, Math.round(viewportRect.height * scaleFactor)),
-    scaleFactor,
+    x: Math.round(rect.x * virtualizationScale),
+    y: Math.round(rect.y * virtualizationScale),
+    width: Math.max(0, Math.round(rect.width * virtualizationScale)),
+    height: Math.max(0, Math.round(rect.height * virtualizationScale)),
+    scaleFactor: scaleFactor * virtualizationScale,
   };
 }
 
@@ -306,12 +332,21 @@ export function NativeRdpHostView({
     // maximize/restore changes, and DPI/viewport changes.
     let moveUnlisten: (() => void) | null = null;
     let resizedUnlisten: (() => void) | null = null;
-    void getCurrentWindow().onMoved(() => {
+    let moveStabilizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const currentWindow = getCurrentWindow();
+    void currentWindow.onMoved(() => {
       schedulePushRect(0, false);
+      if (moveStabilizeTimer !== null) {
+        clearTimeout(moveStabilizeTimer);
+      }
+      moveStabilizeTimer = setTimeout(() => {
+        moveStabilizeTimer = null;
+        schedulePushRect(0, false);
+      }, 180);
     }).then((fn) => {
       moveUnlisten = fn;
     });
-    void getCurrentWindow().onResized(() => {
+    void currentWindow.onResized(() => {
       schedulePushRect(80, false);
     }).then((fn) => {
       resizedUnlisten = fn;
@@ -340,6 +375,9 @@ export function NativeRdpHostView({
       }
       if (scheduledPushFrame !== null) {
         cancelAnimationFrame(scheduledPushFrame);
+      }
+      if (moveStabilizeTimer !== null) {
+        clearTimeout(moveStabilizeTimer);
       }
       if (resizeObserver) {
         resizeObserver.disconnect();
