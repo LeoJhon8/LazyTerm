@@ -14,6 +14,7 @@ import { CustomTitleBar } from "@/components/layout/CustomTitleBar";
 import { ImmersiveHoverBar } from "@/components/layout/ImmersiveHoverBar";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { CredentialVaultUnlockDialog } from "@/components/dialogs/CredentialVaultUnlockDialog";
+import { SessionEntryDialogs } from "@/components/layout/SessionEntryDialogs";
 import { useCredentialsStore } from "@/store/credentials";
 import { migrateProfileCredentials } from "@/services/credentialProfileMigration";
 import { ToastContainer } from "@/components/ui/toast";
@@ -320,6 +321,7 @@ function App() {
         {/* 全局设置弹窗 */}
         <SettingsDialog />
         <CredentialVaultUnlockDialog />
+        <SessionEntryDialogs />
 
         {/* 全局 Toast 通知 */}
         <ToastContainer />

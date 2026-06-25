@@ -36,7 +36,6 @@ import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCli
 
 import { useDialogState } from "@/hooks/useDialogState";
 import { resolveRdpBackend } from "@/lib/rdp-backend";
-import { onNewConnection, onQuickConnect } from "@/lib/quick-connect-event";
 import { useSettingsStore } from "@/store/settings";
 import { logger } from "@/lib/logger";
 
@@ -311,24 +310,6 @@ export function SessionModule() {
     ensureRoot(); 
     syncRootFolderName();
   }, [ensureRoot, syncRootFolderName, locale]);
-
-  // 监听来自 WelcomePage 的快速连接请求
-  useEffect(() => {
-    const cleanup = onQuickConnect((type) => {
-      setInitialQuickConnectType(type);
-      dialog.open('quickConnect');
-    });
-    return cleanup;
-  }, [dialog]);
-
-  useEffect(() => {
-    const cleanup = onNewConnection(() => {
-      setEditNode(null);
-      setTargetNode(null);
-      dialog.open('newConnection');
-    });
-    return cleanup;
-  }, [dialog]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
