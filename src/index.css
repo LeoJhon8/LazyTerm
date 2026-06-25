@@ -420,7 +420,7 @@
     border-bottom: 0;
     background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 72%, transparent), transparent 22%);
     pointer-events: none;
-    opacity: 0.75;
+    opacity: var(--app-shell-frame-opacity, 0.75);
     z-index: 0;
   }
 

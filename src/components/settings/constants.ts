@@ -1,6 +1,6 @@
 import type { TerminalColorScheme } from "@/config/themes";
 import type { TranslationKey } from "@/i18n";
-import type { TerminalCursorStyle } from "@/store/settings";
+import type { AppBackgroundColor, TerminalCursorStyle } from "@/store/settings";
 
 // 可选字体列表
 export const FONT_OPTIONS = [
@@ -18,12 +18,13 @@ export const FONT_OPTIONS = [
 
 // 全局背景色选项
 export const APP_BACKGROUND_OPTIONS: Array<{
-  value: "system" | "light" | "dark";
+  value: AppBackgroundColor;
   labelKey: TranslationKey;
 }> = [
   { value: "system", labelKey: "跟随系统" },
   { value: "light", labelKey: "浅色" },
   { value: "dark", labelKey: "深色" },
+  { value: "custom", labelKey: "自定义颜色" },
 ];
 
 export const TERMINAL_CURSOR_STYLE_OPTIONS: Array<{

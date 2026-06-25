@@ -93,7 +93,14 @@ function getSystemPrefersDark(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-function resolveAppIsDark(appBackgroundColor?: "system" | "light" | "dark"): boolean {
+function resolveAppIsDark(
+  appBackgroundColor?: "system" | "light" | "dark" | "custom",
+  appIsDarkOverride?: boolean
+): boolean {
+  if (typeof appIsDarkOverride === "boolean") {
+    return appIsDarkOverride;
+  }
+
   return appBackgroundColor === "dark" || (appBackgroundColor !== "light" && getSystemPrefersDark());
 }
 
@@ -498,7 +505,8 @@ export function normalizeTerminalThemeName(schemeName: string): string {
 export function getTerminalTheme(
   schemeName: string,
   customThemes?: TerminalColorScheme[],
-  appBackgroundColor?: "system" | "light" | "dark"
+  appBackgroundColor?: "system" | "light" | "dark" | "custom",
+  appIsDarkOverride?: boolean
 ): TerminalColorScheme {
   if (customThemes && customThemes.length > 0) {
     const found = customThemes.find((t) => t.name === schemeName);
@@ -512,14 +520,14 @@ export function getTerminalTheme(
   }
 
   if (resolvedSchemeName === "system-auto") {
-    return resolveAppIsDark(appBackgroundColor)
+    return resolveAppIsDark(appBackgroundColor, appIsDarkOverride)
       ? APP_DARK_TERMINAL_THEME
       : APP_LIGHT_TERMINAL_THEME;
   }
 
   const ecosystem = THEME_ECOSYSTEM_BY_NAME.get(resolvedSchemeName);
   if (ecosystem) {
-    const themeName = resolveAppIsDark(appBackgroundColor)
+    const themeName = resolveAppIsDark(appBackgroundColor, appIsDarkOverride)
       ? ecosystem.darkThemeName
       : ecosystem.lightThemeName;
 

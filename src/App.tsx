@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSettingsStore } from "@/store/settings";
+import { DEFAULT_APP_COLOR_PALETTE, useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
 import { getConnectionErrorPresentation } from "@/services/connectionErrorService";
@@ -27,6 +27,122 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import type { AppColorPalette } from "@/store/settings";
+
+const CUSTOM_PALETTE_VARIABLES = [
+  "--background",
+  "--foreground",
+  "--card",
+  "--card-foreground",
+  "--popover",
+  "--popover-foreground",
+  "--primary",
+  "--primary-foreground",
+  "--secondary",
+  "--secondary-foreground",
+  "--muted",
+  "--muted-foreground",
+  "--accent",
+  "--accent-foreground",
+  "--border",
+  "--input",
+  "--ring",
+  "--panel",
+  "--panel-strong",
+  "--panel-border",
+  "--panel-glow",
+  "--panel-shadow",
+  "--app-gradient-a",
+  "--app-gradient-b",
+  "--app-gradient-c",
+  "--titlebar-surface",
+  "--titlebar-surface-hover",
+  "--terminal-shell",
+  "--terminal-border",
+  "--app-shell-frame-opacity",
+] as const;
+
+function getHexLuminance(color: string): number {
+  const normalized = color.replace("#", "").trim();
+  if (!/^[\da-f]{6}$/i.test(normalized)) {
+    return 1;
+  }
+
+  const channels = [0, 2, 4].map((start) => {
+    const value = parseInt(normalized.slice(start, start + 2), 16) / 255;
+    return value <= 0.03928
+      ? value / 12.92
+      : Math.pow((value + 0.055) / 1.055, 2.4);
+  });
+
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
+function getReadableForeground(background: string): string {
+  return getHexLuminance(background) > 0.42 ? "#111827" : "#ffffff";
+}
+
+function getAppCustomColor(palette: AppColorPalette): string {
+  return palette.color ?? palette.background ?? palette.primary ?? DEFAULT_APP_COLOR_PALETTE.color;
+}
+
+function applyCustomPalette(root: HTMLElement, palette: AppColorPalette) {
+  const color = getAppCustomColor(palette);
+  const isDark = getHexLuminance(color) <= 0.42;
+  const contrastColor = isDark ? "white" : "black";
+  const softContrastColor = isDark ? "white" : color;
+  const primary = isDark
+    ? `color-mix(in srgb, ${color} 50%, white 50%)`
+    : `color-mix(in srgb, ${color} 68%, black 32%)`;
+  const accent = isDark
+    ? `color-mix(in srgb, ${color} 76%, white 24%)`
+    : `color-mix(in srgb, ${color} 88%, black 12%)`;
+  const panel = isDark
+    ? `color-mix(in srgb, ${color} 88%, white 12%)`
+    : `color-mix(in srgb, ${color} 94%, white 6%)`;
+  const border = isDark
+    ? `color-mix(in srgb, ${color} 82%, white 18%)`
+    : `color-mix(in srgb, ${color} 88%, black 12%)`;
+  const foreground = getReadableForeground(color);
+  const primaryForeground = isDark ? "#111827" : "#ffffff";
+  const accentForeground = isDark ? "#ffffff" : "#111827";
+
+  root.style.setProperty("--background", color);
+  root.style.setProperty("--foreground", foreground);
+  root.style.setProperty("--card", `color-mix(in srgb, ${panel} 92%, ${color} 8%)`);
+  root.style.setProperty("--card-foreground", foreground);
+  root.style.setProperty("--popover", `color-mix(in srgb, ${panel} 96%, transparent)`);
+  root.style.setProperty("--popover-foreground", foreground);
+  root.style.setProperty("--primary", primary);
+  root.style.setProperty("--primary-foreground", primaryForeground);
+  root.style.setProperty("--secondary", `color-mix(in srgb, ${panel} 72%, ${color} 28%)`);
+  root.style.setProperty("--secondary-foreground", foreground);
+  root.style.setProperty("--muted", `color-mix(in srgb, ${panel} 70%, ${color} 30%)`);
+  root.style.setProperty("--muted-foreground", `color-mix(in srgb, ${foreground} 68%, ${color} 32%)`);
+  root.style.setProperty("--accent", accent);
+  root.style.setProperty("--accent-foreground", accentForeground);
+  root.style.setProperty("--border", `color-mix(in srgb, ${border} 42%, transparent)`);
+  root.style.setProperty("--input", `color-mix(in srgb, ${border} 34%, transparent)`);
+  root.style.setProperty("--ring", `color-mix(in srgb, ${primary} 42%, transparent)`);
+  root.style.setProperty("--panel", `color-mix(in srgb, ${panel} 84%, transparent)`);
+  root.style.setProperty("--panel-strong", `color-mix(in srgb, ${panel} 94%, transparent)`);
+  root.style.setProperty("--panel-border", `color-mix(in srgb, ${border} 38%, transparent)`);
+  root.style.setProperty("--panel-glow", "none");
+  root.style.setProperty(
+    "--panel-shadow",
+    isDark
+      ? "0 20px 48px rgba(0, 0, 0, 0.22)"
+      : "0 14px 36px rgba(0, 0, 0, 0.045)"
+  );
+  root.style.setProperty("--app-gradient-a", `color-mix(in srgb, ${softContrastColor} 14%, transparent)`);
+  root.style.setProperty("--app-gradient-b", `color-mix(in srgb, ${contrastColor} 10%, transparent)`);
+  root.style.setProperty("--app-gradient-c", `color-mix(in srgb, ${softContrastColor} 8%, transparent)`);
+  root.style.setProperty("--titlebar-surface", `color-mix(in srgb, ${panel} 92%, ${color} 8%)`);
+  root.style.setProperty("--titlebar-surface-hover", `color-mix(in srgb, ${accent} 52%, ${panel} 48%)`);
+  root.style.setProperty("--terminal-shell", `color-mix(in srgb, ${color} 70%, transparent)`);
+  root.style.setProperty("--terminal-border", `color-mix(in srgb, ${border} 52%, transparent)`);
+  root.style.setProperty("--app-shell-frame-opacity", "0.28");
+}
 
 function App() {
   useUpdateNotification();
@@ -46,6 +162,7 @@ function App() {
     topPanelCollapsed,
     bottomPanelCollapsed,
     appBackgroundColor,
+    appColorPalette,
     backgroundImageEnabled,
     backgroundImage,
     backgroundImageUiMode,
@@ -56,6 +173,7 @@ function App() {
     boldFontWeight,
     quickCommandDisplayMode,
   } = useSettingsStore();
+  const resolvedAppColorPalette = appColorPalette ?? DEFAULT_APP_COLOR_PALETTE;
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
   const { getAllConnectors, connectionError, clearConnectionError, focusSessionId, sessions } = useTabsStore();
@@ -147,14 +265,21 @@ function App() {
     const body = document.body;
     // 移除之前的强制覆盖
     root.style.removeProperty("--color-background");
-    root.style.removeProperty("--background");
+    CUSTOM_PALETTE_VARIABLES.forEach((variable) => root.style.removeProperty(variable));
 
-    const isDark = appBackgroundColor === "dark" || (appBackgroundColor === "system" && systemPrefersDark);
+    const isCustom = appBackgroundColor === "custom";
+    const isDark = isCustom
+      ? getHexLuminance(getAppCustomColor(resolvedAppColorPalette)) <= 0.42
+      : appBackgroundColor === "dark" || (appBackgroundColor === "system" && systemPrefersDark);
 
     if (isDark) {
       root.classList.add("dark");
     } else {
       root.classList.remove("dark");
+    }
+
+    if (isCustom) {
+      applyCustomPalette(root, resolvedAppColorPalette);
     }
 
     // 当启用背景图片时，禁用 body 的默认背景渐变
@@ -163,7 +288,7 @@ function App() {
     } else {
       body.classList.remove("has-background-image");
     }
-  }, [appBackgroundColor, hasBackgroundImage, systemPrefersDark]);
+  }, [appBackgroundColor, resolvedAppColorPalette, hasBackgroundImage, systemPrefersDark]);
 
   // 同步外观自定义到 CSS 变量
   useEffect(() => {

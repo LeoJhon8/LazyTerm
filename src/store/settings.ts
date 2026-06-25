@@ -9,6 +9,13 @@ import { DEFAULT_QUICK_COMMAND_FONT_SIZE, normalizeQuickCommandFontSize } from "
 export type BackgroundImageUiMode = "frosted" | "clear";
 export type QuickCommandDisplayMode = "bar" | "panel";
 export type TerminalCursorStyle = "block" | "underline" | "bar";
+export type AppBackgroundColor = "system" | "light" | "dark" | "custom";
+
+export interface AppColorPalette {
+  color: string;
+  background?: string;
+  primary?: string;
+}
 
 /**
  * 视图模式
@@ -44,7 +51,8 @@ interface SettingsData {
   terminalAutocomplete: boolean;
   autocompleteSource: ('history' | 'quick')[];  // 自动补全数据源（多选）
   // 外观自定义
-  appBackgroundColor: "system" | "light" | "dark"; // 全局背景色 (终端外)
+  appBackgroundColor: AppBackgroundColor; // 全局背景色 (终端外)
+  appColorPalette: AppColorPalette;
   terminalColorScheme: string;                  // 终端配色方案名称（预设名或 custom-xxx）
   customThemes: TerminalColorScheme[];          // 用户自定义终端配色方案列表
   terminalOpacity: number;            // 终端背景透明度 0~100
@@ -73,6 +81,10 @@ export type SettingsState = SettingsData & SettingsActions;
 const LEGACY_DEFAULT_FONT_FAMILY = "Menlo, Monaco, 'Courier New', monospace";
 const DEFAULT_FONT_FAMILY = "'Geist Mono', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace";
 
+export const DEFAULT_APP_COLOR_PALETTE: AppColorPalette = {
+  color: "#101820",
+};
+
 const defaultSettings: SettingsData = {
   language: DEFAULT_LANGUAGE_SETTING,
   fontSize: 14,
@@ -100,6 +112,7 @@ const defaultSettings: SettingsData = {
   autocompleteSource: ['history', 'quick'],  // 默认从所有数据源进行自动补全
   // 外观自定义默认值
   appBackgroundColor: "system",
+  appColorPalette: DEFAULT_APP_COLOR_PALETTE,
   terminalColorScheme: "system-auto",
   customThemes: [],
   terminalOpacity: 100,

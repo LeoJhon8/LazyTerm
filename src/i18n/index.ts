@@ -505,6 +505,11 @@ const zhMessages = defineMessages({
   "Cursor style bar": "竖线",
   "Cursor style block": "块状",
   "Cursor style underline": "下划线",
+  "自定义颜色": "自定义颜色",
+  "无法建立连接，请检查目标主机、凭据或网络设置。": "无法建立连接，请检查目标主机、凭据或网络设置。",
+  "与远程主机的连接已终止。": "与远程主机的连接已终止。",
+  "系统菜单已打开，正在临时隐藏 Windows 远程桌面画面...": "系统菜单已打开，正在临时隐藏 Windows 远程桌面画面...",
+  "正在同步 VNC 画面...": "正在同步 VNC 画面...",
 });
 
 type TranslationKey = keyof typeof zhMessages;
@@ -999,6 +1004,11 @@ const enMessages = defineMessages({
   "Cursor style bar": "Bar",
   "Cursor style block": "Block",
   "Cursor style underline": "Underline",
+  "自定义颜色": "Custom color",
+  "无法建立连接，请检查目标主机、凭据或网络设置。": "Unable to establish the connection. Check the target host, credentials, or network settings.",
+  "与远程主机的连接已终止。": "The connection to the remote host has ended.",
+  "系统菜单已打开，正在临时隐藏 Windows 远程桌面画面...": "System menu is open. Temporarily hiding the Windows remote desktop view...",
+  "正在同步 VNC 画面...": "Synchronizing the VNC display...",
 } satisfies Record<TranslationKey, MessageResolver>);
 
 const messages = {

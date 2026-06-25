@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState, type WheelEvent as ReactWheelEvent } from "react";
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
-import { useSettingsStore } from "@/store/settings";
+import { DEFAULT_APP_COLOR_PALETTE, useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useHistoryStore } from "@/store/history";
 import { usePanesStore } from "@/store/panes";
@@ -24,6 +24,7 @@ import { TerminalAutocompleteUI } from "./TerminalAutocompleteUI";
 import { AutocompleteTerminalAddon } from "./AutocompleteTerminalAddon";
 import { extractTerminalCommand } from "./terminal-command-line";
 import { useI18n } from "@/i18n";
+import type { AppColorPalette } from "@/store/settings";
 
 // 全局 Terminal 实例缓存，确保切换 tab 时输出历史不丢失
 const globalTerminalCache = new Map<string, TerminalInstance>();
@@ -112,6 +113,35 @@ function clampTerminalFontSize(fontSize: number): number {
   return Math.max(6, Math.min(100, fontSize));
 }
 
+function getHexLuminance(color: string): number {
+  const normalized = color.replace("#", "").trim();
+  if (!/^[\da-f]{6}$/i.test(normalized)) {
+    return 1;
+  }
+
+  const channels = [0, 2, 4].map((start) => {
+    const value = parseInt(normalized.slice(start, start + 2), 16) / 255;
+    return value <= 0.03928
+      ? value / 12.92
+      : Math.pow((value + 0.055) / 1.055, 2.4);
+  });
+
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
+function resolveAppIsDarkForTerminal(
+  appBackgroundColor: "system" | "light" | "dark" | "custom",
+  appColorPalette: AppColorPalette,
+  systemPrefersDark: boolean
+): boolean {
+  if (appBackgroundColor === "custom") {
+    const color = appColorPalette.color ?? appColorPalette.background ?? appColorPalette.primary ?? DEFAULT_APP_COLOR_PALETTE.color;
+    return getHexLuminance(color) <= 0.42;
+  }
+
+  return appBackgroundColor === "dark" || (appBackgroundColor === "system" && systemPrefersDark);
+}
+
 function getEffectiveFontSizeForSession(
   sessionId: string,
   globalFontSize: number,
@@ -190,12 +220,14 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const customThemes = useSettingsStore((state) => state.customThemes);
   const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
   const appBackgroundColor = useSettingsStore((state) => state.appBackgroundColor);
+  const appColorPalette = useSettingsStore((state) => state.appColorPalette ?? DEFAULT_APP_COLOR_PALETTE);
   const backgroundImageEnabled = useSettingsStore((state) => state.backgroundImageEnabled);
   const backgroundImage = useSettingsStore((state) => state.backgroundImage);
   const terminalAutocomplete = useSettingsStore((state) => state.terminalAutocomplete);
   const paneFontSizeOverrides = usePanesStore((state) => state.paneFontSizeOverrides);
   const setPaneFontSizeOverride = usePanesStore((state) => state.setPaneFontSizeOverride);
   const effectiveFontSize = paneFontSizeOverrides[paneId] ?? fontSize;
+  const appIsDark = resolveAppIsDarkForTerminal(appBackgroundColor, appColorPalette, systemPrefersDark);
 
   // 使用全局缓存替代组件级别的 ref，确保切换 tab 时输出历史不丢失
   const containerMap = useRef(globalContainerCache);
@@ -213,6 +245,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     customThemes,
     terminalOpacity,
     appBackgroundColor,
+    appIsDark,
     hasBackgroundImage: !!(backgroundImageEnabled && backgroundImage),
   });
 
@@ -232,6 +265,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     customThemes,
     terminalOpacity,
     appBackgroundColor,
+    appIsDark,
     hasBackgroundImage: !!hasBackgroundImage,
   };
 
@@ -417,9 +451,10 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         customThemes: nextCustomThemes,
         terminalOpacity: nextTerminalOpacity,
         appBackgroundColor: nextAppBackgroundColor,
+        appIsDark: nextAppIsDark,
         hasBackgroundImage: nextHasBackgroundImage,
       } = appearanceRef.current;
-      const colorScheme = getTerminalTheme(nextTerminalColorScheme, nextCustomThemes, nextAppBackgroundColor);
+      const colorScheme = getTerminalTheme(nextTerminalColorScheme, nextCustomThemes, nextAppBackgroundColor, nextAppIsDark);
       const term = new Terminal({
         fontFamily: nextFontFamily,
         fontSize: nextFontSize,
@@ -643,7 +678,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
   // 监听设置变化
   useEffect(() => {
-    const colorScheme = getTerminalTheme(terminalColorScheme, customThemes, appBackgroundColor);
+    const colorScheme = getTerminalTheme(terminalColorScheme, customThemes, appBackgroundColor, appIsDark);
     terminalMap.current.forEach((instance, id) => {
       const { terminal, fitAddon, connector, termState } = instance;
       const nextFontSize = getEffectiveFontSizeForSession(id, fontSize, paneFontSizeOverrides);
@@ -716,7 +751,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
       }
     });
-  }, [fontSize, paneFontSizeOverrides, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalOpacity, appBackgroundColor, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
+  }, [fontSize, paneFontSizeOverrides, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalOpacity, appBackgroundColor, appIsDark, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
 
   // 清理已被关闭的会话
   useEffect(() => {
@@ -814,7 +849,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     setPaneFontSizeOverrideRef.current(paneId, clampTerminalFontSize(currentSize + delta));
   }, [paneId, sessionId]);
 
-  const currentTheme = getTerminalTheme(terminalColorScheme, customThemes, appBackgroundColor);
+  const currentTheme = getTerminalTheme(terminalColorScheme, customThemes, appBackgroundColor, appIsDark);
   const xtermTheme = toXtermTheme(currentTheme, terminalOpacity);
 
   // 空状态渲染

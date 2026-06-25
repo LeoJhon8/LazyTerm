@@ -7,7 +7,8 @@ import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
-import { useSettingsStore } from "@/store/settings";
+import { DEFAULT_APP_COLOR_PALETTE, useSettingsStore } from "@/store/settings";
+import type { AppBackgroundColor } from "@/store/settings";
 import {
   DEFAULT_DARK_THEME,
   TERMINAL_THEME_ECOSYSTEMS,
@@ -26,10 +27,31 @@ function generateCustomThemeId(): string {
   return `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+function getHexLuminance(color: string): number {
+  const normalized = color.replace("#", "").trim();
+  if (!/^[\da-f]{6}$/i.test(normalized)) {
+    return 1;
+  }
+
+  const channels = [0, 2, 4].map((start) => {
+    const value = parseInt(normalized.slice(start, start + 2), 16) / 255;
+    return value <= 0.03928
+      ? value / 12.92
+      : Math.pow((value + 0.055) / 1.055, 2.4);
+  });
+
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
+function getAppCustomColor(palette: typeof DEFAULT_APP_COLOR_PALETTE): string {
+  return palette.color ?? palette.background ?? palette.primary ?? DEFAULT_APP_COLOR_PALETTE.color;
+}
+
 /** 外观设置：配色方案 + 字体 + 终端主题 + 背景图片 + 透明度 */
 export function AppearanceSettings() {
   const { locale, t } = useI18n();
   const appBackgroundColor = useSettingsStore((s) => s.appBackgroundColor);
+  const appColorPalette = useSettingsStore((s) => s.appColorPalette ?? DEFAULT_APP_COLOR_PALETTE);
   const fontSize = useSettingsStore((s) => s.fontSize);
   const fontFamily = useSettingsStore((s) => s.fontFamily);
   const normalFontWeight = useSettingsStore((s) => s.normalFontWeight);
@@ -51,9 +73,11 @@ export function AppearanceSettings() {
 
   const [editingName, setEditingName] = useState("");
 
-  const isDarkApp = appBackgroundColor === "system"
-    ? window.matchMedia("(prefers-color-scheme: dark)").matches
-    : appBackgroundColor === "dark";
+  const isDarkApp = appBackgroundColor === "custom"
+    ? getHexLuminance(getAppCustomColor(appColorPalette)) <= 0.42
+    : appBackgroundColor === "system"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : appBackgroundColor === "dark";
 
   // 合并预设 + 自定义方案，按配色模式排序
   const activeCustomTheme = customThemes.find((c) => c.name === terminalColorScheme);
@@ -62,7 +86,7 @@ export function AppearanceSettings() {
     ? terminalColorScheme
     : normalizeTerminalThemeName(terminalColorScheme);
   const ecosystemThemeOptions: TerminalColorScheme[] = TERMINAL_THEME_ECOSYSTEMS.map((theme) => ({
-    ...getTerminalTheme(theme.name, customThemes, appBackgroundColor),
+    ...getTerminalTheme(theme.name, customThemes, appBackgroundColor, isDarkApp),
     name: theme.name,
     label: theme.label,
     isDark: isDarkApp,
@@ -105,6 +129,12 @@ export function AppearanceSettings() {
       c.name === themeName ? { ...c, label } : c
     );
     setSettings({ customThemes: updated });
+  };
+
+  const handleUpdateAppCustomColor = (value: string) => {
+    setSettings({
+      appColorPalette: { color: value },
+    });
   };
 
   const resolveColor = (color: string, fallback: string) => color === "auto" ? fallback : color;
@@ -182,12 +212,35 @@ export function AppearanceSettings() {
                         ? "bg-primary text-primary-foreground shadow-sm font-medium"
                         : "bg-background/80 text-muted-foreground hover:text-foreground hover:bg-background"
                     )}
-                    onClick={() => setSettings({ appBackgroundColor: opt.value as "system" | "light" | "dark" })}
+                    onClick={() => setSettings({ appBackgroundColor: opt.value as AppBackgroundColor })}
                   >
                     {t(opt.labelKey)}
                   </button>
                 ))}
               </div>
+              {appBackgroundColor === "custom" && (
+                <div className="mt-3 border-t border-border/30 pt-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="flex min-w-0 items-center gap-2 rounded-md bg-background/55 px-2 py-1.5">
+                      <input
+                        type="color"
+                        value={getAppCustomColor(appColorPalette)}
+                        onChange={(e) => handleUpdateAppCustomColor(e.target.value)}
+                        className="h-6 w-6 shrink-0 cursor-pointer rounded border-0 p-0"
+                      />
+                      <span className="truncate text-sm text-muted-foreground">{t("自定义颜色")}</span>
+                    </label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => setSettings({ appColorPalette: DEFAULT_APP_COLOR_PALETTE })}
+                    >
+                      {t("恢复默认")}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
