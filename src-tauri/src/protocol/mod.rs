@@ -17,9 +17,9 @@ pub mod telnet;
 pub mod terminal;
 
 // RDP 协议
-#[cfg(feature = "rdp-freerdp")]
+#[cfg(freerdp_available)]
 pub mod freerdp_client;
-#[cfg(feature = "rdp-freerdp")]
+#[cfg(freerdp_available)]
 pub mod freerdp_ffi;
 pub mod native_rdp;
 pub mod rdp;

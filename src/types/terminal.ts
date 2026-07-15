@@ -160,9 +160,11 @@ export interface IVncConnector extends ISessionConnector {
 
   onFrame(handler: (frame: VncFramePayload) => void): Promise<void>;
   onCursor(handler: (cursor: VncCursorPayload) => void): Promise<void>;
+  onClipboard(handler: (text: string) => void): Promise<void>;
   onClose(handler: () => void): () => void;
   sendPointer(payload: VncPointerPayload): void;
   sendKey(payload: VncKeyboardPayload): void;
+  pasteClipboard(text: string, keySym: number, modifierKeySyms: number[]): Promise<void>;
   requestFrame(full?: boolean): void;
   getFrameSize(): { width: number; height: number } | null;
 }
@@ -231,6 +233,7 @@ export interface VNCConfig {
   password?: string;
   nickname?: string;
   shared?: boolean;
+  viewOnly?: boolean;
   allowJpeg?: boolean;
   quality?: number;
 }

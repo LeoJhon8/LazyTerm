@@ -47,6 +47,42 @@ fn default_windows_vnc_roots() -> Vec<PathBuf> {
     ]
 }
 
+fn default_windows_openssl_roots() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(root_dir) = env_path("OPENSSL_ROOT_DIR") {
+        candidates.push(root_dir);
+    }
+
+    candidates.extend([
+        PathBuf::from(r"C:\Program Files\OpenSSL-Win64"),
+        PathBuf::from(r"C:\OpenSSL-Win64"),
+        PathBuf::from(r"C:\Program Files\OpenSSL"),
+    ]);
+
+    existing_paths(candidates)
+}
+
+fn emit_windows_openssl_link() {
+    if let Some(lib_dir) = env_path("OPENSSL_LIB_DIR") {
+        println!("cargo:rustc-link-search=native={}", lib_dir.display());
+    } else {
+        for root_dir in default_windows_openssl_roots() {
+            for lib_dir in [root_dir.join(r"lib\VC\x64\MD"), root_dir.join("lib")] {
+                if lib_dir.exists() {
+                    println!("cargo:rustc-link-search=native={}", lib_dir.display());
+                }
+            }
+        }
+    }
+
+    let ssl_lib = env::var("OPENSSL_SSL_LIB_NAME").unwrap_or_else(|_| "libssl".to_string());
+    let crypto_lib =
+        env::var("OPENSSL_CRYPTO_LIB_NAME").unwrap_or_else(|_| "libcrypto".to_string());
+    println!("cargo:rustc-link-lib={ssl_lib}");
+    println!("cargo:rustc-link-lib={crypto_lib}");
+}
+
 fn vnc_windows_include_paths(root_dir: &Path) -> Vec<PathBuf> {
     existing_paths([root_dir.join("include")])
 }
@@ -59,6 +95,7 @@ fn emit_manual_windows_vnc_link(include_paths: &[PathBuf], lib_dir: &Path, lib_n
     );
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib={lib_name}");
+    emit_windows_openssl_link();
     println!("cargo:rustc-link-lib=ws2_32");
     println!("cargo:rustc-link-lib=crypt32");
     println!("cargo:rustc-link-lib=user32");
@@ -349,19 +386,10 @@ fn copy_dlls_to_dir(source_dir: &Path, target_dir: &Path, dll_names: &[&str]) {
 }
 
 fn default_windows_openssl_bin_dirs() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Some(root_dir) = env_path("OPENSSL_ROOT_DIR") {
-        candidates.push(root_dir.join("bin"));
-    }
-
-    candidates.extend([
-        PathBuf::from(r"C:\Program Files\OpenSSL-Win64\bin"),
-        PathBuf::from(r"C:\OpenSSL-Win64\bin"),
-        PathBuf::from(r"C:\Program Files\OpenSSL\bin"),
-    ]);
-
-    candidates
+    default_windows_openssl_roots()
+        .into_iter()
+        .map(|root_dir| root_dir.join("bin"))
+        .collect()
 }
 
 fn copy_windows_runtime_dlls(freerdp_bin_dir: &Path) {
@@ -371,7 +399,12 @@ fn copy_windows_runtime_dlls(freerdp_bin_dir: &Path) {
         "winpr3.dll",
         "winpr-tools3.dll",
     ];
-    let openssl_dlls = ["libcrypto-3-x64.dll", "libssl-3-x64.dll"];
+    let openssl_dlls = [
+        "libcrypto-3-x64.dll",
+        "libssl-3-x64.dll",
+        "libcrypto-4-x64.dll",
+        "libssl-4-x64.dll",
+    ];
     let staged_dir = PathBuf::from("native/freerdp-runtime/win-x64");
 
     copy_dlls_from_dir(freerdp_bin_dir, &freerdp_dlls);
@@ -392,12 +425,13 @@ fn probe_freerdp(target_os: &str) {
         match probe_manual_windows_freerdp_install() {
             Ok(true) => true,
             Ok(false) => {
-                panic!(
-                    "FreeRDP 3 not found for Windows/MSVC.\n\
-                     Set FREERDP_ROOT to an install prefix containing include/lib, or set \
-                     FREERDP_INCLUDE_DIR and FREERDP_LIB_DIR. Required libraries: \
-                     freerdp-client3, freerdp3, winpr3."
+                println!(
+                    "cargo:warning=FreeRDP 3 not found for Windows/MSVC; the embedded FreeRDP \
+                     backend will be disabled. Set FREERDP_ROOT to an install prefix containing \
+                     include/lib/bin, or set FREERDP_INCLUDE_DIR and FREERDP_LIB_DIR to enable it. \
+                     Required libraries: freerdp-client3, freerdp3, winpr3."
                 );
+                false
             }
             Err(error) => {
                 panic!("Invalid FreeRDP Windows configuration: {error}");
@@ -437,6 +471,20 @@ fn main() {
 
     println!("cargo:rerun-if-changed=src/protocol/vnc_ffi/wrapper.c");
     println!("cargo:rerun-if-changed=src/protocol/freerdp_ffi/wrapper.c");
+    for variable in [
+        "FREERDP_ROOT",
+        "FREERDP_INCLUDE_DIR",
+        "FREERDP_LIB_DIR",
+        "FREERDP_LIB_NAME",
+        "FREERDP_CLIENT_LIB_NAME",
+        "WINPR_LIB_NAME",
+        "OPENSSL_ROOT_DIR",
+        "OPENSSL_LIB_DIR",
+        "OPENSSL_SSL_LIB_NAME",
+        "OPENSSL_CRYPTO_LIB_NAME",
+    ] {
+        println!("cargo:rerun-if-env-changed={variable}");
+    }
     println!("cargo:rustc-check-cfg=cfg(libvncclient_available)");
     println!("cargo:rustc-check-cfg=cfg(freerdp_available)");
 

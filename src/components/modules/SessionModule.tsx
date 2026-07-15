@@ -5,7 +5,7 @@ import {
 } from "@dnd-kit/core";
 import { 
   Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, Zap,
-  Pencil, Trash2, Terminal, Upload, AppWindow, ScreenShare, Usb
+  Copy, Pencil, Trash2, Terminal, Upload, AppWindow, ScreenShare, Usb
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -216,6 +216,11 @@ function DraggableDroppableRow({
           </>
         )}
         <ContextMenuSeparator />
+        {node.type !== 'folder' && (
+          <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('duplicate', node)}>
+            <Copy className="mr-2 h-4 w-4" /> {t("复制")}
+          </ContextMenuItem>
+        )}
         <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" /> {t("编辑")}</ContextMenuItem>
         {!node.isRoot && <ContextMenuItem onClick={() => onAction('delete', node)} className="py-1 text-xs text-destructive"><Trash2 className="mr-2 h-4 w-4" /> {t("删除")}</ContextMenuItem>}
       </ContextMenuContent>
@@ -225,7 +230,7 @@ function DraggableDroppableRow({
 
 export function SessionModule() {
   const { locale, t } = useI18n();
-  const { nodes, addFolder, addProfile, removeNode, updateNode, moveNode, ensureRoot, syncRootFolderName } = useSshProfilesStore();
+  const { nodes, addFolder, addProfile, duplicateProfile, removeNode, updateNode, moveNode, ensureRoot, syncRootFolderName } = useSshProfilesStore();
   const { addTab, setActiveTabId, addSession } = useTabsStore();
 
   /**
@@ -381,6 +386,17 @@ export function SessionModule() {
       } else if (node.type === "ai-cli" && node.config) {
         launchWorkspaceWithSession({ title: node.name, type: "ai-cli", config: { aiCliConfig: node.config as AiCliConfig } });
       }
+    } else if (type === 'duplicate' && node.type !== 'folder') {
+      const siblingNames = new Set(
+        nodes.filter((candidate) => candidate.parentId === node.parentId).map((candidate) => candidate.name)
+      );
+      let duplicateName = t("{name} 副本", { name: node.name });
+      let index = 2;
+      while (siblingNames.has(duplicateName)) {
+        duplicateName = t("{name} 副本 {index}", { name: node.name, index });
+        index += 1;
+      }
+      duplicateProfile(node.id, duplicateName);
     } else if (type === 'new-connection') { setEditNode(null); openDialog('newConnection', node); }
     else if (type === 'new-folder') { setEditNode(null); openDialog('folder', node); }
     else if (type === 'edit') { 

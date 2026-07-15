@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { VNCConfig } from "@/types/terminal";
 import { useI18n } from "@/i18n";
 
@@ -23,6 +24,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
   const [quality, setQuality] = useState(30);
+  const [viewOnly, setViewOnly] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -36,6 +38,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
         setPassword(initialConfig.password || "");
         setNickname(initialConfig.nickname || "");
         setQuality(initialConfig.quality ?? 30);
+        setViewOnly(initialConfig.viewOnly ?? false);
         return;
       }
 
@@ -44,6 +47,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       setPassword("");
       setNickname("");
       setQuality(30);
+      setViewOnly(false);
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -61,6 +65,7 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       password: password || undefined,
       nickname: nickname || undefined,
       shared: true,
+      viewOnly,
       allowJpeg: true,
       quality,
     });
@@ -112,6 +117,20 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
                   className="flex-1"
                 />
                 <span className="text-sm w-8 text-right">{quality}%</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="vnc-view-only" className="text-right">{t("仅查看")}</Label>
+              <div className="col-span-3 flex items-center gap-3">
+                <Checkbox
+                  id="vnc-view-only"
+                  checked={viewOnly}
+                  onCheckedChange={(checked) => setViewOnly(checked === true)}
+                />
+                <Label htmlFor="vnc-view-only" className="text-sm text-muted-foreground">
+                  {t("连接后不发送鼠标与键盘输入")}
+                </Label>
               </div>
             </div>
           </div>

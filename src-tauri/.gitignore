@@ -4,4 +4,7 @@
 /gen/schemas
 /native/msrdpax-host/bin/
 /native/msrdpax-host/obj/
-/native/msrdpax-host/publish/
+/native/msrdpax-host/publish/*
+!/native/msrdpax-host/publish/win-x64/
+/native/msrdpax-host/publish/win-x64/*
+!/native/msrdpax-host/publish/win-x64/.gitkeep

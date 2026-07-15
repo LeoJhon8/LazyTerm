@@ -52,6 +52,7 @@ interface SSHProfilesState {
   syncRootFolderName: () => void;
   addFolder: (name: string, parentId: string) => void;
   addProfile: (type: "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli", cfg: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig, parentId: string) => void;
+  duplicateProfile: (id: string, name: string) => void;
   updateNode: (id: string, updates: Partial<SessionNode>) => void;
   removeNode: (id: string) => void;
   toggleFolder: (id: string) => void;
@@ -148,6 +149,31 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
         return {
           nodes: state.nodes.map(n => n.id === parentId ? { ...n, isExpanded: true } : n)
             .concat([{ id: `s_${Math.random().toString(36).slice(2, 9)}`, type, name: defaultName, parentId, config: normalizedConfig, order: maxOrder + 1 }]),
+        };
+      }),
+
+      duplicateProfile: (id, name) => set((state) => {
+        const source = state.nodes.find((node) => node.id === id);
+        if (!source || source.type === "folder" || !source.config || source.parentId === null) {
+          return state;
+        }
+
+        const nodes = state.nodes.map((node) =>
+          node.parentId === source.parentId && node.order > source.order
+            ? { ...node, order: node.order + 1 }
+            : node
+        );
+        const config = { ...source.config, nickname: name };
+
+        return {
+          nodes: nodes.concat([normalizeNode({
+            id: `s_${Math.random().toString(36).slice(2, 9)}`,
+            type: source.type,
+            name,
+            parentId: source.parentId,
+            config,
+            order: source.order + 1,
+          })]),
         };
       }),
 

@@ -20,6 +20,9 @@ export class VncConnector
   private cursorUnlisten: UnlistenFn | null = null;
   private cursorHandler: ((cursor: VncCursorPayload) => void) | null = null;
   private latestCursor: VncCursorPayload | null = null;
+  private clipboardUnlisten: UnlistenFn | null = null;
+  private clipboardHandler: ((text: string) => void) | null = null;
+  private sessionListenersPromise: Promise<void> | null = null;
 
   constructor(config: VNCConfig) {
     super(
@@ -50,6 +53,13 @@ export class VncConnector
     }
   }
 
+  async onClipboard(handler: (text: string) => void): Promise<void> {
+    const sessionId = await this.waitForSessionId();
+
+    this.clipboardHandler = handler;
+    await this.ensureSessionListeners(sessionId);
+  }
+
   sendPointer(payload: VncPointerPayload): void {
     if (!this.sessionId) {
       return;
@@ -78,6 +88,22 @@ export class VncConnector
     });
   }
 
+  async pasteClipboard(text: string, keySym: number, modifierKeySyms: number[]): Promise<void> {
+    const sessionId = await this.waitForSessionId();
+    await invokeTauri(
+      "paste_vnc_clipboard",
+      {
+        sessionId,
+        payload: {
+          text,
+          keySym,
+          modifierKeySyms,
+        },
+      },
+      { scope: "FE/connector/vnc/clipboard" },
+    );
+  }
+
   requestFrame(full = false): void {
     if (!this.sessionId) {
       return;
@@ -99,7 +125,7 @@ export class VncConnector
 
   close(): void {
     super.close();
-    this.cleanupCursorListener();
+    this.cleanupVncListeners();
   }
 
   protected buildCreateSessionArgs(): Record<string, unknown> {
@@ -109,6 +135,7 @@ export class VncConnector
         port: this.config.port,
         password: this.config.password,
         shared: this.config.shared ?? true,
+        viewOnly: this.config.viewOnly ?? false,
         allowJpeg: this.config.allowJpeg ?? true,
         quality: this.config.quality ?? 30,
       },
@@ -125,41 +152,61 @@ export class VncConnector
 
   protected cleanupListeners(): void {
     super.cleanupListeners();
-    this.cleanupCursorListener();
+    this.cleanupVncListeners();
     this.cursorHandler = null;
+    this.clipboardHandler = null;
   }
 
-  private cleanupCursorListener(): void {
+  private cleanupVncListeners(): void {
     if (this.cursorUnlisten) {
       this.cursorUnlisten();
       this.cursorUnlisten = null;
     }
+    if (this.clipboardUnlisten) {
+      this.clipboardUnlisten();
+      this.clipboardUnlisten = null;
+    }
+    this.sessionListenersPromise = null;
   }
 
   private async ensureSessionListeners(sessionId: string): Promise<void> {
-    // 基类已处理 close 监听器，这里只处理 VNC 特有的光标监听器
-    if (this.cursorUnlisten) {
-      return;
+    if (!this.sessionListenersPromise) {
+      this.sessionListenersPromise = this.setupSessionListeners(sessionId).catch((error) => {
+        this.sessionListenersPromise = null;
+        throw error;
+      });
     }
+    await this.sessionListenersPromise;
+  }
 
-    this.cursorUnlisten = await listen<{
-      hotspotX: number;
-      hotspotY: number;
-      width: number;
-      height: number;
-      rgbaBytes: number[];
-    }>(`vnc-cursor-${sessionId}`, (event) => {
-      const payload = event.payload;
-      const cursor: VncCursorPayload = {
-        hotspotX: payload.hotspotX,
-        hotspotY: payload.hotspotY,
-        width: payload.width,
-        height: payload.height,
-        rgbaBytes: new Uint8Array(payload.rgbaBytes),
-      };
-      this.latestCursor = cursor;
-      this.cursorHandler?.(cursor);
-    });
+  private async setupSessionListeners(sessionId: string): Promise<void> {
+    try {
+      this.cursorUnlisten = await listen<{
+        hotspotX: number;
+        hotspotY: number;
+        width: number;
+        height: number;
+        rgbaBytes: number[];
+      }>(`vnc-cursor-${sessionId}`, (event) => {
+        const payload = event.payload;
+        const cursor: VncCursorPayload = {
+          hotspotX: payload.hotspotX,
+          hotspotY: payload.hotspotY,
+          width: payload.width,
+          height: payload.height,
+          rgbaBytes: new Uint8Array(payload.rgbaBytes),
+        };
+        this.latestCursor = cursor;
+        this.cursorHandler?.(cursor);
+      });
+
+      this.clipboardUnlisten = await listen<string>(`vnc-clipboard-${sessionId}`, (event) => {
+        this.clipboardHandler?.(event.payload);
+      });
+    } catch (error) {
+      this.cleanupVncListeners();
+      throw error;
+    }
   }
 
   private static parseFramePacket(packet: ArrayBuffer): VncFramePayload {

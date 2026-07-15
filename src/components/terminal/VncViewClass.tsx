@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
@@ -41,6 +42,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
   const { sessions } = useTabsStore();
   const activeSession = sessions.find((session) => session.id === sessionId);
   const connector = activeSession?.connector?.protocol === "vnc" ? activeSession.connector as IVncConnector : null;
+  const viewOnly = activeSession?.config?.vncConfig?.viewOnly ?? false;
 
   const pointerMaskRef = useRef(0);
   const pointerTargetRef = useRef<number | null>(null);
@@ -54,6 +56,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
   const frameSeqRef = useRef(0);
   const inputSeqRef = useRef(0);
   const lastPointerMoveLogAtRef = useRef(0);
+  const suppressedPasteKeyCodesRef = useRef(new Set<string>());
   const [cursorStyle, setCursorStyle] = useState("default");
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
 
@@ -242,11 +245,25 @@ export function VncViewClass(props: BaseSessionViewProps) {
       }
     });
 
+    connector.onClipboard((text) => {
+      if (disposed || useTabsStore.getState().focusSessionId !== sessionId) {
+        return;
+      }
+      writeText(text).catch((error) => {
+        logger.error("FE/terminal-view/vnc/clipboard", "Write remote clipboard failed", { error });
+      });
+    }).catch((error) => {
+      if (connector.isConnected) {
+        logger.error("FE/terminal-view/vnc/clipboard", "Register clipboard listener failed", { error });
+      }
+    });
+
     return () => {
       disposed = true;
       drawTokenRef.current += 1;
       pointerMaskRef.current = 0;
       pointerTargetRef.current = null;
+      suppressedPasteKeyCodesRef.current.clear();
       pendingFrameRef.current = null;
       pendingFrameSeqRef.current = 0;
       decodeInFlightRef.current = false;
@@ -271,7 +288,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
 
   const emitPointer = useCallback((clientX: number, clientY: number, buttonMask: number, source: "move" | "down" | "up" | "cancel" | "wheel") => {
     const pointerSurface = canvasRef.current ?? containerRef.current;
-    if (!frameSize || !pointerSurface) {
+    if (viewOnly || !frameSize || !pointerSurface) {
       return;
     }
 
@@ -305,7 +322,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
       y: point.y,
       buttonMask,
     });
-  }, [canvasRef, connector, containerRef, frameSize]);
+  }, [canvasRef, connector, containerRef, frameSize, viewOnly]);
 
   const buttonBit = (button: number) => {
     switch (button) {
@@ -321,6 +338,9 @@ export function VncViewClass(props: BaseSessionViewProps) {
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (viewOnly) {
+      return;
+    }
     event.preventDefault();
     event.currentTarget.focus();
     pointerTargetRef.current = event.pointerId;
@@ -331,6 +351,9 @@ export function VncViewClass(props: BaseSessionViewProps) {
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (viewOnly) {
+      return;
+    }
     event.preventDefault();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -342,6 +365,9 @@ export function VncViewClass(props: BaseSessionViewProps) {
   };
 
   const handlePointerCancel = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (viewOnly) {
+      return;
+    }
     event.preventDefault();
     if (pointerTargetRef.current !== null && event.currentTarget.hasPointerCapture(pointerTargetRef.current)) {
       event.currentTarget.releasePointerCapture(pointerTargetRef.current);
@@ -352,8 +378,38 @@ export function VncViewClass(props: BaseSessionViewProps) {
   };
 
   const handleKey = (event: React.KeyboardEvent<HTMLDivElement>, down: boolean) => {
+    if (viewOnly) {
+      return;
+    }
+
     const keySym = mapVncKeyboardEvent(event);
     if (keySym === null) return;
+
+    const isPasteShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
+    if (!down && suppressedPasteKeyCodesRef.current.delete(event.code)) {
+      event.preventDefault();
+      return;
+    }
+
+    if (down && isPasteShortcut) {
+      event.preventDefault();
+      if (event.repeat) {
+        return;
+      }
+
+      suppressedPasteKeyCodesRef.current.add(event.code);
+      const modifierKeySyms: number[] = [];
+      if (event.ctrlKey) modifierKeySyms.push(0xffe3);
+      if (event.metaKey) modifierKeySyms.push(0xffeb);
+      if (event.shiftKey) modifierKeySyms.push(0xffe1);
+
+      readText()
+        .then((text) => connector.pasteClipboard(text, keySym, modifierKeySyms))
+        .catch((error) => {
+          logger.error("FE/terminal-view/vnc/clipboard", "Paste local clipboard failed", { error });
+        });
+      return;
+    }
 
     event.preventDefault();
     if (inStartupTraceWindow()) {
@@ -365,6 +421,22 @@ export function VncViewClass(props: BaseSessionViewProps) {
     connector.sendKey({ keySym, down });
   };
 
+  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    if (viewOnly) {
+      return;
+    }
+
+    const text = event.clipboardData.getData("text/plain");
+    if (!text) {
+      return;
+    }
+
+    event.preventDefault();
+    void connector.pasteClipboard(text, 0x76, [0xffe3]).catch((error) => {
+      logger.error("FE/terminal-view/vnc/clipboard", "Paste local clipboard failed", { error });
+    });
+  };
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) {
@@ -372,6 +444,9 @@ export function VncViewClass(props: BaseSessionViewProps) {
     }
 
     const onNativeWheel = (event: WheelEvent) => {
+      if (viewOnly) {
+        return;
+      }
       event.preventDefault();
 
       const wheelMask = event.deltaY < 0 ? 8 : 16;
@@ -383,7 +458,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
     return () => {
       container.removeEventListener("wheel", onNativeWheel);
     };
-  }, [containerRef, emitPointer]);
+  }, [containerRef, emitPointer, viewOnly]);
 
   return (
     <main
@@ -403,6 +478,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
         onPointerCancel={handlePointerCancel}
         onKeyDown={(event) => handleKey(event, true)}
         onKeyUp={(event) => handleKey(event, false)}
+        onPaste={handlePaste}
         onBlur={() => {
           pointerMaskRef.current = 0;
           pointerTargetRef.current = null;
@@ -416,6 +492,12 @@ export function VncViewClass(props: BaseSessionViewProps) {
           ref={canvasRef}
           className={frameSize ? CANVAS_CLASSNAME : HIDDEN_CLASSNAME}
         />
+
+        {viewOnly && (
+          <div className="pointer-events-none absolute right-3 top-3 z-20 rounded-md border border-border/70 bg-background/85 px-2.5 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
+            {t("仅查看")}
+          </div>
+        )}
 
         <ConnectionStatusOverlay
           status={activeSession.connectionStatus}

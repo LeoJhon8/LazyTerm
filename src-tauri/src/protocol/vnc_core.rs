@@ -150,6 +150,7 @@ struct VncSessionRuntime<R: Runtime> {
     dirty_log_count: u32,
     commit_seq: u64,
     jpeg_quality: u8,
+    view_only: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -177,6 +178,7 @@ impl<R: Runtime> VncSessionRuntime<R> {
         frame_channel: tauri::ipc::Channel<Response>,
         control_rx: mpsc::UnboundedReceiver<VncControlMsg>,
         jpeg_quality: u8,
+        view_only: bool,
     ) -> Self {
         Self {
             app,
@@ -203,6 +205,7 @@ impl<R: Runtime> VncSessionRuntime<R> {
             dirty_log_count: 0,
             commit_seq: 0,
             jpeg_quality,
+            view_only,
         }
     }
 
@@ -344,6 +347,9 @@ impl<R: Runtime> VncSessionRuntime<R> {
     ) -> bool {
         match control {
             VncControlMsg::Pointer(payload) => {
+                if self.view_only {
+                    return true;
+                }
                 let mut buttons = Vec::new();
                 if payload.button_mask & 1 != 0 {
                     buttons.push(MouseButton::Left);
@@ -381,6 +387,9 @@ impl<R: Runtime> VncSessionRuntime<R> {
                 true
             }
             VncControlMsg::Key(payload) => {
+                if self.view_only {
+                    return true;
+                }
                 // 异步发送键盘事件，避免在 HandleRFBServerMessage 持有 io_lock 时阻塞主循环
                 let client = Arc::clone(&self.client);
                 let session_id = self.session_id.clone();
@@ -391,6 +400,30 @@ impl<R: Runtime> VncSessionRuntime<R> {
                     if let Err(error) = client.send_key(key_sym, down).await {
                         log::warn!(
                             "VNC keyboard input failed for {} ({}): {}",
+                            session_id,
+                            target,
+                            error
+                        );
+                    }
+                });
+                self.schedule_refresh(false, refresh_timer);
+                true
+            }
+            VncControlMsg::PasteClipboard(payload) => {
+                if self.view_only {
+                    return true;
+                }
+
+                let client = Arc::clone(&self.client);
+                let session_id = self.session_id.clone();
+                let target = self.target.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = client
+                        .paste_clipboard(payload.text, payload.key_sym, payload.modifier_key_syms)
+                        .await
+                    {
+                        log::warn!(
+                            "VNC clipboard paste failed for {} ({}): {}",
                             session_id,
                             target,
                             error
@@ -543,7 +576,13 @@ impl<R: Runtime> VncSessionRuntime<R> {
                             .app
                             .emit(&format!("vnc-cursor-{}", self.session_id), payload);
                     }
-                    VncClientEvent::Clipboard(_) | VncClientEvent::CursorPosition { .. } => {}
+                    VncClientEvent::Clipboard(clipboard) => {
+                        let _ = self.app.emit(
+                            &format!("vnc-clipboard-{}", self.session_id),
+                            clipboard.text,
+                        );
+                    }
+                    VncClientEvent::CursorPosition { .. } => {}
                 },
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
@@ -924,6 +963,7 @@ pub async fn run_vnc_session<R: Runtime>(
     frame_channel: tauri::ipc::Channel<Response>,
     control_rx: mpsc::UnboundedReceiver<VncControlMsg>,
     jpeg_quality: u8,
+    view_only: bool,
 ) -> Result<(), String> {
     VncSessionRuntime::new(
         app,
@@ -934,6 +974,7 @@ pub async fn run_vnc_session<R: Runtime>(
         frame_channel,
         control_rx,
         jpeg_quality,
+        view_only,
     )
     .run()
     .await
@@ -951,6 +992,7 @@ pub fn convert_config(config: &crate::types::VncConnectConfig) -> VncClientConfi
         port,
         password: config.password.clone(),
         shared: config.shared.unwrap_or(true),
+        view_only: config.view_only.unwrap_or(false),
         allow_jpeg: config.allow_jpeg.unwrap_or(true),
         use_remote_cursor: false,
         handle_new_fb_size: true,

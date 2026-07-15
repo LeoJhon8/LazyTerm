@@ -93,11 +93,13 @@ pub struct RdpSession {
 
 /// VNC 连接配置
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VncConnectConfig {
     pub host: String,
     pub port: u16,
     pub password: Option<String>,
     pub shared: Option<bool>,
+    pub view_only: Option<bool>,
     pub allow_jpeg: Option<bool>,
     pub quality: Option<u8>,
 }
@@ -119,10 +121,20 @@ pub struct VncKeyboardEventPayload {
     pub down: bool,
 }
 
+/// VNC 剪贴板粘贴事件载荷
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VncClipboardPastePayload {
+    pub text: String,
+    pub key_sym: u32,
+    pub modifier_key_syms: Vec<u32>,
+}
+
 /// VNC 控制消息
 pub enum VncControlMsg {
     Pointer(VncPointerEventPayload),
     Key(VncKeyboardEventPayload),
+    PasteClipboard(VncClipboardPastePayload),
     Refresh,
     Close,
 }

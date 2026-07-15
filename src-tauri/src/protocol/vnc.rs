@@ -6,8 +6,8 @@ use super::vnc_client::VncClient;
 use super::vnc_core::{convert_config, run_vnc_session};
 use crate::utils::{log_vnc_error, log_vnc_info, vnc_target_label};
 use crate::{
-    AppState, VncConnectConfig, VncControlMsg, VncKeyboardEventPayload, VncPointerEventPayload,
-    VncSession,
+    AppState, VncClipboardPastePayload, VncConnectConfig, VncControlMsg, VncKeyboardEventPayload,
+    VncPointerEventPayload, VncSession,
 };
 
 use std::sync::Arc;
@@ -62,6 +62,7 @@ pub async fn create_vnc_session<R: Runtime>(
     let app_clone = app.clone();
     let vnc_sessions = Arc::clone(&state.vnc_sessions);
     let jpeg_quality = config.quality.unwrap_or(super::vnc_core::VNC_JPEG_QUALITY);
+    let view_only = config.view_only.unwrap_or(false);
 
     tokio::spawn(async move {
         match run_vnc_session(
@@ -73,6 +74,7 @@ pub async fn create_vnc_session<R: Runtime>(
             frame_channel,
             control_rx,
             jpeg_quality,
+            view_only,
         )
         .await
         {
@@ -124,6 +126,25 @@ pub fn send_vnc_key(
         session
             .control_tx
             .send(VncControlMsg::Key(payload))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("VNC 会话不存在".to_string())
+    }
+}
+
+/// 将本机剪贴板文本同步到远端并执行粘贴快捷键
+#[tauri::command]
+pub fn paste_vnc_clipboard(
+    state: State<'_, AppState>,
+    session_id: String,
+    payload: VncClipboardPastePayload,
+) -> Result<(), String> {
+    let sessions = state.vnc_sessions.lock().unwrap();
+    if let Some(session) = sessions.get(&session_id) {
+        session
+            .control_tx
+            .send(VncControlMsg::PasteClipboard(payload))
             .map_err(|e| e.to_string())?;
         Ok(())
     } else {

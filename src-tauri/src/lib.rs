@@ -32,8 +32,8 @@ pub use crate::types::{
     RdpConnectConfig, RdpControlMsg, RdpKeyboardEventPayload, RdpPointerEventPayload, RdpSession,
     SftpFileEntry, SftpUploadCancelGuard, SftpUploadItem, SftpUploadProgress, ShellInfo,
     SshConnectConfig, SshControlMsg, SshTerminalSession, TelnetConnectConfig, TelnetSession,
-    VncConnectConfig, VncControlMsg, VncControlOutcome, VncCursorEventPayload,
-    VncKeyboardEventPayload, VncPointerEventPayload, VncSession,
+    VncClipboardPastePayload, VncConnectConfig, VncControlMsg, VncControlOutcome,
+    VncCursorEventPayload, VncKeyboardEventPayload, VncPointerEventPayload, VncSession,
 };
 
 // --- 程序入口 ---
@@ -87,6 +87,7 @@ pub fn run() {
             protocol::send_rdp_key,
             protocol::send_vnc_pointer,
             protocol::send_vnc_key,
+            protocol::paste_vnc_clipboard,
             protocol::request_vnc_refresh,
             protocol::release_rdp_inputs,
             protocol::resize_terminal,

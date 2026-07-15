@@ -415,6 +415,7 @@ export function VncForm({ onSubmit, submitLabel }: { onSubmit: (config: VNCConfi
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
   const [quality, setQuality] = useState(30);
+  const [viewOnly, setViewOnly] = useState(false);
   const [credentialId, setCredentialId] = useState<string | undefined>();
 
   const handleSubmit = () => {
@@ -426,6 +427,7 @@ export function VncForm({ onSubmit, submitLabel }: { onSubmit: (config: VNCConfi
       password: credentialId ? undefined : (password || undefined),
       nickname: nickname || undefined,
       shared: true,
+      viewOnly,
       allowJpeg: true,
       quality,
     });
@@ -463,6 +465,18 @@ export function VncForm({ onSubmit, submitLabel }: { onSubmit: (config: VNCConfi
         <div className="flex items-center gap-4">
           <Slider min={10} max={100} step={10} value={[quality]} onValueChange={(val) => setQuality(val[0])} className="flex-1" />
           <span className="text-sm w-8 text-right">{quality}%</span>
+        </div>
+      </FormField>
+      <FormField label={t("仅查看")} description={t("连接后不发送鼠标与键盘输入")}>
+        <div className="flex items-center gap-3">
+          <Checkbox
+            id="vnc-view-only-qc"
+            checked={viewOnly}
+            onCheckedChange={(checked) => setViewOnly(checked === true)}
+          />
+          <Label htmlFor="vnc-view-only-qc" className="text-sm text-muted-foreground">
+            {t("启用只读模式")}
+          </Label>
         </div>
       </FormField>
       <DialogFooter className="pt-2">

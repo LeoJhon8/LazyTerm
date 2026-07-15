@@ -15,6 +15,8 @@ use super::super::vnc_ffi as ffi;
 use super::frame::{FrameBuffer, FrameUpdateRegion};
 use super::ClipboardEvent;
 
+const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024;
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct FrameBufferUpdate {
@@ -186,13 +188,13 @@ unsafe fn got_xcut_text_callback_impl(client: *mut ffi::RfbClient, text: *mut c_
     let ptr = client as usize;
 
     if let Some(ctx) = get_context(ptr) {
-        if !text.is_null() && len > 0 {
+        if !text.is_null() && len > 0 && (len as usize) <= MAX_CLIPBOARD_BYTES {
             let text_slice = std::slice::from_raw_parts(text as *const u8, len as usize);
-            if let Ok(text_str) = String::from_utf8(text_slice.to_vec()) {
-                let _ = ctx
-                    .event_sender
-                    .send(CallbackEvent::Clipboard(ClipboardEvent { text: text_str }));
-            }
+            let text_str = String::from_utf8(text_slice.to_vec())
+                .unwrap_or_else(|_| text_slice.iter().map(|byte| char::from(*byte)).collect());
+            let _ = ctx
+                .event_sender
+                .send(CallbackEvent::Clipboard(ClipboardEvent { text: text_str }));
         }
     }
 }

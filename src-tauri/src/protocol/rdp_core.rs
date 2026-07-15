@@ -1,6 +1,6 @@
 //! RDP runtime backed by FreeRDP.
 
-#[cfg(feature = "rdp-freerdp")]
+#[cfg(freerdp_available)]
 mod freerdp_runtime {
     use std::collections::HashSet;
     use std::sync::mpsc as std_mpsc;
@@ -501,10 +501,10 @@ mod freerdp_runtime {
     }
 }
 
-#[cfg(feature = "rdp-freerdp")]
+#[cfg(freerdp_available)]
 pub use freerdp_runtime::{build_rdp_config, connect_rdp, run_rdp_session};
 
-#[cfg(not(feature = "rdp-freerdp"))]
+#[cfg(not(freerdp_available))]
 mod disabled_runtime {
     use std::sync::mpsc as std_mpsc;
 
@@ -542,5 +542,5 @@ mod disabled_runtime {
     }
 }
 
-#[cfg(not(feature = "rdp-freerdp"))]
+#[cfg(not(freerdp_available))]
 pub use disabled_runtime::{build_rdp_config, connect_rdp, run_rdp_session};

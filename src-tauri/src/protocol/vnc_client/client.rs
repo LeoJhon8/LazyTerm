@@ -34,6 +34,7 @@ pub struct VncClientConfig {
     pub port: u16,
     pub password: Option<String>,
     pub shared: bool,
+    pub view_only: bool,
     pub allow_jpeg: bool,
     pub use_remote_cursor: bool,
     pub handle_new_fb_size: bool,
@@ -49,6 +50,7 @@ impl Default for VncClientConfig {
             port: 5900,
             password: None,
             shared: true,
+            view_only: false,
             allow_jpeg: true,
             use_remote_cursor: false,
             handle_new_fb_size: true,
@@ -190,6 +192,7 @@ impl VncClient {
             ffi::RfbClientSetGotCursorPos(client, super::callbacks::got_cursor_pos_callback);
             ffi::RfbClientSetGetPassword(client, get_password_callback);
             ffi::RfbClientSetShared(client, if config.shared { 1 } else { 0 });
+            ffi::RfbClientSetViewOnly(client, if config.view_only { 1 } else { 0 });
             ffi::RfbClientSetEnableJpeg(client, if config.allow_jpeg { 1 } else { 0 });
             ffi::RfbClientSetUseRemoteCursor(client, if config.use_remote_cursor { 1 } else { 0 });
             ffi::RfbClientSetHandleNewFBSize(client, if config.handle_new_fb_size { 1 } else { 0 });
@@ -454,6 +457,80 @@ impl VncClient {
                             "Failed to send key event".to_string(),
                         ));
                     }
+                    Ok(())
+                }
+            } else {
+                Err(VncError::SessionClosed)
+            }
+        })
+        .await
+        .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
+    }
+
+    /// 将剪贴板文本同步到远端，并在同步成功后发送粘贴快捷键。
+    pub async fn paste_clipboard(
+        &self,
+        text: String,
+        key_sym: u32,
+        modifier_key_syms: Vec<u32>,
+    ) -> VncResult<()> {
+        const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024;
+
+        let inner = self.inner.clone();
+
+        task::spawn_blocking(move || {
+            let text_bytes = text.as_bytes();
+            if text_bytes.len() > MAX_CLIPBOARD_BYTES {
+                return Err(VncError::ProtocolError(format!(
+                    "Clipboard text exceeds {} byte limit",
+                    MAX_CLIPBOARD_BYTES
+                )));
+            }
+
+            let text_len = c_int::try_from(text_bytes.len())
+                .map_err(|_| VncError::ProtocolError("Clipboard text is too large".to_string()))?;
+
+            let _io_guard = inner.io_lock.lock();
+            let client_ptr = *inner.raw_client.lock();
+
+            if let Some(ptr) = client_ptr {
+                unsafe {
+                    let client = ptr as *mut ffi::RfbClient;
+                    let result = ffi::SendClientCutText(
+                        client,
+                        text_bytes.as_ptr().cast::<c_char>(),
+                        text_len,
+                    );
+                    if result == 0 {
+                        return Err(VncError::NetworkError(
+                            "Failed to send clipboard text".to_string(),
+                        ));
+                    }
+
+                    for modifier in &modifier_key_syms {
+                        if ffi::SendKeyEvent(client, *modifier, 1) == 0 {
+                            return Err(VncError::NetworkError(
+                                "Failed to send clipboard modifier key".to_string(),
+                            ));
+                        }
+                    }
+
+                    if ffi::SendKeyEvent(client, key_sym, 1) == 0
+                        || ffi::SendKeyEvent(client, key_sym, 0) == 0
+                    {
+                        return Err(VncError::NetworkError(
+                            "Failed to send clipboard paste key".to_string(),
+                        ));
+                    }
+
+                    for modifier in modifier_key_syms.iter().rev() {
+                        if ffi::SendKeyEvent(client, *modifier, 0) == 0 {
+                            return Err(VncError::NetworkError(
+                                "Failed to release clipboard modifier key".to_string(),
+                            ));
+                        }
+                    }
+
                     Ok(())
                 }
             } else {
