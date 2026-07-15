@@ -10,6 +10,7 @@ use crate::{
 };
 use russh_sftp::client::SftpSession;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -131,12 +132,20 @@ pub async fn sftp_upload_files(
         .await
         .unwrap_or_else(|_| "/".to_string());
 
-    let mut file_infos: Vec<(usize, SftpUploadItem, u64, String)> = Vec::new();
+    let mut file_infos: Vec<(usize, SftpUploadItem, bool, u64, String)> = Vec::new();
     let mut overall_total = 0u64;
     for (index, item) in files.into_iter().enumerate() {
         let meta = tokio::fs::metadata(&item.local_path)
             .await
             .map_err(|e| format!("读取本地文件失败: {} (path={})", e, item.local_path))?;
+        let is_dir = item.is_dir.unwrap_or(false) || meta.is_dir();
+        if is_dir {
+            let file_name = sftp_utils::extract_filename(&item.local_path)
+                .unwrap_or(&item.local_path)
+                .to_string();
+            file_infos.push((index, item, true, 0, file_name));
+            continue;
+        }
         if !meta.is_file() {
             return Err(format!(
                 "读取本地文件失败: 不是文件 (path={})",
@@ -148,11 +157,12 @@ pub async fn sftp_upload_files(
         let file_name = sftp_utils::extract_filename(&item.local_path)
             .unwrap_or(&item.local_path)
             .to_string();
-        file_infos.push((index, item, size, file_name));
+        file_infos.push((index, item, false, size, file_name));
     }
 
     let mut overall_sent = 0u64;
-    for (index, item, file_size, file_name) in file_infos.into_iter() {
+    let mut last_progress_emit: Option<Instant> = None;
+    for (index, item, is_dir, file_size, file_name) in file_infos.into_iter() {
         let cancelled = safe_lock(&state.sftp_upload_cancellations, |cancellations| {
             cancellations.get(&upload_id).copied().unwrap_or(false)
         })
@@ -166,6 +176,13 @@ pub async fn sftp_upload_files(
 
         if remote_path_resolved.is_empty() {
             return Err("远程路径不能为空。".to_string());
+        }
+
+        if is_dir {
+            sftp_utils::ensure_remote_dir_path(&sftp, &remote_path_resolved)
+                .await
+                .map_err(|e| map_sftp_error("创建远程目录失败", &e, None))?;
+            continue;
         }
 
         // 使用 sftp_utils 确保远程目录存在
@@ -189,7 +206,7 @@ pub async fn sftp_upload_files(
         };
 
         let mut sent = 0u64;
-        let mut buffer = vec![0u8; 64 * 1024];
+        let mut buffer = vec![0u8; 256 * 1024];
         loop {
             let cancelled = safe_lock(&state.sftp_upload_cancellations, |cancellations| {
                 cancellations.get(&upload_id).copied().unwrap_or(false)
@@ -212,16 +229,27 @@ pub async fn sftp_upload_files(
                 .map_err(|e| map_sftp_error("写入远程文件失败", &e, Some(&remote_path_resolved)))?;
             sent += n as u64;
             overall_sent += n as u64;
-            let progress = SftpUploadProgress {
-                file_index: index,
-                file_name: file_name.clone(),
-                local_path: item.local_path.clone(),
-                file_size,
-                file_sent: sent.min(file_size),
-                overall_total,
-                overall_sent: overall_sent.min(overall_total),
-            };
-            let _ = app.emit(&progress_event, &progress);
+            let is_file_complete = sent >= file_size;
+            let is_overall_complete = overall_total > 0 && overall_sent >= overall_total;
+            let should_emit_progress = is_file_complete
+                || is_overall_complete
+                || last_progress_emit
+                    .map(|last| last.elapsed() >= Duration::from_millis(500))
+                    .unwrap_or(true);
+
+            if should_emit_progress {
+                last_progress_emit = Some(Instant::now());
+                let progress = SftpUploadProgress {
+                    file_index: index,
+                    file_name: file_name.clone(),
+                    local_path: item.local_path.clone(),
+                    file_size,
+                    file_sent: sent.min(file_size),
+                    overall_total,
+                    overall_sent: overall_sent.min(overall_total),
+                };
+                let _ = app.emit(&progress_event, &progress);
+            }
         }
 
         if file_size == 0 {

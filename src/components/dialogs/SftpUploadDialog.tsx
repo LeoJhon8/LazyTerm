@@ -3,11 +3,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { File, X, Upload, Folder, AlertCircle } from "lucide-react";
+import { File, X, Upload, Folder, FolderOpen, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { stat } from "@tauri-apps/plugin-fs";
+import { readDir, stat } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invokeTauri } from "@/services/tauri";
 import { logger } from "@/lib/logger";
@@ -22,6 +22,8 @@ interface SftpLocalFile {
   path: string;
   name: string;
   size: number;
+  relativePath: string;
+  isDirectory?: boolean;
 }
 
 interface SftpUploadProgressPayload {
@@ -45,12 +47,33 @@ function getFileName(path: string) {
   return parts[parts.length - 1] || path;
 }
 
+function joinLocalPath(parent: string, child: string) {
+  const separator = parent.includes("\\") ? "\\" : "/";
+  return `${parent.replace(/[/\\]$/, "")}${separator}${child}`;
+}
+
+function joinRelativePath(parent: string, child: string) {
+  return parent ? `${parent}/${child}` : child;
+}
+
 function formatBytes(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
   const size = value / Math.pow(1024, index);
   return `${size.toFixed(size >= 100 || index === 0 ? 0 : size >= 10 ? 1 : 2)} ${units[index]}`;
+}
+
+function buildUploadNotificationDetails(remotePaths: string[], currentFile?: string) {
+  const maxPathDetails = 20;
+  const details = currentFile ? [currentFile] : [];
+  details.push(...remotePaths.slice(0, maxPathDetails));
+
+  if (remotePaths.length > maxPathDetails) {
+    details.push(`还有 ${remotePaths.length - maxPathDetails} 个目标路径未展开显示`);
+  }
+
+  return details;
 }
 
 // 简单的进度条组件
@@ -115,17 +138,61 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
     }
   }, [open]);
 
+  const collectFilesFromPath = async (path: string, relativePath?: string): Promise<SftpLocalFile[]> => {
+    const fileInfo = await stat(path);
+    const name = getFileName(path);
+
+    if (fileInfo.isFile) {
+      return [{
+        path,
+        name,
+        size: Number(fileInfo.size),
+        relativePath: relativePath ?? name,
+      }];
+    }
+
+    if (!fileInfo.isDirectory) {
+      return [];
+    }
+
+    const rootRelativePath = relativePath ?? name;
+    const entries = await readDir(path);
+    const nestedFiles: SftpLocalFile[] = [{
+      path,
+      name,
+      size: 0,
+      relativePath: rootRelativePath,
+      isDirectory: true,
+    }];
+
+    for (const entry of entries) {
+      if (entry.isSymlink) continue;
+
+      const childPath = joinLocalPath(path, entry.name);
+      const childRelativePath = joinRelativePath(rootRelativePath, entry.name);
+
+      if (entry.isDirectory) {
+        nestedFiles.push(...await collectFilesFromPath(childPath, childRelativePath));
+      } else if (entry.isFile) {
+        const childInfo = await stat(childPath);
+        nestedFiles.push({
+          path: childPath,
+          name: entry.name,
+          size: Number(childInfo.size),
+          relativePath: childRelativePath,
+        });
+      }
+    }
+
+    return nestedFiles;
+  };
+
   const addFilesFromPaths = async (paths: string[]) => {
     const fileList: SftpLocalFile[] = [];
 
     for (const path of paths) {
       try {
-        const fileInfo = await stat(path);
-        fileList.push({
-          path,
-          name: getFileName(path),
-          size: Number(fileInfo.size),
-        });
+        fileList.push(...await collectFilesFromPath(path));
       } catch (e) {
         logger.warn("FE/sftp-dialog", "无法获取文件信息", { path, error: e });
       }
@@ -196,16 +263,41 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
     }
   };
 
+  const handleSelectDirectory = async () => {
+    try {
+      const selected = await openFileDialog({
+        directory: true,
+        multiple: true,
+        recursive: true,
+        title: t("选择目录"),
+      });
+
+      if (!selected || (Array.isArray(selected) && selected.length === 0)) {
+        return;
+      }
+
+      const paths = Array.isArray(selected) ? selected : [selected];
+      await addFilesFromPaths(paths);
+    } catch (error) {
+      logger.error("FE/sftp-dialog", "选择文件失败", error);
+      setMessage({ text: t("选择文件失败"), type: "error" });
+    }
+  };
+
   const removeFile = (index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const resolveRemotePath = (basePath: string, fileName: string) => {
+  const resolveRemotePath = (basePath: string, relativePath: string) => {
     let trimmed = basePath.trim();
     if (!trimmed) trimmed = "/"; // 默认根目录
     
     const dir = trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
-    return `${dir}${fileName}`;
+    const normalizedRelativePath = relativePath
+      .split(/[/\\]/)
+      .filter(Boolean)
+      .join("/");
+    return `${dir}${normalizedRelativePath}`;
   };
 
   const formatUploadProgressMessage = (sent: number, total: number) => {
@@ -214,7 +306,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
   };
 
   const handleUpload = async () => {
-    if (!targetNode || files.length === 0) return;
+    if (!targetNode || files.length === 0 || !remotePath.trim()) return;
 
       const config = resolveSshCredential(targetNode.config as SSHConfig);
     const uploadId = `${targetNode.id}-${Date.now()}`;
@@ -229,7 +321,8 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
 
       const items = files.map((file) => ({
         local_path: file.path,
-        remote_path: resolveRemotePath(remotePath, file.name),
+        remote_path: resolveRemotePath(remotePath, file.relativePath),
+        is_dir: file.isDirectory ?? false,
       }));
       const remotePaths = items.map((item) => item.remote_path);
 
@@ -238,7 +331,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
         source: "sftp",
         title: "SFTP 上传中",
         message: `${targetNode.name} · ${formatUploadProgressMessage(0, selectedTotal)}`,
-        details: remotePaths,
+        details: buildUploadNotificationDetails(remotePaths),
       });
       lastNotificationProgressRef.current = 0;
 
@@ -266,10 +359,10 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
             type: "info",
             title: "SFTP 上传中",
             message: `${targetNode.name} · ${formatUploadProgressMessage(payload.overall_sent, payload.overall_total)}`,
-            details: [
+            details: buildUploadNotificationDetails(
+              remotePaths,
               `${payload.file_name} · ${formatBytes(payload.file_sent)} / ${formatBytes(payload.file_size)}`,
-              ...remotePaths,
-            ],
+            ),
             read: false,
           });
         }
@@ -298,7 +391,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
           type: "success",
           title: t("上传完成"),
           message: `${targetNode.name} · ${formatUploadProgressMessage(selectedTotal, selectedTotal)}`,
-          details: remotePaths,
+          details: buildUploadNotificationDetails(remotePaths),
           read: false,
         });
       }
@@ -370,6 +463,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
   };
 
   const isSshNode = targetNode?.type === "ssh";
+  const hasRemotePath = remotePath.trim().length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -419,17 +513,28 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <Label>{t("本地文件")}</Label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSelectFiles}
-                    disabled={uploading}
-                  >
-                    <Folder className="h-4 w-4 mr-1" />
-                    {t("选择文件")}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSelectFiles}
+                      disabled={uploading}
+                    >
+                      <Folder className="h-4 w-4 mr-1" />
+                      {t("选择文件")}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSelectDirectory}
+                      disabled={uploading}
+                    >
+                      <FolderOpen className="h-4 w-4 mr-1" />
+                      {t("选择目录")}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className={cn(
@@ -460,11 +565,15 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
                       
                       return (
                         <div key={file.path} className="p-3 flex items-center gap-3">
-                          <File className="h-4 w-4 text-muted-foreground shrink-0" />
+                          {file.isDirectory ? (
+                            <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+                          ) : (
+                            <File className="h-4 w-4 text-muted-foreground shrink-0" />
+                          )}
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate">{file.name}</p>
+                            <p className="text-sm truncate">{file.relativePath}</p>
                             <p className="text-xs text-muted-foreground">
-                              {formatBytes(file.size)}
+                              {file.isDirectory ? t("目录") : formatBytes(file.size)}
                             </p>
                             {isUploading && (
                               <div className="mt-2">
@@ -553,7 +662,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
               </Button>
               <Button
                 onClick={handleUpload}
-                disabled={!isSshNode || files.length === 0}
+                disabled={!isSshNode || files.length === 0 || !hasRemotePath}
               >
                 <Upload className="h-4 w-4 mr-1" />
                 {t("开始上传")}

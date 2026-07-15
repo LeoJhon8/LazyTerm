@@ -189,6 +189,7 @@ pub struct SftpFileEntry {
 pub struct SftpUploadItem {
     pub local_path: String,
     pub remote_path: String,
+    pub is_dir: Option<bool>,
 }
 
 /// SFTP 上传取消守卫

@@ -46,6 +46,42 @@ pub async fn ensure_remote_dirs(sftp: &SftpSession, remote_path: &str) -> Result
     Ok(())
 }
 
+/// 确保远程目录路径存在，不把最后一段当作文件名处理
+pub async fn ensure_remote_dir_path(sftp: &SftpSession, remote_dir: &str) -> Result<(), String> {
+    let dir = remote_dir.trim_end_matches('/');
+    if dir.is_empty() || dir == "/" {
+        return Ok(());
+    }
+
+    let mut cur = String::new();
+    let mut first = true;
+    for part in dir.split('/') {
+        if part.is_empty() {
+            if first {
+                cur.push('/');
+            }
+            first = false;
+            continue;
+        }
+        if !cur.ends_with('/') && !cur.is_empty() {
+            cur.push('/');
+        }
+        cur.push_str(part);
+        let exists = sftp.try_exists(cur.clone()).await.unwrap_or(false);
+        if !exists {
+            if let Err(_e) = sftp.create_dir(cur.clone()).await {
+                let exists_after = sftp.try_exists(cur.clone()).await.unwrap_or(false);
+                if !exists_after {
+                    return Err(format!("创建远程目录失败: {}", cur));
+                }
+            }
+        }
+        first = false;
+    }
+
+    Ok(())
+}
+
 /// 标准化远程路径（处理 . 和 ..）
 pub fn normalize_remote_path(path: &str) -> String {
     let parts: Vec<&str> = path.split('/').collect();

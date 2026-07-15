@@ -16,9 +16,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { DialogFooter } from "@/components/ui/dialog";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { Eye, EyeOff, KeyRound, Settings } from "lucide-react";
+import { ChevronDown, Eye, EyeOff, KeyRound, Settings } from "lucide-react";
 import { invokeTauri } from "@/services/tauri";
 import { logger } from "@/lib/logger";
 import { useI18n } from "@/i18n";
@@ -68,11 +75,11 @@ export function FormField({
 function PasswordInput({
   value,
   onChange,
-  disabled,
+  placeholder,
 }: {
   value: string;
   onChange: React.ChangeEventHandler<HTMLInputElement>;
-  disabled?: boolean;
+  placeholder?: string;
 }) {
   const { t } = useI18n();
   const [visible, setVisible] = useState(false);
@@ -85,8 +92,8 @@ function PasswordInput({
         type={visible ? "text" : "password"}
         value={value}
         onChange={onChange}
+        placeholder={placeholder}
         autoComplete="off"
-        disabled={disabled}
         className="password-input-native-reveal-hidden pr-10"
       />
       <Button
@@ -96,7 +103,6 @@ function PasswordInput({
         className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setVisible((current) => !current)}
-        disabled={disabled}
         title={label}
         aria-label={label}
       >
@@ -106,48 +112,85 @@ function PasswordInput({
   );
 }
 
-function CredentialSelect({
+function CredentialDropdownInput({
+  inputType = "text",
   value,
-  onChange,
-  types,
+  selectedCredentialId,
+  credentialTypes,
+  placeholder,
+  onManualChange,
+  onCredentialChange,
+  trailing,
 }: {
+  inputType?: "text" | "password";
   value: string;
-  onChange: (credential: Credential | null) => void;
-  types?: CredentialType[];
+  selectedCredentialId?: string;
+  credentialTypes: CredentialType[];
+  placeholder?: string;
+  onManualChange: (value: string) => void;
+  onCredentialChange: (credential: Credential | null) => void;
+  trailing?: React.ReactNode;
 }) {
   const credentials = useCredentialsStore((state) => state.credentials);
   const openSettings = useSettingsDialogStore((state) => state.openSettings);
-  const filteredCredentials = types
-    ? credentials.filter((credential) => types.includes(credential.type))
-    : credentials;
+  const filteredCredentials = credentials.filter((credential) => credentialTypes.includes(credential.type));
+  const selectedCredential = selectedCredentialId
+    ? filteredCredentials.find((credential) => credential.id === selectedCredentialId)
+    : undefined;
+  const displayPlaceholder = selectedCredential
+    ? `使用凭据：${selectedCredential.name}`
+    : placeholder;
+
+  const handleInputChange: React.ChangeEventHandler<HTMLInputElement> = (event) => {
+    if (selectedCredentialId) onCredentialChange(null);
+    onManualChange(event.target.value);
+  };
+
+  const input = inputType === "password"
+    ? (
+      <PasswordInput
+        value={selectedCredential ? "" : value}
+        onChange={handleInputChange}
+        placeholder={displayPlaceholder}
+      />
+    )
+    : (
+      <Input
+        value={selectedCredential ? "" : value}
+        onChange={handleInputChange}
+        placeholder={displayPlaceholder}
+        className="flex-1"
+      />
+    );
 
   return (
     <div className="flex items-center gap-2">
-      <Select
-        value={value}
-        onValueChange={(nextValue) => {
-          if (nextValue === "manual") {
-            onChange(null);
-            return;
-          }
-          onChange(filteredCredentials.find((credential) => credential.id === nextValue) ?? null);
-        }}
-      >
-        <SelectTrigger className="flex-1">
-          <SelectValue placeholder="手动输入" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="manual">手动输入</SelectItem>
+      <div className="min-w-0 flex-1">{input}</div>
+      {trailing}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" title="选择凭据" aria-label="选择凭据">
+            <ChevronDown className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuItem onClick={() => onCredentialChange(null)}>
+            手动输入
+          </DropdownMenuItem>
+          {filteredCredentials.length > 0 && <DropdownMenuSeparator />}
           {filteredCredentials.map((credential) => (
-            <SelectItem key={credential.id} value={credential.id}>
-              {credential.name}
-            </SelectItem>
+            <DropdownMenuItem key={credential.id} onClick={() => onCredentialChange(credential)}>
+              <KeyRound className="mr-2 h-4 w-4" />
+              <span className="truncate">{credential.name}</span>
+            </DropdownMenuItem>
           ))}
-        </SelectContent>
-      </Select>
-      <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => openSettings("credentials")} title="管理凭据">
-        {filteredCredentials.length > 0 ? <KeyRound className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
-      </Button>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => openSettings("credentials")}>
+            <Settings className="mr-2 h-4 w-4" />
+            管理凭据
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -161,7 +204,8 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
   const [password, setPassword] = useState("");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [nickname, setNickname] = useState("");
-  const [credentialId, setCredentialId] = useState("manual");
+  const [passwordCredentialId, setPasswordCredentialId] = useState<string | undefined>();
+  const [privateKeyCredentialId, setPrivateKeyCredentialId] = useState<string | undefined>();
 
   const handleSelectKey = async () => {
     try {
@@ -172,6 +216,9 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
         filters: [{ name: "All Files", extensions: ["*"] }],
       });
       if (selected && typeof selected === "string") {
+        setPasswordCredentialId(undefined);
+        setPrivateKeyCredentialId(undefined);
+        setPassword("");
         setPrivateKeyPath(selected);
       }
     } catch (err) {
@@ -181,17 +228,17 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
 
   const handleSubmit = () => {
     if (!host || !port || !username) return;
-    const usesSavedCredential = credentialId !== "manual";
-    const credential = usesSavedCredential ? useCredentialsStore.getState().getCredential(credentialId) : undefined;
+    const credentialId = privateKeyCredentialId ?? passwordCredentialId;
+    const credential = credentialId ? useCredentialsStore.getState().getCredential(credentialId) : undefined;
     const parsedPort = parseInt(port, 10);
     onSubmit({
       host,
       port: parsedPort,
       username,
-      credentialId: usesSavedCredential ? credentialId : undefined,
+      credentialId,
       authType: credential?.type === "ssh-key" || privateKeyPath ? "privateKey" : "password",
-      password: usesSavedCredential ? undefined : (password || undefined),
-      privateKeyPath: usesSavedCredential ? undefined : (privateKeyPath || undefined),
+      password: credentialId ? undefined : (password || undefined),
+      privateKeyPath: credentialId ? undefined : (privateKeyPath || undefined),
       nickname: nickname || undefined,
       keepAlive: parsedPort === 2222 ? undefined : true,
       keepAliveInterval: parsedPort === 2222 ? undefined : 60,
@@ -214,31 +261,47 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
         <Input value={username} onChange={(e) => setUsername(e.target.value)} required />
       </FormField>
       <Separator />
-      <FormField label="凭据">
-        <CredentialSelect
-          value={credentialId}
-          onChange={(credential) => {
-            setCredentialId(credential?.id ?? "manual");
-            if (!credential) return;
-            if (credential.username) setUsername(credential.username);
-            if (credential.type === "password") {
-              setPassword("");
-              setPrivateKeyPath("");
-            } else {
-              setPassword("");
-              setPrivateKeyPath(credential.privateKeyPath ?? "");
-            }
+      <FormField label={t("密码")}>
+        <CredentialDropdownInput
+          inputType="password"
+          value={password}
+          selectedCredentialId={passwordCredentialId}
+          credentialTypes={["password"]}
+          onManualChange={(nextPassword) => {
+            setPassword(nextPassword);
+            setPasswordCredentialId(undefined);
+            setPrivateKeyCredentialId(undefined);
+            setPrivateKeyPath("");
+          }}
+          onCredentialChange={(credential) => {
+            setPasswordCredentialId(credential?.id);
+            setPrivateKeyCredentialId(undefined);
+            setPassword("");
+            setPrivateKeyPath("");
+            if (credential?.username) setUsername(credential.username);
           }}
         />
       </FormField>
-      <FormField label={t("密码")}>
-        <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} disabled={credentialId !== "manual"} />
-      </FormField>
       <FormField label={t("私钥路径")}>
-        <div className="flex items-center gap-2">
-          <Input value={privateKeyPath} onChange={(e) => setPrivateKeyPath(e.target.value)} className="flex-1" disabled={credentialId !== "manual"} />
-          <Button type="button" variant="outline" size="sm" onClick={handleSelectKey} disabled={credentialId !== "manual"}>{t("浏览")}</Button>
-        </div>
+        <CredentialDropdownInput
+          value={privateKeyPath}
+          selectedCredentialId={privateKeyCredentialId}
+          credentialTypes={["ssh-key"]}
+          onManualChange={(nextPrivateKeyPath) => {
+            setPrivateKeyPath(nextPrivateKeyPath);
+            setPrivateKeyCredentialId(undefined);
+            setPasswordCredentialId(undefined);
+            setPassword("");
+          }}
+          onCredentialChange={(credential) => {
+            setPrivateKeyCredentialId(credential?.id);
+            setPasswordCredentialId(undefined);
+            setPassword("");
+            setPrivateKeyPath(credential?.privateKeyPath ?? "");
+            if (credential?.username) setUsername(credential.username);
+          }}
+          trailing={<Button type="button" variant="outline" size="sm" onClick={handleSelectKey}>{t("浏览")}</Button>}
+        />
       </FormField>
       <DialogFooter className="pt-2">
         <Button type="submit" disabled={!host || !port || !username}>{t(submitLabel)}</Button>
@@ -260,7 +323,7 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
   const [password, setPassword] = useState("");
   const [domain, setDomain] = useState("");
   const [nickname, setNickname] = useState("");
-  const [credentialId, setCredentialId] = useState("manual");
+  const [credentialId, setCredentialId] = useState<string | undefined>();
   const [width, setWidth] = useState("1280");
   const [height, setHeight] = useState("720");
   const [autoResize, setAutoResize] = useState(true);
@@ -271,8 +334,8 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
       host,
       port: parseInt(port, 10) || 3389,
       username,
-      credentialId: credentialId !== "manual" ? credentialId : undefined,
-      password: credentialId !== "manual" ? undefined : (password || undefined),
+      credentialId,
+      password: credentialId ? undefined : (password || undefined),
       domain: domain || undefined,
       nickname: nickname || undefined,
       width: usesNativeRdp ? undefined : (parseInt(width, 10) || 1280),
@@ -299,19 +362,22 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
       <FormField label={t("域")}>
         <Input value={domain} onChange={(e) => setDomain(e.target.value)} />
       </FormField>
-      <FormField label="凭据">
-        <CredentialSelect
-          value={credentialId}
-          types={["password"]}
-          onChange={(credential) => {
-            setCredentialId(credential?.id ?? "manual");
-            if (credential?.username) setUsername(credential.username);
+      <FormField label={t("密码")}>
+        <CredentialDropdownInput
+          inputType="password"
+          value={password}
+          selectedCredentialId={credentialId}
+          credentialTypes={["password"]}
+          onManualChange={(nextPassword) => {
+            setCredentialId(undefined);
+            setPassword(nextPassword);
+          }}
+          onCredentialChange={(credential) => {
+            setCredentialId(credential?.id);
             if (credential) setPassword("");
+            if (credential?.username) setUsername(credential.username);
           }}
         />
-      </FormField>
-      <FormField label={t("密码")}>
-        <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} disabled={credentialId !== "manual"} />
       </FormField>
       {!usesNativeRdp && (
         <>
@@ -349,15 +415,15 @@ export function VncForm({ onSubmit, submitLabel }: { onSubmit: (config: VNCConfi
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
   const [quality, setQuality] = useState(30);
-  const [credentialId, setCredentialId] = useState("manual");
+  const [credentialId, setCredentialId] = useState<string | undefined>();
 
   const handleSubmit = () => {
     if (!host) return;
     onSubmit({
       host,
       port: parseInt(port, 10) || 5900,
-      credentialId: credentialId !== "manual" ? credentialId : undefined,
-      password: credentialId !== "manual" ? undefined : (password || undefined),
+      credentialId,
+      password: credentialId ? undefined : (password || undefined),
       nickname: nickname || undefined,
       shared: true,
       allowJpeg: true,
@@ -376,18 +442,21 @@ export function VncForm({ onSubmit, submitLabel }: { onSubmit: (config: VNCConfi
       <FormField label={t("端口")} required>
         <Input type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
       </FormField>
-      <FormField label="凭据">
-        <CredentialSelect
-          value={credentialId}
-          types={["password"]}
-          onChange={(credential) => {
-            setCredentialId(credential?.id ?? "manual");
+      <FormField label={t("密码")} description="无密码时留空">
+        <CredentialDropdownInput
+          inputType="password"
+          value={password}
+          selectedCredentialId={credentialId}
+          credentialTypes={["password"]}
+          onManualChange={(nextPassword) => {
+            setCredentialId(undefined);
+            setPassword(nextPassword);
+          }}
+          onCredentialChange={(credential) => {
+            setCredentialId(credential?.id);
             if (credential) setPassword("");
           }}
         />
-      </FormField>
-      <FormField label={t("密码")} description="无密码时留空">
-        <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} disabled={credentialId !== "manual"} />
       </FormField>
       <Separator />
       <FormField label={t("渲染质量")}>
