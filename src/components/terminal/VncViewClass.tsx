@@ -74,36 +74,65 @@ export function VncViewClass(props: BaseSessionViewProps) {
   const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
   const resizeTimerRef = useRef<number | null>(null);
 
-  // ResizeObserver for mask timing
+  // 仅在 VNC 画布的实际显示尺寸变化时显示比例调整遮罩。
   useEffect(() => {
-    if (!containerRef.current) return;
-    
-    // Skip initial mount
-    let initialMount = true;
-    
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas || !frameSize) {
+      return;
+    }
+
+    const readRenderedSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const pixelRatio = window.devicePixelRatio || 1;
+      return {
+        width: Math.round(rect.width * pixelRatio),
+        height: Math.round(rect.height * pixelRatio),
+      };
+    };
+    let lastRenderedSize: { width: number; height: number } | null = readRenderedSize();
+
     const resizeObserver = new ResizeObserver(() => {
-      if (initialMount) {
-        initialMount = false;
+      const nextRenderedSize = readRenderedSize();
+      if (nextRenderedSize.width <= 0 || nextRenderedSize.height <= 0) {
         return;
       }
+      if (
+        !lastRenderedSize
+        || lastRenderedSize.width <= 0
+        || lastRenderedSize.height <= 0
+      ) {
+        lastRenderedSize = nextRenderedSize;
+        return;
+      }
+      if (
+        nextRenderedSize.width === lastRenderedSize.width
+        && nextRenderedSize.height === lastRenderedSize.height
+      ) {
+        return;
+      }
+
+      lastRenderedSize = nextRenderedSize;
       setResizeMaskVisible(true);
       if (resizeTimerRef.current !== null) {
         window.clearTimeout(resizeTimerRef.current);
       }
       resizeTimerRef.current = window.setTimeout(() => {
         setResizeMaskVisible(false);
+        resizeTimerRef.current = null;
       }, 2000);
     });
 
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(container);
     return () => {
       resizeObserver.disconnect();
-      if (resizeTimerRef.current) {
+      if (resizeTimerRef.current !== null) {
         window.clearTimeout(resizeTimerRef.current);
         resizeTimerRef.current = null;
       }
+      setResizeMaskVisible(false);
     };
-  }, [containerRef]);
+  }, [canvasRef, containerRef, frameSize?.height, frameSize?.width]);
 
   const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
   const elapsedMs = () => Math.round(nowMs() - traceStartedAtRef.current);
@@ -203,10 +232,14 @@ export function VncViewClass(props: BaseSessionViewProps) {
               `t=${elapsedMs()}ms seq=${frameSeq} phase=draw encoding=${frame.encoding} full=${frame.fullFrame} region=${frame.regionWidth}x${frame.regionHeight}@${frame.regionLeft},${frame.regionTop} area_pct=${frameAreaPct(frame)} draw_ms=${drawElapsed} decode_in_flight=${decodeInFlightRef.current} pending_replaced=${pendingFrameRef.current !== frame}`,
             );
           }
-          setFrameSize({
-            width: frame.desktopWidth,
-            height: frame.desktopHeight,
-          });
+          setFrameSize((current) => (
+            current?.width === frame.desktopWidth && current?.height === frame.desktopHeight
+              ? current
+              : {
+                  width: frame.desktopWidth,
+                  height: frame.desktopHeight,
+                }
+          ));
           notifyVisualReady();
         }
       } catch (error) {

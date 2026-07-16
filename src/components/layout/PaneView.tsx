@@ -220,7 +220,7 @@ export function PaneView({ paneId }: PaneViewProps) {
           "group relative flex h-full w-full cursor-pointer items-center justify-center transition-all",
           "bg-background/50",
           paneCount > 1 && "border border-border/40",
-          paneCount > 1 && isFocused && "border-2 border-primary/50",
+          paneCount > 1 && isFocused && "border-primary/50 ring-1 ring-inset ring-primary/40",
         )}
         onClick={handlePaneClick}
       >
@@ -250,7 +250,7 @@ export function PaneView({ paneId }: PaneViewProps) {
       className={cn(
         "group relative flex h-full w-full min-h-0 flex-col overflow-hidden transition-all",
         paneCount > 1 && "border border-border/40",
-        paneCount > 1 && isFocused && "border-2 border-primary/50",
+        paneCount > 1 && isFocused && "border-primary/50 ring-1 ring-inset ring-primary/40",
       )}
       onClick={handlePaneClick}
     >

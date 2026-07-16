@@ -49,6 +49,8 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   const canvasConnector = connector && backend !== "msrdpax" ? connector as IRdpConnector : null;
 
   const resizeTimerRef = useRef<number | null>(null);
+  const resizeMaskTimerRef = useRef<number | null>(null);
+  const frameSizeRef = useRef(frameSize);
   const pendingFrameRef = useRef<RdpFramePayload | null>(null);
   const decodeInFlightRef = useRef(false);
   const drawTokenRef = useRef(0);
@@ -61,6 +63,10 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   useEffect(() => {
     notifyVisualReadyRef.current = notifyVisualReady;
   }, [notifyVisualReady]);
+
+  useEffect(() => {
+    frameSizeRef.current = frameSize;
+  }, [frameSize]);
 
   const markVisualReady = useCallback(() => {
     if (!transitionMaskVisibleRef.current) return;
@@ -268,48 +274,76 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
 
   // 自动调整大小
   useEffect(() => {
-    if (!canvasConnector || backend === "freerdp" || !containerRef.current || !frameSize || !(activeSession?.config?.rdpConfig?.autoResize ?? true)) {
+    const container = containerRef.current;
+    if (!canvasConnector || backend === "freerdp" || !container || !(activeSession?.config?.rdpConfig?.autoResize ?? true)) {
       return;
     }
 
+    let lastObservedSize: { width: number; height: number } | null = null;
     const resizeObserver = new ResizeObserver(([entry]) => {
-      const nextWidth = Math.max(200, Math.floor(entry.contentRect.width));
-      const nextHeight = Math.max(200, Math.floor(entry.contentRect.height));
-
-      if (nextWidth === frameSize.width && nextHeight === frameSize.height) {
+      const observedWidth = Math.floor(entry.contentRect.width);
+      const observedHeight = Math.floor(entry.contentRect.height);
+      if (observedWidth <= 0 || observedHeight <= 0) {
         return;
       }
 
-      if (resizeTimerRef.current) {
-        window.clearTimeout(resizeTimerRef.current);
+      if (!lastObservedSize) {
+        lastObservedSize = { width: observedWidth, height: observedHeight };
+        return;
       }
 
-      setResizeMaskVisible(true);
-      if ((resizeObserver as any)._maskTimer) {
-        window.clearTimeout((resizeObserver as any)._maskTimer);
+      if (observedWidth === lastObservedSize.width && observedHeight === lastObservedSize.height) {
+        return;
       }
-      (resizeObserver as any)._maskTimer = window.setTimeout(() => {
-        setResizeMaskVisible(false);
-      }, 2000);
+      lastObservedSize = { width: observedWidth, height: observedHeight };
 
-      resizeTimerRef.current = window.setTimeout(() => {
-        canvasConnector.resize(nextWidth, nextHeight);
-      }, 250);
-    });
-
-    resizeObserver.observe(containerRef.current);
-
-    return () => {
-      resizeObserver.disconnect();
-      if ((resizeObserver as any)._maskTimer) {
-        window.clearTimeout((resizeObserver as any)._maskTimer);
+      const currentFrameSize = frameSizeRef.current;
+      if (!currentFrameSize) {
+        return;
       }
+
+      const nextWidth = Math.max(200, observedWidth);
+      const nextHeight = Math.max(200, observedHeight);
+
       if (resizeTimerRef.current) {
         window.clearTimeout(resizeTimerRef.current);
         resizeTimerRef.current = null;
       }
+
+      setResizeMaskVisible(true);
+      if (resizeMaskTimerRef.current !== null) {
+        window.clearTimeout(resizeMaskTimerRef.current);
+      }
+      resizeMaskTimerRef.current = window.setTimeout(() => {
+        setResizeMaskVisible(false);
+        resizeMaskTimerRef.current = null;
+      }, 2000);
+
+      if (nextWidth === currentFrameSize.width && nextHeight === currentFrameSize.height) {
+        return;
+      }
+
+      resizeTimerRef.current = window.setTimeout(() => {
+        canvasConnector.resize(nextWidth, nextHeight);
+        resizeTimerRef.current = null;
+      }, 250);
+    });
+
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+      if (resizeMaskTimerRef.current !== null) {
+        window.clearTimeout(resizeMaskTimerRef.current);
+        resizeMaskTimerRef.current = null;
+      }
+      if (resizeTimerRef.current !== null) {
+        window.clearTimeout(resizeTimerRef.current);
+        resizeTimerRef.current = null;
+      }
+      setResizeMaskVisible(false);
     };
-  }, [activeSession?.config?.rdpConfig?.autoResize, backend, canvasConnector, frameSize, containerRef]);
+  }, [activeSession?.config?.rdpConfig?.autoResize, backend, canvasConnector, containerRef]);
 
   // Native RDP 渲染
   if (activeSession && nativeConnector) {

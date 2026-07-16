@@ -91,6 +91,13 @@ function sameHostRect(a: NativeHostRect | null, b: NativeHostRect): boolean {
     && a.scaleFactor === b.scaleFactor;
 }
 
+function sameHostSize(a: NativeHostRect | null, b: NativeHostRect): boolean {
+  return !!a
+    && a.width === b.width
+    && a.height === b.height
+    && a.scaleFactor === b.scaleFactor;
+}
+
 export function NativeRdpHostView({
   sessionId,
   hostLabel,
@@ -224,16 +231,33 @@ export function NativeRdpHostView({
     let resizeObserver: ResizeObserver | null = null;
     let scheduledPushTimer: ReturnType<typeof setTimeout> | null = null;
     let scheduledPushFrame: number | null = null;
+    let pendingResizeMask = false;
     setHostRectMounted(false);
 
-    const pushRect = async (initial: boolean = false) => {
+    const showResizeMask = () => {
+      setResizeMaskVisible(true);
+      if (resizeMaskTimerRef.current !== null) {
+        window.clearTimeout(resizeMaskTimerRef.current);
+      }
+      resizeMaskTimerRef.current = window.setTimeout(() => {
+        setResizeMaskVisible(false);
+        resizeMaskTimerRef.current = null;
+      }, 1200);
+    };
+
+    const pushRect = async (initial: boolean = false, showMaskOnSizeChange: boolean = false) => {
       const rect = await readHostRect(element);
       if (disposed) {
         return;
       }
 
-      if (!initial && sameHostRect(lastMountedRectRef.current, rect)) {
+      const previousRect = lastMountedRectRef.current;
+      if (!initial && sameHostRect(previousRect, rect)) {
         return;
+      }
+
+      if (!initial && showMaskOnSizeChange && !sameHostSize(previousRect, rect)) {
+        showResizeMask();
       }
 
       try {
@@ -257,24 +281,12 @@ export function NativeRdpHostView({
       }
     };
 
-    const showResizeMask = () => {
-      setResizeMaskVisible(true);
-      if (resizeMaskTimerRef.current !== null) {
-        window.clearTimeout(resizeMaskTimerRef.current);
-      }
-      resizeMaskTimerRef.current = window.setTimeout(() => {
-        setResizeMaskVisible(false);
-      }, 1200);
-    };
-
     const schedulePushRect = (delayMs: number, showMask: boolean) => {
       if (!initialMountDone || disposed) {
         return;
       }
 
-      if (showMask) {
-        showResizeMask();
-      }
+      pendingResizeMask = pendingResizeMask || showMask;
 
       if (scheduledPushTimer !== null) {
         clearTimeout(scheduledPushTimer);
@@ -289,7 +301,9 @@ export function NativeRdpHostView({
         scheduledPushTimer = null;
         scheduledPushFrame = requestAnimationFrame(() => {
           scheduledPushFrame = null;
-          void pushRect(false);
+          const showMaskOnSizeChange = pendingResizeMask;
+          pendingResizeMask = false;
+          void pushRect(false, showMaskOnSizeChange);
         });
       }, delayMs);
     };
