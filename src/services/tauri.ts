@@ -8,6 +8,8 @@ interface InvokeLogOptions {
   logSuccess?: boolean;
 }
 
+const serializedInvokeQueues = new Map<string, Promise<void>>();
+
 export async function invokeTauri<T>(
   command: string,
   args?: Record<string, unknown>,
@@ -29,6 +31,31 @@ export async function invokeTauri<T>(
     logger.error(scope, `invoke failed: ${command}`, getErrorMessage(error));
     throw error;
   }
+}
+
+export function invokeTauriSerialized<T>(
+  queueKey: string,
+  command: string,
+  args?: Record<string, unknown>,
+  options: InvokeLogOptions = {}
+): Promise<T> {
+  const previous = serializedInvokeQueues.get(queueKey) ?? Promise.resolve();
+  const result = previous
+    .catch(() => undefined)
+    .then(() => invokeTauri<T>(command, args, options));
+  const queueTail = result.then(
+    () => undefined,
+    () => undefined
+  );
+
+  serializedInvokeQueues.set(queueKey, queueTail);
+  void queueTail.then(() => {
+    if (serializedInvokeQueues.get(queueKey) === queueTail) {
+      serializedInvokeQueues.delete(queueKey);
+    }
+  });
+
+  return result;
 }
 
 export function invokeTauriBackground(

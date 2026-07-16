@@ -15,7 +15,8 @@ export type DialogType =
   | "folder" 
   | "delete" 
   | "edit" 
-  | "sftp";
+  | "sftp"
+  | "sftp-download";
 
 /**
  * 弹窗状态

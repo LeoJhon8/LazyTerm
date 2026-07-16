@@ -29,6 +29,56 @@ import type { AppColorPalette } from "@/store/settings";
 // 全局 Terminal 实例缓存，确保切换 tab 时输出历史不丢失
 const globalTerminalCache = new Map<string, TerminalInstance>();
 const globalContainerCache = new Map<string, HTMLDivElement>();
+const MAX_TERMINAL_OUTPUT_BATCH = 256 * 1024;
+
+class OrderedTerminalOutput {
+  private pending: string[] = [];
+  private writing = false;
+  private disposed = false;
+  private readonly terminal: Terminal;
+
+  constructor(terminal: Terminal) {
+    this.terminal = terminal;
+  }
+
+  write(data: string) {
+    if (this.disposed || !data) return;
+    this.pending.push(data);
+    this.drain();
+  }
+
+  dispose() {
+    this.disposed = true;
+    this.pending = [];
+  }
+
+  private takeBatch() {
+    let batch = "";
+    while (this.pending.length > 0 && batch.length < MAX_TERMINAL_OUTPUT_BATCH) {
+      const next = this.pending[0];
+      const remaining = MAX_TERMINAL_OUTPUT_BATCH - batch.length;
+      if (next.length <= remaining) {
+        batch += next;
+        this.pending.shift();
+      } else {
+        batch += next.slice(0, remaining);
+        this.pending[0] = next.slice(remaining);
+      }
+    }
+    return batch;
+  }
+
+  private drain() {
+    if (this.disposed || this.writing || this.pending.length === 0) return;
+
+    const batch = this.takeBatch();
+    this.writing = true;
+    this.terminal.write(batch, () => {
+      this.writing = false;
+      this.drain();
+    });
+  }
+}
 
 /**
  * Terminal 视图组件
@@ -37,6 +87,7 @@ const globalContainerCache = new Map<string, HTMLDivElement>();
 
 interface TerminalInstance {
   terminal: Terminal;
+  output: OrderedTerminalOutput;
   fitAddon: FitAddon;
   resizeObserver: ResizeObserver;
   connector?: ITerminalConnector;
@@ -349,7 +400,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       return await connector.onData((data) => {
         if (!isCurrentConnector) return;
         if (currentTermInstance) {
-          currentTermInstance.terminal.write(data);
+          currentTermInstance.output.write(data);
         } else {
           tempBuffer += data;
         }
@@ -376,7 +427,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         };
 
         if (tempBuffer) {
-          existingInstance.terminal.write(tempBuffer);
+          existingInstance.output.write(tempBuffer);
           tempBuffer = "";
         }
 
@@ -403,7 +454,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           existingInstance.termState.isTransitioning = false;
         }, 2000);
 
-        existingInstance.terminal.write(
+        existingInstance.output.write(
           connector.protocol === "serial"
             ? [
                 "\r\n",
@@ -430,7 +481,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
 
         if (tempBuffer) {
-          existingInstance.terminal.write(tempBuffer);
+          existingInstance.output.write(tempBuffer);
           tempBuffer = "";
         }
 
@@ -544,6 +595,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       }
 
       term.open(containerEl);
+      const output = new OrderedTerminalOutput(term);
 
       const pasteElement = term.textarea;
       const pasteHandler = (event: ClipboardEvent) => {
@@ -622,6 +674,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
       const instance: TerminalInstance = {
         terminal: term,
+        output,
         fitAddon,
         resizeObserver,
         connector,
@@ -648,6 +701,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           if (termState.resizeTimeoutId) clearTimeout(termState.resizeTimeoutId);
           if (webglAddon) webglAddon.dispose();
           if (instance.acAddon) instance.acAddon.dispose();
+          output.dispose();
           term.dispose();
         },
       };
@@ -656,7 +710,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
       currentTermInstance = instance;
       if (tempBuffer) {
-        term.write(tempBuffer);
+        output.write(tempBuffer);
         tempBuffer = "";
       }
 

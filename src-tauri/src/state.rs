@@ -21,6 +21,7 @@ pub struct AppState {
     pub native_rdp_sessions: Arc<StdMutex<HashMap<String, NativeRdpSession>>>,
     pub telnet_sessions: Arc<TokioMutex<HashMap<String, TelnetSession>>>,
     pub sftp_upload_cancellations: Arc<StdMutex<HashMap<String, bool>>>,
+    pub sftp_download_cancellations: Arc<StdMutex<HashMap<String, bool>>>,
 }
 
 impl AppState {

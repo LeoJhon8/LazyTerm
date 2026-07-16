@@ -2,7 +2,7 @@ import type { ConnectionStateEvent, ITerminalConnector, SerialConfig } from "@/t
 import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
-import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
+import { invokeTauri, invokeTauriBackground, invokeTauriSerialized } from "@/services/tauri";
 
 export class SerialConnector implements ITerminalConnector {
   public readonly protocol = 'serial' as const;
@@ -85,16 +85,19 @@ export class SerialConnector implements ITerminalConnector {
   write(data: string | Uint8Array): void {
     if (!this.sessionId) return;
     
+    const sessionId = this.sessionId;
     const dataStr = typeof data === 'string' ? data : new TextDecoder().decode(data);
     
-    invokeTauri("write_serial", {
-      sessionId: this.sessionId, 
+    invokeTauriSerialized(`serial:${sessionId}:write`, "write_serial", {
+      sessionId,
       data: dataStr 
     }, {
       scope: "FE/connector/serial/write",
     }).catch((error) => {
       logger.error("FE/connector/serial/write", "Write failed", error);
-      this.handleDisconnect();
+      if (this.sessionId === sessionId) {
+        this.handleDisconnect();
+      }
     });
   }
 

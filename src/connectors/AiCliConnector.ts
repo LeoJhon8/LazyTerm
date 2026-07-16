@@ -2,7 +2,7 @@ import type { AiCliConfig, ConnectionStateEvent, ITerminalConnector } from "@/ty
 import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
-import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
+import { invokeTauri, invokeTauriBackground, invokeTauriSerialized } from "@/services/tauri";
 import { useNotificationsStore } from "@/store/notifications";
 
 function stripAnsiSequences(value: string) {
@@ -49,8 +49,6 @@ export class AiCliConnector implements ITerminalConnector {
   private appSessionId: string | null = null;
   private readonly stateEmitter = new ConnectionStateEmitter("FE/connector/ai-cli/state");
   private dataHandler: ((data: string) => void) | null = null;
-  private lastWriteDedup: { data: string; at: number } | null = null;
-  private lastReadDedup: { data: string; at: number } | null = null;
   private promptState = {
     waitingForOutput: false,
     hasOutput: false,
@@ -136,32 +134,23 @@ export class AiCliConnector implements ITerminalConnector {
   write(data: string | Uint8Array): void {
     if (!this.sessionId) return;
 
+    const sessionId = this.sessionId;
     const dataStr = typeof data === "string" ? data : new TextDecoder().decode(data);
-    const now = performance.now();
-    if (
-      this.lastWriteDedup &&
-      this.lastWriteDedup.data === dataStr &&
-      now - this.lastWriteDedup.at < 40
-    ) {
-      logger.warn("FE/connector/ai-cli/write", "Dropped duplicate write chunk", {
-        size: dataStr.length,
-      });
-      return;
-    }
-    this.lastWriteDedup = { data: dataStr, at: now };
 
     if (dataStr.includes("\r") || dataStr.includes("\n")) {
       this.startPromptTracking();
     }
 
-    invokeTauri("write_to_terminal", {
-      sessionId: this.sessionId,
+    invokeTauriSerialized(`ai-cli:${sessionId}:write`, "write_to_terminal", {
+      sessionId,
       data: dataStr,
     }, {
       scope: "FE/connector/ai-cli/write",
     }).catch((error) => {
       logger.error("FE/connector/ai-cli/write", "Write failed", error);
-      this.handleDisconnect();
+      if (this.sessionId === sessionId) {
+        this.handleDisconnect();
+      }
     });
   }
 
@@ -252,19 +241,6 @@ export class AiCliConnector implements ITerminalConnector {
   }
 
   private handleData(data: string): void {
-    const now = performance.now();
-    if (
-      this.lastReadDedup &&
-      this.lastReadDedup.data === data &&
-      now - this.lastReadDedup.at < 40
-    ) {
-      logger.warn("FE/connector/ai-cli/data", "Dropped duplicate read chunk", {
-        size: data.length,
-      });
-      return;
-    }
-    this.lastReadDedup = { data, at: now };
-
     this.dataHandler?.(data);
 
     const state = this.promptState;

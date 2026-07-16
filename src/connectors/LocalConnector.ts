@@ -2,7 +2,7 @@ import type { ConnectionStateEvent, ITerminalConnector } from "@/types/terminal"
 import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
-import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
+import { invokeTauri, invokeTauriBackground, invokeTauriSerialized } from "@/services/tauri";
 
 export class LocalConnector implements ITerminalConnector {
   public readonly protocol = 'local' as const;
@@ -90,17 +90,20 @@ export class LocalConnector implements ITerminalConnector {
   write(data: string | Uint8Array): void {
     if (!this.sessionId) return;
     
+    const sessionId = this.sessionId;
     const dataStr = typeof data === 'string' ? data : new TextDecoder().decode(data);
     
     // 3. 将输入发送给 Rust
-    invokeTauri("write_to_terminal", {
-      sessionId: this.sessionId, 
+    invokeTauriSerialized(`local:${sessionId}:write`, "write_to_terminal", {
+      sessionId,
       data: dataStr 
     }, {
       scope: "FE/connector/local/write",
     }).catch((error) => {
       logger.error("FE/connector/local/write", "Write failed", error);
-      this.handleDisconnect();
+      if (this.sessionId === sessionId) {
+        this.handleDisconnect();
+      }
     });
   }
 

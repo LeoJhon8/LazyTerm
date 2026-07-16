@@ -227,6 +227,30 @@ impl Drop for SftpUploadCancelGuard {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpDownloadProgress {
+    pub file_name: String,
+    pub remote_path: String,
+    pub local_path: String,
+    pub file_size: u64,
+    pub file_received: u64,
+    pub overall_total: u64,
+    pub overall_received: u64,
+}
+
+pub struct SftpDownloadCancelGuard {
+    pub download_id: String,
+    pub cancellations: Arc<StdMutex<HashMap<String, bool>>>,
+}
+
+impl Drop for SftpDownloadCancelGuard {
+    fn drop(&mut self) {
+        if let Ok(mut cancellations) = self.cancellations.lock() {
+            cancellations.remove(&self.download_id);
+        }
+    }
+}
+
 // ==================== Shell 相关类型 ====================
 
 /// Shell 信息

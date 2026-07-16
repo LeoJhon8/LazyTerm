@@ -6,13 +6,71 @@ use crate::protocol::ssh_auth;
 use crate::utils::map_sftp_error;
 use crate::SftpFileEntry;
 use crate::{
-    AppState, SftpUploadCancelGuard, SftpUploadItem, SftpUploadProgress, SshConnectConfig,
+    AppState, SftpDownloadCancelGuard, SftpDownloadProgress, SftpUploadCancelGuard, SftpUploadItem,
+    SftpUploadProgress, SshConnectConfig,
 };
 use russh_sftp::client::SftpSession;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+struct DownloadFile {
+    remote_path: String,
+    relative_path: String,
+    size: u64,
+}
+
+fn join_remote_path(parent: &str, child: &str) -> String {
+    format!("{}/{}", parent.trim_end_matches('/'), child)
+}
+
+fn download_cancelled(state: &State<'_, AppState>, download_id: &str) -> bool {
+    safe_lock(&state.sftp_download_cancellations, |cancellations| {
+        cancellations.get(download_id).copied().unwrap_or(false)
+    })
+    .unwrap_or(false)
+}
+
+async fn collect_download_files(
+    sftp: &SftpSession,
+    remote_path: String,
+    relative_path: String,
+    files: &mut Vec<DownloadFile>,
+) -> Result<(), String> {
+    let metadata = sftp
+        .metadata(&remote_path)
+        .await
+        .map_err(|e| map_sftp_error("读取远程文件信息失败", &e, Some(&remote_path)))?;
+
+    if !metadata.is_dir() {
+        files.push(DownloadFile {
+            remote_path,
+            relative_path,
+            size: metadata.size.unwrap_or(0),
+        });
+        return Ok(());
+    }
+
+    let mut entries = sftp
+        .read_dir(&remote_path)
+        .await
+        .map_err(|e| map_sftp_error("读取远程目录失败", &e, Some(&remote_path)))?;
+    while let Some(entry) = entries.next() {
+        let name = entry.file_name();
+        if name == "." || name == ".." {
+            continue;
+        }
+        Box::pin(collect_download_files(
+            sftp,
+            join_remote_path(&remote_path, &name),
+            format!("{}/{}", relative_path.trim_end_matches('/'), name),
+            files,
+        ))
+        .await?;
+    }
+    Ok(())
+}
 
 /// 单文件 SFTP 上传
 #[tauri::command]
@@ -285,6 +343,150 @@ pub fn cancel_sftp_upload(state: State<'_, AppState>, upload_id: String) -> Resu
 }
 
 /// 列出远程目录
+#[tauri::command]
+pub async fn sftp_download(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: SshConnectConfig,
+    remote_paths: Vec<String>,
+    local_dir: String,
+    progress_event: String,
+    download_id: String,
+) -> Result<(), String> {
+    if remote_paths.is_empty() {
+        return Ok(());
+    }
+    safe_lock(&state.sftp_download_cancellations, |cancellations| {
+        cancellations.insert(download_id.clone(), false);
+    })
+    .map_err(|e| e.to_string())?;
+    let _cancel_guard = SftpDownloadCancelGuard {
+        download_id: download_id.clone(),
+        cancellations: Arc::clone(&state.sftp_download_cancellations),
+    };
+
+    let handle = ssh_auth::connect_and_authenticate(&config).await?;
+    let channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|e| format!("打开会话失败: {}", e))?;
+    channel
+        .request_subsystem(true, "sftp")
+        .await
+        .map_err(|e| format!("请求 SFTP 子系统失败: {}", e))?;
+    let sftp = SftpSession::new(channel.into_stream())
+        .await
+        .map_err(|e| format!("SFTP 初始化失败: {}", e))?;
+    let home_dir = sftp
+        .canonicalize(".")
+        .await
+        .unwrap_or_else(|_| "/".to_string());
+    tokio::fs::create_dir_all(&local_dir)
+        .await
+        .map_err(|e| format!("创建本地目录失败: {} (path={})", e, local_dir))?;
+
+    let mut files = Vec::new();
+    for remote_path in remote_paths {
+        let resolved = sftp_utils::resolve_remote_path(&remote_path, &home_dir);
+        let name = resolved
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| format!("无法下载远程根目录: {}", remote_path))?
+            .to_string();
+        collect_download_files(&sftp, resolved, name, &mut files).await?;
+    }
+
+    let overall_total = files.iter().map(|file| file.size).sum();
+    let mut overall_received = 0u64;
+    let mut last_progress_emit: Option<Instant> = None;
+    for item in files {
+        if download_cancelled(&state, &download_id) {
+            return Err("下载已停止".to_string());
+        }
+        let relative_local_path = item
+            .relative_path
+            .split('/')
+            .filter(|part| !part.is_empty() && *part != "." && *part != "..")
+            .fold(std::path::PathBuf::new(), |path, part| path.join(part));
+        let local_path = std::path::Path::new(&local_dir).join(relative_local_path);
+        if let Some(parent) = local_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("创建本地目录失败: {} (path={})", e, parent.display()))?;
+        }
+        let mut remote_file = sftp
+            .open(&item.remote_path)
+            .await
+            .map_err(|e| map_sftp_error("打开远程文件失败", &e, Some(&item.remote_path)))?;
+        let mut local_file = tokio::fs::File::create(&local_path)
+            .await
+            .map_err(|e| format!("创建本地文件失败: {} (path={})", e, local_path.display()))?;
+        let file_name = local_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(&item.relative_path)
+            .to_string();
+        let local_path_text = local_path.to_string_lossy().to_string();
+        let mut file_received = 0u64;
+        let mut buffer = vec![0u8; 256 * 1024];
+        loop {
+            if download_cancelled(&state, &download_id) {
+                return Err("下载已停止".to_string());
+            }
+            let read = remote_file
+                .read(&mut buffer)
+                .await
+                .map_err(|e| map_sftp_error("读取远程文件失败", &e, Some(&item.remote_path)))?;
+            if read == 0 {
+                break;
+            }
+            local_file
+                .write_all(&buffer[..read])
+                .await
+                .map_err(|e| format!("写入本地文件失败: {} (path={})", e, local_path.display()))?;
+            file_received += read as u64;
+            overall_received += read as u64;
+            let should_emit = file_received >= item.size
+                || (overall_total > 0 && overall_received >= overall_total)
+                || last_progress_emit
+                    .map(|last| last.elapsed() >= Duration::from_millis(500))
+                    .unwrap_or(true);
+            if should_emit {
+                last_progress_emit = Some(Instant::now());
+                let _ = app.emit(
+                    &progress_event,
+                    SftpDownloadProgress {
+                        file_name: file_name.clone(),
+                        remote_path: item.remote_path.clone(),
+                        local_path: local_path_text.clone(),
+                        file_size: item.size,
+                        file_received: file_received.min(item.size),
+                        overall_total,
+                        overall_received: overall_received.min(overall_total),
+                    },
+                );
+            }
+        }
+    }
+    let _ = sftp.close().await;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cancel_sftp_download(state: State<'_, AppState>, download_id: String) -> Result<(), String> {
+    safe_lock(&state.sftp_download_cancellations, |cancellations| {
+        if let Some(cancelled) = cancellations.get_mut(&download_id) {
+            *cancelled = true;
+            Ok(())
+        } else {
+            Err("下载任务不存在或已结束".to_string())
+        }
+    })
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn sftp_list_dir(
     config: SshConnectConfig,

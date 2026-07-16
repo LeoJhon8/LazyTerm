@@ -30,11 +30,11 @@ pub use utils::{
 pub use crate::types::{
     LocalTerminalSession, NativeHostRect, NativeRdpStateEventPayload, NativeRdpTraceEventPayload,
     RdpConnectConfig, RdpControlMsg, RdpKeyboardEventPayload, RdpPointerEventPayload, RdpSession,
-    SftpFileEntry, SftpUploadCancelGuard, SftpUploadItem, SftpUploadProgress, ShellInfo,
-    SshConnectConfig, SshControlMsg, SshTerminalSession, TelnetConnectConfig, TelnetSession,
-    VncClipboardPastePayload, VncConnectConfig, VncControlMsg, VncControlOutcome,
-    VncCursorEventPayload, VncKeyboardEventPayload, VncPointerEventPayload, VncSession,
-    VncTextInputPayload,
+    SftpDownloadCancelGuard, SftpDownloadProgress, SftpFileEntry, SftpUploadCancelGuard,
+    SftpUploadItem, SftpUploadProgress, ShellInfo, SshConnectConfig, SshControlMsg,
+    SshTerminalSession, TelnetConnectConfig, TelnetSession, VncClipboardPastePayload,
+    VncConnectConfig, VncControlMsg, VncControlOutcome, VncCursorEventPayload,
+    VncKeyboardEventPayload, VncPointerEventPayload, VncSession, VncTextInputPayload,
 };
 
 // --- 程序入口 ---
@@ -57,6 +57,7 @@ pub fn run() {
             native_rdp_sessions: Arc::new(StdMutex::new(HashMap::new())),
             telnet_sessions: Arc::new(TokioMutex::new(HashMap::new())),
             sftp_upload_cancellations: Arc::new(StdMutex::new(HashMap::new())),
+            sftp_download_cancellations: Arc::new(StdMutex::new(HashMap::new())),
         })
         .invoke_handler(tauri::generate_handler![
             protocol::create_terminal,
@@ -81,6 +82,8 @@ pub fn run() {
             protocol::sftp_upload_file,
             protocol::sftp_upload_files,
             protocol::cancel_sftp_upload,
+            protocol::sftp_download,
+            protocol::cancel_sftp_download,
             protocol::sftp_list_dir,
             protocol::write_to_terminal,
             protocol::write_to_ssh_session,

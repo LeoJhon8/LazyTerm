@@ -2,7 +2,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ConnectionStateEvent, ITerminalConnector, SSHConfig } from "@/types/terminal";
 import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { logger } from "@/lib/logger";
-import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
+import { invokeTauri, invokeTauriBackground, invokeTauriSerialized } from "@/services/tauri";
 
 /**
  * 估算初始 PTY 大小所需的字体配置
@@ -202,10 +202,11 @@ export class SshConnector implements ITerminalConnector {
   write(data: string | Uint8Array): void {
     if (!this.sessionId) return;
 
+    const sessionId = this.sessionId;
     const text = typeof data === "string" ? data : new TextDecoder().decode(data);
     
-    invokeTauri("write_to_ssh_session", {
-      sessionId: this.sessionId,
+    invokeTauriSerialized(`ssh:${sessionId}:write`, "write_to_ssh_session", {
+      sessionId,
       data: text,
     }, {
       scope: "FE/connector/ssh/write",

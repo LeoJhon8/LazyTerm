@@ -2,7 +2,7 @@ import type { ConnectionStateEvent, ITerminalConnector, TelnetConfig } from "@/t
 import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
-import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
+import { invokeTauri, invokeTauriBackground, invokeTauriSerialized } from "@/services/tauri";
 
 export class TelnetConnector implements ITerminalConnector {
   public readonly protocol = 'telnet' as const;
@@ -93,16 +93,19 @@ export class TelnetConnector implements ITerminalConnector {
   write(data: string | Uint8Array): void {
     if (!this.sessionId) return;
     
+    const sessionId = this.sessionId;
     const dataStr = typeof data === 'string' ? data : new TextDecoder().decode(data);
     
-    invokeTauri("write_telnet", {
-      sessionId: this.sessionId, 
+    invokeTauriSerialized(`telnet:${sessionId}:write`, "write_telnet", {
+      sessionId,
       data: dataStr 
     }, {
       scope: "FE/connector/telnet/write",
     }).catch((error) => {
       logger.error("FE/connector/telnet/write", "Write failed", error);
-      this.handleDisconnect();
+      if (this.sessionId === sessionId) {
+        this.handleDisconnect();
+      }
     });
   }
 

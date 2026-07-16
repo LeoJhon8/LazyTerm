@@ -5,7 +5,7 @@ import {
 } from "@dnd-kit/core";
 import { 
   Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, Zap,
-  Copy, Pencil, Trash2, Terminal, Upload, AppWindow, ScreenShare, Usb
+  Copy, Pencil, Trash2, Terminal, Upload, Download, AppWindow, ScreenShare, Usb
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import { VncConnectDialog } from "@/components/dialogs/VncConnectDialog";
 import { SerialConnectDialog } from "@/components/dialogs/SerialConnectDialog";
 import { TelnetConnectDialog } from "@/components/dialogs/TelnetConnectDialog";
 import { SftpUploadDialog } from "@/components/dialogs/SftpUploadDialog";
+import { SftpDownloadDialog } from "@/components/dialogs/SftpDownloadDialog";
 import { AiCliDialog } from "@/components/dialogs/AiCliDialog";
 import { NewConnectionDialog } from "@/components/dialogs/NewConnectionDialog";
 import { QuickConnectDialog } from "@/components/dialogs/QuickConnectDialog";
@@ -177,6 +178,7 @@ function DraggableDroppableRow({
       <ContextMenuTrigger>
         <div 
           ref={setDroppableRef} 
+          data-session-node-row
           onClick={(event) => {
             onSelect(node, event);
             if (node.type === 'folder' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
@@ -207,7 +209,12 @@ function DraggableDroppableRow({
         ) : node.type === 'ssh' ? (
           <>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> {t("连接会话")}</ContextMenuItem>
-            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('sftp-upload', node)}><Upload className="mr-2 h-4 w-4" /> {t("SFTP 上传文件")}</ContextMenuItem>
+            {!isBulkSelected && (
+              <>
+                <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('sftp-upload', node)}><Upload className="mr-2 h-4 w-4" /> {t("上传文件")}</ContextMenuItem>
+                <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('sftp-download', node)}><Download className="mr-2 h-4 w-4" /> {t("下载文件")}</ContextMenuItem>
+              </>
+            )}
           </>
         ) : node.type === 'rdp' ? (
           <>
@@ -361,6 +368,23 @@ export function SessionModule() {
     setSelectedNodeIds((prev) => prev.filter((id) => existingIds.has(id)));
     setSelectionAnchorId((prev) => (prev && existingIds.has(prev) ? prev : null));
   }, [nodes]);
+
+  useEffect(() => {
+    if (selectedNodeIds.length === 0) return;
+
+    const clearSelection = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("[data-session-node-row]")) return;
+      if (target.closest('[role="menu"], [role="dialog"], [data-radix-popper-content-wrapper]')) return;
+
+      setSelectedNodeIds([]);
+      setSelectionAnchorId(null);
+    };
+
+    document.addEventListener("pointerdown", clearSelection);
+    return () => document.removeEventListener("pointerdown", clearSelection);
+  }, [selectedNodeIds.length]);
 
   const isSshConfig = (config: SessionNode["config"]): config is SSHConfig => {
     return !!config && "authType" in config;
@@ -516,6 +540,7 @@ export function SessionModule() {
       else openDialog('vnc', node);
     } else if (type === 'delete') { setTargetNode(node); dialog.open('delete', node.id); }
     else if (type === 'sftp-upload' && node.type === 'ssh') { setSftpNode(node); dialog.open('sftp', node.id); }
+    else if (type === 'sftp-download' && node.type === 'ssh') { setSftpNode(node); dialog.open('sftp-download', node.id); }
   };
 
 
@@ -712,6 +737,11 @@ export function SessionModule() {
       {/* SFTP 上传弹窗 */}
       <SftpUploadDialog
         open={dialog.isOpen('sftp')}
+        onOpenChange={() => dialog.close()}
+        targetNode={sftpNode}
+      />
+      <SftpDownloadDialog
+        open={dialog.isOpen('sftp-download')}
         onOpenChange={() => dialog.close()}
         targetNode={sftpNode}
       />
