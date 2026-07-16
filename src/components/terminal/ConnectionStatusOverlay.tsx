@@ -65,7 +65,20 @@ export function ConnectionStatusOverlay({
   ];
 
   return (
-    <div className={`pointer-events-auto absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-md ${zIndexClass}`}>
+    <div
+      className={`pointer-events-auto absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-md ${zIndexClass}`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerUp={(event) => event.stopPropagation()}
+      onPointerCancel={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onMouseUp={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.stopPropagation()}
+      onWheel={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+      onKeyUp={(event) => event.stopPropagation()}
+    >
       <div className="flex w-[460px] max-w-[calc(100%_-_2rem)] flex-col overflow-hidden rounded-2xl border border-border/50 bg-background/80 shadow-2xl backdrop-blur-3xl">
         <div className="flex items-center justify-between border-b border-border/50 bg-muted/40 px-6 py-4">
           <div className="flex items-center gap-3">

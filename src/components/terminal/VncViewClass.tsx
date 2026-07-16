@@ -26,6 +26,17 @@ const VNC_STARTUP_TRACE_WINDOW_MS = 15_000;
 const VNC_POINTER_MOVE_LOG_INTERVAL_MS = 250;
 const VNC_SLOW_DRAW_LOG_THRESHOLD_MS = 20;
 const VNC_ENABLE_DIAGNOSTIC_LOGS = false;
+const VNC_KEYSTROKE_PASTE_MAX_LENGTH = 4096;
+
+function normalizeVncPasteText(text: string) {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function canPasteVncTextAsKeystrokes(text: string) {
+  return text.length > 0
+    && text.length <= VNC_KEYSTROKE_PASTE_MAX_LENGTH
+    && /^[\t\n\x20-\x7e]*$/.test(text);
+}
 
 export function VncViewClass(props: BaseSessionViewProps) {
   const { t } = useI18n();
@@ -377,6 +388,19 @@ export function VncViewClass(props: BaseSessionViewProps) {
     emitPointer(event.clientX, event.clientY, 0, "cancel");
   };
 
+  const pasteLocalText = (text: string, keySym: number, modifierKeySyms: number[]) => {
+    const normalizedText = normalizeVncPasteText(text);
+    if (!normalizedText) {
+      return Promise.resolve();
+    }
+
+    if (canPasteVncTextAsKeystrokes(normalizedText)) {
+      return connector.typeText(normalizedText, modifierKeySyms);
+    }
+
+    return connector.pasteClipboard(text, keySym, modifierKeySyms);
+  };
+
   const handleKey = (event: React.KeyboardEvent<HTMLDivElement>, down: boolean) => {
     if (viewOnly) {
       return;
@@ -404,7 +428,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
       if (event.shiftKey) modifierKeySyms.push(0xffe1);
 
       readText()
-        .then((text) => connector.pasteClipboard(text, keySym, modifierKeySyms))
+        .then((text) => pasteLocalText(text, keySym, modifierKeySyms))
         .catch((error) => {
           logger.error("FE/terminal-view/vnc/clipboard", "Paste local clipboard failed", { error });
         });
@@ -432,7 +456,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
     }
 
     event.preventDefault();
-    void connector.pasteClipboard(text, 0x76, [0xffe3]).catch((error) => {
+    void pasteLocalText(text, 0x76, [0xffe3]).catch((error) => {
       logger.error("FE/terminal-view/vnc/clipboard", "Paste local clipboard failed", { error });
     });
   };

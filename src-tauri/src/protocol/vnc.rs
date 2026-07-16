@@ -7,7 +7,7 @@ use super::vnc_core::{convert_config, run_vnc_session};
 use crate::utils::{log_vnc_error, log_vnc_info, vnc_target_label};
 use crate::{
     AppState, VncClipboardPastePayload, VncConnectConfig, VncControlMsg, VncKeyboardEventPayload,
-    VncPointerEventPayload, VncSession,
+    VncPointerEventPayload, VncSession, VncTextInputPayload,
 };
 
 use std::sync::Arc;
@@ -152,7 +152,26 @@ pub fn paste_vnc_clipboard(
     }
 }
 
-/// 请求 VNC 刷新
+/// Types text as VNC key events.
+#[tauri::command]
+pub fn type_vnc_text(
+    state: State<'_, AppState>,
+    session_id: String,
+    payload: VncTextInputPayload,
+) -> Result<(), String> {
+    let sessions = state.vnc_sessions.lock().unwrap();
+    if let Some(session) = sessions.get(&session_id) {
+        session
+            .control_tx
+            .send(VncControlMsg::TypeText(payload))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("VNC session does not exist".to_string())
+    }
+}
+
+/// Requests a VNC refresh.
 #[tauri::command]
 pub fn request_vnc_refresh(
     state: State<'_, AppState>,

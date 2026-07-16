@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, type MouseEvent } from "react";
 import { 
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, 
   useDraggable, useDroppable
@@ -78,9 +78,9 @@ function getDropPosition(
 }
 
 function NodeRowContent({ 
-  node, depth, isDragging, isOver, dropPos, isOverlay, isUploading 
+  node, depth, isDragging, isOver, dropPos, isOverlay, isUploading, isSelected
 }: { 
-  node: SessionNode, depth: number, isDragging?: boolean, isOver?: boolean, dropPos?: DropPosition | null, isOverlay?: boolean, isUploading?: boolean 
+  node: SessionNode, depth: number, isDragging?: boolean, isOver?: boolean, dropPos?: DropPosition | null, isOverlay?: boolean, isUploading?: boolean, isSelected?: boolean
 }) {
   const isFolder = node.type === "folder";
   return (
@@ -89,6 +89,7 @@ function NodeRowContent({
       className={cn(
         "flex items-center gap-2 py-2 px-2 rounded-lg text-sm transition-all relative border-y border-transparent",
         !isOverlay && "group hover:bg-accent/50",
+        isSelected && !isOverlay && "bg-accent text-accent-foreground ring-1 ring-accent-foreground/15",
         isOverlay && "bg-background border shadow-xl opacity-90 w-60 z-50 pointer-events-none",
         isUploading && !isOverlay && "border-slate-300/80 bg-amber-100/80 text-amber-950 ring-1 ring-amber-300/80 dark:border-cyan-400/40 dark:bg-cyan-500/16 dark:text-cyan-50 dark:ring-cyan-400/45",
         
@@ -129,6 +130,7 @@ function NodeRowContent({
           className={cn(
             "truncate flex-1 select-none",
             node.isRoot ? "font-semibold text-foreground" : "font-medium text-muted-foreground group-hover:text-foreground",
+            isSelected && !node.isRoot && "text-accent-foreground",
             isUploading && "text-amber-950 dark:text-cyan-50"
           )}
         >
@@ -143,14 +145,20 @@ function DraggableDroppableRow({
   node,
   depth,
   onAction,
+  onSelect,
   overId,
   dropPos,
+  isSelected,
+  isBulkSelected,
 }: {
   node: SessionNode;
   depth: number;
   onAction: (type: string, node: SessionNode) => void;
+  onSelect: (node: SessionNode, event: MouseEvent<HTMLDivElement>) => void;
   overId: string | null;
   dropPos: DropPosition | null;
+  isSelected: boolean;
+  isBulkSelected: boolean;
 }) {
   const { t } = useI18n();
   const { toggleFolder } = useSshProfilesStore();
@@ -169,7 +177,13 @@ function DraggableDroppableRow({
       <ContextMenuTrigger>
         <div 
           ref={setDroppableRef} 
-          onClick={() => node.type === 'folder' && toggleFolder(node.id)}
+          onClick={(event) => {
+            onSelect(node, event);
+            if (node.type === 'folder' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+              toggleFolder(node.id);
+            }
+          }}
+          onContextMenu={(event) => onSelect(node, event)}
           onDoubleClick={() => node.type !== 'folder' && onAction('connect', node)}
         >
           <div ref={setDraggableRef} {...attributes} {...listeners} className={cn(isDragging && "opacity-20")}>
@@ -179,6 +193,7 @@ function DraggableDroppableRow({
               isDragging={isDragging} 
               isOver={isOver && overId === node.id} 
               dropPos={overId === node.id ? dropPos : null} 
+              isSelected={isSelected}
             />
           </div>
         </div>
@@ -216,12 +231,12 @@ function DraggableDroppableRow({
           </>
         )}
         <ContextMenuSeparator />
-        {node.type !== 'folder' && (
+        {!isBulkSelected && node.type !== 'folder' && (
           <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('duplicate', node)}>
             <Copy className="mr-2 h-4 w-4" /> {t("复制")}
           </ContextMenuItem>
         )}
-        <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" /> {t("编辑")}</ContextMenuItem>
+        {!isBulkSelected && <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('edit', node)}><Pencil className="mr-2 h-4 w-4" /> {t("编辑")}</ContextMenuItem>}
         {!node.isRoot && <ContextMenuItem onClick={() => onAction('delete', node)} className="py-1 text-xs text-destructive"><Trash2 className="mr-2 h-4 w-4" /> {t("删除")}</ContextMenuItem>}
       </ContextMenuContent>
     </ContextMenu>
@@ -289,6 +304,8 @@ export function SessionModule() {
   const [tempName, setTempName] = useState("");
   const [targetNode, setTargetNode] = useState<SessionNode | null>(null);
   const [editNode, setEditNode] = useState<SessionNode | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
 
   const saveRemoteProfile = async (
     type: "ssh" | "rdp" | "vnc",
@@ -318,11 +335,32 @@ export function SessionModule() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
+  const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+  const deleteTargetNodes = useMemo(() => {
+    const targetIds = targetNode && selectedNodeIdSet.has(targetNode.id)
+      ? selectedNodeIds
+      : targetNode
+        ? [targetNode.id]
+        : [];
+    const targetIdSet = new Set(targetIds);
+    return nodes.filter((node) => targetIdSet.has(node.id) && !node.isRoot);
+  }, [nodes, selectedNodeIds, selectedNodeIdSet, targetNode]);
+  const deleteTargetName = deleteTargetNodes.length === 1
+    ? deleteTargetNodes[0].name
+    : locale === "zh-CN"
+      ? `${deleteTargetNodes.length} 个项目`
+      : `${deleteTargetNodes.length} selected items`;
 
   const activeDragNode = useMemo(
     () => (dragState.activeId ? nodes.find((node) => node.id === dragState.activeId) ?? null : null),
     [dragState.activeId, nodes]
   );
+
+  useEffect(() => {
+    const existingIds = new Set(nodes.map((node) => node.id));
+    setSelectedNodeIds((prev) => prev.filter((id) => existingIds.has(id)));
+    setSelectionAnchorId((prev) => (prev && existingIds.has(prev) ? prev : null));
+  }, [nodes]);
 
   const isSshConfig = (config: SessionNode["config"]): config is SSHConfig => {
     return !!config && "authType" in config;
@@ -367,25 +405,93 @@ export function SessionModule() {
     dialog.open(type, node?.id ?? null, node?.type === 'folder' ? node.name : "");
   };
 
-  const handleAction = (type: string, node: SessionNode) => {
-    if (type === 'connect' && node.config) {
-      if (node.type === "ssh" && isSshConfig(node.config)) {
-        launchWorkspaceWithSession({ title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } });
-      } else if (node.type === "rdp" && isRdpConfig(node.config)) {
-        const backend = resolveRdpBackend(useSettingsStore.getState().rdpBackend);
-        const rdpConfig = backend === "msrdpax"
-          ? { ...node.config, backend, width: undefined, height: undefined, autoResize: true }
-          : { ...node.config, backend, autoResize: false };
-        launchWorkspaceWithSession({ title: node.name, type: "rdp", host: rdpConfig.host, config: { host: rdpConfig.host, port: rdpConfig.port, rdpConfig } });
-      } else if (node.type === "vnc" && isVncConfig(node.config)) {
-        launchWorkspaceWithSession({ title: node.name, type: "vnc", host: node.config.host, config: { host: node.config.host, port: node.config.port, vncConfig: node.config } });
-      } else if (node.type === "serial" && isSerialConfig(node.config)) {
-        launchWorkspaceWithSession({ title: node.name, type: "serial", host: node.config.port, config: { serialConfig: node.config } });
-      } else if (node.type === "telnet" && isTelnetConfig(node.config)) {
-        launchWorkspaceWithSession({ title: node.name, type: "telnet", host: node.config.host, config: { telnetConfig: node.config } });
-      } else if (node.type === "ai-cli" && node.config) {
-        launchWorkspaceWithSession({ title: node.name, type: "ai-cli", config: { aiCliConfig: node.config as AiCliConfig } });
+  const handleSelectNode = (node: SessionNode, event: MouseEvent<HTMLDivElement>) => {
+    if (node.isRoot) {
+      setSelectedNodeIds([]);
+      setSelectionAnchorId(null);
+      return;
+    }
+
+    if (event.shiftKey && selectionAnchorId) {
+      const visibleSelectableIds = sortedNodes
+        .filter((candidate) => !candidate.isRoot)
+        .map((candidate) => candidate.id);
+      const anchorIndex = visibleSelectableIds.indexOf(selectionAnchorId);
+      const nodeIndex = visibleSelectableIds.indexOf(node.id);
+
+      if (anchorIndex !== -1 && nodeIndex !== -1) {
+        const start = Math.min(anchorIndex, nodeIndex);
+        const end = Math.max(anchorIndex, nodeIndex);
+        setSelectedNodeIds(visibleSelectableIds.slice(start, end + 1));
+        return;
       }
+    }
+
+    if (event.ctrlKey || event.metaKey) {
+      setSelectedNodeIds((prev) => {
+        if (prev.includes(node.id)) {
+          return prev.filter((id) => id !== node.id);
+        }
+        return [...prev, node.id];
+      });
+      setSelectionAnchorId(node.id);
+      return;
+    }
+
+    if (event.type === "contextmenu" && selectedNodeIdSet.has(node.id)) {
+      return;
+    }
+
+    setSelectedNodeIds([node.id]);
+    setSelectionAnchorId(node.id);
+  };
+
+  const getSessionDataForNode = (node: SessionNode): Parameters<typeof addSession>[0] | null => {
+    if (!node.config) {
+      return null;
+    }
+
+    if (node.type === "ssh" && isSshConfig(node.config)) {
+      return { title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } };
+    }
+
+    if (node.type === "rdp" && isRdpConfig(node.config)) {
+      const backend = resolveRdpBackend(useSettingsStore.getState().rdpBackend);
+      const rdpConfig = backend === "msrdpax"
+        ? { ...node.config, backend, width: undefined, height: undefined, autoResize: true }
+        : { ...node.config, backend, autoResize: false };
+      return { title: node.name, type: "rdp", host: rdpConfig.host, config: { host: rdpConfig.host, port: rdpConfig.port, rdpConfig } };
+    }
+
+    if (node.type === "vnc" && isVncConfig(node.config)) {
+      return { title: node.name, type: "vnc", host: node.config.host, config: { host: node.config.host, port: node.config.port, vncConfig: node.config } };
+    }
+
+    if (node.type === "serial" && isSerialConfig(node.config)) {
+      return { title: node.name, type: "serial", host: node.config.port, config: { serialConfig: node.config } };
+    }
+
+    if (node.type === "telnet" && isTelnetConfig(node.config)) {
+      return { title: node.name, type: "telnet", host: node.config.host, config: { telnetConfig: node.config } };
+    }
+
+    if (node.type === "ai-cli" && node.config) {
+      return { title: node.name, type: "ai-cli", config: { aiCliConfig: node.config as AiCliConfig } };
+    }
+
+    return null;
+  };
+
+  const handleAction = (type: string, node: SessionNode) => {
+    if (type === 'connect') {
+      const targetNodes = selectedNodeIds.length > 1 && selectedNodeIdSet.has(node.id)
+        ? sortedNodes.filter((candidate) => selectedNodeIdSet.has(candidate.id))
+        : [node];
+
+      targetNodes
+        .map(getSessionDataForNode)
+        .filter((sessionData): sessionData is Parameters<typeof addSession>[0] => sessionData !== null)
+        .forEach(launchWorkspaceWithSession);
     } else if (type === 'duplicate' && node.type !== 'folder') {
       const siblingNames = new Set(
         nodes.filter((candidate) => candidate.parentId === node.parentId).map((candidate) => candidate.name)
@@ -473,8 +579,11 @@ export function SessionModule() {
                 node={fn}
                 depth={fn.depth}
                 onAction={handleAction}
+                onSelect={handleSelectNode}
                 overId={dragState.overId}
                 dropPos={dragState.dropPos}
+                isSelected={selectedNodeIdSet.has(fn.id)}
+                isBulkSelected={selectedNodeIds.length > 1 && selectedNodeIdSet.has(fn.id)}
               />
             ))}
           </div>
@@ -611,13 +720,15 @@ export function SessionModule() {
       <AlertDialog open={dialog.isOpen('delete')} onOpenChange={() => dialog.close()}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("确认删除 “{name}”？", { name: targetNode?.name ?? "" })}</AlertDialogTitle>
+            <AlertDialogTitle>{t("确认删除 “{name}”？", { name: deleteTargetName })}</AlertDialogTitle>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => dialog.close()}>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive" onClick={() => { 
-              if (targetNode) {
-                removeNode(targetNode.id);
+              if (deleteTargetNodes.length > 0) {
+                deleteTargetNodes.forEach((node) => removeNode(node.id));
+                setSelectedNodeIds([]);
+                setSelectionAnchorId(null);
               }
               dialog.close(); 
             }}>

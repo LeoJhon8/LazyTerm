@@ -165,6 +165,7 @@ export interface IVncConnector extends ISessionConnector {
   sendPointer(payload: VncPointerPayload): void;
   sendKey(payload: VncKeyboardPayload): void;
   pasteClipboard(text: string, keySym: number, modifierKeySyms: number[]): Promise<void>;
+  typeText(text: string, modifierKeySyms: number[]): Promise<void>;
   requestFrame(full?: boolean): void;
   getFrameSize(): { width: number; height: number } | null;
 }

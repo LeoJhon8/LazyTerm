@@ -433,6 +433,30 @@ impl<R: Runtime> VncSessionRuntime<R> {
                 self.schedule_refresh(false, refresh_timer);
                 true
             }
+            VncControlMsg::TypeText(payload) => {
+                if self.view_only {
+                    return true;
+                }
+
+                let client = Arc::clone(&self.client);
+                let session_id = self.session_id.clone();
+                let target = self.target.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = client
+                        .type_text(payload.text, payload.modifier_key_syms)
+                        .await
+                    {
+                        log::warn!(
+                            "VNC text input failed for {} ({}): {}",
+                            session_id,
+                            target,
+                            error
+                        );
+                    }
+                });
+                self.schedule_refresh(false, refresh_timer);
+                true
+            }
             VncControlMsg::Refresh => {
                 if !self.has_received_frame && self.startup_full_refresh_in_flight {
                     return true;

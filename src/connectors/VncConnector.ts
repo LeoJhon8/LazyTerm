@@ -104,6 +104,18 @@ export class VncConnector
     );
   }
 
+  async typeText(text: string, modifierKeySyms: number[]): Promise<void> {
+    const sessionId = await this.waitForSessionId();
+    await invokeTauri(
+      "type_vnc_text",
+      {
+        sessionId,
+        payload: { text, modifierKeySyms },
+      },
+      { scope: "FE/connector/vnc/type-text" },
+    );
+  }
+
   requestFrame(full = false): void {
     if (!this.sessionId) {
       return;

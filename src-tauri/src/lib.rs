@@ -34,6 +34,7 @@ pub use crate::types::{
     SshConnectConfig, SshControlMsg, SshTerminalSession, TelnetConnectConfig, TelnetSession,
     VncClipboardPastePayload, VncConnectConfig, VncControlMsg, VncControlOutcome,
     VncCursorEventPayload, VncKeyboardEventPayload, VncPointerEventPayload, VncSession,
+    VncTextInputPayload,
 };
 
 // --- 程序入口 ---
@@ -88,6 +89,7 @@ pub fn run() {
             protocol::send_vnc_pointer,
             protocol::send_vnc_key,
             protocol::paste_vnc_clipboard,
+            protocol::type_vnc_text,
             protocol::request_vnc_refresh,
             protocol::release_rdp_inputs,
             protocol::resize_terminal,

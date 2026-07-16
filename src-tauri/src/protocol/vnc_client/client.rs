@@ -8,7 +8,7 @@ use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::task;
 
 use super::super::vnc_ffi as ffi;
@@ -475,6 +475,7 @@ impl VncClient {
         modifier_key_syms: Vec<u32>,
     ) -> VncResult<()> {
         const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024;
+        const CLIPBOARD_SYNC_DELAY: Duration = Duration::from_millis(80);
 
         let inner = self.inner.clone();
 
@@ -506,6 +507,8 @@ impl VncClient {
                             "Failed to send clipboard text".to_string(),
                         ));
                     }
+
+                    std::thread::sleep(CLIPBOARD_SYNC_DELAY);
 
                     for modifier in &modifier_key_syms {
                         if ffi::SendKeyEvent(client, *modifier, 1) == 0 {
@@ -541,7 +544,77 @@ impl VncClient {
         .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
     }
 
-    /// 请求帧缓冲区更新
+    /// Types text as VNC key events for consoles without clipboard support.
+    pub async fn type_text(
+        &self,
+        text: String,
+        modifier_key_syms: Vec<u32>,
+    ) -> VncResult<()> {
+        const MAX_TEXT_BYTES: usize = 16 * 1024;
+        const MODIFIER_RELEASE_DELAY: Duration = Duration::from_millis(10);
+        const KEY_DELAY: Duration = Duration::from_millis(5);
+
+        let inner = self.inner.clone();
+
+        task::spawn_blocking(move || {
+            if text.len() > MAX_TEXT_BYTES {
+                return Err(VncError::ProtocolError(format!(
+                    "Text input exceeds {} byte limit",
+                    MAX_TEXT_BYTES
+                )));
+            }
+
+            let key_syms = text
+                .chars()
+                .map(|ch| match ch {
+                    '\n' | '\r' => Ok(0xff0d),
+                    '\t' => Ok(0xff09),
+                    ' '..='~' => Ok(ch as u32),
+                    _ => Err(VncError::ProtocolError(
+                        "Text input contains unsupported characters".to_string(),
+                    )),
+                })
+                .collect::<VncResult<Vec<_>>>()?;
+
+            let _io_guard = inner.io_lock.lock();
+            let client_ptr = *inner.raw_client.lock();
+
+            if let Some(ptr) = client_ptr {
+                unsafe {
+                    let client = ptr as *mut ffi::RfbClient;
+                    for modifier in modifier_key_syms.iter().rev() {
+                        if ffi::SendKeyEvent(client, *modifier, 0) == 0 {
+                            return Err(VncError::NetworkError(
+                                "Failed to release text input modifier key".to_string(),
+                            ));
+                        }
+                    }
+                    if !modifier_key_syms.is_empty() {
+                        std::thread::sleep(MODIFIER_RELEASE_DELAY);
+                    }
+
+                    for key_sym in key_syms {
+                        if ffi::SendKeyEvent(client, key_sym, 1) == 0
+                            || ffi::SendKeyEvent(client, key_sym, 0) == 0
+                        {
+                            return Err(VncError::NetworkError(
+                                "Failed to send typed text key event".to_string(),
+                            ));
+                        }
+                        std::thread::sleep(KEY_DELAY);
+                    }
+
+                    Ok(())
+                }
+            } else {
+                Err(VncError::SessionClosed)
+            }
+        })
+        .await
+        .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
+    }
+
+    /// Requests a framebuffer update.
     pub async fn request_update(
         &self,
         x: u16,

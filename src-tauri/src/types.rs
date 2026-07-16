@@ -130,11 +130,20 @@ pub struct VncClipboardPastePayload {
     pub modifier_key_syms: Vec<u32>,
 }
 
+/// VNC 文本按键输入载荷
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VncTextInputPayload {
+    pub text: String,
+    pub modifier_key_syms: Vec<u32>,
+}
+
 /// VNC 控制消息
 pub enum VncControlMsg {
     Pointer(VncPointerEventPayload),
     Key(VncKeyboardEventPayload),
     PasteClipboard(VncClipboardPastePayload),
+    TypeText(VncTextInputPayload),
     Refresh,
     Close,
 }
