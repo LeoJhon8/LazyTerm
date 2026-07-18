@@ -18,7 +18,7 @@ export type SplitDirection = "horizontal" | "vertical";
 export interface PaneLeaf {
   type: "leaf";
   id: string;
-  sessionId: string | null;
+  sessionId: string;
 }
 
 /** 分裂节点 — 包含两个子节点 */
@@ -63,7 +63,7 @@ export function generateSplitId(): string {
 // ========== 创建工具 ==========
 
 /** 创建叶子节点 */
-export function createLeaf(sessionId: string | null = null): PaneLeaf {
+export function createLeaf(sessionId: string): PaneLeaf {
   return {
     type: "leaf",
     id: generatePaneId(),
@@ -174,7 +174,7 @@ export function splitLeaf(
   root: PaneNode | null,
   leafId: string,
   direction: SplitDirection,
-  newSessionId: string | null = null,
+  newSessionId: string,
   dropZone: DropZone = "right"
 ): { root: PaneNode | null; newLeafId: string | null } {
   if (!root) {
@@ -304,7 +304,7 @@ function removeLeafFromSplit(split: PaneSplit, leafId: string): PaneNode | null 
 export function setLeafSession(
   root: PaneNode | null,
   leafId: string,
-  sessionId: string | null
+  sessionId: string
 ): PaneNode | null {
   if (!root) return null;
 

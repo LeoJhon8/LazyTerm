@@ -166,7 +166,7 @@ export function HistoryModule() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("清空所有历史")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("确定要清空所有历史命令吗？此操作不可恢复！")}
+              {t("清空所有历史命令？此操作不可恢复。")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

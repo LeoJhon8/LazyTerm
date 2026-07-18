@@ -57,7 +57,7 @@ export function ConnectionStatusOverlay({
 
   const title = status.phase === "failed" ? t("连接失败") : t("连接断开");
   const fallbackDescription = status.phase === "failed"
-    ? t("无法建立连接，请检查目标主机、凭据或网络设置。")
+      ? t("连接失败，请检查主机、凭据或网络。")
     : t("与远程主机的连接已终止。");
   const diagnosticDetails = [
     { label: t("目标地址"), value: target },

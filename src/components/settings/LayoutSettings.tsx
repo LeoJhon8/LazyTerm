@@ -165,7 +165,7 @@ export function LayoutSettings() {
             })}
           </div>
           <p className="text-xs text-muted-foreground px-3 mt-1">
-            {t("每个模块只能分配到左侧或右侧，无模块的侧栏将自动收起。")}
+            {t("模块仅可分配到一侧；空侧栏自动收起。")}
           </p>
         </div>
 
@@ -179,7 +179,7 @@ export function LayoutSettings() {
               <div className="flex-1 min-w-0 mr-4">
                 <Label className="text-sm font-medium">{t("快捷命令栏")}</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {t("在终端底部显示快捷命令，可快速执行常用命令")}
+                  {t("在终端底部显示常用命令")}
                 </p>
               </div>
               <Switch
@@ -193,7 +193,7 @@ export function LayoutSettings() {
               <div className="flex-1 min-w-0 mr-4">
                 <Label className="text-sm font-medium">{t("快捷命令显示模式")}</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {t("单行保持紧凑，多行面板可同时展示更多命令。")}
+                  {t("单行更紧凑，多行显示更多命令。")}
                 </p>
               </div>
               <Select
@@ -248,7 +248,7 @@ export function LayoutSettings() {
               <div className="flex-1 min-w-0 mr-4">
                 <Label className="text-sm font-medium">{t("恢复默认布局")}</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {t("如果您对当前的布局不满意，可以一键将左右侧栏的所有面板及状态恢复至初始默认设置。")}
+                  {t("将侧栏模块和状态恢复为默认设置。")}
                 </p>
               </div>
               <Button

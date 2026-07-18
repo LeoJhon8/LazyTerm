@@ -16,7 +16,6 @@ import {
   VIEW_CONTAINER_CLASSNAME,
 } from "./BaseSessionView";
 import { ConnectionStatusOverlay } from "./ConnectionStatusOverlay";
-import { Terminal as TerminalIcon } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
 import { normalizePasteTextForConnector } from "@/lib/terminal-paste";
@@ -82,7 +81,6 @@ class OrderedTerminalOutput {
 
 /**
  * Terminal 视图组件
- * 继承 BaseSessionView 的模板方法模式
  */
 
 interface TerminalInstance {
@@ -246,10 +244,6 @@ function isTerminalConnector(connector: SessionConnector | undefined): connector
   return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
 }
 
-/**
- * TerminalView 组件
- * 实现 BaseSessionView 定义的 renderContent 抽象方法
- */
 export function TerminalViewClass(props: BaseSessionViewProps) {
   const { t } = useI18n();
   const { paneId, sessionId } = props;
@@ -467,7 +461,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
               ].join("")
             : [
                 "\r\n",
-                `\x1b[33m${t("SSH 连接已断开，已降级到本地终端。")}\x1b[0m`,
+                `\x1b[33m${t("SSH 已断开，已切换到本地终端。")}\x1b[0m`,
                 `\r\n\x1b[90m${t("之前的 SSH 输出已保留。")}\x1b[0m`,
                 "\r\n\r\n",
               ].join("")
@@ -929,19 +923,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   );
   const xtermTheme = toXtermTheme(currentTheme, terminalOpacity);
 
-  // 空状态渲染
   if (!activeSession) {
-    return (
-      <div className="terminal-empty-state h-full w-full flex items-center justify-center">
-        <div className="flex max-w-md flex-col items-center gap-4 rounded-3xl border border-white/10 bg-white/6 px-8 py-10 text-center text-white/80">
-          <TerminalIcon className="h-10 w-10 text-emerald-300" />
-          <div>
-            <div className="text-lg font-semibold text-white">{t("今天，你想连接什么？")}</div>
-            <div className="mt-2 text-sm leading-6 text-white/60">{t("轻松、快速建立ssh连接，windows远程桌面，VNC连接，本地终端。")}</div>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const connectionProtocol = activeSession.type === "ai-cli"
@@ -1000,10 +983,17 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
               }
               // 更新缓存的容器引用
               containerMap.current.set(sessionId, el);
-              // 触发尺寸调整
+              // 分屏结构变化会重建容器，尺寸监听必须跟随终端迁移到新容器。
+              cachedInstance.resizeObserver.disconnect();
+              cachedInstance.resizeObserver.observe(el);
+              // 同步 xterm 与远端 PTY 的行列数，避免两端宽度不一致导致长命令覆盖。
               requestAnimationFrame(() => {
                 try {
-                  cachedInstance.fitAddon.fit();
+                  syncTerminalDimensions(
+                    cachedInstance.terminal,
+                    cachedInstance.fitAddon,
+                    cachedInstance.connector
+                  );
                 } catch (e) {
                   logger.warn("FE/terminal-view/refit", "Terminal refit failed after container move", { e });
                 }

@@ -12,13 +12,7 @@ export function BottomSlot() {
   const Component = MODULE_COMPONENTS[module];
 
   if (!Component) {
-    return (
-      <div className="module-empty">
-        <div className="module-empty-card">
-          <p className="text-sm font-medium text-foreground">底部区域未配置模块</p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (

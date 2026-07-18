@@ -22,7 +22,6 @@ import { useI18n } from "@/i18n";
 
 /**
  * RemoteDesktopView 组件
- * 继承 BaseGraphicSessionView 的图形化视图抽象子类
  */
 export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   const { t } = useI18n();

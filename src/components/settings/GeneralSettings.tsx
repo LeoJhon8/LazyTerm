@@ -64,7 +64,7 @@ export function GeneralSettings() {
             <div className="flex items-center justify-between px-4 py-2.5">
               <div className="flex flex-col gap-0.5">
                 <Label className="text-sm">{t("RDP 连接方案")}</Label>
-                {!isWindows && <span className="text-xs text-muted-foreground">{t("非 Windows 平台固定使用 FreeRDP")}</span>}
+                {!isWindows && <span className="text-xs text-muted-foreground">{t("非 Windows 平台使用 FreeRDP")}</span>}
               </div>
               <Select
                 value={resolvedRdpBackend}

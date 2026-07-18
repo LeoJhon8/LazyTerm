@@ -114,8 +114,8 @@ const defaultSettings: SettingsData = {
   defaultShell: "powershell.exe",
   confirmCloseNonDefaultTabs: false,
   rdpBackend: "freerdp",
-  terminalAutocomplete: true,
-  autocompleteSource: ['history', 'quick'],  // 默认从所有数据源进行自动补全
+  terminalAutocomplete: false,
+  autocompleteSource: [],  // 默认不启用任何自动补全数据源
   // 外观自定义默认值
   appBackgroundColor: "system",
   appColorPalette: DEFAULT_APP_COLOR_PALETTE,

@@ -54,7 +54,7 @@ export function DataSettings() {
       });
       if (!filePath) return;
       await writeTextFile(filePath, jsonString);
-      setImportMessage(t("备份成功！文件已保存至：{path}", { path: filePath }));
+      setImportMessage(t("备份已保存至：{path}", { path: filePath }));
       setMessageType("success");
     } catch (error: unknown) {
       logger.error("FE/settings/data", "Failed to export backup", { error });
@@ -99,9 +99,9 @@ export function DataSettings() {
     if (useGitSyncStore.getState().gitRepoPath) {
       try {
         const synced = await syncToGitDir();
-        setImportMessage(t("成功恢复 {count} 条配置数据！已同步 {synced} 个文件到 git 目录", { count: importedCount, synced }));
+        setImportMessage(t("已恢复 {count} 条配置，并同步 {synced} 个文件。", { count: importedCount, synced }));
       } catch {
-        setImportMessage(t("成功恢复 {count} 条配置数据！但同步到 git 目录失败", { count: importedCount }));
+        setImportMessage(t("已恢复 {count} 条配置，但 Git 同步失败。", { count: importedCount }));
       }
     } else {
       setImportMessage(t("成功恢复 {count} 条配置数据！", { count: importedCount }));
@@ -162,7 +162,7 @@ export function DataSettings() {
       const selected = await openDialog({ title: t("选择本地 Git 仓库文件夹"), directory: true, multiple: false });
       if (selected && typeof selected === "string") {
         const isRepo = await checkGitRepo(selected);
-        if (!isRepo) { setImportMessage(t("该文件夹不是一个有效的 Git 仓库，请先初始化")); setMessageType("error"); }
+        if (!isRepo) { setImportMessage(t("该目录不是 Git 仓库，请先初始化")); setMessageType("error"); }
         else { setImportMessage(t("成功设置 Git 同步目录")); setMessageType("success"); }
         setGitRepoPath(selected);
       }
@@ -190,7 +190,7 @@ export function DataSettings() {
       const syncedCount = await syncFromGitDir();
       
       setLastSyncTime(Date.now());
-      setImportMessage(t("同步拉取成功！已更新 {count} 项本地配置，正在刷新页面...", { count: syncedCount }));
+      setImportMessage(t("已更新 {count} 项配置，即将刷新。", { count: syncedCount }));
       setMessageType("success");
       
       // 自动刷新页面以加载新配置
@@ -301,7 +301,7 @@ export function DataSettings() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("恢复数据")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("恢复将覆盖当前的 SSH 配置与快捷命令，确定要继续吗？")}</AlertDialogDescription>
+            <AlertDialogDescription>{t("恢复会覆盖 SSH 配置和快捷命令，是否继续？")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => { setRestoreConfirmOpen(false); setPendingRestoreData(null); }}>{t("取消")}</AlertDialogCancel>
@@ -315,7 +315,7 @@ export function DataSettings() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("清空所有数据")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("确定要清空所有会话配置和快捷命令吗？此操作不可恢复！")}</AlertDialogDescription>
+            <AlertDialogDescription>{t("清空所有会话配置和快捷命令？此操作不可恢复。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setClearConfirmOpen(false)}>{t("取消")}</AlertDialogCancel>

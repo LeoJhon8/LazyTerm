@@ -22,6 +22,8 @@ function sanitizeSlotConfig(config: SlotConfig): SlotConfig {
       }
     }
   }
+  config.top = { ...DEFAULT_SLOT_CONFIG.top };
+  config.bottom = { ...DEFAULT_SLOT_CONFIG.bottom };
   return config;
 }
 
@@ -37,7 +39,6 @@ interface SlotConfigState {
   setActiveAndExpand: (slot: 'left' | 'right', moduleId: string) => void;
   addModuleToSlot: (slot: 'left' | 'right', moduleId: string) => void;
   removeModuleFromSlot: (slot: 'left' | 'right', moduleId: string) => void;
-  setSingleModule: (slot: 'top' | 'bottom', moduleId: string) => void;
   resetToDefault: () => void;
   saveCustomConfig: (name: string) => void;
   loadConfig: (config: SlotConfig) => void;
@@ -141,16 +142,6 @@ export const useSlotConfigStore = create<SlotConfigState>()(
           };
         }),
 
-      setSingleModule: (slot, moduleId) =>
-        set((state) => ({
-          currentConfig: {
-            ...state.currentConfig,
-            [slot]: {
-              module: moduleId
-            }
-          }
-        })),
-
       resetToDefault: () => 
         set({ currentConfig: DEFAULT_SLOT_CONFIG }),
 
@@ -160,8 +151,8 @@ export const useSlotConfigStore = create<SlotConfigState>()(
         localStorage.setItem(`lazy-term-slot-config-${name}`, JSON.stringify(config));
       },
 
-      loadConfig: (config) => 
-        set({ currentConfig: config })
+      loadConfig: (config) =>
+        set({ currentConfig: sanitizeSlotConfig({ ...config }) })
     }),
     {
       name: "lazy-term-slot-config",

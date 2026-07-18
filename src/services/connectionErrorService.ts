@@ -103,7 +103,6 @@ function buildRdpErrorPresentation(technicalDetails: string): ConnectionErrorPre
       summary: tCurrent("当前 RDP 连接只支持密码认证。"),
       guidance: [
         tCurrent("请填写密码后重新连接。"),
-        tCurrent("如果目标环境依赖其它认证方式，需要继续扩展后端认证支持。"),
       ],
       technicalDetails,
     };
@@ -146,11 +145,11 @@ function buildRdpErrorPresentation(technicalDetails: string): ConnectionErrorPre
 
   if (normalized.includes("tls handshake") || normalized.includes("begin connection failed")) {
     return {
-      summary: tCurrent("已连到目标端口，但远端没有完成远程桌面握手。"),
+      summary: tCurrent("目标端口已连接，但 RDP 握手失败。"),
       guidance: [
-        tCurrent("确认该端口对应的是 RDP 服务，而不是其它协议。"),
+        tCurrent("确认该端口运行的是 RDP 服务。"),
         tCurrent("确认目标主机已启用远程桌面服务。"),
-        tCurrent("如果经过代理或端口映射，确认它没有截断 TLS 或 RDP 协商。"),
+        tCurrent("若使用代理或端口映射，请确认未阻断 TLS/RDP 协商。"),
       ],
       technicalDetails,
     };
@@ -158,11 +157,11 @@ function buildRdpErrorPresentation(technicalDetails: string): ConnectionErrorPre
 
   if (normalized.includes("credssp") || normalized.includes("logon") || normalized.includes("authentication") || normalized.includes("finalize connection failed")) {
     return {
-      summary: tCurrent("远程桌面握手已进入认证阶段，但认证或会话初始化没有通过。"),
+      summary: tCurrent("RDP 认证或会话初始化失败。"),
       guidance: [
         tCurrent("检查用户名、密码和域是否正确。"),
         tCurrent("确认服务器允许该账号使用远程桌面登录。"),
-        tCurrent("如果服务器策略限制了 NLA 或加密方式，需要核对目标端配置。"),
+        tCurrent("检查服务器的 NLA 和加密策略。"),
       ],
       technicalDetails,
     };
@@ -230,7 +229,7 @@ function buildLocalErrorPresentation(technicalDetails: string): ConnectionErrorP
     summary: tCurrent("本地终端启动失败。"),
     guidance: [
       tCurrent("检查默认 Shell 路径是否存在。"),
-      tCurrent("如果启用了管理员模式，确认当前系统允许内联提升。"),
+      tCurrent("管理员模式下，请确认系统允许权限提升。"),
     ],
     technicalDetails,
   };

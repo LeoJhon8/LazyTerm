@@ -524,7 +524,7 @@ export function NativeRdpHostView({
   const showTransitionMask = connectionStatus?.phase === "connected"
     && (showMenuMask || resizeMaskVisible || overlayMode !== "none");
   const transitionText = showMenuMask
-    ? t("系统菜单已打开，正在临时隐藏 Windows 远程桌面画面...")
+    ? t("系统菜单已打开，远程桌面画面暂时隐藏。")
     : resizeMaskVisible
       ? t("正在调整会话尺寸...")
       : t("正在同步 Windows 远程桌面画面...");

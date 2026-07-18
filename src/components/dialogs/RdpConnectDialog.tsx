@@ -145,7 +145,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
                   <Label className="text-right">{t("自动跟随窗口")}</Label>
                   <div className="col-span-3 flex items-center gap-3">
                     <Checkbox id="rdp-auto-resize" checked={autoResize} onCheckedChange={(checked) => setAutoResize(checked === true)} />
-                    <Label htmlFor="rdp-auto-resize" className="text-sm text-muted-foreground">{t("窗口尺寸变化时自动请求远端分辨率更新")}</Label>
+              <Label htmlFor="rdp-auto-resize" className="text-sm text-muted-foreground">{t("窗口变化时同步远端分辨率")}</Label>
                   </div>
                 </div>
               </>

@@ -393,7 +393,7 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
             <div className="flex items-center gap-3">
               <Checkbox id="rdp-auto-resize-qc" checked={autoResize} onCheckedChange={(checked) => setAutoResize(checked === true)} />
               <Label htmlFor="rdp-auto-resize-qc" className="text-sm text-muted-foreground">
-                {t("窗口尺寸变化时自动请求远端分辨率更新")}
+                  {t("窗口变化时同步远端分辨率")}
               </Label>
             </div>
           </FormField>

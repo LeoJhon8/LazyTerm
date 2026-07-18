@@ -93,7 +93,7 @@ src-tauri/
 
 核心视图在 `src/components/terminal/`：
 
-- `BaseSessionView.tsx`：终端和图形视图共用基础逻辑。
+- `BaseSessionView.tsx`：终端和图形视图共用类型与样式工具。
 - `TerminalViewClass.tsx`：xterm.js 终端视图。
 - `BaseGraphicSessionView.tsx`：RDP/VNC 图形视图共用逻辑。
 - `RemoteDesktopViewClass.tsx`：RDP 图形视图。

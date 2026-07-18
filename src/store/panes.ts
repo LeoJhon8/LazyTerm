@@ -58,12 +58,12 @@ interface PanesState {
   /** 
    * 添加一个新的叶子面板到当前工作区
    */
-  addPane: (sessionId?: string) => string | null;
+  addPane: (sessionId: string) => string | null;
   
   /**
    * 分裂指定叶子面板
    */
-  splitPane: (leafId: string, direction: SplitDirection, sessionId?: string, dropZone?: DropZone) => string | null;
+  splitPane: (leafId: string, direction: SplitDirection, sessionId: string, dropZone?: DropZone) => string | null;
   
   /**
    * 移除叶子面板
@@ -81,7 +81,7 @@ interface PanesState {
   /**
    * 设置叶子面板的会话
    */
-  setPaneSession: (leafId: string, sessionId: string | null) => void;
+  setPaneSession: (leafId: string, sessionId: string) => void;
   
   /**
    * 设置分裂节点的比例
@@ -171,7 +171,7 @@ export const usePanesStore = create<PanesState>()(
       
       if (!rootNode) {
         // 没有面板，创建新的根叶子
-        const leaf = createLeaf(sessionId ?? null);
+        const leaf = createLeaf(sessionId);
         set((state) => ({
           workspaces: {
             ...state.workspaces,
@@ -187,7 +187,7 @@ export const usePanesStore = create<PanesState>()(
       if (!targetId) return null;
 
       const { root: newRoot, newLeafId } = splitLeaf(
-        rootNode, targetId, "horizontal", sessionId ?? null, "right"
+        rootNode, targetId, "horizontal", sessionId, "right"
       );
 
       if (newRoot && newLeafId) {
@@ -212,7 +212,7 @@ export const usePanesStore = create<PanesState>()(
       const { rootNode } = ws;
       
       const { root: newRoot, newLeafId } = splitLeaf(
-        rootNode, leafId, direction, sessionId ?? null, dropZone
+        rootNode, leafId, direction, sessionId, dropZone
       );
 
       if (newRoot && newLeafId) {
@@ -344,10 +344,8 @@ export const usePanesStore = create<PanesState>()(
       }));
 
       // 同步更新 tabs store 的 focusSessionId
-      if (leaf.sessionId) {
-        useTabsStore.getState().setFocusSession(leaf.sessionId);
-        logger.debug("FE/store/panes", "Focused pane and synced focusSession", { leafId, sessionId: leaf.sessionId });
-      }
+      useTabsStore.getState().setFocusSession(leaf.sessionId);
+      logger.debug("FE/store/panes", "Focused pane and synced focusSession", { leafId, sessionId: leaf.sessionId });
     },
 
     clearPanes: () => {

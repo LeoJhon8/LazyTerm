@@ -792,32 +792,6 @@
     color: var(--muted-foreground);
   }
 
-  .module-empty {
-    display: flex;
-    height: 100%;
-    min-height: 0;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 24px;
-    text-align: center;
-    color: var(--muted-foreground);
-  }
-
-  .module-empty-card {
-    display: flex;
-    width: min(320px, 100%);
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    border: 1px solid color-mix(in srgb, var(--panel-border) 75%, transparent);
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
-    padding: 20px;
-    box-shadow: var(--panel-glow);
-  }
-
   .chip-row {
     display: inline-flex;
     align-items: center;

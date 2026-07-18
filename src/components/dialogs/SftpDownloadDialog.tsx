@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { downloadDir } from "@tauri-apps/api/path";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { CheckSquare, ChevronLeft, Download, File, Folder, Loader2, Square } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -21,6 +22,7 @@ interface Props {
   open: boolean; onOpenChange: (open: boolean) => void; targetNode: SessionNode | null;
 }
 
+const DEFAULT_REMOTE_PATH = "~/";
 const joinPath = (parent: string, child: string) => `${parent.endsWith("/") ? parent : `${parent}/`}${child}`;
 function formatBytes(value: number) {
   if (!value) return "0 B";
@@ -32,7 +34,7 @@ function formatBytes(value: number) {
 export function SftpDownloadDialog({ open, onOpenChange, targetNode }: Props) {
   const addNotification = useNotificationsStore((state) => state.addNotification);
   const updateNotification = useNotificationsStore((state) => state.updateNotification);
-  const [currentPath, setCurrentPath] = useState("~/");
+  const [currentPath, setCurrentPath] = useState(DEFAULT_REMOTE_PATH);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [localDir, setLocalDir] = useState("");
@@ -71,8 +73,19 @@ export function SftpDownloadDialog({ open, onOpenChange, targetNode }: Props) {
 
   useEffect(() => {
     if (open && targetNode) {
-      setLocalDir(""); setReceived(0); setTotal(0); setMessage("");
-      void fetchDir("~/");
+      let cancelled = false;
+      setCurrentPath(DEFAULT_REMOTE_PATH); setLocalDir(""); setReceived(0); setTotal(0); setMessage("");
+      void downloadDir()
+        .then((path) => {
+          if (!cancelled) setLocalDir(path);
+        })
+        .catch((error) => {
+          if (!cancelled) setMessage(`获取用户下载目录失败: ${String(error)}`);
+        });
+      void fetchDir(DEFAULT_REMOTE_PATH);
+      return () => {
+        cancelled = true;
+      };
     }
   }, [open, targetNode]);
   useEffect(() => () => unlistenRef.current?.(), []);

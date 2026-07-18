@@ -3,9 +3,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { File, X, Upload, Folder, FolderOpen, AlertCircle } from "lucide-react";
+import { File, X, Upload, FolderOpen, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { downloadDir } from "@tauri-apps/api/path";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { readDir, stat } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -24,6 +25,15 @@ interface SftpLocalFile {
   size: number;
   relativePath: string;
   isDirectory?: boolean;
+  sourcePath: string;
+  sourceType: "file" | "directory";
+}
+
+interface SftpSelectionRoot {
+  path: string;
+  name: string;
+  type: "file" | "directory";
+  size: number;
 }
 
 interface SftpUploadProgressPayload {
@@ -45,6 +55,17 @@ interface SftpUploadDialogProps {
 function getFileName(path: string) {
   const parts = path.split(/[/\\]/);
   return parts[parts.length - 1] || path;
+}
+
+const DEFAULT_REMOTE_PATH = "~/";
+
+async function getDefaultLocalSelectionPath() {
+  try {
+    return await downloadDir();
+  } catch (error) {
+    logger.warn("FE/sftp-dialog", "无法获取用户下载目录", error);
+    return undefined;
+  }
 }
 
 function joinLocalPath(parent: string, child: string) {
@@ -88,18 +109,104 @@ function Progress({ value, className }: { value: number; className?: string }) {
   );
 }
 
+interface UploadSelectionAreaProps {
+  type: "file" | "directory";
+  roots: SftpSelectionRoot[];
+  title: string;
+  hint: string;
+  emptyText: string;
+  disabled: boolean;
+  onSelect: () => void;
+  onRemove: (path: string) => void;
+}
+
+function UploadSelectionArea({
+  type,
+  roots,
+  title,
+  hint,
+  emptyText,
+  disabled,
+  onSelect,
+  onRemove,
+}: UploadSelectionAreaProps) {
+  const Icon = type === "file" ? File : FolderOpen;
+
+  return (
+    <div
+      role="button"
+      tabIndex={disabled ? undefined : 0}
+      aria-label={title}
+      className={cn(
+        "flex h-[190px] min-w-0 flex-col overflow-hidden rounded-md border border-border/50 bg-muted/15 transition-colors",
+        disabled ? "cursor-default opacity-60" : "cursor-pointer hover:border-primary/50 hover:bg-accent/20"
+      )}
+      onClick={() => {
+        if (!disabled) onSelect();
+      }}
+      onKeyDown={(event) => {
+        if (disabled || event.currentTarget !== event.target) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+    >
+      {roots.length === 0 ? (
+        <div className="flex h-full flex-col items-center justify-center p-3 text-center">
+          <Icon className="mb-2 h-7 w-7 text-primary" />
+          <span className="text-sm font-medium">{title}</span>
+          <span className="mt-1 text-xs text-muted-foreground">{hint}</span>
+          <span className="mt-3 text-[11px] text-muted-foreground/70">{emptyText}</span>
+        </div>
+      ) : (
+        <>
+          <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+            <Icon className="h-4 w-4 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">{title}</span>
+            <span className="shrink-0 text-[11px] text-muted-foreground">{hint}</span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto">
+          <div className="divide-y">
+            {roots.map((root) => (
+              <div key={root.path} className="flex min-w-0 items-center gap-2 px-2.5 py-1.5">
+                <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-xs" title={root.path}>{root.name}</span>
+                <span className="shrink-0 text-[11px] text-muted-foreground">{formatBytes(root.size)}</span>
+                {!disabled && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRemove(root.path);
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadDialogProps) {
   const { t } = useI18n();
   const addNotification = useNotificationsStore((state) => state.addNotification);
   const updateNotification = useNotificationsStore((state) => state.updateNotification);
-  const [remotePath, setRemotePath] = useState("");
+  const [remotePath, setRemotePath] = useState(DEFAULT_REMOTE_PATH);
   const [files, setFiles] = useState<SftpLocalFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
   const [overallSent, setOverallSent] = useState(0);
   const [overallTotal, setOverallTotal] = useState(0);
-  const [fileProgress, setFileProgress] = useState<Record<string, { sent: number; total: number }>>({});
   const [showDirSelector, setShowDirSelector] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   
@@ -107,8 +214,30 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
   const currentUploadIdRef = useRef<string | null>(null);
   const progressNotificationIdRef = useRef<string | null>(null);
   const lastNotificationProgressRef = useRef(0);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
 
   const selectedTotal = useMemo(() => files.reduce((acc, item) => acc + (item.size || 0), 0), [files]);
+  const selectionRoots = useMemo(() => {
+    const roots = new Map<string, SftpSelectionRoot>();
+
+    files.forEach((file) => {
+      const existing = roots.get(file.sourcePath);
+      if (existing) {
+        existing.size += file.size || 0;
+        return;
+      }
+      roots.set(file.sourcePath, {
+        path: file.sourcePath,
+        name: getFileName(file.sourcePath),
+        type: file.sourceType,
+        size: file.size || 0,
+      });
+    });
+
+    return [...roots.values()];
+  }, [files]);
+  const selectedFileRoots = selectionRoots.filter((root) => root.type === "file");
+  const selectedDirectoryRoots = selectionRoots.filter((root) => root.type === "directory");
 
   // 清理监听器
   useEffect(() => {
@@ -126,21 +255,29 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
   useEffect(() => {
     if (open) {
       setFiles([]);
-      setRemotePath("");
+      setRemotePath(DEFAULT_REMOTE_PATH);
       setMessage(null);
       setOverallSent(0);
       setOverallTotal(0);
-      setFileProgress({});
       setUploading(false);
       setStopping(false);
+      setIsDragOver(false);
       progressNotificationIdRef.current = null;
       lastNotificationProgressRef.current = 0;
     }
   }, [open]);
 
-  const collectFilesFromPath = async (path: string, relativePath?: string): Promise<SftpLocalFile[]> => {
+  const collectFilesFromPath = async (
+    path: string,
+    relativePath?: string,
+    source?: Pick<SftpLocalFile, "sourcePath" | "sourceType">
+  ): Promise<SftpLocalFile[]> => {
     const fileInfo = await stat(path);
     const name = getFileName(path);
+    const rootSource = source ?? {
+      sourcePath: path,
+      sourceType: fileInfo.isDirectory ? "directory" as const : "file" as const,
+    };
 
     if (fileInfo.isFile) {
       return [{
@@ -148,6 +285,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
         name,
         size: Number(fileInfo.size),
         relativePath: relativePath ?? name,
+        ...rootSource,
       }];
     }
 
@@ -163,6 +301,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
       size: 0,
       relativePath: rootRelativePath,
       isDirectory: true,
+      ...rootSource,
     }];
 
     for (const entry of entries) {
@@ -172,7 +311,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
       const childRelativePath = joinRelativePath(rootRelativePath, entry.name);
 
       if (entry.isDirectory) {
-        nestedFiles.push(...await collectFilesFromPath(childPath, childRelativePath));
+        nestedFiles.push(...await collectFilesFromPath(childPath, childRelativePath, rootSource));
       } else if (entry.isFile) {
         const childInfo = await stat(childPath);
         nestedFiles.push({
@@ -180,6 +319,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
           name: entry.name,
           size: Number(childInfo.size),
           relativePath: childRelativePath,
+          ...rootSource,
         });
       }
     }
@@ -199,11 +339,17 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
     }
 
     setFiles((prev) => {
-      const existing = new Set(prev.map(f => f.path));
-      const toAdd = fileList.filter(f => !existing.has(f.path));
+      const existing = new Set(prev.map((file) => `${file.sourcePath}\0${file.path}`));
+      const toAdd = fileList.filter((file) => {
+        const key = `${file.sourcePath}\0${file.path}`;
+        if (existing.has(key)) return false;
+        existing.add(key);
+        return true;
+      });
       const next = [...prev, ...toAdd];
       if (toAdd.length > 0) {
-        setMessage({ text: t("已添加 {count} 个文件", { count: toAdd.length }), type: "info" });
+        const rootCount = new Set(toAdd.map((file) => file.sourcePath)).size;
+        setMessage({ text: t("已添加 {count} 项", { count: rootCount }), type: "info" });
       }
       return next;
     });
@@ -217,17 +363,29 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
 
     const setupDragDrop = async () => {
       try {
-        unlistenFn = await getCurrentWindow().onDragDropEvent((event) => {
+        const currentWindow = getCurrentWindow();
+        const scaleFactor = await currentWindow.scaleFactor();
+        const isInsideDropZone = (position: { x: number; y: number }) => {
+          const element = dropZoneRef.current;
+          if (!element) return false;
+          const rect = element.getBoundingClientRect();
+          const x = position.x / scaleFactor;
+          const y = position.y / scaleFactor;
+          return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+        };
+
+        unlistenFn = await currentWindow.onDragDropEvent((event) => {
           if (!isSubscribed) return;
-          
-          if (event.payload.type === 'over') {
-            setIsDragOver(true);
+
+          if (event.payload.type === "enter" || event.payload.type === "over") {
+            setIsDragOver(isInsideDropZone(event.payload.position));
           } else if (event.payload.type === 'leave') {
             setIsDragOver(false);
           } else if (event.payload.type === 'drop') {
+            const shouldAdd = isInsideDropZone(event.payload.position);
             setIsDragOver(false);
-            if (event.payload.paths && event.payload.paths.length > 0) {
-              addFilesFromPaths(event.payload.paths);
+            if (shouldAdd && event.payload.paths.length > 0) {
+              void addFilesFromPaths(event.payload.paths);
             }
           }
         });
@@ -246,46 +404,42 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
 
   const handleSelectFiles = async () => {
     try {
+      const defaultPath = await getDefaultLocalSelectionPath();
       const selected = await openFileDialog({
         multiple: true,
         title: t("选择要上传的文件"),
+        defaultPath,
       });
-      
-      if (!selected || (Array.isArray(selected) && selected.length === 0)) {
-        return;
-      }
 
-      const paths = Array.isArray(selected) ? selected : [selected];
-      await addFilesFromPaths(paths);
+      if (!selected || (Array.isArray(selected) && selected.length === 0)) return;
+      await addFilesFromPaths(Array.isArray(selected) ? selected : [selected]);
     } catch (error) {
       logger.error("FE/sftp-dialog", "选择文件失败", error);
       setMessage({ text: t("选择文件失败"), type: "error" });
     }
   };
 
-  const handleSelectDirectory = async () => {
+  const handleSelectDirectories = async () => {
     try {
+      const defaultPath = await getDefaultLocalSelectionPath();
       const selected = await openFileDialog({
         directory: true,
         multiple: true,
         recursive: true,
-        title: t("选择目录"),
+        title: t("选择要上传的目录"),
+        defaultPath,
       });
 
-      if (!selected || (Array.isArray(selected) && selected.length === 0)) {
-        return;
-      }
-
-      const paths = Array.isArray(selected) ? selected : [selected];
-      await addFilesFromPaths(paths);
+      if (!selected || (Array.isArray(selected) && selected.length === 0)) return;
+      await addFilesFromPaths(Array.isArray(selected) ? selected : [selected]);
     } catch (error) {
-      logger.error("FE/sftp-dialog", "选择文件失败", error);
-      setMessage({ text: t("选择文件失败"), type: "error" });
+      logger.error("FE/sftp-dialog", "选择目录失败", error);
+      setMessage({ text: t("选择目录失败"), type: "error" });
     }
   };
 
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+  const removeSelectionRoot = (sourcePath: string) => {
+    setFiles((prev) => prev.filter((file) => file.sourcePath !== sourcePath));
   };
 
   const resolveRemotePath = (basePath: string, relativePath: string) => {
@@ -317,7 +471,6 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
       setMessage({ text: t("正在准备上传..."), type: "info" });
       setOverallSent(0);
       setOverallTotal(selectedTotal);
-      setFileProgress({});
 
       const items = files.map((file) => ({
         local_path: file.path,
@@ -341,13 +494,6 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
         const payload = event.payload;
         setOverallSent(payload.overall_sent);
         setOverallTotal(payload.overall_total);
-        setFileProgress((prev) => ({
-          ...prev,
-          [payload.local_path]: {
-            sent: payload.file_sent,
-            total: payload.file_size,
-          },
-        }));
         const now = Date.now();
         const isComplete = payload.overall_total > 0 && payload.overall_sent >= payload.overall_total;
         if (
@@ -467,20 +613,20 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] min-w-0 overflow-x-hidden overflow-y-auto sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5" />
+          <DialogTitle className="flex min-w-0 items-center gap-2">
+            <Upload className="h-5 w-5 shrink-0" />
             {t("SFTP 文件上传")}
             {targetNode && (
-              <span className="text-sm font-normal text-muted-foreground">
+              <span className="min-w-0 truncate text-sm font-normal text-muted-foreground">
                 - {targetNode.name}
               </span>
             )}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="min-w-0 space-y-4 py-4">
           {!isSshNode ? (
             <div className="flex items-center gap-2 text-amber-600 bg-amber-50 p-3 rounded-md">
               <AlertCircle className="h-4 w-4" />
@@ -490,14 +636,14 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
             <>
               <div className="space-y-2">
                 <Label htmlFor="remote-path">{t("远程路径")}</Label>
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <Input
                     id="remote-path"
                     placeholder={t("请输入远程路径")}
                     value={remotePath}
                     onChange={(e) => setRemotePath(e.target.value)}
                     disabled={uploading}
-                    className="flex-1"
+                    className="min-w-0 flex-1 w-auto"
                   />
                   <Button
                     variant="outline"
@@ -513,113 +659,48 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <Label>{t("本地文件")}</Label>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleSelectFiles}
-                      disabled={uploading}
-                    >
-                      <Folder className="h-4 w-4 mr-1" />
-                      {t("选择文件")}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleSelectDirectory}
-                      disabled={uploading}
-                    >
-                      <FolderOpen className="h-4 w-4 mr-1" />
-                      {t("选择目录")}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className={cn(
-                  "border rounded-md transition-colors relative min-h-[120px] max-h-[300px] flex flex-col",
-                  files.length === 0 && !uploading && "cursor-pointer hover:bg-accent/30",
-                  isDragOver ? "bg-accent/50 border-primary" : ""
-                )}
-                  role={files.length === 0 && !uploading ? "button" : undefined}
-                  tabIndex={files.length === 0 && !uploading ? 0 : undefined}
-                  onClick={() => {
-                    if (files.length === 0 && !uploading) {
-                      void handleSelectFiles();
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (files.length > 0 || uploading) return;
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      void handleSelectFiles();
-                    }
-                  }}
+                <Label>{t("本地文件或目录")}</Label>
+                <div
+                  ref={dropZoneRef}
+                  className={cn(
+                    "relative min-w-0 overflow-hidden rounded-md border p-2 transition-colors",
+                    isDragOver && "border-primary bg-accent/30"
+                  )}
                 >
-                  {files.length > 0 ? (
-                    <div className="divide-y overflow-auto flex-1 h-full">
-                      {files.map((file, index) => {
-                      const progress = fileProgress[file.path];
-                      const isUploading = !!progress;
-                      
-                      return (
-                        <div key={file.path} className="p-3 flex items-center gap-3">
-                          {file.isDirectory ? (
-                            <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
-                          ) : (
-                            <File className="h-4 w-4 text-muted-foreground shrink-0" />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate">{file.relativePath}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {file.isDirectory ? t("目录") : formatBytes(file.size)}
-                            </p>
-                            {isUploading && (
-                              <div className="mt-2">
-                                <Progress
-                                  value={(progress.sent / progress.total) * 100}
-                                  className="h-1"
-                                />
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {formatBytes(progress.sent)} / {formatBytes(progress.total)}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                          {!uploading && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeFile(index)}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      );
-                    })}
+                  <div className="grid grid-cols-[minmax(0,7fr)_minmax(120px,3fr)] gap-2">
+                    <UploadSelectionArea
+                      type="file"
+                      roots={selectedFileRoots}
+                      title={t("点击上传文件")}
+                      hint={t("支持多选")}
+                      emptyText={t("暂无文件")}
+                      disabled={uploading}
+                      onSelect={() => void handleSelectFiles()}
+                      onRemove={removeSelectionRoot}
+                    />
+                    <UploadSelectionArea
+                      type="directory"
+                      roots={selectedDirectoryRoots}
+                      title={t("点击上传目录")}
+                      hint={t("支持多选")}
+                      emptyText={t("暂无目录")}
+                      disabled={uploading}
+                      onSelect={() => void handleSelectDirectories()}
+                      onRemove={removeSelectionRoot}
+                    />
                   </div>
-                ) : (
-                  <div className="p-8 flex-1 flex flex-col items-center justify-center text-muted-foreground pointer-events-none">
-                    <Upload className={cn(
-                      "h-8 w-8 mx-auto mb-2 transition-all", 
-                      isDragOver ? "text-primary opacity-100 scale-110" : "opacity-50"
-                    )} />
-                    <p className="text-sm">{isDragOver ? t("松开鼠标添加文件") : t("点击“选择文件”或拖拽文件到这里")}</p>
-                  </div>
-                )}
-                
-                {isDragOver && files.length > 0 && (
-                  <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center border-primary border-2 border-dashed rounded-md z-10 pointer-events-none">
-                    <p className="text-sm font-medium text-primary">{t("松开鼠标添加文件")}</p>
-                  </div>
-                )}
-              </div>
 
-              {files.length > 0 && (
+                  {isDragOver && (
+                    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-background/85 backdrop-blur-sm">
+                      <p className="text-sm font-medium text-primary">{t("松开鼠标添加文件或目录")}</p>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">{t("拖拽文件和目录到此区域，将自动识别")}</p>
+
+                {selectionRoots.length > 0 && (
                   <p className="text-xs text-muted-foreground text-right">
-                    {t("共 {count} 个文件，总计 {size}", { count: files.length, size: formatBytes(selectedTotal) })}
+                    {t("共 {count} 项，总计 {size}", { count: selectionRoots.length, size: formatBytes(selectedTotal) })}
                   </p>
                 )}
               </div>
@@ -637,7 +718,7 @@ export function SftpUploadDialog({ open, onOpenChange, targetNode }: SftpUploadD
               {message && (
                 <div
                   className={cn(
-                    "p-3 rounded-md text-sm",
+                    "min-w-0 break-words p-3 rounded-md text-sm",
                     message.type === "success" && "bg-green-50 text-green-700",
                     message.type === "error" && "bg-red-50 text-red-700",
                     message.type === "info" && "bg-blue-50 text-blue-700"

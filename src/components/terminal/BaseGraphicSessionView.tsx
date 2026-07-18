@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { logger } from "@/lib/logger";
 import {
   type BaseSessionViewProps,
-  useBaseSessionView,
   clamp,
 } from "./BaseSessionView";
 
@@ -39,7 +38,6 @@ export interface BaseGraphicSessionViewResult {
 export function useBaseGraphicSessionView(
   props: BaseSessionViewProps
 ): BaseGraphicSessionViewResult {
-  const { notifyVisualReady: baseNotifyVisualReady } = useBaseSessionView(props);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(null);
@@ -51,9 +49,9 @@ export function useBaseGraphicSessionView(
   const notifyVisualReady = useCallback(() => {
     if (!visualReadyNotifiedRef.current) {
       visualReadyNotifiedRef.current = true;
-      baseNotifyVisualReady();
+      props.onVisualReady?.(props.sessionId);
     }
-  }, [baseNotifyVisualReady]);
+  }, [props.onVisualReady, props.sessionId]);
 
   /**
    * 重置视觉就绪状态

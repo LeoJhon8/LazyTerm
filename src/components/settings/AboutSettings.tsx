@@ -98,7 +98,7 @@ export function AboutSettings() {
         return;
       }
 
-      setUpdateStatus(t("当前已是最新版本 ({version})", { version: displayedVersion }));
+        setUpdateStatus(t("已是最新版本（{version}）", { version: displayedVersion }));
     } catch (err: unknown) {
       setUpdateStatus(t("检查更新失败：{error}", { error: err instanceof Error ? err.message : String(err) }));
     } finally {

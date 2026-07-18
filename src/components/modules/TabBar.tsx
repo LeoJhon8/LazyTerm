@@ -481,7 +481,7 @@ export function TabBar() {
       title: targetCount === 1
         ? t("确认关闭 {name}？", { name: previewNames[0] })
         : t("确认关闭 {count} 个非默认工作区？", { count: targetCount }),
-      description: t("即将关闭 {summary}。关闭后相关的连接会立即断开。", { summary: sessionSummary }),
+      description: t("将关闭 {summary}，相关连接会立即断开。", { summary: sessionSummary }),
     });
   };
 

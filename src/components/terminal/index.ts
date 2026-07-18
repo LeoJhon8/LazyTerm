@@ -1,13 +1,10 @@
 /**
  * 终端视图组件导出
- * 使用模板方法模式实现，所有视图继承自 BaseSessionView
+ * 终端视图共享类型与工具
  */
 
-export { 
-  useBaseSessionView,
+export {
   type BaseSessionViewProps,
-  type BaseSessionViewResult,
-  ConnectionStatusBadge,
   clamp,
   VIEW_CONTAINER_CLASSNAME,
   CANVAS_CLASSNAME,

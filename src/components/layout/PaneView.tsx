@@ -23,7 +23,6 @@ interface PaneViewProps {
 }
 
 export function PaneView({ paneId }: PaneViewProps) {
-  const { t } = useI18n();
   const activeTabId = useTabsStore((state) => state.activeTabId);
   const focusedPaneId = usePanesStore((state) =>
     activeTabId ? state.workspaces[activeTabId]?.focusedPaneId : null
@@ -44,7 +43,7 @@ export function PaneView({ paneId }: PaneViewProps) {
 
   const leaf = usePanesStore((state) => state.getLeafById(paneId));
   const isFocused = focusedPaneId === paneId;
-  const session = leaf?.sessionId
+  const session = leaf
     ? sessions.find((item) => item.id === leaf.sessionId) ?? null
     : null;
   const isNativeRdpPane = session?.type === "rdp" && session.connector?.protocol === "rdp" && session.connector.backend === "msrdpax";
@@ -204,44 +203,8 @@ export function PaneView({ paneId }: PaneViewProps) {
     });
   }, [focusPane, maximizePane, paneId]);
 
-  if (!leaf) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-background/50">
-        <div className="text-sm text-muted-foreground">{t("面板不存在")}</div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div
-        ref={containerRef}
-        className={cn(
-          "group relative flex h-full w-full cursor-pointer items-center justify-center transition-all",
-          "bg-background/50",
-          paneCount > 1 && "border border-border/40",
-          paneCount > 1 && isFocused && "border-primary/50 ring-1 ring-inset ring-primary/40",
-        )}
-        onClick={handlePaneClick}
-      >
-        <div className="text-center">
-          <div className="mb-2 text-sm text-muted-foreground">{t("此面板未关联会话")}</div>
-          <div className="text-xs text-muted-foreground/60">
-            {t("从标签栏拖拽标签页到此处")}
-          </div>
-        </div>
-
-        {isTabDragging && dropZone && <DropZoneOverlay zone={dropZone} />}
-
-        {paneCount > 1 && (
-          <PaneControls
-            onClose={handleClose}
-            onMaximize={handleMaximize}
-            showMaximize
-          />
-        )}
-      </div>
-    );
+  if (!leaf || !session) {
+    return null;
   }
 
   return (

@@ -72,7 +72,12 @@ function SortableQuickCommand({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="quickcmd-command-item">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="quickcmd-command-item"
+      onContextMenu={(event) => event.stopPropagation()}
+    >
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <Button
@@ -197,6 +202,18 @@ export function QuickCmdBar() {
     addCommand(newCommand);
   };
 
+  const handleOpenAddCommand = () => {
+    setEditingCmd(null);
+    setConfigOpen(true);
+  };
+
+  const handleConfigOpenChange = (open: boolean) => {
+    setConfigOpen(open);
+    if (!open) {
+      setEditingCmd(null);
+    }
+  };
+
   // 编辑命令
   const handleEditCommand = (cmd: QuickCommand) => {
     setEditingCmd(cmd);
@@ -227,73 +244,88 @@ export function QuickCmdBar() {
   };
 
   return (
-    <div className="quickcmd-surface" data-mode={quickCommandDisplayMode} style={quickCommandStyle}>
-      <div className="quickcmd-leading-icon" aria-label={t("快捷命令")} title={t("快捷命令")}>
-        <Play className="h-3 w-3 fill-current" />
-      </div>
-
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={sortedCommands.map(cmd => cmd.id)}
-          strategy={isPanelMode ? rectSortingStrategy : horizontalListSortingStrategy}
-        >
-          <div
-            ref={commandsContainerRef}
-            className={cn(
-              "toolbar-scroll command-scroll no-scrollbar flex-1",
-              isPanelMode ? "quickcmd-panel-scroll" : "h-full"
-            )}
-            onWheel={isPanelMode ? undefined : handleCommandsWheel}
-          >
-            {sortedCommands.length === 0 ? (
-              <div className="quickcmd-empty">
-                {t("暂无快捷命令，点击右侧加号创建常用操作。")}
-              </div>
-            ) : (
-              sortedCommands.map((cmd) => (
-                <SortableQuickCommand
-                  key={cmd.id}
-                  cmd={cmd}
-                  onClick={() => handleCommandClick(cmd)}
-                  onContextMenu={() => sendToAllSessions(cmd)}
-                  onEdit={() => handleEditCommand(cmd)}
-                  onDelete={() => handleDeleteCommand(cmd)}
-                />
-              ))
-            )}
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="quickcmd-surface" data-mode={quickCommandDisplayMode} style={quickCommandStyle}>
+          <div className="quickcmd-leading-icon" aria-label={t("快捷命令")} title={t("快捷命令")}>
+            <Play className="h-3 w-3 fill-current" />
           </div>
-        </SortableContext>
-      </DndContext>
 
-      {/* 添加命令按钮 */}
-      <Dialog open={configOpen} onOpenChange={setConfigOpen}>
-        <DialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="quickcmd-add-button h-full rounded-none p-0">
-            <Plus className="h-3 w-3" />
-          </Button>
-        </DialogTrigger>
-        
-        <DialogContent className="sm:max-w-150">
-          <DialogHeader>
-            <DialogTitle>{editingCmd ? t("编辑快捷命令") : t("添加快捷命令")}</DialogTitle>
-          </DialogHeader>
-          
-          <QuickCommandForm 
-            onAdd={handleAddCommand}
-            onUpdate={updateCommand}
-            onClose={() => {
-              setConfigOpen(false);
-              setEditingCmd(null);
-            }}
-            editingCmd={editingCmd}
-          />
-        </DialogContent>
-      </Dialog>
-    </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={sortedCommands.map(cmd => cmd.id)}
+              strategy={isPanelMode ? rectSortingStrategy : horizontalListSortingStrategy}
+            >
+              <div
+                ref={commandsContainerRef}
+                className={cn(
+                  "toolbar-scroll command-scroll no-scrollbar flex-1",
+                  isPanelMode ? "quickcmd-panel-scroll" : "h-full"
+                )}
+                onWheel={isPanelMode ? undefined : handleCommandsWheel}
+              >
+                {sortedCommands.length === 0 ? (
+                  <div className="quickcmd-empty">
+                    {t("暂无快捷命令")}
+                  </div>
+                ) : (
+                  sortedCommands.map((cmd) => (
+                    <SortableQuickCommand
+                      key={cmd.id}
+                      cmd={cmd}
+                      onClick={() => handleCommandClick(cmd)}
+                      onContextMenu={() => sendToAllSessions(cmd)}
+                      onEdit={() => handleEditCommand(cmd)}
+                      onDelete={() => handleDeleteCommand(cmd)}
+                    />
+                  ))
+                )}
+              </div>
+            </SortableContext>
+          </DndContext>
+
+          {/* 添加命令按钮 */}
+          <Dialog open={configOpen} onOpenChange={handleConfigOpenChange}>
+            <DialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="quickcmd-add-button h-full rounded-none p-0"
+                aria-label={t("添加快捷命令")}
+                title={t("添加快捷命令")}
+                onClick={() => setEditingCmd(null)}
+                onContextMenu={(event) => event.stopPropagation()}
+              >
+                <Plus className="h-3 w-3" />
+              </Button>
+            </DialogTrigger>
+
+            <DialogContent className="sm:max-w-150">
+              <DialogHeader>
+                <DialogTitle>{editingCmd ? t("编辑快捷命令") : t("添加快捷命令")}</DialogTitle>
+              </DialogHeader>
+
+              <QuickCommandForm
+                onAdd={handleAddCommand}
+                onUpdate={updateCommand}
+                onClose={() => handleConfigOpenChange(false)}
+                editingCmd={editingCmd}
+              />
+            </DialogContent>
+          </Dialog>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="min-w-36 text-xs">
+        <ContextMenuItem className="py-1 text-xs" onClick={handleOpenAddCommand}>
+          <Plus className="mr-2 h-4 w-4" />
+          {t("添加快捷命令")}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
