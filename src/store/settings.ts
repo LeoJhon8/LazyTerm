@@ -13,6 +13,7 @@ import { DEFAULT_QUICK_COMMAND_FONT_SIZE, normalizeQuickCommandFontSize } from "
 export type BackgroundImageUiMode = "frosted" | "clear";
 export type QuickCommandDisplayMode = "bar" | "panel";
 export type TerminalCursorStyle = "block" | "underline" | "bar";
+export type TerminalRightClickBehavior = "context-menu" | "quick-copy-paste";
 export type AppBackgroundColor = "system" | "light" | "dark" | "custom";
 
 export interface AppColorPalette {
@@ -54,6 +55,8 @@ interface SettingsData {
   rdpBackend: ConfigurableRdpBackend;
   terminalAutocomplete: boolean;
   autocompleteSource: ('history' | 'quick')[];  // 自动补全数据源（多选）
+  copyOnSelect: boolean;
+  terminalRightClickBehavior: TerminalRightClickBehavior;
   // 外观自定义
   appBackgroundColor: AppBackgroundColor; // 全局背景色 (终端外)
   appColorPalette: AppColorPalette;
@@ -116,6 +119,8 @@ const defaultSettings: SettingsData = {
   rdpBackend: "freerdp",
   terminalAutocomplete: false,
   autocompleteSource: [],  // 默认不启用任何自动补全数据源
+  copyOnSelect: false,
+  terminalRightClickBehavior: "context-menu",
   // 外观自定义默认值
   appBackgroundColor: "system",
   appColorPalette: DEFAULT_APP_COLOR_PALETTE,
@@ -154,7 +159,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: "lazy-term-settings",
       storage: createJSONStorage(() => gitAwareStorage),
-      version: 2,
+      version: 3,
       migrate: (persistedState, version) => {
         if (persistedState && typeof persistedState === "object") {
           const data: Partial<SettingsData> = { ...(persistedState as Partial<SettingsData>) };
@@ -174,6 +179,11 @@ export const useSettingsStore = create<SettingsState>()(
             data.terminalBackgroundColor = hasCustomBackground
               ? legacyBackground
               : DEFAULT_TERMINAL_BACKGROUND_COLOR;
+          }
+
+          if (version < 3) {
+            data.copyOnSelect = true;
+            data.terminalRightClickBehavior = "quick-copy-paste";
           }
 
           return data;

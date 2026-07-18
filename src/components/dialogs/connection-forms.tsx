@@ -33,6 +33,11 @@ import { useCredentialsStore } from "@/store/credentials";
 import { useSettingsStore } from "@/store/settings";
 import { useSettingsDialogStore } from "@/store/settings-dialog";
 import { resolveRdpBackend } from "@/lib/rdp-backend";
+import {
+  DEFAULT_RDP_RESOLUTION_VALUE,
+  getRdpResolutionPreset,
+  RDP_RESOLUTION_PRESETS,
+} from "@/lib/rdp-resolution";
 import type { Credential, CredentialType } from "@/types/credential";
 import type {
   SSHConfig,
@@ -324,12 +329,11 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
   const [domain, setDomain] = useState("");
   const [nickname, setNickname] = useState("");
   const [credentialId, setCredentialId] = useState<string | undefined>();
-  const [width, setWidth] = useState("1280");
-  const [height, setHeight] = useState("720");
-  const [autoResize, setAutoResize] = useState(true);
+  const [resolution, setResolution] = useState(DEFAULT_RDP_RESOLUTION_VALUE);
 
   const handleSubmit = () => {
     if (!host || !username) return;
+    const selectedResolution = getRdpResolutionPreset(resolution);
     onSubmit({
       host,
       port: parseInt(port, 10) || 3389,
@@ -338,8 +342,8 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
       password: credentialId ? undefined : (password || undefined),
       domain: domain || undefined,
       nickname: nickname || undefined,
-      width: usesNativeRdp ? undefined : (parseInt(width, 10) || 1280),
-      height: usesNativeRdp ? undefined : (parseInt(height, 10) || 720),
+      width: usesNativeRdp ? undefined : selectedResolution.width,
+      height: usesNativeRdp ? undefined : selectedResolution.height,
       autoResize: usesNativeRdp ? true : false,
       backend: fixedBackend,
     });
@@ -382,22 +386,20 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
       {!usesNativeRdp && (
         <>
           <Separator />
-          <FormField label={t("初始宽度")}>
-            <Input type="number" min="200" value={width} onChange={(e) => setWidth(e.target.value)} />
+          <FormField label={t("桌面分辨率")}>
+            <Select value={resolution} onValueChange={setResolution}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RDP_RESOLUTION_PRESETS.map((preset) => (
+                  <SelectItem key={preset.value} value={preset.value}>
+                    {preset.width} × {preset.height}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </FormField>
-          <FormField label={t("初始高度")}>
-            <Input type="number" min="200" value={height} onChange={(e) => setHeight(e.target.value)} />
-          </FormField>
-          <div className="hidden">
-          <FormField label={t("自动跟随窗口")}>
-            <div className="flex items-center gap-3">
-              <Checkbox id="rdp-auto-resize-qc" checked={autoResize} onCheckedChange={(checked) => setAutoResize(checked === true)} />
-              <Label htmlFor="rdp-auto-resize-qc" className="text-sm text-muted-foreground">
-                  {t("窗口变化时同步远端分辨率")}
-              </Label>
-            </div>
-          </FormField>
-          </div>
         </>
       )}
       <DialogFooter className="pt-2">

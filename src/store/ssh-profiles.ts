@@ -4,6 +4,7 @@ import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCli
 import { getSystemLanguage, resolveAppLocale, type AppLocale } from "@/i18n/config";
 import { useSettingsStore } from "@/store/settings";
 import { gitAwareStorage } from "@/store/git-aware-storage";
+import { getClosestRdpResolutionPreset } from "@/lib/rdp-resolution";
 
 export type NodeType = "folder" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
 
@@ -19,15 +20,21 @@ export interface SessionNode {
 }
 
 function normalizeRdpConfig(config: RDPConfig): RDPConfig {
-  if (config.backend !== "msrdpax") {
-    return config;
+  if (config.backend === "msrdpax") {
+    return {
+      ...config,
+      width: undefined,
+      height: undefined,
+      autoResize: true,
+    };
   }
+
+  const resolution = getClosestRdpResolutionPreset(config.width, config.height);
 
   return {
     ...config,
-    width: undefined,
-    height: undefined,
-    autoResize: true,
+    width: resolution.width,
+    height: resolution.height,
   };
 }
 

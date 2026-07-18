@@ -430,8 +430,8 @@ fn spawn_native_rdp_sidecar<R: Runtime>(
             username: config.username.clone(),
             password: config.password.clone(),
             domain: config.domain.clone(),
-            width: config.width,
-            height: config.height,
+            width: None,
+            height: None,
         }),
         rect: None,
     };

@@ -73,8 +73,6 @@ export class NativeRdpConnector implements INativeRdpConnector {
           username: this.config.username,
           password: this.config.password,
           domain: this.config.domain,
-          width: undefined,
-          height: undefined,
           auto_resize: true,
         },
       }, {

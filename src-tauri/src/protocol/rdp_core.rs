@@ -24,6 +24,21 @@ mod freerdp_runtime {
     const RDP_KEYBOARD_JPEG_QUALITY: u8 = 42;
     const RDP_CLICK_JPEG_QUALITY: u8 = 46;
     const RDP_INTERACTION_WINDOW: Duration = Duration::from_millis(320);
+    const DEFAULT_RDP_RESOLUTION: (u32, u32) = (1280, 720);
+    const RDP_RESOLUTION_PRESETS: &[(u32, u32)] = &[
+        (1024, 768),
+        (1280, 720),
+        (1280, 800),
+        (1280, 1024),
+        (1366, 768),
+        (1440, 900),
+        (1600, 900),
+        (1680, 1050),
+        (1920, 1080),
+        (1920, 1200),
+        (2560, 1440),
+        (3840, 2160),
+    ];
 
     pub struct RdpFrameEncoderState {
         rgb_buffer: Vec<u8>,
@@ -133,9 +148,12 @@ mod freerdp_runtime {
             .password
             .clone()
             .ok_or_else(|| "RDP 连接当前仅支持密码认证。".to_string())?;
-
-        let width = config.width.unwrap_or(1280).clamp(200, 8192);
-        let height = config.height.unwrap_or(720).clamp(200, 8192);
+        let requested_resolution = (config.width, config.height);
+        let (width, height) = match requested_resolution {
+            (Some(width), Some(height))
+                if RDP_RESOLUTION_PRESETS.contains(&(width, height)) => (width, height),
+            _ => DEFAULT_RDP_RESOLUTION,
+        };
 
         Ok(FreeRdpClientConfig {
             host: config.host.clone(),

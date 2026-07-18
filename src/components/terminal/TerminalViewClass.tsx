@@ -16,6 +16,14 @@ import {
   VIEW_CONTAINER_CLASSNAME,
 } from "./BaseSessionView";
 import { ConnectionStatusOverlay } from "./ConnectionStatusOverlay";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
 import { normalizePasteTextForConnector } from "@/lib/terminal-paste";
@@ -94,6 +102,7 @@ interface TerminalInstance {
   dataUnsubscribe?: () => void;
   pasteElement?: HTMLTextAreaElement;
   pasteHandler?: (event: ClipboardEvent) => void;
+  clipboardKeyDisposable?: { dispose(): void };
   dispose: () => void;
   webglAddon?: WebglAddon | null;
   acAddon?: AutocompleteTerminalAddon | null;
@@ -271,6 +280,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const backgroundImageEnabled = useSettingsStore((state) => state.backgroundImageEnabled);
   const backgroundImage = useSettingsStore((state) => state.backgroundImage);
   const terminalAutocomplete = useSettingsStore((state) => state.terminalAutocomplete);
+  const terminalRightClickBehavior = useSettingsStore((state) => state.terminalRightClickBehavior);
+  const [terminalContextMenuOpen, setTerminalContextMenuOpen] = useState(false);
   const paneFontSizeOverrides = usePanesStore((state) => state.paneFontSizeOverrides);
   const setPaneFontSizeOverride = usePanesStore((state) => state.setPaneFontSizeOverride);
   const effectiveFontSize = paneFontSizeOverrides[paneId] ?? fontSize;
@@ -662,8 +673,44 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         }
       });
 
+      const clipboardKeyDisposable = term.attachCustomKeyEventHandler((event) => {
+        if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey) {
+          return true;
+        }
+
+        const key = event.key.toLowerCase();
+        if (key === "c") {
+          if (!term.hasSelection()) {
+            return true;
+          }
+
+          event.preventDefault();
+          void writeText(term.getSelection()).catch((error) => {
+            logger.error("FE/terminal-view/clipboard", "Copy shortcut failed", { error });
+          });
+          return false;
+        }
+
+        if (key === "v") {
+          event.preventDefault();
+          void readText()
+            .then((text) => {
+              const currentConnector = terminalMap.current.get(sessionId)?.connector ?? connector;
+              if (text && currentConnector) {
+                currentConnector.write(normalizePasteTextForConnector(text, currentConnector.protocol));
+              }
+            })
+            .catch((error) => {
+              logger.error("FE/terminal-view/clipboard", "Paste shortcut failed", { error });
+            });
+          return false;
+        }
+
+        return true;
+      });
+
       const selectionDisposable = term.onSelectionChange(async () => {
-        if (term.hasSelection()) {
+        if (useSettingsStore.getState().copyOnSelect && term.hasSelection()) {
           try {
             await writeText(term.getSelection());
           } catch (e) {
@@ -688,6 +735,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         dataUnsubscribe,
         pasteElement,
         pasteHandler,
+        clipboardKeyDisposable,
         termState,
         webglAddon,
         acAddon,
@@ -698,6 +746,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           containerEl.removeEventListener("wheel", handleWheel, { capture: true });
           pasteElement?.removeEventListener("paste", pasteHandler);
           inputDisposable.dispose();
+          clipboardKeyDisposable.dispose();
           parserDisposables.forEach((disposable) => disposable.dispose());
           keyDisposable.dispose();
           selectionDisposable.dispose();
@@ -877,8 +926,37 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     return () => clearTimeout(timer);
   }, [sessionId, leftSlotCollapsed, rightSlotCollapsed, activateTerminal]);
 
-  // 鼠标右键处理
-  const handleContextMenu = async (e: React.MouseEvent) => {
+  const copyTerminalSelection = async (clearSelection = false) => {
+    const instance = terminalMap.current.get(sessionId);
+    if (!instance?.terminal.hasSelection()) return;
+
+    try {
+      await writeText(instance.terminal.getSelection());
+      if (clearSelection) {
+        instance.terminal.clearSelection();
+      }
+    } catch (error) {
+      logger.error("FE/terminal-view/clipboard", "Failed to copy terminal selection", { error });
+    }
+  };
+
+  const pasteTerminalClipboard = async () => {
+    if (!activeSession?.connector || !isTerminalConnector(activeSession.connector)) return;
+
+    try {
+      const text = await readText();
+      if (text) {
+        activeSession.connector.write(
+          normalizePasteTextForConnector(text, activeSession.connector.protocol)
+        );
+      }
+    } catch (error) {
+      logger.error("FE/terminal-view/clipboard", "Failed to paste terminal clipboard", { error });
+    }
+  };
+
+  // 快捷复制/粘贴模式：有选区时复制并清除，否则粘贴。
+  const handleQuickCopyPaste = async (e: React.MouseEvent) => {
     e.preventDefault();
 
     if (!sessionId || !activeSession?.connector || !isTerminalConnector(activeSession.connector)) return;
@@ -887,18 +965,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     if (!instance) return;
 
     if (instance.terminal.hasSelection()) {
-      instance.terminal.clearSelection();
+      await copyTerminalSelection(true);
     } else {
-      try {
-        const text = await readText();
-        if (text) {
-          activeSession.connector.write(
-            normalizePasteTextForConnector(text, activeSession.connector.protocol)
-          );
-        }
-      } catch (error) {
-        logger.error("FE/terminal-view/clipboard", "Failed to read clipboard", { error });
-      }
+      await pasteTerminalClipboard();
     }
   };
 
@@ -939,7 +1008,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         : activeSession.host || activeSession.title;
 
   // 渲染内容（对应基类的 renderContent 抽象方法）
-  return (
+  const terminalView = (
     <main
       className={cn(
         VIEW_CONTAINER_CLASSNAME, 
@@ -948,7 +1017,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       )}
       onClick={() => activateTerminal(sessionId)}
       onWheelCapture={handleTerminalWheel}
-      onContextMenu={handleContextMenu}
+      onContextMenu={terminalRightClickBehavior === "quick-copy-paste" ? handleQuickCopyPaste : undefined}
       style={{
         backgroundColor: hasBackgroundImage ? "transparent" : xtermTheme.background,
       }}
@@ -1016,5 +1085,57 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         onReconnect={activeSession.type === "local" ? undefined : () => reconnectSession(sessionId)}
       />
     </main>
+  );
+
+  if (terminalRightClickBehavior === "quick-copy-paste") {
+    return terminalView;
+  }
+
+  const hasTerminalSelection = terminalContextMenuOpen
+    && (terminalMap.current.get(sessionId)?.terminal.hasSelection() ?? false);
+
+  return (
+    <ContextMenu onOpenChange={setTerminalContextMenuOpen}>
+      <ContextMenuTrigger asChild>
+        {terminalView}
+      </ContextMenuTrigger>
+      <ContextMenuContent
+        className="min-w-52 text-xs"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          activateTerminal(sessionId);
+        }}
+      >
+        <ContextMenuItem
+          className="py-1.5 text-xs"
+          disabled={!hasTerminalSelection}
+          onSelect={() => { void copyTerminalSelection(); }}
+        >
+          {t("复制所选内容")}
+          <ContextMenuShortcut>Ctrl+Shift+C</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuItem
+          className="py-1.5 text-xs"
+          onSelect={() => { void pasteTerminalClipboard(); }}
+        >
+          {t("粘贴剪贴板")}
+          <ContextMenuShortcut>Ctrl+Shift+V</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          className="py-1.5 text-xs"
+          onSelect={() => terminalMap.current.get(sessionId)?.terminal.selectAll()}
+        >
+          {t("全选终端内容")}
+        </ContextMenuItem>
+        <ContextMenuItem
+          className="py-1.5 text-xs"
+          disabled={!hasTerminalSelection}
+          onSelect={() => terminalMap.current.get(sessionId)?.terminal.clearSelection()}
+        >
+          {t("清除选区")}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

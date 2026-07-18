@@ -523,6 +523,10 @@
     padding-top: 6px !important;
   }
 
+  .activity-panel-overlay > .module-shell > .history-module-header {
+    background: color-mix(in srgb, var(--panel-strong) 42%, transparent);
+  }
+
   .activity-panel-overlay .module-title {
     min-width: 0;
     overflow: hidden;
@@ -570,82 +574,55 @@
     color: inherit;
   }
 
-  .history-header-actions {
+  .history-search-bar {
     display: flex;
-    min-width: 0;
+    height: 36px;
+    width: 100%;
     align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
+    gap: 7px;
+    padding: 0 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 62%, transparent);
+    background: color-mix(in srgb, var(--panel-strong) 42%, transparent);
+    color: color-mix(in srgb, var(--muted-foreground) 78%, transparent);
+    transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
   }
 
-  .history-header-actions:focus-within,
-  .history-header-actions:hover,
-  .history-header-actions--searching {
-    position: absolute;
-    inset: 0 42px 0 0;
-    padding-left: 8px;
-    right: 42px;
-    z-index: 6;
-    background: var(--background);
+  .activity-panel-overlay > .module-shell > .module-header + .history-search-bar {
+    padding-top: 0 !important;
   }
 
-  .activity-panel-overlay > .module-shell > .module-header:has(.history-header-actions:hover) .module-title,
-  .activity-panel-overlay > .module-shell > .module-header:has(.history-header-actions:focus-within) .module-title,
-  .activity-panel-overlay > .module-shell > .module-header:has(.history-header-actions--searching) .module-title {
-    visibility: hidden;
+  .history-search-bar:hover {
+    background: color-mix(in srgb, var(--panel-strong) 44%, transparent);
   }
 
-  .history-header-search {
-    position: relative;
-    display: flex;
-    height: 28px;
-    width: 28px;
-    align-items: center;
-    overflow: hidden;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    background: transparent;
-    color: color-mix(in srgb, var(--muted-foreground) 86%, transparent);
-    transition: width 160ms ease, border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+  .history-search-bar:focus-within {
+    border-bottom-color: color-mix(in srgb, var(--primary) 42%, var(--panel-border));
+    background: color-mix(in srgb, var(--panel-strong) 52%, transparent);
+    color: color-mix(in srgb, var(--primary) 74%, var(--foreground));
   }
 
-  .history-header-search:hover,
-  .history-header-search:focus-within,
-  .history-header-search--active {
-    width: min(168px, 44vw);
-    border-color: color-mix(in srgb, var(--panel-border) 78%, transparent);
-    background: color-mix(in srgb, var(--accent) 42%, var(--panel-strong) 58%);
-    color: var(--foreground);
-  }
-
-  .history-header-actions:focus-within .history-header-search,
-  .history-header-actions:hover .history-header-search,
-  .history-header-actions--searching .history-header-search {
-    flex: 1 1 auto;
-    width: auto;
-  }
-
-  .history-header-search-icon {
-    pointer-events: none;
-    position: absolute;
-    left: 7px;
-    top: 50%;
+  .history-search-icon {
     height: 13px;
     width: 13px;
-    transform: translateY(-50%);
+    flex: 0 0 auto;
   }
 
-  .history-header-search-input {
+  .history-search-input {
     height: 100% !important;
     width: 100% !important;
+    min-width: 0;
     border: 0 !important;
-    border-radius: 6px !important;
+    border-radius: 0 !important;
     background: transparent !important;
-    padding-left: 26px !important;
-    padding-right: 8px !important;
+    padding: 0 !important;
     font-size: 11px !important;
+    color: var(--foreground);
     box-shadow: none !important;
     outline: none !important;
+  }
+
+  .history-search-input::placeholder {
+    color: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
   }
 
   .history-header-action-button {

@@ -3,11 +3,23 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { RDPConfig } from "@/types/terminal";
 import { useI18n } from "@/i18n";
 import { resolveRdpBackend } from "@/lib/rdp-backend";
+import {
+  DEFAULT_RDP_RESOLUTION_VALUE,
+  getClosestRdpResolutionPreset,
+  getRdpResolutionPreset,
+  RDP_RESOLUTION_PRESETS,
+} from "@/lib/rdp-resolution";
 import { useSettingsStore } from "@/store/settings";
 
 interface RdpConnectDialogProps {
@@ -29,9 +41,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
   const [password, setPassword] = useState("");
   const [domain, setDomain] = useState("");
   const [nickname, setNickname] = useState("");
-  const [width, setWidth] = useState("1280");
-  const [height, setHeight] = useState("720");
-  const [autoResize, setAutoResize] = useState(true);
+  const [resolution, setResolution] = useState(DEFAULT_RDP_RESOLUTION_VALUE);
 
   useEffect(() => {
     if (!open) {
@@ -46,9 +56,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
         setPassword(initialConfig.password || "");
         setDomain(initialConfig.domain || "");
         setNickname(initialConfig.nickname || "");
-        setWidth(initialConfig.width?.toString() || "1280");
-        setHeight(initialConfig.height?.toString() || "720");
-        setAutoResize(initialConfig.autoResize ?? true);
+        setResolution(getClosestRdpResolutionPreset(initialConfig.width, initialConfig.height).value);
         return;
       }
 
@@ -58,9 +66,7 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       setPassword("");
       setDomain("");
       setNickname("");
-      setWidth("1280");
-      setHeight("720");
-      setAutoResize(true);
+      setResolution(DEFAULT_RDP_RESOLUTION_VALUE);
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -71,6 +77,8 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       return;
     }
 
+    const selectedResolution = getRdpResolutionPreset(resolution);
+
     onSave({
       host,
       port: parseInt(port, 10) || 3389,
@@ -79,8 +87,8 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       password: password || undefined,
       domain: domain || undefined,
       nickname: nickname || undefined,
-      width: usesNativeRdp ? undefined : (parseInt(width, 10) || 1280),
-      height: usesNativeRdp ? undefined : (parseInt(height, 10) || 720),
+      width: usesNativeRdp ? undefined : selectedResolution.width,
+      height: usesNativeRdp ? undefined : selectedResolution.height,
       autoResize: usesNativeRdp ? true : false,
       backend: fixedBackend,
     });
@@ -127,29 +135,26 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
               <Input id="rdp-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="col-span-3" autoComplete="off" />
             </div>
 
-            <Separator />
-
-            {!usesNativeRdp ? (
+            {!usesNativeRdp && (
               <>
+                <Separator className="col-span-4" />
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="rdp-width" className="text-right">{t("初始宽度")}</Label>
-                  <Input id="rdp-width" type="number" min="200" value={width} onChange={(event) => setWidth(event.target.value)} className="col-span-3" />
-                </div>
-
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="rdp-height" className="text-right">{t("初始高度")}</Label>
-                  <Input id="rdp-height" type="number" min="200" value={height} onChange={(event) => setHeight(event.target.value)} className="col-span-3" />
-                </div>
-
-                <div className="hidden grid-cols-4 items-center gap-4">
-                  <Label className="text-right">{t("自动跟随窗口")}</Label>
-                  <div className="col-span-3 flex items-center gap-3">
-                    <Checkbox id="rdp-auto-resize" checked={autoResize} onCheckedChange={(checked) => setAutoResize(checked === true)} />
-              <Label htmlFor="rdp-auto-resize" className="text-sm text-muted-foreground">{t("窗口变化时同步远端分辨率")}</Label>
-                  </div>
+                  <Label htmlFor="rdp-resolution" className="text-right">{t("桌面分辨率")}</Label>
+                  <Select value={resolution} onValueChange={setResolution}>
+                    <SelectTrigger id="rdp-resolution" className="col-span-3">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {RDP_RESOLUTION_PRESETS.map((preset) => (
+                        <SelectItem key={preset.value} value={preset.value}>
+                          {preset.width} × {preset.height}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </>
-            ) : null}
+            )}
           </div>
 
           <DialogFooter>

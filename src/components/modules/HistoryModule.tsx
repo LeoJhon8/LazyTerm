@@ -17,7 +17,6 @@ import {
 import { Trash2, Search, X, Send } from "lucide-react";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import { useI18n } from "@/i18n";
-import { cn } from "@/lib/utils";
 
 function isTerminalConnector(connector: SessionConnector | undefined): connector is ITerminalConnector {
   return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
@@ -54,22 +53,12 @@ export function HistoryModule() {
   return (
     <div className="module-shell">
       {/* 头部区域 */}
-      <div className="module-header shrink-0 border-b-0">
+      <div className="module-header history-module-header shrink-0 border-b-0">
         <div className="module-title overflow-hidden">
           <div className="module-title-text overflow-hidden">
             <span className="module-heading truncate text-[15px]">{t("历史命令")}</span>
           </div>
         </div>
-        <div className={cn("history-header-actions", searchQuery && "history-header-actions--searching")}>
-          <div className={cn("history-header-search", searchQuery && "history-header-search--active")}>
-            <Search className="history-header-search-icon" />
-            <Input
-              placeholder=""
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="history-header-search-input"
-            />
-          </div>
         {commands.length > 0 && (
           <Button
             variant="ghost"
@@ -81,10 +70,23 @@ export function HistoryModule() {
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         )}
-        </div>
       </div>
 
       {/* 搜索框区域 */}
+      <div className="history-search-bar shrink-0">
+        <Search className="history-search-icon" />
+        <Input
+          type="text"
+          placeholder={t("搜索历史记录...")}
+          aria-label={t("搜索历史记录...")}
+          autoComplete="off"
+          spellCheck={false}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="history-search-input"
+        />
+      </div>
+
       {/* 列表区域 */}
       <div className="relative flex-1 min-h-0 w-full overflow-hidden">
         <ScrollArea className="h-full w-full overflow-x-hidden">
