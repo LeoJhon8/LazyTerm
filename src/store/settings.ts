@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { TerminalColorScheme } from "@/config/themes";
+import {
+  DEFAULT_TERMINAL_BACKGROUND_COLOR,
+  type TerminalBackgroundMode,
+  type TerminalColorScheme,
+} from "@/config/themes";
 import { DEFAULT_LANGUAGE_SETTING, type AppLanguageSetting } from "@/i18n/config";
 import type { ConfigurableRdpBackend } from "@/lib/rdp-backend";
 import { gitAwareStorage } from "@/store/git-aware-storage";
@@ -55,6 +59,8 @@ interface SettingsData {
   appColorPalette: AppColorPalette;
   terminalColorScheme: string;                  // 终端配色方案名称（预设名或 custom-xxx）
   customThemes: TerminalColorScheme[];          // 用户自定义终端配色方案列表
+  terminalBackgroundMode: TerminalBackgroundMode; // 终端区域底色模式
+  terminalBackgroundColor: string;              // 自定义终端区域底色
   terminalOpacity: number;            // 终端背景透明度 0~100
   backgroundImageEnabled: boolean;    // 是否开启图片背景
   backgroundImagePath: string;        // 背景图片的真实路径(用于展示)
@@ -115,6 +121,8 @@ const defaultSettings: SettingsData = {
   appColorPalette: DEFAULT_APP_COLOR_PALETTE,
   terminalColorScheme: "system-auto",
   customThemes: [],
+  terminalBackgroundMode: "auto",
+  terminalBackgroundColor: DEFAULT_TERMINAL_BACKGROUND_COLOR,
   terminalOpacity: 100,
   backgroundImageEnabled: false,
   backgroundImagePath: "",
@@ -146,16 +154,29 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: "lazy-term-settings",
       storage: createJSONStorage(() => gitAwareStorage),
-      version: 1,
+      version: 2,
       migrate: (persistedState, version) => {
-        if (version < 1 && persistedState && typeof persistedState === "object") {
-          const data = persistedState as Partial<SettingsData>;
-          if (data.fontFamily === LEGACY_DEFAULT_FONT_FAMILY) {
-            return {
-              ...data,
-              fontFamily: DEFAULT_FONT_FAMILY,
-            };
+        if (persistedState && typeof persistedState === "object") {
+          const data: Partial<SettingsData> = { ...(persistedState as Partial<SettingsData>) };
+
+          if (version < 1 && data.fontFamily === LEGACY_DEFAULT_FONT_FAMILY) {
+            data.fontFamily = DEFAULT_FONT_FAMILY;
           }
+
+          if (version < 2) {
+            const selectedCustomTheme = data.customThemes?.find(
+              (theme) => theme.name === data.terminalColorScheme
+            );
+            const legacyBackground = selectedCustomTheme?.background;
+            const hasCustomBackground = !!legacyBackground && /^#[\da-f]{6}$/i.test(legacyBackground);
+
+            data.terminalBackgroundMode = hasCustomBackground ? "custom" : "auto";
+            data.terminalBackgroundColor = hasCustomBackground
+              ? legacyBackground
+              : DEFAULT_TERMINAL_BACKGROUND_COLOR;
+          }
+
+          return data;
         }
 
         return persistedState;

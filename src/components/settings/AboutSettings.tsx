@@ -9,6 +9,12 @@ import { useI18n } from "@/i18n";
 import { notifyUpdateAvailable } from "@/hooks/useUpdateNotification";
 import { checkForUpdate, getCurrentAppVersion } from "@/services/updateService";
 
+type UpdateDownloadStatus = {
+  downloading: boolean;
+  progress: number | null;
+  error: string | null;
+};
+
 /** 关于与更新设置 */
 export function AboutSettings() {
   const { t } = useI18n();
@@ -20,13 +26,54 @@ export function AboutSettings() {
 
   useEffect(() => {
     getCurrentAppVersion().then(setVersion);
-    const unlisten = listen("update-progress", (event: { payload: { progress: number } }) => {
-      setDownloadProgress(event.payload.progress);
+    let disposed = false;
+    let receivedDownloadEvent = false;
+    let stopListening: (() => void) | undefined;
+
+    void (async () => {
+      const [stopProgressListener, stopErrorListener] = await Promise.all([
+        listen<{ progress: number }>("update-progress", (event) => {
+          if (!disposed) {
+            receivedDownloadEvent = true;
+            setDownloadProgress(event.payload.progress);
+          }
+        }),
+        listen<{ error: string }>("update-download-error", (event) => {
+          if (!disposed) {
+            receivedDownloadEvent = true;
+            setDownloadProgress(null);
+            setUpdateStatus(t("下载或安装失败：{error}", { error: event.payload.error }));
+          }
+        }),
+      ]);
+
+      if (disposed) {
+        stopProgressListener();
+        stopErrorListener();
+        return;
+      }
+      stopListening = () => {
+        stopProgressListener();
+        stopErrorListener();
+      };
+
+      const status = await invoke<UpdateDownloadStatus>("get_update_download_status");
+      if (disposed || receivedDownloadEvent) return;
+
+      if (status.downloading) {
+        setDownloadProgress((current) => Math.max(current ?? 0, status.progress ?? 0));
+      } else if (status.error) {
+        setUpdateStatus(t("下载或安装失败：{error}", { error: status.error }));
+      }
+    })().catch((err) => {
+      console.error("Failed to restore update download status", err);
     });
+
     return () => {
-      unlisten.then((f) => f());
+      disposed = true;
+      stopListening?.();
     };
-  }, []);
+  }, [t]);
 
   const displayedVersion = version === undefined ? t("加载中...") : (version ?? t("未知"));
 
@@ -77,10 +124,10 @@ export function AboutSettings() {
               </Button>
             </div>
 
-            {updateStatus && (
+            {(updateStatus || downloadProgress !== null) && (
               <div className="px-4 py-3">
                 <div className="p-3 rounded-lg bg-primary/10 text-primary text-sm font-medium border border-primary/20 space-y-3">
-                  <div className="leading-relaxed">{updateStatus}</div>
+                  {updateStatus && <div className="leading-relaxed">{updateStatus}</div>}
                   {latestUpdateUrl && downloadProgress === null && (
                     <Button
                       size="sm"

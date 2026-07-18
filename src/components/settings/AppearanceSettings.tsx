@@ -10,13 +10,19 @@ import { logger } from "@/lib/logger";
 import { DEFAULT_APP_COLOR_PALETTE, useSettingsStore } from "@/store/settings";
 import type { AppBackgroundColor } from "@/store/settings";
 import {
-  DEFAULT_DARK_THEME,
+  DEFAULT_TERMINAL_BACKGROUND_COLOR,
   TERMINAL_THEME_ECOSYSTEMS,
-  getTerminalTheme,
+  getResolvedTerminalTheme,
   normalizeTerminalThemeName,
 } from "@/config/themes";
 import type { TerminalColorScheme } from "@/config/themes";
-import { FONT_OPTIONS, APP_BACKGROUND_OPTIONS, EDITABLE_THEME_COLOR_ITEMS, TERMINAL_CURSOR_STYLE_OPTIONS } from "./constants";
+import {
+  FONT_OPTIONS,
+  APP_BACKGROUND_OPTIONS,
+  EDITABLE_THEME_COLOR_ITEMS,
+  TERMINAL_BACKGROUND_OPTIONS,
+  TERMINAL_CURSOR_STYLE_OPTIONS,
+} from "./constants";
 import { getTerminalThemeDisplayName, useI18n } from "@/i18n";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -61,6 +67,8 @@ export function AppearanceSettings() {
   const terminalColorScheme = useSettingsStore((s) => s.terminalColorScheme);
   const terminalCursorStyle = useSettingsStore((s) => s.terminalCursorStyle);
   const customThemes = useSettingsStore((s) => s.customThemes);
+  const terminalBackgroundMode = useSettingsStore((s) => s.terminalBackgroundMode);
+  const terminalBackgroundColor = useSettingsStore((s) => s.terminalBackgroundColor);
   const terminalOpacity = useSettingsStore((s) => s.terminalOpacity);
   const backgroundImageEnabled = useSettingsStore((s) => s.backgroundImageEnabled);
   const backgroundImage = useSettingsStore((s) => s.backgroundImage);
@@ -78,7 +86,6 @@ export function AppearanceSettings() {
     : appBackgroundColor === "system"
       ? window.matchMedia("(prefers-color-scheme: dark)").matches
       : appBackgroundColor === "dark";
-
   // 合并预设 + 自定义方案，按配色模式排序
   const activeCustomTheme = customThemes.find((c) => c.name === terminalColorScheme);
   const isCustomSelected = !!activeCustomTheme;
@@ -86,20 +93,39 @@ export function AppearanceSettings() {
     ? terminalColorScheme
     : normalizeTerminalThemeName(terminalColorScheme);
   const ecosystemThemeOptions: TerminalColorScheme[] = TERMINAL_THEME_ECOSYSTEMS.map((theme) => ({
-    ...getTerminalTheme(theme.name, customThemes, appBackgroundColor, isDarkApp),
+    ...getResolvedTerminalTheme(
+      theme.name,
+      customThemes,
+      terminalBackgroundMode,
+      terminalBackgroundColor,
+      isDarkApp
+    ),
     name: theme.name,
     label: theme.label,
-    isDark: isDarkApp,
   }));
-  const allThemes: TerminalColorScheme[] = [...ecosystemThemeOptions, ...customThemes];
+  const customThemeOptions = customThemes.map((theme) =>
+    getResolvedTerminalTheme(
+      theme.name,
+      customThemes,
+      terminalBackgroundMode,
+      terminalBackgroundColor,
+      isDarkApp
+    )
+  );
+  const allThemes: TerminalColorScheme[] = [...ecosystemThemeOptions, ...customThemeOptions];
 
   const handleAddCustomTheme = () => {
     const id = generateCustomThemeId();
     const newTheme: TerminalColorScheme = {
-      ...DEFAULT_DARK_THEME,
+      ...getResolvedTerminalTheme(
+        "system-auto",
+        [],
+        terminalBackgroundMode,
+        terminalBackgroundColor,
+        isDarkApp
+      ),
       name: id,
       label: t("自定义方案"),
-      isDark: true,
     };
     setSettings({
       customThemes: [...customThemes, newTheme],
@@ -135,6 +161,10 @@ export function AppearanceSettings() {
     setSettings({
       appColorPalette: { color: value },
     });
+  };
+
+  const handleUpdateTerminalBackgroundColor = (value: string) => {
+    setSettings({ terminalBackgroundColor: value });
   };
 
   const resolveColor = (color: string, fallback: string) => color === "auto" ? fallback : color;
@@ -244,6 +274,52 @@ export function AppearanceSettings() {
             </div>
           </div>
 
+          {/* 终端区域配色 */}
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("终端区域配色")}</Label>
+            <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden px-3 py-3">
+              <div className="flex flex-wrap gap-2">
+                {TERMINAL_BACKGROUND_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    className={cn(
+                      "px-4 py-1.5 rounded-full text-sm transition-all duration-200",
+                      terminalBackgroundMode === opt.value
+                        ? "bg-primary text-primary-foreground shadow-sm font-medium"
+                        : "bg-background/80 text-muted-foreground hover:text-foreground hover:bg-background"
+                    )}
+                    onClick={() => setSettings({ terminalBackgroundMode: opt.value })}
+                  >
+                    {t(opt.labelKey)}
+                  </button>
+                ))}
+              </div>
+              {terminalBackgroundMode === "custom" && (
+                <div className="mt-3 border-t border-border/30 pt-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="flex min-w-0 items-center gap-2 rounded-md bg-background/55 px-2 py-1.5">
+                      <input
+                        type="color"
+                        value={terminalBackgroundColor || DEFAULT_TERMINAL_BACKGROUND_COLOR}
+                        onChange={(e) => handleUpdateTerminalBackgroundColor(e.target.value)}
+                        className="h-6 w-6 shrink-0 cursor-pointer rounded border-0 p-0"
+                      />
+                      <span className="truncate text-sm text-muted-foreground">{t("自定义颜色")}</span>
+                    </label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => setSettings({ terminalBackgroundColor: DEFAULT_TERMINAL_BACKGROUND_COLOR })}
+                    >
+                      {t("恢复默认")}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* 字体设置 */}
           <div className="flex flex-col gap-1">
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("字体设置")}</Label>
@@ -328,9 +404,9 @@ export function AppearanceSettings() {
             </div>
           </div>
 
-          {/* 终端主题 */}
+          {/* 终端输出主题 */}
           <div className="flex flex-col gap-1">
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("终端主题")}</Label>
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("终端输出主题")}</Label>
             <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-2.5">
                 <Label className="text-sm">{t("配色方案")}</Label>

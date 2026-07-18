@@ -204,38 +204,68 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
       moveNode: (activeId, overId, position) => set((state) => {
         const activeNode = state.nodes.find(n => n.id === activeId);
         const overNode = state.nodes.find(n => n.id === overId);
-        if (!activeNode || !overNode || activeId === overId) return state;
-        if (activeNode.type === 'folder' && isDescendant(state.nodes, activeId, overId)) return state;
+        if (!activeNode || !overNode || activeNode.isRoot || activeId === overId) return state;
 
         let newParentId: string | null = overNode.parentId;
-        let newOrder = overNode.order;
 
         if (overNode.isRoot) {
-          newParentId = overNode.id; 
-          newOrder = -1;
+          newParentId = overNode.id;
         } else if (position === 'inside' && overNode.type === 'folder') {
           newParentId = overNode.id;
-          newOrder = -1;
-        } else if (position === 'after') {
-          newOrder = overNode.order + 0.5;
-        } else {
-          newOrder = overNode.order - 0.5;
         }
 
         if (newParentId === null) newParentId = 'root-folder';
+        if (
+          activeNode.type === 'folder'
+          && (newParentId === activeId || isDescendant(state.nodes, activeId, newParentId))
+        ) {
+          return state;
+        }
 
-        const updated = state.nodes.map(n => {
-          if (n.id === activeId) return { ...n, parentId: newParentId, order: newOrder };
-          if (n.id === newParentId && n.type === 'folder') return { ...n, isExpanded: true };
-          return n;
-        });
+        const oldParentId = activeNode.parentId;
+        const destinationSiblings = state.nodes
+          .filter(n => n.parentId === newParentId && n.id !== activeId)
+          .sort((a, b) => a.order - b.order);
 
-        const finalNodes = [...updated].sort((a, b) => {
-          if (a.parentId !== b.parentId) return 0;
-          return a.order - b.order;
-        }).map((n, i) => ({ ...n, order: i }));
+        let insertionIndex = 0;
+        if (!overNode.isRoot && position !== 'inside') {
+          const overIndex = destinationSiblings.findIndex(n => n.id === overId);
+          if (overIndex === -1) return state;
+          insertionIndex = overIndex + (position === 'after' ? 1 : 0);
+        }
 
-        return { nodes: finalNodes };
+        const reorderedDestination = [...destinationSiblings];
+        reorderedDestination.splice(insertionIndex, 0, activeNode);
+        const destinationOrders = new Map(
+          reorderedDestination.map((node, index) => [node.id, index])
+        );
+        const oldParentOrders = oldParentId !== newParentId
+          ? new Map(
+              state.nodes
+                .filter(n => n.parentId === oldParentId && n.id !== activeId)
+                .sort((a, b) => a.order - b.order)
+                .map((node, index) => [node.id, index])
+            )
+          : null;
+
+        return {
+          nodes: state.nodes.map(n => {
+            if (n.id === activeId) {
+              return { ...n, parentId: newParentId, order: destinationOrders.get(n.id) ?? 0 };
+            }
+            if (n.id === newParentId && n.type === 'folder') {
+              return { ...n, isExpanded: true };
+            }
+
+            const destinationOrder = destinationOrders.get(n.id);
+            if (destinationOrder !== undefined) {
+              return { ...n, order: destinationOrder };
+            }
+
+            const oldParentOrder = oldParentOrders?.get(n.id);
+            return oldParentOrder === undefined ? n : { ...n, order: oldParentOrder };
+          }),
+        };
       }),
 
       importProfiles: (profiles) => set((state) => {

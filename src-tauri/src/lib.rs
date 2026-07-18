@@ -49,6 +49,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(protocol::UpdateDownloadState::default())
         .manage(AppState {
             local_sessions: Arc::new(StdMutex::new(HashMap::new())),
             ssh_sessions: Arc::new(TokioMutex::new(HashMap::new())),
@@ -103,6 +104,7 @@ pub fn run() {
             protocol::close_ssh_session,
             protocol::close_rdp_session,
             protocol::close_vnc_session,
+            protocol::get_update_download_status,
             protocol::download_and_install_update,
             protocol::git_check_repo,
             protocol::git_commit_and_push,

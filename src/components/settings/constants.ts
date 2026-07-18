@@ -1,4 +1,4 @@
-import type { TerminalColorScheme } from "@/config/themes";
+import type { TerminalBackgroundMode, TerminalColorScheme } from "@/config/themes";
 import type { TranslationKey } from "@/i18n";
 import type { AppBackgroundColor, TerminalCursorStyle } from "@/store/settings";
 
@@ -27,6 +27,16 @@ export const APP_BACKGROUND_OPTIONS: Array<{
   { value: "custom", labelKey: "自定义颜色" },
 ];
 
+export const TERMINAL_BACKGROUND_OPTIONS: Array<{
+  value: TerminalBackgroundMode;
+  labelKey: TranslationKey;
+}> = [
+  { value: "auto", labelKey: "自动" },
+  { value: "light", labelKey: "浅色" },
+  { value: "dark", labelKey: "深色" },
+  { value: "custom", labelKey: "自定义颜色" },
+];
+
 export const TERMINAL_CURSOR_STYLE_OPTIONS: Array<{
   value: TerminalCursorStyle;
   labelKey: TranslationKey;
@@ -39,7 +49,6 @@ export const TERMINAL_CURSOR_STYLE_OPTIONS: Array<{
 // 可编辑的主题颜色项
 export type EditableThemeColorKey = keyof Pick<
   TerminalColorScheme,
-  | "background"
   | "foreground"
   | "cursor"
   | "selectionBackground"
@@ -54,7 +63,6 @@ export type EditableThemeColorKey = keyof Pick<
 >;
 
 export const EDITABLE_THEME_COLOR_ITEMS: Array<{ key: EditableThemeColorKey; labelKey: TranslationKey }> = [
-  { key: "background", labelKey: "背景色" },
   { key: "foreground", labelKey: "前景色" },
   { key: "cursor", labelKey: "光标颜色" },
   { key: "selectionBackground", labelKey: "选区背景" },

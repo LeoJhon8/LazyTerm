@@ -33,6 +33,10 @@ export interface TerminalThemeEcosystem {
   lightThemeName: string;
 }
 
+export type TerminalBackgroundMode = "auto" | "light" | "dark" | "custom";
+
+export const DEFAULT_TERMINAL_BACKGROUND_COLOR = "#1e1e1e";
+
 const APP_DARK_TERMINAL_THEME: TerminalColorScheme = {
   name: "app-dark",
   label: "跟随外观深色",
@@ -93,17 +97,6 @@ function getSystemPrefersDark(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-function resolveAppIsDark(
-  appBackgroundColor?: "system" | "light" | "dark" | "custom",
-  appIsDarkOverride?: boolean
-): boolean {
-  if (typeof appIsDarkOverride === "boolean") {
-    return appIsDarkOverride;
-  }
-
-  return appBackgroundColor === "dark" || (appBackgroundColor !== "light" && getSystemPrefersDark());
-}
-
 export const DEFAULT_DARK_THEME: Omit<TerminalColorScheme, "name" | "label"> = {
   isDark: true,
   background: "#1e1e1e",
@@ -133,7 +126,7 @@ export const DEFAULT_DARK_THEME: Omit<TerminalColorScheme, "name" | "label"> = {
 export const TERMINAL_THEMES: TerminalColorScheme[] = [
   {
     name: "system-auto",
-    label: "跟随外观主题 (自动)",
+    label: "跟随终端底色 (自动)",
     isDark: true,
     background: "auto",
     foreground: "auto",
@@ -432,7 +425,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
 export const TERMINAL_THEME_ECOSYSTEMS: TerminalThemeEcosystem[] = [
   {
     name: "system-auto",
-    label: "跟随外观主题 (自动)",
+    label: "跟随终端底色 (自动)",
     darkThemeName: "app-dark",
     lightThemeName: "app-light",
   },
@@ -505,8 +498,7 @@ export function normalizeTerminalThemeName(schemeName: string): string {
 export function getTerminalTheme(
   schemeName: string,
   customThemes?: TerminalColorScheme[],
-  appBackgroundColor?: "system" | "light" | "dark" | "custom",
-  appIsDarkOverride?: boolean
+  prefersDark: boolean = getSystemPrefersDark()
 ): TerminalColorScheme {
   if (customThemes && customThemes.length > 0) {
     const found = customThemes.find((t) => t.name === schemeName);
@@ -520,14 +512,14 @@ export function getTerminalTheme(
   }
 
   if (resolvedSchemeName === "system-auto") {
-    return resolveAppIsDark(appBackgroundColor, appIsDarkOverride)
+    return prefersDark
       ? APP_DARK_TERMINAL_THEME
       : APP_LIGHT_TERMINAL_THEME;
   }
 
   const ecosystem = THEME_ECOSYSTEM_BY_NAME.get(resolvedSchemeName);
   if (ecosystem) {
-    const themeName = resolveAppIsDark(appBackgroundColor, appIsDarkOverride)
+    const themeName = prefersDark
       ? ecosystem.darkThemeName
       : ecosystem.lightThemeName;
 
@@ -541,6 +533,56 @@ export function getTerminalTheme(
     TERMINAL_THEMES.find((t) => t.name === resolvedSchemeName) ||
     TERMINAL_THEMES[1]
   );
+}
+
+export function getColorLuminance(color: string): number {
+  const normalized = color.replace("#", "").trim();
+  if (!/^[\da-f]{6}$/i.test(normalized)) {
+    return 1;
+  }
+
+  const channels = [0, 2, 4].map((start) => {
+    const value = parseInt(normalized.slice(start, start + 2), 16) / 255;
+    return value <= 0.03928
+      ? value / 12.92
+      : Math.pow((value + 0.055) / 1.055, 2.4);
+  });
+
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
+export function resolveTerminalBackground(
+  mode: TerminalBackgroundMode,
+  customColor: string,
+  appIsDark: boolean
+): string {
+  if (mode === "custom") {
+    return /^#[\da-f]{6}$/i.test(customColor)
+      ? customColor
+      : DEFAULT_TERMINAL_BACKGROUND_COLOR;
+  }
+
+  if (mode === "light") return APP_LIGHT_TERMINAL_THEME.background;
+  if (mode === "dark") return DEFAULT_TERMINAL_BACKGROUND_COLOR;
+  return appIsDark ? APP_DARK_TERMINAL_THEME.background : APP_LIGHT_TERMINAL_THEME.background;
+}
+
+export function getResolvedTerminalTheme(
+  schemeName: string,
+  customThemes: TerminalColorScheme[],
+  backgroundMode: TerminalBackgroundMode,
+  customBackgroundColor: string,
+  appIsDark: boolean
+): TerminalColorScheme {
+  const background = resolveTerminalBackground(backgroundMode, customBackgroundColor, appIsDark);
+  const backgroundIsDark = getColorLuminance(background) <= 0.42;
+  const theme = getTerminalTheme(schemeName, customThemes, backgroundIsDark);
+
+  return {
+    ...theme,
+    isDark: backgroundIsDark,
+    background,
+  };
 }
 
 export function toXtermTheme(scheme: TerminalColorScheme, opacityPercent: number = 100) {

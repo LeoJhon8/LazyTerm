@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect, type MouseEvent } from "react";
+import { useState, useMemo, useEffect, useRef, type MouseEvent } from "react";
 import { 
-  DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, 
-  useDraggable, useDroppable
+  DndContext, closestCenter, pointerWithin, PointerSensor, useSensor, useSensors, DragOverlay,
+  useDraggable, useDroppable, type CollisionDetection, type DragMoveEvent
 } from "@dnd-kit/core";
 import { 
   Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, Zap,
@@ -42,6 +42,11 @@ import { logger } from "@/lib/logger";
 
 type DropPosition = 'before' | 'after' | 'inside';
 
+const pointerFirstCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  return pointerCollisions.length > 0 ? pointerCollisions : closestCenter(args);
+};
+
 function getSortedFlattenedNodes(nodes: SessionNode[], parentId: string | null = null, depth = 0): (SessionNode & { depth: number })[] {
   return nodes
     .filter(n => n.parentId === parentId)
@@ -57,6 +62,7 @@ function getSortedFlattenedNodes(nodes: SessionNode[], parentId: string | null =
 
 function getDropPosition(
   node: SessionNode,
+  pointerY: number | null,
   activeRect: { top: number; height: number } | null | undefined,
   overRect: { top: number; height: number } | null | undefined,
 ): DropPosition | null {
@@ -67,11 +73,11 @@ function getDropPosition(
   }
 
   const activeCenterY = activeRect.top + activeRect.height / 2;
-  const relativeY = activeCenterY - overRect.top;
+  const relativeY = (pointerY ?? activeCenterY) - overRect.top;
 
   if (node.type === 'folder') {
-    if (relativeY < overRect.height * 0.25) return 'before';
-    if (relativeY > overRect.height * 0.75) return 'after';
+    if (relativeY < overRect.height * 0.2) return 'before';
+    if (relativeY > overRect.height * 0.8) return 'after';
     return 'inside';
   }
 
@@ -305,6 +311,7 @@ export function SessionModule() {
     overId: string | null;
     dropPos: DropPosition | null;
   }>({ activeId: null, overId: null, dropPos: null });
+  const pointerYRef = useRef<number | null>(null);
 
   // 弹窗状态管理
   const dialog = useDialogState();
@@ -340,7 +347,7 @@ export function SessionModule() {
     syncRootFolderName();
   }, [ensureRoot, syncRootFolderName, locale]);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
   const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
   const deleteTargetNodes = useMemo(() => {
@@ -386,6 +393,20 @@ export function SessionModule() {
     return () => document.removeEventListener("pointerdown", clearSelection);
   }, [selectedNodeIds.length]);
 
+  useEffect(() => {
+    if (!dragState.activeId) {
+      pointerYRef.current = null;
+      return;
+    }
+
+    const updatePointerPosition = (event: PointerEvent) => {
+      pointerYRef.current = event.clientY;
+    };
+
+    document.addEventListener("pointermove", updatePointerPosition, true);
+    return () => document.removeEventListener("pointermove", updatePointerPosition, true);
+  }, [dragState.activeId]);
+
   const isSshConfig = (config: SessionNode["config"]): config is SSHConfig => {
     return !!config && "authType" in config;
   };
@@ -417,6 +438,21 @@ export function SessionModule() {
       }
       return { activeId, overId, dropPos };
     });
+  };
+
+  const handleDragMove = (event: DragMoveEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      updateDragState(active.id as string, null, null);
+      return;
+    }
+
+    const overNode = nodes.find((node) => node.id === over.id);
+    const activeRect = active.rect.current.translated ?? active.rect.current.initial;
+    const nextDropPos = overNode
+      ? getDropPosition(overNode, pointerYRef.current, activeRect, over.rect)
+      : null;
+    updateDragState(active.id as string, over.id as string, nextDropPos);
   };
 
   const openDialog = (type: Parameters<typeof dialog.open>[0], node: SessionNode | null = null) => {
@@ -570,25 +606,24 @@ export function SessionModule() {
       <div className="flex-1 overflow-y-auto px-2 pt-0 pb-3">
         <DndContext 
           sensors={sensors} 
-          collisionDetection={closestCenter} 
-          onDragStart={(e) => updateDragState(e.active.id as string, null, null)}
-          onDragOver={(e) => {
-            const { active, over } = e;
-            if (!over || active.id === over.id) {
-              updateDragState(active.id as string, null, null);
-              return;
-            }
-            const overNode = nodes.find((node) => node.id === over.id);
-            const activeRect = active.rect.current.translated ?? active.rect.current.initial;
-            const nextDropPos = overNode ? getDropPosition(overNode, activeRect, over.rect) : null;
-            updateDragState(active.id as string, over.id as string, nextDropPos);
+          collisionDetection={pointerFirstCollisionDetection}
+          onDragStart={(e) => {
+            const activatorEvent = e.activatorEvent;
+            pointerYRef.current = "clientY" in activatorEvent
+              ? (activatorEvent as PointerEvent).clientY
+              : null;
+            updateDragState(e.active.id as string, null, null);
           }}
+          onDragMove={handleDragMove}
+          onDragOver={handleDragMove}
           onDragEnd={(e) => {
             const { active, over } = e;
             if (over && active.id !== over.id) {
               const overNode = nodes.find((node) => node.id === over.id);
               const activeRect = active.rect.current.translated ?? active.rect.current.initial;
-              const dropPos = overNode ? getDropPosition(overNode, activeRect, over.rect) : null;
+              const dropPos = overNode
+                ? getDropPosition(overNode, pointerYRef.current, activeRect, over.rect)
+                : null;
               if (dropPos) {
                 moveNode(active.id as string, over.id as string, dropPos);
               }

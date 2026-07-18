@@ -10,7 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
-import { getTerminalTheme, toXtermTheme } from "@/config/themes";
+import { getResolvedTerminalTheme, toXtermTheme } from "@/config/themes";
 import {
   type BaseSessionViewProps,
   VIEW_CONTAINER_CLASSNAME,
@@ -269,6 +269,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const terminalColorScheme = useSettingsStore((state) => state.terminalColorScheme);
   const terminalCursorStyle = useSettingsStore((state) => state.terminalCursorStyle);
   const customThemes = useSettingsStore((state) => state.customThemes);
+  const terminalBackgroundMode = useSettingsStore((state) => state.terminalBackgroundMode);
+  const terminalBackgroundColor = useSettingsStore((state) => state.terminalBackgroundColor);
   const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
   const appBackgroundColor = useSettingsStore((state) => state.appBackgroundColor);
   const appColorPalette = useSettingsStore((state) => state.appColorPalette ?? DEFAULT_APP_COLOR_PALETTE);
@@ -294,8 +296,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     terminalColorScheme,
     terminalCursorStyle,
     customThemes,
+    terminalBackgroundMode,
+    terminalBackgroundColor,
     terminalOpacity,
-    appBackgroundColor,
     appIsDark,
     hasBackgroundImage: !!(backgroundImageEnabled && backgroundImage),
   });
@@ -314,8 +317,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     terminalColorScheme,
     terminalCursorStyle,
     customThemes,
+    terminalBackgroundMode,
+    terminalBackgroundColor,
     terminalOpacity,
-    appBackgroundColor,
     appIsDark,
     hasBackgroundImage: !!hasBackgroundImage,
   };
@@ -500,12 +504,19 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         terminalColorScheme: nextTerminalColorScheme,
         terminalCursorStyle: nextTerminalCursorStyle,
         customThemes: nextCustomThemes,
+        terminalBackgroundMode: nextTerminalBackgroundMode,
+        terminalBackgroundColor: nextTerminalBackgroundColor,
         terminalOpacity: nextTerminalOpacity,
-        appBackgroundColor: nextAppBackgroundColor,
         appIsDark: nextAppIsDark,
         hasBackgroundImage: nextHasBackgroundImage,
       } = appearanceRef.current;
-      const colorScheme = getTerminalTheme(nextTerminalColorScheme, nextCustomThemes, nextAppBackgroundColor, nextAppIsDark);
+      const colorScheme = getResolvedTerminalTheme(
+        nextTerminalColorScheme,
+        nextCustomThemes,
+        nextTerminalBackgroundMode,
+        nextTerminalBackgroundColor,
+        nextAppIsDark
+      );
       const term = new Terminal({
         fontFamily: nextFontFamily,
         fontSize: nextFontSize,
@@ -732,7 +743,13 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
   // 监听设置变化
   useEffect(() => {
-    const colorScheme = getTerminalTheme(terminalColorScheme, customThemes, appBackgroundColor, appIsDark);
+    const colorScheme = getResolvedTerminalTheme(
+      terminalColorScheme,
+      customThemes,
+      terminalBackgroundMode,
+      terminalBackgroundColor,
+      appIsDark
+    );
     terminalMap.current.forEach((instance, id) => {
       const { terminal, fitAddon, connector, termState } = instance;
       const nextFontSize = getEffectiveFontSizeForSession(id, fontSize, paneFontSizeOverrides);
@@ -805,7 +822,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
       }
     });
-  }, [fontSize, paneFontSizeOverrides, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalOpacity, appBackgroundColor, appIsDark, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
+  }, [fontSize, paneFontSizeOverrides, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalBackgroundMode, terminalBackgroundColor, terminalOpacity, appBackgroundColor, appIsDark, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
 
   // 清理已被关闭的会话
   useEffect(() => {
@@ -903,7 +920,13 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     setPaneFontSizeOverrideRef.current(paneId, clampTerminalFontSize(currentSize + delta));
   }, [paneId, sessionId]);
 
-  const currentTheme = getTerminalTheme(terminalColorScheme, customThemes, appBackgroundColor, appIsDark);
+  const currentTheme = getResolvedTerminalTheme(
+    terminalColorScheme,
+    customThemes,
+    terminalBackgroundMode,
+    terminalBackgroundColor,
+    appIsDark
+  );
   const xtermTheme = toXtermTheme(currentTheme, terminalOpacity);
 
   // 空状态渲染
