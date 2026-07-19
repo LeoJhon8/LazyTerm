@@ -1,7 +1,8 @@
 import { useState, useMemo, useRef, type CSSProperties, type WheelEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Plus, Trash2, Pencil, Send } from "lucide-react";
+import { ListChecks, Plus, Trash2, Pencil, Send } from "lucide-react";
 import { useQuickCommandsStore, type QuickCommand } from "@/store/quick-commands";
+import { QuickCommandManagerDialog } from "@/components/modules/QuickCommandManagerDialog";
 import { useSettingsStore } from "@/store/settings";
 import { useTabsStore } from "@/store/tabs";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
@@ -122,6 +123,7 @@ export function QuickCmdBar() {
   const { quickCommandDisplayMode, quickCommandFontSize } = useSettingsStore();
   const { focusSessionId, sessions, getAllConnectors } = useTabsStore();
   const [configOpen, setConfigOpen] = useState(false);
+  const [managerOpen, setManagerOpen] = useState(false);
   const [editingCmd, setEditingCmd] = useState<QuickCommand | null>(null);
   const commandsContainerRef = useRef<HTMLDivElement>(null);
   const isPanelMode = quickCommandDisplayMode === "panel";
@@ -198,7 +200,7 @@ export function QuickCmdBar() {
   };
 
   // 添加新命令
-  const handleAddCommand = (newCommand: Omit<QuickCommand, "id">) => {
+  const handleAddCommand = (newCommand: Omit<QuickCommand, "id" | "order" | "createdAt">) => {
     addCommand(newCommand);
   };
 
@@ -244,12 +246,22 @@ export function QuickCmdBar() {
   };
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div className="quickcmd-surface" data-mode={quickCommandDisplayMode} style={quickCommandStyle}>
-          <div className="quickcmd-leading-icon" aria-label={t("快捷命令")} title={t("快捷命令")}>
-            <Play className="h-3 w-3 fill-current" />
-          </div>
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div className="quickcmd-surface" data-mode={quickCommandDisplayMode} style={quickCommandStyle}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="quickcmd-leading-icon rounded-none p-0"
+              aria-label={t("管理快捷命令")}
+              title={t("管理快捷命令")}
+              onClick={() => setManagerOpen(true)}
+              onContextMenu={(event) => event.stopPropagation()}
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+            </Button>
 
           <DndContext
             sensors={sensors}
@@ -317,15 +329,24 @@ export function QuickCmdBar() {
               />
             </DialogContent>
           </Dialog>
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="min-w-36 text-xs">
-        <ContextMenuItem className="py-1 text-xs" onClick={handleOpenAddCommand}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t("添加快捷命令")}
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="min-w-36 text-xs">
+          <ContextMenuItem className="py-1 text-xs" onClick={handleOpenAddCommand}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t("添加快捷命令")}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+      <QuickCommandManagerDialog
+        open={managerOpen}
+        onOpenChange={(open) => {
+          setManagerOpen(open);
+          if (!open) restoreTerminalFocus();
+        }}
+      />
+    </>
   );
 }
 
@@ -336,7 +357,7 @@ function QuickCommandForm({
   onClose,
   editingCmd
 }: {
-  onAdd: (cmd: Omit<QuickCommand, "id">) => void;
+  onAdd: (cmd: Omit<QuickCommand, "id" | "order" | "createdAt">) => void;
   onUpdate: (id: string, updates: Partial<QuickCommand>) => void;
   onClose: () => void;
   editingCmd?: QuickCommand | null;
@@ -361,8 +382,7 @@ function QuickCommandForm({
     } else {
       onAdd({ 
         label: label.trim(), 
-        command: command, 
-        order: 0,
+        command: command,
       });
       setLabel("");
       setCommand("");

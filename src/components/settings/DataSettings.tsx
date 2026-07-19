@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { useSshProfilesStore } from "@/store/ssh-profiles";
-import { useQuickCommandsStore } from "@/store/quick-commands";
+import { normalizeQuickCommands, useQuickCommandsStore } from "@/store/quick-commands";
 import { useGitSyncStore } from "@/store/git-sync";
 import { exportCredentialVault, useCredentialsStore } from "@/store/credentials";
 import type { CredentialVaultDocument } from "@/types/credential";
@@ -80,7 +80,10 @@ export function DataSettings() {
     if (!data) return;
     let importedCount = 0;
     if (data.sshProfiles && Array.isArray(data.sshProfiles)) { importProfiles(data.sshProfiles); importedCount += data.sshProfiles.length; }
-    if (data.quickCommands && Array.isArray(data.quickCommands)) { useQuickCommandsStore.setState({ commands: data.quickCommands }); importedCount += data.quickCommands.length; }
+    if (data.quickCommands && Array.isArray(data.quickCommands)) {
+      useQuickCommandsStore.setState({ commands: normalizeQuickCommands(data.quickCommands) });
+      importedCount += data.quickCommands.length;
+    }
     if (data.credentialVault && typeof data.credentialVault === "object") {
       const credentialVault = data.credentialVault as CredentialVaultDocument;
       if (credentialVault.version !== 1 || !Array.isArray(credentialVault.credentials)) {
