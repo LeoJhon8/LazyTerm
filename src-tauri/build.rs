@@ -353,38 +353,6 @@ fn copy_dlls_from_dir(source_dir: &Path, dll_names: &[&str]) {
     }
 }
 
-fn copy_dlls_to_dir(source_dir: &Path, target_dir: &Path, dll_names: &[&str]) {
-    if !source_dir.exists() {
-        return;
-    }
-
-    if let Err(error) = fs::create_dir_all(target_dir) {
-        println!(
-            "cargo:warning=Failed to create runtime DLL staging directory {}: {}",
-            target_dir.display(),
-            error
-        );
-        return;
-    }
-
-    for dll_name in dll_names {
-        let source = source_dir.join(dll_name);
-        if !source.exists() {
-            continue;
-        }
-
-        let target = target_dir.join(dll_name);
-        if let Err(error) = fs::copy(&source, &target) {
-            println!(
-                "cargo:warning=Failed to stage runtime DLL {} to {}: {}",
-                source.display(),
-                target.display(),
-                error
-            );
-        }
-    }
-}
-
 fn default_windows_openssl_bin_dirs() -> Vec<PathBuf> {
     default_windows_openssl_roots()
         .into_iter()
@@ -405,14 +373,14 @@ fn copy_windows_runtime_dlls(freerdp_bin_dir: &Path) {
         "libcrypto-4-x64.dll",
         "libssl-4-x64.dll",
     ];
-    let staged_dir = PathBuf::from("native/freerdp-runtime/win-x64");
-
+    // Keep machine-local dependencies out of the tracked runtime directory. The
+    // checked-in DLLs are release assets and should only change during an
+    // intentional runtime upgrade; normal builds only need DLLs beside the
+    // executable in Cargo's ignored target directory.
     copy_dlls_from_dir(freerdp_bin_dir, &freerdp_dlls);
-    copy_dlls_to_dir(freerdp_bin_dir, &staged_dir, &freerdp_dlls);
 
     for openssl_bin_dir in default_windows_openssl_bin_dirs() {
         copy_dlls_from_dir(&openssl_bin_dir, &openssl_dlls);
-        copy_dlls_to_dir(&openssl_bin_dir, &staged_dir, &openssl_dlls);
     }
 }
 

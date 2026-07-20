@@ -102,7 +102,6 @@ interface TerminalInstance {
   dataUnsubscribe?: () => void;
   pasteElement?: HTMLTextAreaElement;
   pasteHandler?: (event: ClipboardEvent) => void;
-  clipboardKeyDisposable?: { dispose(): void };
   dispose: () => void;
   webglAddon?: WebglAddon | null;
   acAddon?: AutocompleteTerminalAddon | null;
@@ -673,7 +672,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         }
       });
 
-      const clipboardKeyDisposable = term.attachCustomKeyEventHandler((event) => {
+      term.attachCustomKeyEventHandler((event) => {
         if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey) {
           return true;
         }
@@ -735,7 +734,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         dataUnsubscribe,
         pasteElement,
         pasteHandler,
-        clipboardKeyDisposable,
         termState,
         webglAddon,
         acAddon,
@@ -746,7 +744,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           containerEl.removeEventListener("wheel", handleWheel, { capture: true });
           pasteElement?.removeEventListener("paste", pasteHandler);
           inputDisposable.dispose();
-          clipboardKeyDisposable.dispose();
           parserDisposables.forEach((disposable) => disposable.dispose());
           keyDisposable.dispose();
           selectionDisposable.dispose();
