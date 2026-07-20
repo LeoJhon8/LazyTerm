@@ -5,6 +5,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
@@ -209,6 +210,7 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
   const [password, setPassword] = useState("");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [nickname, setNickname] = useState("");
+  const [startupCommand, setStartupCommand] = useState("");
   const [passwordCredentialId, setPasswordCredentialId] = useState<string | undefined>();
   const [privateKeyCredentialId, setPrivateKeyCredentialId] = useState<string | undefined>();
 
@@ -245,6 +247,7 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
       password: credentialId ? undefined : (password || undefined),
       privateKeyPath: credentialId ? undefined : (privateKeyPath || undefined),
       nickname: nickname || undefined,
+      startupCommand: startupCommand.trim() ? startupCommand : undefined,
       keepAlive: parsedPort === 2222 ? undefined : true,
       keepAliveInterval: parsedPort === 2222 ? undefined : 60,
       readyTimeout: 30000,
@@ -253,11 +256,11 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")} description="留空时使用主机地址">
-        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
-      </FormField>
       <FormField label={t("主机地址")} required>
         <Input value={host} onChange={(e) => setHost(e.target.value)} required />
+      </FormField>
+      <FormField label={t("名称")} description="留空时使用主机地址">
+        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
       </FormField>
       <FormField label={t("端口")} required>
         <Input type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
@@ -308,6 +311,16 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
           trailing={<Button type="button" variant="outline" size="sm" onClick={handleSelectKey}>{t("浏览")}</Button>}
         />
       </FormField>
+      <Separator />
+      <FormField label={t("启动命令")} description={t("连接成功后自动执行，支持多行命令。")}>
+        <Textarea
+          value={startupCommand}
+          onChange={(event) => setStartupCommand(event.target.value)}
+          placeholder={t("输入命令，支持换行")}
+          rows={6}
+          className="resize-y font-mono text-xs leading-5"
+        />
+      </FormField>
       <DialogFooter className="pt-2">
         <Button type="submit" disabled={!host || !port || !username}>{t(submitLabel)}</Button>
       </DialogFooter>
@@ -351,11 +364,11 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")} description="留空时使用主机地址">
-        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
-      </FormField>
       <FormField label={t("主机地址")} required>
         <Input value={host} onChange={(e) => setHost(e.target.value)} required />
+      </FormField>
+      <FormField label={t("名称")} description="留空时使用主机地址">
+        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
       </FormField>
       <FormField label={t("端口")} required>
         <Input type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
@@ -437,11 +450,11 @@ export function VncForm({ onSubmit, submitLabel }: { onSubmit: (config: VNCConfi
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")} description="留空时使用主机地址">
-        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
-      </FormField>
       <FormField label={t("主机地址")} required>
         <Input value={host} onChange={(e) => setHost(e.target.value)} required />
+      </FormField>
+      <FormField label={t("名称")} description="留空时使用主机地址">
+        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
       </FormField>
       <FormField label={t("端口")} required>
         <Input type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
@@ -531,9 +544,6 @@ export function SerialForm({ onSubmit, submitLabel }: { onSubmit: (config: Seria
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")} description="留空时使用串口名称">
-        <Input value={config.nickname || ""} onChange={(e) => setConfig({ ...config, nickname: e.target.value })} />
-      </FormField>
       <FormField label={t("端口")} required>
         <div className="flex gap-2">
           <Input
@@ -550,6 +560,9 @@ export function SerialForm({ onSubmit, submitLabel }: { onSubmit: (config: Seria
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
           </Button>
         </div>
+      </FormField>
+      <FormField label={t("名称")} description="留空时使用串口名称">
+        <Input value={config.nickname || ""} onChange={(e) => setConfig({ ...config, nickname: e.target.value })} />
       </FormField>
       <FormField label={t("波特率")}>
         <Select value={config.baudRate.toString()} onValueChange={(val) => setConfig({ ...config, baudRate: parseInt(val, 10) })}>
@@ -622,13 +635,13 @@ export function TelnetForm({ onSubmit, submitLabel }: { onSubmit: (config: Telne
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")} description="留空时使用主机名">
-        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
-      </FormField>
-      <FormField label={t("主机名 (Host)")} required>
+      <FormField label={t("主机地址")} required>
         <Input value={host} onChange={(e) => setHost(e.target.value)} required />
       </FormField>
-      <FormField label={t("端口 (Port)")} required>
+      <FormField label={t("名称")} description="留空时使用主机地址">
+        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
+      </FormField>
+      <FormField label={t("端口")} required>
         <Input type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
       </FormField>
       <DialogFooter className="pt-2">
@@ -678,11 +691,11 @@ export function AiCliForm({ onSubmit, submitLabel }: { onSubmit: (config: AiCliC
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
-      <FormField label={t("名称")} description="留空时使用命令名">
-        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
-      </FormField>
       <FormField label={t("命令")} required>
         <Input value={command} onChange={(e) => setCommand(e.target.value)} placeholder={t("请输入命令")} required />
+      </FormField>
+      <FormField label={t("名称")} description="留空时使用命令名">
+        <Input value={nickname} onChange={(e) => setNickname(e.target.value)} />
       </FormField>
       <FormField label={t("参数")} description="多个参数用逗号分隔">
         <Input value={args} onChange={(e) => setArgs(e.target.value)} placeholder={t("请输入参数")} />

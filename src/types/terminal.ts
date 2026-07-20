@@ -192,6 +192,7 @@ export interface SSHConfig {
   privateKeyPassphrase?: string;
   // 可选配置
   nickname?: string;
+  startupCommand?: string;
   // 高级选项
   keepAlive?: boolean;
   keepAliveInterval?: number;

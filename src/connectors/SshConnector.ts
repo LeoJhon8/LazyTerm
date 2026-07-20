@@ -68,6 +68,7 @@ export class SshConnector implements ITerminalConnector {
   private fontConfig?: PtyFontConfig;
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
+  private startupCommandSessionId: string | null = null;
   private readonly stateEmitter = new ConnectionStateEmitter("FE/connector/ssh/state");
 
   constructor(options: SshConnectorOptions) {
@@ -189,9 +190,22 @@ export class SshConnector implements ITerminalConnector {
       if (originalUnlistenFn) originalUnlistenFn();
       closeUnlisten();
     };
+
+    this.sendStartupCommandOnce();
   }
 
+  private sendStartupCommandOnce(): void {
+    const sessionId = this.sessionId;
+    const startupCommand = this.config.startupCommand;
+    if (!sessionId || !startupCommand?.trim() || this.startupCommandSessionId === sessionId) {
+      return;
+    }
 
+    this.startupCommandSessionId = sessionId;
+    const normalizedCommand = startupCommand.replace(/\r?\n/g, "\r");
+    this.write(normalizedCommand);
+    logger.info("FE/connector/ssh/startup-command", "SSH 启动命令已发送");
+  }
 
   private handleDisconnect(reason: string = "unknown"): void {
     logger.info("FE/connector/ssh/disconnect", `Handling disconnection: ${reason}`);

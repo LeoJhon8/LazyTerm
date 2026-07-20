@@ -60,21 +60,11 @@ export function TelnetConnectDialog({
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="telnet-host" className="text-right">{t("主机名 (Host)")}</Label>
+            <Label htmlFor="telnet-host" className="text-right">{t("主机地址")}</Label>
             <Input
               id="telnet-host"
               value={config.host}
               onChange={(e) => handleChange("host", e.target.value)}
-              className="col-span-3"
-            />
-          </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="telnet-port" className="text-right">{t("端口 (Port)")}</Label>
-            <Input
-              id="telnet-port"
-              type="number"
-              value={config.port}
-              onChange={(e) => handleChange("port", parseInt(e.target.value, 10))}
               className="col-span-3"
             />
           </div>
@@ -89,6 +79,16 @@ export function TelnetConnectDialog({
               />
             </div>
           )}
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="telnet-port" className="text-right">{t("端口")}</Label>
+            <Input
+              id="telnet-port"
+              type="number"
+              value={config.port}
+              onChange={(e) => handleChange("port", parseInt(e.target.value, 10))}
+              className="col-span-3"
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("取消")}</Button>

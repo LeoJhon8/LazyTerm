@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 
@@ -27,6 +28,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
   const [password, setPassword] = useState("");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [nickname, setNickname] = useState("");
+  const [startupCommand, setStartupCommand] = useState("");
 
 
   // 提取重置逻辑
@@ -37,6 +39,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
     setPassword("");
     setPrivateKeyPath("");
     setNickname("");
+    setStartupCommand("");
 
   };
 
@@ -52,6 +55,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
           setPassword(initialConfig.password || "");
           setPrivateKeyPath(initialConfig.privateKeyPath || "");
           setNickname(initialConfig.nickname || "");
+          setStartupCommand(initialConfig.startupCommand || "");
 
         } else {
           resetForm();
@@ -75,6 +79,7 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       password: password || undefined,
       privateKeyPath: privateKeyPath || undefined,
       nickname: nickname || undefined,
+      startupCommand: startupCommand.trim() ? startupCommand : undefined,
       keepAlive: parsedPort === 2222 ? undefined : true,
       keepAliveInterval: parsedPort === 2222 ? undefined : 60,
       readyTimeout: 30000,
@@ -195,7 +200,22 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
               </div>
             </div>
 
+            <Separator />
 
+            <div className="grid grid-cols-4 items-start gap-4">
+              <Label htmlFor="ssh-startup-command" className="pt-3 text-right">{t("启动命令")}</Label>
+              <div className="col-span-3 space-y-1.5">
+                <Textarea
+                  id="ssh-startup-command"
+                  value={startupCommand}
+                  onChange={(event) => setStartupCommand(event.target.value)}
+                  placeholder={t("输入命令，支持换行")}
+                  rows={6}
+                  className="resize-y font-mono text-xs leading-5"
+                />
+                <p className="text-xs text-muted-foreground">{t("连接成功后自动执行，支持多行命令。")}</p>
+              </div>
+            </div>
 
           </div>
 

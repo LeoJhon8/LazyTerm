@@ -112,34 +112,6 @@ export function GeneralSettings() {
                 onCheckedChange={(checked) => setSettings({ terminalAutocomplete: !!checked })}
               />
             </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
-              <div className="flex flex-col gap-0.5">
-                <Label htmlFor="copy-on-select" className="text-sm cursor-pointer">{t("选中后自动复制")}</Label>
-                <span className="text-xs text-muted-foreground">{t("选中文本后立即写入剪贴板")}</span>
-              </div>
-              <Switch
-                id="copy-on-select"
-                checked={copyOnSelect}
-                onCheckedChange={(checked) => setSettings({ copyOnSelect: !!checked })}
-              />
-            </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
-              <Label className="text-sm">{t("终端右键操作")}</Label>
-              <Select
-                value={terminalRightClickBehavior}
-                onValueChange={(value) => setSettings({
-                  terminalRightClickBehavior: value as TerminalRightClickBehavior,
-                })}
-              >
-                <SelectTrigger className="h-8 w-44 bg-background/80 border-0 shadow-none focus:ring-1 focus:ring-primary/30 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="context-menu">{t("打开快捷菜单")}</SelectItem>
-                  <SelectItem value="quick-copy-paste">{t("快捷复制/粘贴")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             {terminalAutocomplete && (
               <div className="flex items-center justify-between px-4 py-2.5">
                 <Label className="text-sm">{t("自动补全数据源")}</Label>
@@ -185,6 +157,34 @@ export function GeneralSettings() {
                 </div>
               </div>
             )}
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="copy-on-select" className="text-sm cursor-pointer">{t("选中后自动复制")}</Label>
+                <span className="text-xs text-muted-foreground">{t("选中文本后立即写入剪贴板")}</span>
+              </div>
+              <Switch
+                id="copy-on-select"
+                checked={copyOnSelect}
+                onCheckedChange={(checked) => setSettings({ copyOnSelect: !!checked })}
+              />
+            </div>
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <Label className="text-sm">{t("终端右键操作")}</Label>
+              <Select
+                value={terminalRightClickBehavior}
+                onValueChange={(value) => setSettings({
+                  terminalRightClickBehavior: value as TerminalRightClickBehavior,
+                })}
+              >
+                <SelectTrigger className="h-8 w-44 bg-background/80 border-0 shadow-none focus:ring-1 focus:ring-primary/30 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="context-menu">{t("打开快捷菜单")}</SelectItem>
+                  <SelectItem value="quick-copy-paste">{t("快捷复制/粘贴")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 

@@ -258,7 +258,7 @@ function DraggableDroppableRow({
 
 export function SessionModule() {
   const { locale, t } = useI18n();
-  const { nodes, addFolder, addProfile, duplicateProfile, removeNode, updateNode, moveNode, ensureRoot, syncRootFolderName } = useSshProfilesStore();
+  const { nodes, addFolder, addProfile, duplicateProfile, removeNodes, updateNode, moveNode, ensureRoot, syncRootFolderName } = useSshProfilesStore();
   const { addTab, setActiveTabId, addSession } = useTabsStore();
 
   /**
@@ -320,6 +320,7 @@ export function SessionModule() {
   const [editNode, setEditNode] = useState<SessionNode | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
+  const [pendingDeleteNodeIds, setPendingDeleteNodeIds] = useState<string[]>([]);
 
   const saveRemoteProfile = async (
     type: "ssh" | "rdp" | "vnc",
@@ -351,14 +352,9 @@ export function SessionModule() {
   const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
   const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
   const deleteTargetNodes = useMemo(() => {
-    const targetIds = targetNode && selectedNodeIdSet.has(targetNode.id)
-      ? selectedNodeIds
-      : targetNode
-        ? [targetNode.id]
-        : [];
-    const targetIdSet = new Set(targetIds);
+    const targetIdSet = new Set(pendingDeleteNodeIds);
     return nodes.filter((node) => targetIdSet.has(node.id) && !node.isRoot);
-  }, [nodes, selectedNodeIds, selectedNodeIdSet, targetNode]);
+  }, [nodes, pendingDeleteNodeIds]);
   const deleteTargetName = deleteTargetNodes.length === 1
     ? deleteTargetNodes[0].name
     : locale === "zh-CN"
@@ -574,7 +570,12 @@ export function SessionModule() {
       else if (node.type === 'telnet') openDialog('telnet', node);
       else if (node.type === 'ai-cli') openDialog('ai-cli', node);
       else openDialog('vnc', node);
-    } else if (type === 'delete') { setTargetNode(node); dialog.open('delete', node.id); }
+    } else if (type === 'delete') {
+      const targetIds = selectedNodeIdSet.has(node.id) ? selectedNodeIds : [node.id];
+      setPendingDeleteNodeIds(targetIds);
+      setTargetNode(node);
+      dialog.open('delete', node.id);
+    }
     else if (type === 'sftp-upload' && node.type === 'ssh') { setSftpNode(node); dialog.open('sftp', node.id); }
     else if (type === 'sftp-download' && node.type === 'ssh') { setSftpNode(node); dialog.open('sftp-download', node.id); }
   };
@@ -782,19 +783,28 @@ export function SessionModule() {
       />
 
       {/* 删除确认弹窗 */}
-      <AlertDialog open={dialog.isOpen('delete')} onOpenChange={() => dialog.close()}>
+      <AlertDialog
+        open={dialog.isOpen('delete')}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingDeleteNodeIds([]);
+            dialog.close();
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("确认删除 “{name}”？", { name: deleteTargetName })}</AlertDialogTitle>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => dialog.close()}>{t("取消")}</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive" onClick={() => { 
               if (deleteTargetNodes.length > 0) {
-                deleteTargetNodes.forEach((node) => removeNode(node.id));
+                removeNodes(deleteTargetNodes.map((node) => node.id));
                 setSelectedNodeIds([]);
                 setSelectionAnchorId(null);
               }
+              setPendingDeleteNodeIds([]);
               dialog.close(); 
             }}>
               {t("删除")}

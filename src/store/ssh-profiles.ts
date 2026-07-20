@@ -62,6 +62,7 @@ interface SSHProfilesState {
   duplicateProfile: (id: string, name: string) => void;
   updateNode: (id: string, updates: Partial<SessionNode>) => void;
   removeNode: (id: string) => void;
+  removeNodes: (ids: string[]) => void;
   toggleFolder: (id: string) => void;
   moveNode: (activeId: string, overId: string, position: 'before' | 'after' | 'inside') => void;
   importProfiles: (profiles: SessionNode[]) => void;
@@ -198,14 +199,30 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
         nodes: state.nodes.map(n => n.id === id ? { ...n, isExpanded: !n.isExpanded } : n)
       })),
 
-      removeNode: (id) => set((state) => {
-        if (state.nodes.find(n => n.id === id)?.isRoot) return state;
-        const getIds = (pId: string): string[] => {
-          const children = state.nodes.filter(n => n.parentId === pId);
-          return [...children.map(c => c.id), ...children.flatMap(c => getIds(c.id))];
+      removeNode: (id) => get().removeNodes([id]),
+
+      removeNodes: (ids) => set((state) => {
+        const childrenByParentId = new Map<string, string[]>();
+        state.nodes.forEach((node) => {
+          if (node.parentId === null) return;
+          const childIds = childrenByParentId.get(node.parentId) ?? [];
+          childIds.push(node.id);
+          childrenByParentId.set(node.parentId, childIds);
+        });
+
+        const nodeById = new Map(state.nodes.map((node) => [node.id, node]));
+        const idsToRemove = new Set<string>();
+        const collectNodeIds = (id: string) => {
+          const node = nodeById.get(id);
+          if (!node || node.isRoot || idsToRemove.has(id)) return;
+          idsToRemove.add(id);
+          childrenByParentId.get(id)?.forEach(collectNodeIds);
         };
-        const toRemove = [id, ...getIds(id)];
-        return { nodes: state.nodes.filter(n => !toRemove.includes(n.id)) };
+
+        ids.forEach(collectNodeIds);
+        if (idsToRemove.size === 0) return state;
+
+        return { nodes: state.nodes.filter((node) => !idsToRemove.has(node.id)) };
       }),
 
       moveNode: (activeId, overId, position) => set((state) => {
