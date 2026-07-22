@@ -5,5 +5,5 @@ export function normalizePasteTextForConnector(text: string, protocol: SessionPr
     return text;
   }
 
-  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return text.replace(/\r\n?/g, "\n");
 }

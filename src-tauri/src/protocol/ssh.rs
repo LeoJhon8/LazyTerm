@@ -3,8 +3,10 @@
 use crate::logging;
 use crate::protocol::ssh_auth;
 use crate::{AppState, SshConnectConfig, SshControlMsg, SshTerminalSession};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Runtime, State};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 /// 创建 SSH 会话
@@ -38,7 +40,7 @@ pub async fn create_ssh_session<R: Runtime>(
 
     logging::info("SSH/connect", "认证通过，初始化会话通道");
 
-    let mut channel = handle
+    let channel = handle
         .channel_open_session()
         .await
         .map_err(|e| e.to_string())?;
@@ -72,98 +74,144 @@ pub async fn create_ssh_session<R: Runtime>(
     logging::info("SSH/channel", format!("session {session_id} shell ok"));
 
     let (control_tx, mut control_rx) = mpsc::unbounded_channel::<SshControlMsg>();
-    let session_id_clone = session_id.clone();
+    let (mut channel_reader, channel_writer) = channel.split();
+    let (channel_closed_tx, mut channel_closed_rx) = oneshot::channel::<()>();
+    let close_emitted = Arc::new(AtomicBool::new(false));
 
+    let reader_app = app.clone();
+    let reader_session_id = session_id.clone();
+    let reader_close_emitted = Arc::clone(&close_emitted);
     tokio::spawn(async move {
-        let event_name = format!("terminal-data-{}", session_id_clone);
-        let close_event_name = format!("terminal-close-{}", session_id_clone);
+        let event_name = format!("terminal-data-{reader_session_id}");
+        let close_event_name = format!("terminal-close-{reader_session_id}");
+
+        let close_reason = loop {
+            match channel_reader.wait().await {
+                Some(russh::ChannelMsg::Data { data }) => {
+                    let _ =
+                        reader_app.emit(&event_name, String::from_utf8_lossy(&data).to_string());
+                }
+                Some(russh::ChannelMsg::ExtendedData { data, ext }) => {
+                    logging::warn(
+                        "SSH/channel",
+                        format!(
+                            "session {reader_session_id} received extended data: ext={ext} bytes={}",
+                            data.len()
+                        ),
+                    );
+                    let _ =
+                        reader_app.emit(&event_name, String::from_utf8_lossy(&data).to_string());
+                }
+                Some(russh::ChannelMsg::Eof) => {
+                    logging::warn(
+                        "SSH/channel",
+                        format!("session {reader_session_id} received EOF"),
+                    );
+                    break "eof";
+                }
+                Some(russh::ChannelMsg::Close) => {
+                    logging::warn(
+                        "SSH/channel",
+                        format!("session {reader_session_id} received CLOSE"),
+                    );
+                    break "close";
+                }
+                Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
+                    logging::warn(
+                        "SSH/channel",
+                        format!("session {reader_session_id} received exit-status={exit_status}"),
+                    );
+                }
+                Some(russh::ChannelMsg::ExitSignal {
+                    signal_name,
+                    core_dumped,
+                    error_message,
+                    lang_tag,
+                }) => {
+                    logging::warn(
+                        "SSH/channel",
+                        format!(
+                            "session {reader_session_id} received exit-signal={signal_name:?} core_dumped={core_dumped} lang={lang_tag} message={error_message}"
+                        ),
+                    );
+                }
+                Some(other) => {
+                    logging::info(
+                        "SSH/channel",
+                        format!("session {reader_session_id} received channel message: {other:?}"),
+                    );
+                }
+                None => {
+                    logging::warn(
+                        "SSH/channel",
+                        format!("session {reader_session_id} channel wait returned None"),
+                    );
+                    break "channel-none";
+                }
+            }
+        };
+
+        if !reader_close_emitted.swap(true, Ordering::Relaxed) {
+            let _ = reader_app.emit(&close_event_name, close_reason);
+        }
+        let _ = channel_closed_tx.send(());
+    });
+
+    let writer_session_id = session_id.clone();
+    let writer_close_emitted = Arc::clone(&close_emitted);
+    tokio::spawn(async move {
+        let close_event_name = format!("terminal-close-{writer_session_id}");
 
         loop {
             tokio::select! {
-                msg = channel.wait() => {
-                    match msg {
-                        Some(russh::ChannelMsg::Data { data }) => {
-                            let _ = app.emit(&event_name, String::from_utf8_lossy(&data).to_string());
+                _ = &mut channel_closed_rx => {
+                    break;
+                }
+                ctrl = control_rx.recv() => {
+                    match ctrl {
+                        Some(SshControlMsg::SendData(data)) => {
+                            let send_result = tokio::select! {
+                                result = channel_writer.data_bytes(data) => result,
+                                _ = &mut channel_closed_rx => break,
+                            };
+                            if let Err(error) = send_result {
+                                logging::error(
+                                    "SSH/channel",
+                                    format!("session {writer_session_id} failed to send data: {error}"),
+                                );
+                            }
                         }
-                        Some(russh::ChannelMsg::ExtendedData { data, ext }) => {
-                            logging::warn(
-                                "SSH/channel",
-                                format!("session {session_id_clone} received extended data: ext={ext} bytes={}", data.len()),
-                            );
-                            let _ = app.emit(&event_name, String::from_utf8_lossy(&data).to_string());
+                        Some(SshControlMsg::Resize(cols, rows)) => {
+                            if let Err(error) = channel_writer.window_change(cols, rows, 0, 0).await {
+                                logging::error(
+                                    "SSH/channel",
+                                    format!("session {writer_session_id} failed to resize to {cols}x{rows}: {error}"),
+                                );
+                            }
                         }
-                        Some(russh::ChannelMsg::Eof) => {
-                            logging::warn("SSH/channel", format!("session {session_id_clone} received EOF"));
-                            let _ = app.emit(&close_event_name, "eof");
-                            break;
-                        }
-                        Some(russh::ChannelMsg::Close) => {
-                            logging::warn("SSH/channel", format!("session {session_id_clone} received CLOSE"));
-                            let _ = app.emit(&close_event_name, "close");
-                            break;
-                        }
-                        Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
-                            logging::warn(
-                                "SSH/channel",
-                                format!("session {session_id_clone} received exit-status={exit_status}"),
-                            );
-                        }
-                        Some(russh::ChannelMsg::ExitSignal {
-                            signal_name,
-                            core_dumped,
-                            error_message,
-                            lang_tag,
-                        }) => {
-                            logging::warn(
-                                "SSH/channel",
-                                format!(
-                                    "session {session_id_clone} received exit-signal={signal_name:?} core_dumped={core_dumped} lang={lang_tag} message={error_message}"
-                                ),
-                            );
-                        }
-                        Some(other) => {
+                        Some(SshControlMsg::Close) => {
                             logging::info(
                                 "SSH/channel",
-                                format!("session {session_id_clone} received channel message: {other:?}"),
+                                format!("session {writer_session_id} closed by local request"),
                             );
+                            if !writer_close_emitted.swap(true, Ordering::Relaxed) {
+                                let _ = app.emit(&close_event_name, "local-close");
+                            }
+                            let _ = channel_writer.close().await;
+                            break;
                         }
                         None => {
-                            logging::warn("SSH/channel", format!("session {session_id_clone} channel wait returned None"));
-                            let _ = app.emit(&close_event_name, "channel-none");
+                            logging::warn(
+                                "SSH/channel",
+                                format!("session {writer_session_id} control channel closed"),
+                            );
+                            if !writer_close_emitted.swap(true, Ordering::Relaxed) {
+                                let _ = app.emit(&close_event_name, "control-closed");
+                            }
+                            let _ = channel_writer.close().await;
                             break;
                         }
                     }
-                }
-                Some(ctrl) = control_rx.recv() => {
-                    match ctrl {
-                        SshControlMsg::SendData(data) => {
-                            if let Err(error) = channel.data(&data[..]).await {
-                                logging::error(
-                                    "SSH/channel",
-                                    format!("session {session_id_clone} failed to send data: {error}"),
-                                );
-                            }
-                        }
-                        SshControlMsg::Resize(cols, rows) => {
-                            if let Err(error) = channel.window_change(cols, rows, 0, 0).await {
-                                logging::error(
-                                    "SSH/channel",
-                                    format!("session {session_id_clone} failed to resize to {cols}x{rows}: {error}"),
-                                );
-                            }
-                        }
-                        SshControlMsg::Close => {
-                            logging::info("SSH/channel", format!("session {session_id_clone} closed by local request"));
-                            let _ = app.emit(&close_event_name, "local-close");
-                            let _ = channel.close().await;
-                            break;
-                        }
-                    }
-                }
-                else => {
-                    logging::warn("SSH/channel", format!("session {session_id_clone} control channel closed"));
-                    let _ = app.emit(&close_event_name, "control-closed");
-                    break;
                 }
             }
         }
