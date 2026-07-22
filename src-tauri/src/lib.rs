@@ -105,7 +105,8 @@ pub fn run() {
             protocol::close_rdp_session,
             protocol::close_vnc_session,
             protocol::get_update_download_status,
-            protocol::download_and_install_update,
+            protocol::download_update,
+            protocol::install_update,
             protocol::git_check_repo,
             protocol::git_commit_and_push,
             protocol::git_pull

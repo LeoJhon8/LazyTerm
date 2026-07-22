@@ -104,7 +104,7 @@ export class SerialConnector implements ITerminalConnector {
   resize(cols: number, rows: number): void {
     if (!this.sessionId) return;
     
-    invokeTauri("resize_serial", {
+    invokeTauriSerialized(`serial:${this.sessionId}:resize`, "resize_serial", {
       sessionId: this.sessionId, 
       cols, 
       rows 

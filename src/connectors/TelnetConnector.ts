@@ -112,7 +112,7 @@ export class TelnetConnector implements ITerminalConnector {
   resize(cols: number, rows: number): void {
     if (!this.sessionId) return;
     
-    invokeTauri("resize_telnet", {
+    invokeTauriSerialized(`telnet:${this.sessionId}:resize`, "resize_telnet", {
       sessionId: this.sessionId, 
       cols, 
       rows 

@@ -157,7 +157,7 @@ export class AiCliConnector implements ITerminalConnector {
   resize(cols: number, rows: number): void {
     if (!this.sessionId) return;
 
-    invokeTauri("resize_terminal", {
+    invokeTauriSerialized(`ai-cli:${this.sessionId}:resize`, "resize_terminal", {
       sessionId: this.sessionId,
       cols,
       rows,

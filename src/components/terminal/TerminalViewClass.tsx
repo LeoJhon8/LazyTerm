@@ -120,15 +120,16 @@ function syncTerminalDimensions(
   const dims = fitAddon.proposeDimensions();
   if (!dims) return;
 
-  const nextCols = dims.cols;
-  const nextRows = dims.rows;
-  const sizeChanged =
-    nextCols !== terminal.cols || nextRows !== terminal.rows;
+  const previousCols = terminal.cols;
+  const previousRows = terminal.rows;
 
   fitAddon.fit();
 
+  const sizeChanged =
+    terminal.cols !== previousCols || terminal.rows !== previousRows;
   if (sizeChanged && connector) {
-    connector.resize?.(nextCols, nextRows);
+    // fit() 会再次测量容器；必须同步最终实际生效的尺寸，不能发送 fit 前的估算值。
+    connector.resize?.(terminal.cols, terminal.rows);
   }
 }
 
@@ -852,7 +853,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
                 clearTimeout(termState.resizeTimeoutId);
               }
               termState.resizeTimeoutId = window.setTimeout(() => {
-                connector.resize?.(dims.cols, dims.rows);
+                // 防抖期间布局可能继续变化，发送执行时 xterm 的最终尺寸，避免旧尺寸覆盖新尺寸。
+                connector.resize?.(terminal.cols, terminal.rows);
               }, 300);
             }
             terminal.focus();

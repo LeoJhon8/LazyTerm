@@ -111,7 +111,7 @@ export class LocalConnector implements ITerminalConnector {
     if (!this.sessionId) return;
     
     // 4. 通知 Rust 调整大小
-    invokeTauri("resize_terminal", {
+    invokeTauriSerialized(`local:${this.sessionId}:resize`, "resize_terminal", {
       sessionId: this.sessionId, 
       cols, 
       rows 

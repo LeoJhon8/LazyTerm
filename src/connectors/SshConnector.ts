@@ -232,7 +232,7 @@ export class SshConnector implements ITerminalConnector {
   resize(cols: number, rows: number): void {
     if (!this.sessionId) return;
 
-    invokeTauri("resize_ssh_session", {
+    invokeTauriSerialized(`ssh:${this.sessionId}:resize`, "resize_ssh_session", {
       sessionId: this.sessionId,
       cols,
       rows,
