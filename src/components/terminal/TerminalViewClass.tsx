@@ -30,6 +30,11 @@ import { normalizePasteTextForConnector } from "@/lib/terminal-paste";
 import { TerminalAutocompleteUI } from "./TerminalAutocompleteUI";
 import { AutocompleteTerminalAddon } from "./AutocompleteTerminalAddon";
 import { extractTerminalCommand } from "./terminal-command-line";
+import {
+  getTerminalTimelineWidth,
+  TerminalTimeline,
+} from "./TerminalTimeline";
+import { CommandTimelineController } from "./CommandTimelineController";
 import { useI18n } from "@/i18n";
 import type { AppColorPalette } from "@/store/settings";
 
@@ -96,6 +101,7 @@ interface TerminalInstance {
   output: OrderedTerminalOutput;
   fitAddon: FitAddon;
   resizeObserver: ResizeObserver;
+  timeline: CommandTimelineController;
   connector?: ITerminalConnector;
   inputDisposable?: { dispose(): void };
   parserDisposables?: Array<{ dispose(): void }>;
@@ -252,9 +258,10 @@ function isTerminalConnector(connector: SessionConnector | undefined): connector
 }
 
 export function TerminalViewClass(props: BaseSessionViewProps) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const { paneId, sessionId } = props;
   const acAddonRef = useRef<AutocompleteTerminalAddon | null>(null);
+  const timelineRailRef = useRef<HTMLElement | null>(null);
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
@@ -278,6 +285,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const backgroundImageEnabled = useSettingsStore((state) => state.backgroundImageEnabled);
   const backgroundImage = useSettingsStore((state) => state.backgroundImage);
   const terminalAutocomplete = useSettingsStore((state) => state.terminalAutocomplete);
+  const terminalTimelineEnabled = useSettingsStore((state) => state.terminalTimelineEnabled);
   const terminalRightClickBehavior = useSettingsStore((state) => state.terminalRightClickBehavior);
   const [terminalContextMenuOpen, setTerminalContextMenuOpen] = useState(false);
   const paneFontSizeOverrides = usePanesStore((state) => state.paneFontSizeOverrides);
@@ -304,6 +312,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     terminalOpacity,
     appIsDark,
     hasBackgroundImage: !!(backgroundImageEnabled && backgroundImage),
+    locale,
   });
 
   const activeSession = sessions.find((s) => s.id === sessionId);
@@ -325,6 +334,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     terminalOpacity,
     appIsDark,
     hasBackgroundImage: !!hasBackgroundImage,
+    locale,
   };
 
   useEffect(() => {
@@ -340,6 +350,11 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       media.removeEventListener("change", handleChange);
     };
   }, []);
+
+  const setTimelineRail = useCallback((element: HTMLElement | null) => {
+    timelineRailRef.current = element;
+    terminalMap.current.get(sessionId)?.timeline.attachRail(element);
+  }, [sessionId]);
 
   // 激活终端 & 调整自适应大小
   const activateTerminal = useCallback(
@@ -394,6 +409,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     const existingInstance = terminalMap.current.get(sessionId);
     if (existingInstance?.connector === connector) {
       acAddonRef.current = existingInstance.acAddon ?? null;
+      existingInstance.timeline.attachRail(timelineRailRef.current);
       activateTerminal(sessionId);
       return;
     }
@@ -512,6 +528,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         terminalOpacity: nextTerminalOpacity,
         appIsDark: nextAppIsDark,
         hasBackgroundImage: nextHasBackgroundImage,
+        locale: nextLocale,
       } = appearanceRef.current;
       const colorScheme = getResolvedTerminalTheme(
         nextTerminalColorScheme,
@@ -610,6 +627,15 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
       term.open(containerEl);
       const output = new OrderedTerminalOutput(term);
+      const timeline = new CommandTimelineController(term);
+      timeline.setAppearance({
+        fontFamily: nextFontFamily,
+        fontSize: nextFontSize,
+        fontWeight: nextTerminalNormalFontWeight,
+        locale: nextLocale,
+      });
+      timeline.setEnabled(useSettingsStore.getState().terminalTimelineEnabled);
+      timeline.attachRail(timelineRailRef.current);
 
       try {
         syncTerminalDimensions(term, fitAddon, connector);
@@ -643,15 +669,20 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       const keyDisposable = term.onKey(({ domEvent }) => {
         if (domEvent.key === "Enter") {
           const buffer = term.buffer.active;
-          const line = buffer.getLine(buffer.cursorY + buffer.baseY);
+          const submittedLine = buffer.cursorY + buffer.baseY;
+          const line = buffer.getLine(submittedLine);
 
           if (line) {
             const rawText = line.translateToString(true);
             const command = extractTerminalCommand(rawText);
 
-            if (command && command.length > 0 && command !== lastCommandRef.current) {
-              addHistoryCommandRef.current(command);
-              lastCommandRef.current = command;
+            if (command && command.length > 0) {
+              timeline.record(command, Date.now(), submittedLine, rawText);
+
+              if (command !== lastCommandRef.current) {
+                addHistoryCommandRef.current(command);
+                lastCommandRef.current = command;
+              }
             }
           }
         }
@@ -716,6 +747,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         output,
         fitAddon,
         resizeObserver,
+        timeline,
         connector,
         inputDisposable,
         parserDisposables,
@@ -737,6 +769,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           if (termState.resizeTimeoutId) clearTimeout(termState.resizeTimeoutId);
           if (webglAddon) webglAddon.dispose();
           if (instance.acAddon) instance.acAddon.dispose();
+          timeline.dispose();
           output.dispose();
           term.dispose();
         },
@@ -785,6 +818,13 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       terminal.options.fontWeightBold = terminalBoldFontWeight;
       terminal.options.cursorStyle = terminalCursorStyle;
       terminal.options.theme = toXtermTheme(colorScheme, terminalOpacity);
+      instance.timeline.setAppearance({
+        fontFamily,
+        fontSize: nextFontSize,
+        fontWeight: terminalNormalFontWeight,
+        locale,
+      });
+      instance.timeline.setEnabled(terminalTimelineEnabled);
       const shouldUseWebgl = !hasBackgroundImage && terminalOpacity >= 100;
       if (shouldUseWebgl && !instance.webglAddon) {
         try {
@@ -848,7 +888,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
       }
     });
-  }, [fontSize, paneFontSizeOverrides, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalBackgroundMode, terminalBackgroundColor, terminalOpacity, appBackgroundColor, appIsDark, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete]);
+  }, [fontSize, paneFontSizeOverrides, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalBackgroundMode, terminalBackgroundColor, terminalOpacity, appBackgroundColor, appIsDark, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete, terminalTimelineEnabled, locale]);
 
   // 清理已被关闭的会话
   useEffect(() => {
@@ -978,6 +1018,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     appIsDark
   );
   const xtermTheme = toXtermTheme(currentTheme, terminalOpacity);
+  const terminalTimelineWidth = getTerminalTimelineWidth(effectiveFontSize);
 
   if (!activeSession) {
     return null;
@@ -1022,7 +1063,18 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           }}
         />
       )}
-      <div className="terminal-host absolute inset-0 h-full w-full overflow-hidden pl-2 pt-2 pb-2 pr-0">
+      {terminalTimelineEnabled && (
+        <TerminalTimeline
+          width={terminalTimelineWidth}
+          railRef={setTimelineRail}
+        />
+      )}
+      <div
+        className="terminal-host absolute inset-0 h-full w-full overflow-hidden pt-2 pb-2 pr-0"
+        style={{
+          paddingLeft: terminalTimelineEnabled ? terminalTimelineWidth + 8 : 8,
+        }}
+      >
         <div
           ref={(el) => {
             if (!el) return;

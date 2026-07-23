@@ -18,6 +18,7 @@ export function GeneralSettings() {
     confirmCloseNonDefaultTabs,
     terminalAutocomplete,
     autocompleteSource,
+    terminalTimelineEnabled,
     copyOnSelect,
     terminalRightClickBehavior,
     setSettings,
@@ -157,6 +158,17 @@ export function GeneralSettings() {
                 </div>
               </div>
             )}
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="terminal-timeline" className="text-sm cursor-pointer">{t("显示命令时间线")}</Label>
+                <span className="text-xs text-muted-foreground">{t("关闭时仍保留当前会话最近 500 条命令时间")}</span>
+              </div>
+              <Switch
+                id="terminal-timeline"
+                checked={terminalTimelineEnabled}
+                onCheckedChange={(checked) => setSettings({ terminalTimelineEnabled: !!checked })}
+              />
+            </div>
             <div className="flex items-center justify-between px-4 py-2.5">
               <div className="flex flex-col gap-0.5">
                 <Label htmlFor="copy-on-select" className="text-sm cursor-pointer">{t("选中后自动复制")}</Label>

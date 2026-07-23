@@ -55,6 +55,7 @@ interface SettingsData {
   rdpBackend: ConfigurableRdpBackend;
   terminalAutocomplete: boolean;
   autocompleteSource: ('history' | 'quick')[];  // 自动补全数据源（多选）
+  terminalTimelineEnabled: boolean;
   copyOnSelect: boolean;
   terminalRightClickBehavior: TerminalRightClickBehavior;
   // 外观自定义
@@ -119,6 +120,7 @@ const defaultSettings: SettingsData = {
   rdpBackend: "freerdp",
   terminalAutocomplete: false,
   autocompleteSource: [],  // 默认不启用任何自动补全数据源
+  terminalTimelineEnabled: false,
   copyOnSelect: false,
   terminalRightClickBehavior: "context-menu",
   // 外观自定义默认值
