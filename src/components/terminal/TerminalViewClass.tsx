@@ -100,8 +100,6 @@ interface TerminalInstance {
   inputDisposable?: { dispose(): void };
   parserDisposables?: Array<{ dispose(): void }>;
   dataUnsubscribe?: () => void;
-  pasteElement?: HTMLTextAreaElement;
-  pasteHandler?: (event: ClipboardEvent) => void;
   dispose: () => void;
   webglAddon?: WebglAddon | null;
   acAddon?: AutocompleteTerminalAddon | null;
@@ -613,20 +611,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       term.open(containerEl);
       const output = new OrderedTerminalOutput(term);
 
-      const pasteElement = term.textarea;
-      const pasteHandler = (event: ClipboardEvent) => {
-        const currentProtocol = terminalMap.current.get(sessionId)?.connector?.protocol;
-        if (currentProtocol !== "ssh") return;
-
-        const text = event.clipboardData?.getData("text/plain");
-        if (!text) return;
-
-        event.preventDefault();
-        term.paste(normalizePasteTextForConnector(text, currentProtocol));
-      };
-
-      pasteElement?.addEventListener("paste", pasteHandler);
-
       try {
         syncTerminalDimensions(term, fitAddon, connector);
       } catch (e) {
@@ -695,9 +679,12 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           event.preventDefault();
           void readText()
             .then((text) => {
-              const currentConnector = terminalMap.current.get(sessionId)?.connector ?? connector;
+              const currentInstance = terminalMap.current.get(sessionId);
+              const currentConnector = currentInstance?.connector ?? connector;
               if (text && currentConnector) {
-                currentConnector.write(normalizePasteTextForConnector(text, currentConnector.protocol));
+                (currentInstance?.terminal ?? term).paste(
+                  normalizePasteTextForConnector(text, currentConnector.protocol)
+                );
               }
             })
             .catch((error) => {
@@ -733,8 +720,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         inputDisposable,
         parserDisposables,
         dataUnsubscribe,
-        pasteElement,
-        pasteHandler,
         termState,
         webglAddon,
         acAddon,
@@ -743,7 +728,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           dataUnsubscribe();
           connector?.close();
           containerEl.removeEventListener("wheel", handleWheel, { capture: true });
-          pasteElement?.removeEventListener("paste", pasteHandler);
           inputDisposable.dispose();
           parserDisposables.forEach((disposable) => disposable.dispose());
           keyDisposable.dispose();
@@ -945,8 +929,12 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     try {
       const text = await readText();
       if (text) {
-        activeSession.connector.write(
-          normalizePasteTextForConnector(text, activeSession.connector.protocol)
+        const instance = terminalMap.current.get(sessionId);
+        const currentConnector = instance?.connector;
+        if (!instance || !currentConnector) return;
+
+        instance.terminal.paste(
+          normalizePasteTextForConnector(text, currentConnector.protocol)
         );
       }
     } catch (error) {
