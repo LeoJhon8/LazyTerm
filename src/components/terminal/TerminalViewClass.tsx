@@ -628,6 +628,12 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       term.open(containerEl);
       const output = new OrderedTerminalOutput(term);
       const timeline = new CommandTimelineController(term);
+      parserDisposables.push(
+        term.parser.registerOscHandler(633, (data) => {
+          timeline.handleShellIntegration(data);
+          return true;
+        })
+      );
       timeline.setAppearance({
         fontFamily: nextFontFamily,
         fontSize: nextFontSize,

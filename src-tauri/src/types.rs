@@ -165,6 +165,15 @@ pub struct VncSession {
 pub struct LocalTerminalSession {
     pub master: Box<dyn portable_pty::MasterPty + Send>,
     pub writer: Box<dyn std::io::Write + Send>,
+    pub integration_script_path: Option<std::path::PathBuf>,
+}
+
+impl Drop for LocalTerminalSession {
+    fn drop(&mut self) {
+        if let Some(path) = &self.integration_script_path {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 // ==================== Telnet 相关类型 ====================

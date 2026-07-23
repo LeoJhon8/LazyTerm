@@ -3,8 +3,78 @@
 use crate::{AppState, LocalTerminalSession, ShellInfo};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read as _, Write};
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Runtime, State};
 use uuid::Uuid;
+
+const GIT_BASH_INTEGRATION_SCRIPT: &str = r#"# Lazy Terminal Git Bash shell integration.
+# This file is generated for one terminal session and removed when it closes.
+
+if [[ -r ~/.bashrc ]]; then
+    source ~/.bashrc
+fi
+
+if [[ $- == *i* && -z ${LAZYTERM_SHELL_INTEGRATION_ACTIVE:-} ]]; then
+    LAZYTERM_SHELL_INTEGRATION_ACTIVE=1
+    export LAZYTERM_SHELL_INTEGRATION_ACTIVE
+
+    __lazyterm_prompt_begin() {
+        local __lazyterm_exit_code=$?
+        __lazyterm_last_exit_code=$__lazyterm_exit_code
+        printf '\033]633;D;%s\007' "$__lazyterm_exit_code"
+        return "$__lazyterm_exit_code"
+    }
+
+    __lazyterm_prompt_ready() {
+        local __lazyterm_exit_code=${__lazyterm_last_exit_code:-0}
+        if [[ ${PS1:-} != "${__lazyterm_wrapped_ps1:-}" ]]; then
+            __lazyterm_wrapped_ps1='\[\033]633;A\007\]'"${PS1:-}"'\[\033]633;B\007\]'
+            PS1=$__lazyterm_wrapped_ps1
+        fi
+        return "$__lazyterm_exit_code"
+    }
+
+    case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+        "declare -a"*)
+            PROMPT_COMMAND=(
+                __lazyterm_prompt_begin
+                "${PROMPT_COMMAND[@]}"
+                __lazyterm_prompt_ready
+            )
+            ;;
+        *)
+            PROMPT_COMMAND="__lazyterm_prompt_begin${PROMPT_COMMAND:+;$PROMPT_COMMAND};__lazyterm_prompt_ready"
+            ;;
+    esac
+
+    PS0=$'\033]633;C\007'"${PS0:-}"
+fi
+"#;
+
+fn is_git_bash_shell(shell: &str) -> bool {
+    if !cfg!(target_os = "windows") {
+        return false;
+    }
+
+    let normalized = shell.replace('/', "\\").to_ascii_lowercase();
+    matches!(normalized.as_str(), "bash" | "bash.exe" | "git-bash")
+        || (normalized.ends_with("\\bash.exe") && normalized.contains("\\git\\"))
+}
+
+fn create_git_bash_integration_script(session_id: &str) -> Result<PathBuf, String> {
+    let directory = std::env::temp_dir().join("lazy-terminal-shell-integration");
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("无法创建 Git Bash Shell Integration 临时目录: {error}"))?;
+
+    let path = directory.join(format!("{session_id}.bash"));
+    std::fs::write(&path, GIT_BASH_INTEGRATION_SCRIPT)
+        .map_err(|error| format!("无法写入 Git Bash Shell Integration 脚本: {error}"))?;
+    Ok(path)
+}
+
+fn bash_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
 
 /// 创建本地终端会话
 #[tauri::command]
@@ -64,6 +134,12 @@ pub async fn create_terminal<R: Runtime>(
         }
     }
 
+    let git_bash_integration_path = if is_git_bash_shell(&shell_cmd) {
+        Some(create_git_bash_integration_script(&session_id)?)
+    } else {
+        None
+    };
+
     let mut cmd = if is_wsl_shell {
         // WSL shell：解析 "wsl.exe -d <发行版>" 格式
         let parts: Vec<&str> = shell_cmd.splitn(4, ' ').collect();
@@ -83,6 +159,12 @@ pub async fn create_terminal<R: Runtime>(
         let mut c = CommandBuilder::new("sudo");
         c.arg("--inline");
         c.arg(shell_cmd);
+        if let Some(path) = &git_bash_integration_path {
+            c.arg("--rcfile");
+            c.arg(bash_path(path));
+            c.env("TERM_PROGRAM", "LazyTerminal");
+            c.env("LAZYTERM_SHELL_INTEGRATION", "1");
+        }
         // 添加额外的 shell_args
         if let Some(args) = &shell_args {
             for arg in args {
@@ -92,6 +174,12 @@ pub async fn create_terminal<R: Runtime>(
         c
     } else {
         let mut c = CommandBuilder::new(&shell_cmd);
+        if let Some(path) = &git_bash_integration_path {
+            c.arg("--rcfile");
+            c.arg(bash_path(path));
+            c.env("TERM_PROGRAM", "LazyTerminal");
+            c.env("LAZYTERM_SHELL_INTEGRATION", "1");
+        }
         // 添加额外的 shell_args
         if let Some(args) = &shell_args {
             for arg in args {
@@ -105,7 +193,15 @@ pub async fn create_terminal<R: Runtime>(
         cmd.cwd(path);
     }
 
-    let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let _child = match pair.slave.spawn_command(cmd) {
+        Ok(child) => child,
+        Err(error) => {
+            if let Some(path) = &git_bash_integration_path {
+                let _ = std::fs::remove_file(path);
+            }
+            return Err(error.to_string());
+        }
+    };
     drop(pair.slave);
 
     let master = pair.master;
@@ -165,11 +261,14 @@ pub async fn create_terminal<R: Runtime>(
         }
     });
 
-    state
-        .local_sessions
-        .lock()
-        .unwrap()
-        .insert(session_id.clone(), LocalTerminalSession { master, writer });
+    state.local_sessions.lock().unwrap().insert(
+        session_id.clone(),
+        LocalTerminalSession {
+            master,
+            writer,
+            integration_script_path: git_bash_integration_path,
+        },
+    );
 
     Ok(session_id)
 }

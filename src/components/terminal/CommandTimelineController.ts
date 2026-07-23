@@ -17,7 +17,6 @@ export interface CommandTimelineAppearance {
 
 interface CommandTimelineLabel {
   root: HTMLButtonElement;
-  date: HTMLSpanElement;
   time: HTMLSpanElement;
 }
 
@@ -35,14 +34,6 @@ interface CommandTimelineEntry {
   decorationDisposeDisposable?: IDisposable;
   anchor?: HTMLElement;
   label?: CommandTimelineLabel;
-}
-
-interface VisibleTimelineEntry {
-  entry: CommandTimelineEntry;
-  top: number;
-  bottom: number;
-  height: number;
-  date: string;
 }
 
 const DEFAULT_APPEARANCE: CommandTimelineAppearance = {
@@ -68,6 +59,7 @@ export class CommandTimelineController {
   private disposed = false;
   private nextEntryId = 0;
   private syncFrameId: number | null = null;
+  private pendingShellCommandMarker?: IMarker;
   private appearance = DEFAULT_APPEARANCE;
   private dateFormatter = this.createDateFormatter(DEFAULT_APPEARANCE.locale);
   private timeFormatter = this.createTimeFormatter(DEFAULT_APPEARANCE.locale);
@@ -156,6 +148,21 @@ export class CommandTimelineController {
     this.scheduleSync();
   }
 
+  handleShellIntegration(data: string) {
+    const markerType = data.split(";", 1)[0];
+    if (markerType !== "B" || this.disposed) {
+      return;
+    }
+
+    if (
+      this.pendingShellCommandMarker
+      && !this.pendingShellCommandMarker.isDisposed
+    ) {
+      this.pendingShellCommandMarker.dispose();
+    }
+    this.pendingShellCommandMarker = this.terminal.registerMarker(0);
+  }
+
   record(
     command: string,
     timestamp: number,
@@ -166,18 +173,22 @@ export class CommandTimelineController {
       return;
     }
 
-    const cursorLine = this.getCursorLine();
-    const marker = this.terminal.registerMarker(submittedLine - cursorLine);
+    const shellMarker = this.pendingShellCommandMarker;
+    this.pendingShellCommandMarker = undefined;
+    const marker = shellMarker && !shellMarker.isDisposed
+      ? shellMarker
+      : this.terminal.registerMarker(submittedLine - this.getCursorLine());
     if (!marker) {
       return;
     }
+    const resolvedSubmittedLine = marker.line >= 0 ? marker.line : submittedLine;
 
     const entry: CommandTimelineEntry = {
       id: this.nextEntryId += 1,
       command,
       submittedText: this.normalizeLineText(submittedText),
       timestamp,
-      lastResolvedLine: submittedLine,
+      lastResolvedLine: resolvedSubmittedLine,
       verified: true,
     };
     this.bindMarker(entry, marker);
@@ -206,6 +217,13 @@ export class CommandTimelineController {
     }
     this.resizeObserver.disconnect();
     this.terminalDisposables.forEach((disposable) => disposable.dispose());
+    if (
+      this.pendingShellCommandMarker
+      && !this.pendingShellCommandMarker.isDisposed
+    ) {
+      this.pendingShellCommandMarker.dispose();
+    }
+    this.pendingShellCommandMarker = undefined;
 
     for (const entry of [...this.entries]) {
       this.removeEntry(entry, true);
@@ -278,10 +296,6 @@ export class CommandTimelineController {
     root.className = "absolute left-0 z-10 w-full pr-4 text-right tabular-nums leading-none text-muted-foreground/75 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/60";
     root.style.display = "none";
 
-    const date = document.createElement("span");
-    date.className = "absolute left-0 flex w-full items-center justify-end whitespace-nowrap pr-4";
-    date.style.bottom = "100%";
-
     const time = document.createElement("span");
     time.className = "flex h-full w-full items-center justify-end whitespace-nowrap";
 
@@ -289,7 +303,7 @@ export class CommandTimelineController {
     dot.ariaHidden = "true";
     dot.className = "absolute right-0.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary/75 ring-2 ring-background/80";
 
-    root.append(date, time, dot);
+    root.append(time, dot);
     root.addEventListener("mousedown", this.stopMouseDown);
     root.addEventListener("click", () => {
       if (!entry.marker || entry.marker.line < 0) {
@@ -299,7 +313,7 @@ export class CommandTimelineController {
       this.terminal.focus();
     });
 
-    entry.label = { root, date, time };
+    entry.label = { root, time };
     this.updateLabelContent(entry);
     this.updateLabelAppearance(entry.label);
     this.rail.appendChild(root);
@@ -328,7 +342,6 @@ export class CommandTimelineController {
 
     const date = this.dateFormatter.format(entry.timestamp);
     const time = this.timeFormatter.format(entry.timestamp);
-    entry.label.date.textContent = date;
     entry.label.time.textContent = time;
     entry.label.root.title = `${date} ${time}`;
     entry.label.root.ariaLabel = `${date} ${time}，${entry.command}`;
@@ -358,7 +371,6 @@ export class CommandTimelineController {
 
     this.reconcileEntries();
     const railRect = this.rail.getBoundingClientRect();
-    const visible: VisibleTimelineEntry[] = [];
 
     for (const entry of this.entries) {
       this.ensureLabel(entry);
@@ -386,38 +398,6 @@ export class CommandTimelineController {
       label.root.style.display = "block";
       label.root.style.top = `${top}px`;
       label.root.style.height = `${height}px`;
-      label.date.style.height = `${height}px`;
-
-      visible.push({
-        entry,
-        top,
-        bottom: top + height,
-        height,
-        date: this.dateFormatter.format(entry.timestamp),
-      });
-    }
-
-    visible.sort((a, b) => a.top - b.top);
-    const displayedDates = new Set<string>();
-    const railHeight = railRect.height;
-
-    for (const item of visible) {
-      const dateTop = item.top - item.height;
-      const dateFitsRail = dateTop >= 0 && item.top <= railHeight;
-      const dateOverlapsCommand = visible.some((other) => (
-        other !== item
-        && other.top < item.top
-        && other.bottom > dateTop + 0.5
-      ));
-      const showDate = (
-        !displayedDates.has(item.date)
-        && dateFitsRail
-        && !dateOverlapsCommand
-      );
-      item.entry.label!.date.style.display = showDate ? "flex" : "none";
-      if (showDate) {
-        displayedDates.add(item.date);
-      }
     }
   }
 
