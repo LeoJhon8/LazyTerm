@@ -1,6 +1,6 @@
 /**
  * 连接配置表单组件 — 供 NewConnectionDialog 和 QuickConnectDialog 共享
- * 包含 SSH、RDP、VNC、Serial、Telnet、AI CLI 六种类型的表单
+ * 包含本地终端、SSH、RDP、VNC、Serial、Telnet、AI CLI 七种类型的表单
  */
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ import { useCredentialsStore } from "@/store/credentials";
 import { useSettingsStore } from "@/store/settings";
 import { useSettingsDialogStore } from "@/store/settings-dialog";
 import { resolveRdpBackend } from "@/lib/rdp-backend";
+import { getAvailableShells } from "@/services/shellService";
 import {
   DEFAULT_RDP_RESOLUTION_VALUE,
   getRdpResolutionPreset,
@@ -47,10 +48,12 @@ import type {
   SerialConfig,
   TelnetConfig,
   AiCliConfig,
+  LocalConfig,
 } from "@/types/terminal";
+import type { ShellInfo } from "@/types/shell";
 
 /** 表单提交按钮的文案 key */
-export type SubmitLabel = "立即创建" | "连接";
+export type SubmitLabel = "立即创建" | "连接" | "保存";
 
 /* ==================== 通用表单字段布局 ==================== */
 export function FormField({
@@ -198,6 +201,132 @@ function CredentialDropdownInput({
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
+  );
+}
+
+/* ==================== 本地终端表单 ==================== */
+export function LocalForm({
+  onSubmit,
+  submitLabel,
+  initialConfig,
+}: {
+  onSubmit: (config: LocalConfig) => void;
+  submitLabel: SubmitLabel;
+  initialConfig?: LocalConfig;
+}) {
+  const { t } = useI18n();
+  const defaultShell = useSettingsStore((state) => state.defaultShell);
+  const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
+  const [shell, setShell] = useState(initialConfig?.shell ?? defaultShell);
+  const [nickname, setNickname] = useState(initialConfig?.nickname ?? "");
+  const [cwd, setCwd] = useState(initialConfig?.cwd ?? "");
+  const [startupCommand, setStartupCommand] = useState(initialConfig?.startupCommand ?? "");
+  const [admin, setAdmin] = useState(initialConfig?.admin ?? false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAvailableShells()
+      .then((shells) => {
+        if (cancelled) return;
+        setAvailableShells(shells);
+        setShell((current) => current || shells[0]?.path || "");
+      })
+      .catch((error) => {
+        logger.error("FE/dialog/connection-forms/local", "获取 Shell 列表失败", { error });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setShell(initialConfig?.shell ?? defaultShell);
+    setNickname(initialConfig?.nickname ?? "");
+    setCwd(initialConfig?.cwd ?? "");
+    setStartupCommand(initialConfig?.startupCommand ?? "");
+    setAdmin(initialConfig?.admin ?? false);
+  }, [defaultShell, initialConfig]);
+
+  const handleSelectCwd = async () => {
+    try {
+      const selected = await openFileDialog({
+        directory: true,
+        multiple: false,
+        title: t("选择工作目录"),
+      });
+      if (selected && typeof selected === "string") {
+        setCwd(selected);
+      }
+    } catch (error) {
+      logger.error("FE/dialog/connection-forms/local", "选择目录失败", { error });
+    }
+  };
+
+  const handleSubmit = () => {
+    if (!shell) return;
+    const selectedShell = availableShells.find((item) => item.path === shell);
+    const shellName = shell.split(/[/\\]/).pop()?.replace(/\.exe$/i, "");
+    onSubmit({
+      shell,
+      nickname: nickname.trim() || selectedShell?.name || shellName || t("本地终端"),
+      cwd: cwd.trim() || undefined,
+      startupCommand: startupCommand.trim() ? startupCommand : undefined,
+      admin,
+    });
+  };
+
+  const shellOptions = availableShells.some((item) => item.path === shell) || !shell
+    ? availableShells
+    : [{ name: shell, path: shell, icon_type: "terminal" }, ...availableShells];
+
+  return (
+    <form onSubmit={(event) => { event.preventDefault(); handleSubmit(); }} className="grid gap-4">
+      <FormField label={t("名称")} description={t("留空时使用 Shell 名称")}>
+        <Input value={nickname} onChange={(event) => setNickname(event.target.value)} />
+      </FormField>
+      <FormField label="Shell" required>
+        <Select value={shell} onValueChange={setShell}>
+          <SelectTrigger>
+            <SelectValue placeholder={t("选择终端类型")} />
+          </SelectTrigger>
+          <SelectContent>
+            {shellOptions.map((item) => (
+              <SelectItem key={item.path} value={item.path}>
+                {item.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {shellOptions.length === 0 && (
+          <p className="text-xs text-muted-foreground">{t("未检测到可用的终端")}</p>
+        )}
+      </FormField>
+      <FormField label={t("工作目录")} description={t("可选，留空使用当前目录")}>
+        <div className="flex gap-2">
+          <Input value={cwd} onChange={(event) => setCwd(event.target.value)} className="flex-1" />
+          <Button type="button" variant="outline" size="sm" onClick={handleSelectCwd}>
+            {t("浏览")}
+          </Button>
+        </div>
+      </FormField>
+      <FormField label={t("启动命令")} description={t("连接成功后自动执行，支持多行命令。")}>
+        <Textarea
+          value={startupCommand}
+          onChange={(event) => setStartupCommand(event.target.value)}
+          rows={4}
+          placeholder={t("输入命令，支持换行")}
+        />
+      </FormField>
+      <FormField label={t("以管理员身份运行")}>
+        <div className="flex h-9 items-center">
+          <Checkbox checked={admin} onCheckedChange={(checked) => setAdmin(checked === true)} />
+        </div>
+      </FormField>
+      <DialogFooter className="pt-2">
+        <Button type="submit" disabled={!shell}>{t(submitLabel)}</Button>
+      </DialogFooter>
+    </form>
   );
 }
 

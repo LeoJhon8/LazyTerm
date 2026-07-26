@@ -1,8 +1,14 @@
 import { useState, useEffect } from "react";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useSettingsStore, type TerminalRightClickBehavior } from "@/store/settings";
+import {
+  MAX_LONG_COMMAND_THRESHOLD_MINUTES,
+  MIN_LONG_COMMAND_THRESHOLD_MINUTES,
+  normalizeLongCommandThresholdMinutes,
+} from "@/store/settings-values";
 import { APP_LANGUAGE_OPTIONS, useI18n } from "@/i18n";
 import { isWindowsPlatform, resolveRdpBackend, type ConfigurableRdpBackend } from "@/lib/rdp-backend";
 import type { ShellInfo } from "@/types/shell";
@@ -19,6 +25,8 @@ export function GeneralSettings() {
     terminalAutocomplete,
     autocompleteSource,
     terminalTimelineEnabled,
+    longCommandNotificationEnabled,
+    longCommandThresholdMinutes,
     copyOnSelect,
     terminalRightClickBehavior,
     setSettings,
@@ -169,6 +177,53 @@ export function GeneralSettings() {
                 onCheckedChange={(checked) => setSettings({ terminalTimelineEnabled: !!checked })}
               />
             </div>
+            <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <Label htmlFor="long-command-notification" className="text-sm cursor-pointer">
+                  {t("长命令完成通知")}
+                </Label>
+                <span className="text-xs text-muted-foreground">
+                  {t("命令运行超过设定时间后，在完成时发送通知中心消息")}
+                </span>
+              </div>
+              <Switch
+                id="long-command-notification"
+                checked={longCommandNotificationEnabled}
+                onCheckedChange={(checked) => setSettings({ longCommandNotificationEnabled: !!checked })}
+              />
+            </div>
+            {longCommandNotificationEnabled && (
+              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                <div className="flex flex-col gap-0.5">
+                  <Label htmlFor="long-command-threshold" className="text-sm">
+                    {t("长命令判定时间")}
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    {t("默认 3 分钟，可设置 1 到 120 分钟")}
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Input
+                    id="long-command-threshold"
+                    type="number"
+                    min={MIN_LONG_COMMAND_THRESHOLD_MINUTES}
+                    max={MAX_LONG_COMMAND_THRESHOLD_MINUTES}
+                    step={1}
+                    value={longCommandThresholdMinutes}
+                    onChange={(event) => {
+                      if (event.target.value === "") return;
+                      setSettings({
+                        longCommandThresholdMinutes: normalizeLongCommandThresholdMinutes(
+                          event.target.valueAsNumber
+                        ),
+                      });
+                    }}
+                    className="h-8 w-20 rounded-md bg-background/80 px-2 text-right"
+                  />
+                  <span className="text-sm text-muted-foreground">{t("分钟")}</span>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between px-4 py-2.5">
               <div className="flex flex-col gap-0.5">
                 <Label htmlFor="copy-on-select" className="text-sm cursor-pointer">{t("选中后自动复制")}</Label>

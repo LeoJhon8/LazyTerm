@@ -35,8 +35,10 @@ import {
   TerminalTimeline,
 } from "./TerminalTimeline";
 import { CommandTimelineController } from "./CommandTimelineController";
+import { LongCommandTracker } from "./LongCommandTracker";
 import { useI18n } from "@/i18n";
 import type { AppColorPalette } from "@/store/settings";
+import { onTerminalCommandSubmitted } from "@/lib/terminal-command-events";
 
 // 全局 Terminal 实例缓存，确保切换 tab 时输出历史不丢失
 const globalTerminalCache = new Map<string, TerminalInstance>();
@@ -102,6 +104,7 @@ interface TerminalInstance {
   fitAddon: FitAddon;
   resizeObserver: ResizeObserver;
   timeline: CommandTimelineController;
+  longCommandTracker: LongCommandTracker;
   connector?: ITerminalConnector;
   inputDisposable?: { dispose(): void };
   parserDisposables?: Array<{ dispose(): void }>;
@@ -628,11 +631,19 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       term.open(containerEl);
       const output = new OrderedTerminalOutput(term);
       const timeline = new CommandTimelineController(term);
+      const longCommandTracker = new LongCommandTracker({
+        terminal: term,
+        getSessionTitle: () =>
+          useTabsStore.getState().sessions.find((session) => session.id === sessionId)?.title
+          ?? sessionId,
+      });
       parserDisposables.push(
         term.parser.registerOscHandler(633, (data) => {
           timeline.handleShellIntegration(data);
+          longCommandTracker.handleShellIntegration(data);
           return true;
-        })
+        }),
+        term.onWriteParsed(() => longCommandTracker.handleTerminalWriteParsed())
       );
       timeline.setAppearance({
         fontFamily: nextFontFamily,
@@ -671,6 +682,10 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           if (typeof unsub === "function") unsub();
         });
       };
+      const unsubscribeCommandSubmitted = onTerminalCommandSubmitted(
+        sessionId,
+        ({ command, submittedAt }) => longCommandTracker.record(command, submittedAt)
+      );
 
       const keyDisposable = term.onKey(({ domEvent }) => {
         if (domEvent.key === "Enter") {
@@ -684,6 +699,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
             if (command && command.length > 0) {
               timeline.record(command, Date.now(), submittedLine, rawText);
+              longCommandTracker.record(command);
 
               if (command !== lastCommandRef.current) {
                 addHistoryCommandRef.current(command);
@@ -754,6 +770,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         fitAddon,
         resizeObserver,
         timeline,
+        longCommandTracker,
         connector,
         inputDisposable,
         parserDisposables,
@@ -764,6 +781,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
         dispose: () => {
           dataUnsubscribe();
+          unsubscribeCommandSubmitted();
           connector?.close();
           containerEl.removeEventListener("wheel", handleWheel, { capture: true });
           inputDisposable.dispose();
@@ -776,6 +794,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           if (webglAddon) webglAddon.dispose();
           if (instance.acAddon) instance.acAddon.dispose();
           timeline.dispose();
+          longCommandTracker.dispose();
           output.dispose();
           term.dispose();
         },

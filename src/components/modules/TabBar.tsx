@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { X, Plus, Columns, Pencil, XCircle, ArrowLeftToLine, ArrowRightToLine, Copy, Server, Terminal, AppWindow, ScreenShare, Usb } from "lucide-react";
+import { X, Plus, Columns, Pencil, XCircle, ArrowLeftToLine, ArrowRightToLine, Copy, Server, Terminal, AppWindow, ScreenShare, Usb, LayoutTemplate } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
 import { getAllLeaves } from "@/lib/pane-utils";
 import { useEffect, useRef, useState, useCallback, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
@@ -58,6 +58,7 @@ import { startTabDrag, endTabDrag } from "@/lib/tab-drag-state";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
+import { WorkspaceTemplateDialog } from "@/components/modules/WorkspaceTemplateDialog";
 
 interface CloseConfirmationState {
   open: boolean;
@@ -121,6 +122,7 @@ function SortableTab({
   onSwitch,
   onClose,
   onDuplicate,
+  onSaveAsTemplate,
   onRename,
   onCloseOthers,
   onCloseLeft,
@@ -137,6 +139,7 @@ function SortableTab({
   onSwitch: (id: string) => void;
   onClose: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
   onDuplicate: (id: string) => void;
+  onSaveAsTemplate: (id: string) => void;
   onRename: (id: string) => void;
   onCloseOthers: (id: string) => void;
   onCloseLeft: (id: string) => void;
@@ -225,6 +228,12 @@ function SortableTab({
             <Copy className="mr-2 h-3.5 w-3.5" />
             {t("复制会话")}
           </ContextMenuItem>
+          {isSplit ? (
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onSaveAsTemplate(id)}>
+              <LayoutTemplate className="mr-2 h-3.5 w-3.5" />
+              {t("保存为工作区")}
+            </ContextMenuItem>
+          ) : null}
           <ContextMenuItem className="py-1 text-xs" onClick={() => onRename(id)}>
             <Pencil className="mr-2 h-3.5 w-3.5" />
             {t("重命名标签页")}
@@ -280,6 +289,8 @@ export function TabBar() {
     sessionId: null,
     value: "",
   });
+  const [workspaceTemplateDialogOpen, setWorkspaceTemplateDialogOpen] = useState(false);
+  const [templateWorkspaceId, setTemplateWorkspaceId] = useState<string | null>(null);
   
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [isTabsOverflowing, setIsTabsOverflowing] = useState(false);
@@ -634,6 +645,14 @@ export function TabBar() {
     }
   };
 
+  const handleOpenWorkspaceTemplates = (tabId: string | null = activeTabId) => {
+    if (tabId) {
+      setActiveTabId(tabId);
+    }
+    setTemplateWorkspaceId(tabId);
+    setWorkspaceTemplateDialogOpen(true);
+  };
+
 
 
 
@@ -722,6 +741,7 @@ export function TabBar() {
                     onSwitch={handleTabSwitch}
                     onClose={handleCloseTab}
                     onDuplicate={handleDuplicateSession}
+                    onSaveAsTemplate={handleOpenWorkspaceTemplates}
                     onRename={handleRenameOpen}
                     onCloseOthers={handleCloseOthers}
                     onCloseLeft={handleCloseLeft}
@@ -809,6 +829,17 @@ export function TabBar() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <WorkspaceTemplateDialog
+        open={workspaceTemplateDialogOpen}
+        workspaceId={templateWorkspaceId}
+        onOpenChange={(open) => {
+          setWorkspaceTemplateDialogOpen(open);
+          if (!open) {
+            setTemplateWorkspaceId(null);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -5,7 +5,8 @@ import {
 } from "@dnd-kit/core";
 import { 
   Folder, Server, ChevronRight, ChevronDown, Plus, FolderPlus, Zap,
-  Copy, Pencil, Trash2, Terminal, Upload, Download, AppWindow, ScreenShare, Usb
+  Copy, Pencil, Trash2, Terminal, Upload, Download, AppWindow, ScreenShare, Usb,
+  LayoutTemplate
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ import { SftpDownloadDialog } from "@/components/dialogs/SftpDownloadDialog";
 import { AiCliDialog } from "@/components/dialogs/AiCliDialog";
 import { NewConnectionDialog } from "@/components/dialogs/NewConnectionDialog";
 import { QuickConnectDialog } from "@/components/dialogs/QuickConnectDialog";
+import { LocalForm } from "@/components/dialogs/connection-forms";
 import { 
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator 
 } from "@/components/ui/context-menu";
@@ -33,12 +35,15 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
-import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCliConfig } from "@/types/terminal";
+import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCliConfig, LocalConfig } from "@/types/terminal";
 
 import { useDialogState } from "@/hooks/useDialogState";
 import { resolveRdpBackend } from "@/lib/rdp-backend";
 import { useSettingsStore } from "@/store/settings";
 import { logger } from "@/lib/logger";
+import { launchWorkspaceTemplate } from "@/lib/workspace-template";
+import type { WorkspaceTemplateDefinition } from "@/types/workspace-template";
+import { toast } from "@/components/ui/toast";
 
 type DropPosition = 'before' | 'after' | 'inside';
 
@@ -118,7 +123,11 @@ function NodeRowContent({
           </div>
         ) : (
           <div>
-            {node.type === "rdp"
+            {node.type === "workspace-template"
+              ? <LayoutTemplate className="h-4 w-4 text-cyan-500" />
+              : node.type === "local"
+              ? <Terminal className="h-4 w-4 text-blue-600/80" />
+              : node.type === "rdp"
               ? <AppWindow className="h-4 w-4 text-sky-600/80" />
               : node.type === "vnc"
               ? <ScreenShare className="h-4 w-4 text-emerald-600/80" />
@@ -212,6 +221,13 @@ function DraggableDroppableRow({
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-connection', node)}><Plus className="mr-2 h-4 w-4" /> {t("新建连接")}</ContextMenuItem>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('new-folder', node)}><FolderPlus className="mr-2 h-4 w-4" /> {t("新建子文件夹")}</ContextMenuItem>
           </>
+        ) : node.type === 'workspace-template' ? (
+          <>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}>
+              <LayoutTemplate className="mr-2 h-4 w-4 text-cyan-500" />
+              {t("连接")}
+            </ContextMenuItem>
+          </>
         ) : node.type === 'ssh' ? (
           <>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> {t("连接会话")}</ContextMenuItem>
@@ -221,6 +237,13 @@ function DraggableDroppableRow({
                 <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('sftp-download', node)}><Download className="mr-2 h-4 w-4" /> {t("下载文件")}</ContextMenuItem>
               </>
             )}
+          </>
+        ) : node.type === 'local' ? (
+          <>
+            <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}>
+              <Terminal className="mr-2 h-4 w-4 text-blue-600/80" />
+              {t("连接")}
+            </ContextMenuItem>
           </>
         ) : node.type === 'rdp' ? (
           <>
@@ -453,7 +476,7 @@ export function SessionModule() {
 
   const openDialog = (type: Parameters<typeof dialog.open>[0], node: SessionNode | null = null) => {
     setTargetNode(node);
-    if (node?.type === 'folder') {
+    if (node) {
       setTempName(node.name);
     } else {
       setTempName("");
@@ -511,6 +534,21 @@ export function SessionModule() {
       return { title: node.name, type: "ssh", host: node.config.host, config: { host: node.config.host, port: node.config.port, sshConfig: node.config } };
     }
 
+    if (node.type === "local") {
+      const localConfig = node.config as LocalConfig;
+      return {
+        title: node.name,
+        type: "local",
+        cwd: localConfig.cwd,
+        config: {
+          cwd: localConfig.cwd,
+          shell: localConfig.shell,
+          admin: localConfig.admin,
+          startupCommand: localConfig.startupCommand,
+        },
+      };
+    }
+
     if (node.type === "rdp" && isRdpConfig(node.config)) {
       const backend = resolveRdpBackend(useSettingsStore.getState().rdpBackend);
       const rdpConfig = backend === "msrdpax"
@@ -540,6 +578,28 @@ export function SessionModule() {
 
   const handleAction = (type: string, node: SessionNode) => {
     if (type === 'connect') {
+      if (node.type === "workspace-template") {
+        const template = node.config as WorkspaceTemplateDefinition | undefined;
+        if (!template) {
+          toast.error(t("工作区数据不完整，无法完成操作。"));
+          return;
+        }
+        try {
+          const result = launchWorkspaceTemplate(node.name, template);
+          if (result.missingCredentialSessionTitles.length > 0) {
+            toast.info(t("{count} 个远程会话的凭据不可用，连接可能失败。", {
+              count: result.missingCredentialSessionTitles.length,
+            }));
+          } else {
+            toast.success(t("已创建工作区。"));
+          }
+        } catch (error) {
+          logger.error("FE/session/workspace-template", "Failed to launch workspace template", { error });
+          toast.error(t("工作区操作失败。"));
+        }
+        return;
+      }
+
       const targetNodes = selectedNodeIds.length > 1 && selectedNodeIdSet.has(node.id)
         ? sortedNodes.filter((candidate) => selectedNodeIdSet.has(candidate.id))
         : [node];
@@ -564,6 +624,8 @@ export function SessionModule() {
     else if (type === 'edit') { 
       setEditNode(node); 
       if (node.type === 'folder') openDialog('folder', node);
+      else if (node.type === 'workspace-template') openDialog('folder', node);
+      else if (node.type === 'local') openDialog('local', node);
       else if (node.type === 'ssh') openDialog('ssh', node);
       else if (node.type === 'rdp') openDialog('rdp', node);
       else if (node.type === 'serial') openDialog('serial', node);
@@ -701,6 +763,30 @@ export function SessionModule() {
               dialog.close(); setTempName("");
             }}>{t("确定")}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 本地终端弹窗 */}
+      <Dialog open={dialog.isOpen('local')} onOpenChange={() => dialog.close()}>
+        <DialogContent className="sm:max-w-165">
+          <DialogHeader>
+            <DialogTitle>{t("本地终端")}</DialogTitle>
+          </DialogHeader>
+          <LocalForm
+            initialConfig={editNode?.type === "local" ? editNode.config as LocalConfig : undefined}
+            submitLabel="保存"
+            onSubmit={(cfg) => {
+              if (editNode) {
+                updateNode(editNode.id, {
+                  config: cfg,
+                  name: cfg.nickname || cfg.shell?.split(/[/\\]/).pop()?.replace(/\.exe$/i, "") || t("本地终端"),
+                });
+              } else if (targetNode) {
+                addProfile("local", cfg, targetNode.id);
+              }
+              dialog.close();
+            }}
+          />
         </DialogContent>
       </Dialog>
 

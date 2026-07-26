@@ -55,6 +55,13 @@ interface PanesState {
   /** 清理工作区（当 Tab 关闭时调用） */
   cleanupWorkspace: (tabId: string) => void;
 
+  /** 一次性写入指定工作区，用于恢复已保存的完整分屏树。 */
+  setWorkspace: (
+    tabId: string,
+    workspace: WorkspaceTree,
+    fontSizeOverrides?: Record<string, number>,
+  ) => void;
+
   /** 
    * 添加一个新的叶子面板到当前工作区
    */
@@ -158,6 +165,36 @@ export const usePanesStore = create<PanesState>()(
         return { workspaces: newWorkspaces, paneFontSizeOverrides };
       });
       logger.info("FE/store/panes", "Cleaned up workspace for tab", { tabId });
+    },
+
+    setWorkspace: (tabId, workspace, fontSizeOverrides = {}) => {
+      set((state) => {
+        const previousLeafIds = new Set(
+          getAllLeaves(state.workspaces[tabId]?.rootNode ?? null).map((leaf) => leaf.id),
+        );
+        const nextPaneFontSizeOverrides = Object.fromEntries(
+          Object.entries(state.paneFontSizeOverrides).filter(([leafId]) => !previousLeafIds.has(leafId)),
+        );
+
+        for (const leaf of getAllLeaves(workspace.rootNode)) {
+          const fontSize = fontSizeOverrides[leaf.id];
+          if (typeof fontSize === "number" && Number.isFinite(fontSize)) {
+            nextPaneFontSizeOverrides[leaf.id] = Math.max(6, Math.min(100, fontSize));
+          }
+        }
+
+        return {
+          workspaces: {
+            ...state.workspaces,
+            [tabId]: workspace,
+          },
+          paneFontSizeOverrides: nextPaneFontSizeOverrides,
+        };
+      });
+      logger.info("FE/store/panes", "Restored workspace tree", {
+        tabId,
+        paneCount: getAllLeaves(workspace.rootNode).length,
+      });
     },
 
     // ========== 核心操作 ==========

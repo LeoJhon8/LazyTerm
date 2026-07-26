@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { SettingsTab } from "@/store/settings-dialog";
+import { sendSystemNotification } from "@/services/systemNotificationService";
 
 export type NotificationType = "info" | "success" | "warning" | "error";
 export type NotificationSource = "sftp" | "terminal" | "system" | "ai";
@@ -56,16 +57,38 @@ export const useNotificationsStore = create<NotificationsState>()((set) => ({
     set((state) => ({
       notifications: [nextNotification, ...state.notifications].slice(0, MAX_NOTIFICATION_COUNT),
     }));
+    sendSystemNotification(nextNotification);
 
     return id;
   },
 
   updateNotification: (id, updates) => {
-    set((state) => ({
-      notifications: state.notifications.map((item) =>
-        item.id === id ? { ...item, ...updates } : item
-      ),
-    }));
+    let previousNotification: NotificationItem | undefined;
+    let nextNotification: NotificationItem | undefined;
+
+    set((state) => {
+      const notifications = state.notifications.map((item) => {
+        if (item.id !== id) {
+          return item;
+        }
+
+        previousNotification = item;
+        nextNotification = { ...item, ...updates };
+        return nextNotification;
+      });
+      return { notifications };
+    });
+
+    if (
+      previousNotification
+      && nextNotification
+      && (
+        previousNotification.type !== nextNotification.type
+        || previousNotification.title !== nextNotification.title
+      )
+    ) {
+      sendSystemNotification(nextNotification);
+    }
   },
 
   markAsRead: (id) => {

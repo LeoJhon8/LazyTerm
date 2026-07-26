@@ -6,6 +6,7 @@ import { useState, useCallback } from "react";
 export type DialogType = 
   | "newConnection"
   | "quickConnect"
+  | "local"
   | "ssh" 
   | "rdp" 
   | "vnc" 

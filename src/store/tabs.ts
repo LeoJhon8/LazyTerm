@@ -74,6 +74,16 @@ export interface TabWorkspace {
   title: string;
 }
 
+export interface AddSessionOptions {
+  /** 跳过默认的窗格生命周期处理，由调用方一次性恢复完整布局。 */
+  notifyLifecycle?: boolean;
+}
+
+export interface RemoveSessionOptions {
+  /** 跳过默认的窗格生命周期处理，用于回滚尚未挂载的批量会话。 */
+  notifyLifecycle?: boolean;
+}
+
 function getNextTabId(tabs: TabWorkspace[], removedId: string): string | null {
   const remainingTabs = tabs.filter((tab) => tab.id !== removedId);
   return remainingTabs.length > 0 ? remainingTabs[remainingTabs.length - 1].id : null;
@@ -105,8 +115,11 @@ interface TabsState {
   connectionError: SessionConnectionError | null;
 
   /** 主动创建新会话（带连接器） */
-  addSession: (sessionData: Omit<TerminalSession, "id" | "connector" | "connectionStatus">) => string;
-  removeSession: (id: string) => void;
+  addSession: (
+    sessionData: Omit<TerminalSession, "id" | "connector" | "connectionStatus">,
+    options?: AddSessionOptions,
+  ) => string;
+  removeSession: (id: string, options?: RemoveSessionOptions) => void;
   setFocusSession: (id: string | null) => void;
   updateSession: (id: string, updates: Partial<Omit<TerminalSession, "id" | "connector">>) => void;
   
@@ -176,7 +189,7 @@ export const useTabsStore = create<TabsState>()(
         focusSessionId: null,
         connectionError: null,
 
-        addSession: (sessionData) => {
+        addSession: (sessionData, options) => {
           // 生成随机 ID
           const id = Math.random().toString(36).substring(2, 11);
 
@@ -202,7 +215,7 @@ export const useTabsStore = create<TabsState>()(
           attachConnectionState(id, connector);
 
           // 通知生命周期回调（由 TabBar 处理 pane 创建）
-          if (sessionLifecycleCallbacks) {
+          if (options?.notifyLifecycle !== false && sessionLifecycleCallbacks) {
             sessionLifecycleCallbacks.onSessionCreated(id);
           }
 
@@ -246,7 +259,7 @@ export const useTabsStore = create<TabsState>()(
           return id;
         },
 
-        removeSession: (id) => {
+        removeSession: (id, options) => {
           const targetSession = get().sessions.find(s => s.id === id);
           const remainingCount = get().sessions.length - 1;
           stateUnsubscribers.get(id)?.();
@@ -282,7 +295,7 @@ export const useTabsStore = create<TabsState>()(
           });
 
           // 3. 通知生命周期回调（状态更新后触发，确保 TabBar 能获取最新状态）
-          if (sessionLifecycleCallbacks) {
+          if (options?.notifyLifecycle !== false && sessionLifecycleCallbacks) {
             sessionLifecycleCallbacks.onSessionRemoved(id);
             
             if (remainingCount === 0) {

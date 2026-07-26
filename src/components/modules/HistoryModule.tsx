@@ -17,6 +17,7 @@ import {
 import { Trash2, Search, X, Send } from "lucide-react";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import { useI18n } from "@/i18n";
+import { emitTerminalCommandSubmitted } from "@/lib/terminal-command-events";
 
 function isTerminalConnector(connector: SessionConnector | undefined): connector is ITerminalConnector {
   return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
@@ -24,7 +25,7 @@ function isTerminalConnector(connector: SessionConnector | undefined): connector
 
 export function HistoryModule() {
   const { t } = useI18n();
-  const { focusSessionId, getAllConnectors } = useTabsStore();
+  const { focusSessionId } = useTabsStore();
   const commands = useHistoryStore((state) => state.commands);
   const clearCommands = useHistoryStore((state) => state.clearCommands);
   const removeCommand = useHistoryStore((state) => state.removeCommand);
@@ -46,6 +47,7 @@ export function HistoryModule() {
       (s) => s.id === focusSessionId
     );
     if (focusSession?.connector?.isConnected && isTerminalConnector(focusSession.connector)) {
+      emitTerminalCommandSubmitted(focusSession.id, command);
       focusSession.connector.write(command + "\r");
     }
   };
@@ -150,10 +152,13 @@ export function HistoryModule() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setSendToAllState({ open: false, command: "" })}>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => {
-              const connectors = getAllConnectors();
-              connectors.forEach((connector) => {
-                if (connector.isConnected) {
-                  connector.write(sendToAllState.command + "\r");
+              useTabsStore.getState().sessions.forEach((session) => {
+                if (
+                  session.connector?.isConnected
+                  && isTerminalConnector(session.connector)
+                ) {
+                  emitTerminalCommandSubmitted(session.id, sendToAllState.command);
+                  session.connector.write(sendToAllState.command + "\r");
                 }
               });
               setSendToAllState({ open: false, command: "" });

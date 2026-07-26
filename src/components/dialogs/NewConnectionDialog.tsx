@@ -21,8 +21,10 @@ import type {
   SerialConfig,
   TelnetConfig,
   AiCliConfig,
+  LocalConfig,
 } from "@/types/terminal";
 import {
+  LocalForm,
   SshForm,
   RdpForm,
   VncForm,
@@ -32,9 +34,10 @@ import {
 } from "./connection-forms";
 
 /** 连接类型定义 */
-type ConnectionType = "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
+type ConnectionType = "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
 
 const CONNECTION_TYPES: Array<ConnectionTypeOption<ConnectionType>> = [
+  { type: "local", icon: <Terminal className="h-4 w-4 text-blue-600/80" />, labelKey: "本地终端" },
   { type: "ssh", icon: <Server className="h-4 w-4 text-emerald-600/80" />, labelKey: "SSH" },
   { type: "ai-cli", icon: <Terminal className="h-4 w-4 text-violet-600/80" />, labelKey: "AI CLI" },
   { type: "rdp", icon: <AppWindow className="h-4 w-4 text-sky-600/80" />, labelKey: "Windows 远程" },
@@ -49,7 +52,7 @@ interface NewConnectionDialogProps {
   /** 初始连接类型（可选，默认 ssh） */
   initialType?: ConnectionType;
   /** 保存回调，返回类型和配置 */
-  onSave: (type: ConnectionType, config: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig) => void;
+  onSave: (type: ConnectionType, config: LocalConfig | SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig) => void;
 }
 
 export function NewConnectionDialog({ open, onOpenChange, initialType, onSave }: NewConnectionDialogProps) {
@@ -63,7 +66,7 @@ export function NewConnectionDialog({ open, onOpenChange, initialType, onSave }:
     }
   }, [open, initialType]);
 
-  const handleSave = (config: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig) => {
+  const handleSave = (config: LocalConfig | SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig) => {
     onSave(selectedType, config);
     onOpenChange(false);
   };
@@ -81,6 +84,7 @@ export function NewConnectionDialog({ open, onOpenChange, initialType, onSave }:
           {/* 右侧：配置表单 */}
           <div className="flex-1 flex flex-col min-w-0">
             <div className="flex-1 overflow-y-auto px-6 py-4">
+              {selectedType === "local" && <LocalForm onSubmit={handleSave} submitLabel="立即创建" />}
               {selectedType === "ssh" && <SshForm onSubmit={handleSave} submitLabel="立即创建" />}
               {selectedType === "rdp" && <RdpForm onSubmit={handleSave} submitLabel="立即创建" />}
               {selectedType === "vnc" && <VncForm onSubmit={handleSave} submitLabel="立即创建" />}

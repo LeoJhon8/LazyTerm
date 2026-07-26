@@ -41,6 +41,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { emitTerminalCommandSubmitted } from "@/lib/terminal-command-events";
 
 // 可排序的快捷命令按钮组件
 function SortableQuickCommand({
@@ -121,7 +122,7 @@ export function QuickCmdBar() {
   const { t } = useI18n();
   const { commands, addCommand, removeCommand, updateCommand, reorderCommands } = useQuickCommandsStore();
   const { quickCommandDisplayMode, quickCommandFontSize } = useSettingsStore();
-  const { focusSessionId, sessions, getAllConnectors } = useTabsStore();
+  const { focusSessionId, sessions } = useTabsStore();
   const [configOpen, setConfigOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
   const [editingCmd, setEditingCmd] = useState<QuickCommand | null>(null);
@@ -164,6 +165,9 @@ export function QuickCmdBar() {
     const focusSession = sessions.find((session) => session.id === focusSessionId);
     if (focusSession?.connector?.isConnected && isTerminalConnector(focusSession.connector)) {
       const commandsToExecute = cmd.command.replace(/\r?\n/g, "\r");
+      if (commandsToExecute.includes("\r")) {
+        emitTerminalCommandSubmitted(focusSession.id, cmd.command);
+      }
       focusSession.connector.write(commandsToExecute);
       restoreTerminalFocus();
     }
@@ -171,13 +175,16 @@ export function QuickCmdBar() {
 
   // 发送命令到所有终端会话
   const sendToAllSessions = (cmd: QuickCommand) => {
-    const connectors = getAllConnectors();
-    if (connectors.length === 0) return;
-
     const commandsToExecute = cmd.command.replace(/\r?\n/g, "\r");
-    connectors.forEach((connector) => {
-      if (connector.isConnected) {
-        connector.write(commandsToExecute);
+    sessions.forEach((session) => {
+      if (
+        session.connector?.isConnected
+        && isTerminalConnector(session.connector)
+      ) {
+        if (commandsToExecute.includes("\r")) {
+          emitTerminalCommandSubmitted(session.id, cmd.command);
+        }
+        session.connector.write(commandsToExecute);
       }
     });
     restoreTerminalFocus();

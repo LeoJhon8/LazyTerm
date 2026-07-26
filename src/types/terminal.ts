@@ -204,6 +204,9 @@ export interface SSHConfig {
 export interface LocalConfig {
   cwd?: string;
   shell?: string;
+  nickname?: string;
+  admin?: boolean;
+  startupCommand?: string;
 }
 
 export interface TelnetConfig {

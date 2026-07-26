@@ -1,19 +1,20 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCliConfig } from "@/types/terminal";
+import type { RDPConfig, SSHConfig, VNCConfig, SerialConfig, TelnetConfig, AiCliConfig, LocalConfig } from "@/types/terminal";
 import { getSystemLanguage, resolveAppLocale, type AppLocale } from "@/i18n/config";
 import { useSettingsStore } from "@/store/settings";
 import { gitAwareStorage } from "@/store/git-aware-storage";
 import { getClosestRdpResolutionPreset } from "@/lib/rdp-resolution";
+import type { WorkspaceTemplateDefinition } from "@/types/workspace-template";
 
-export type NodeType = "folder" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
+export type NodeType = "folder" | "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli" | "workspace-template";
 
 export interface SessionNode {
   id: string;
   type: NodeType;
   name: string;
   parentId: string | null;
-  config?: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig;
+  config?: LocalConfig | SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig | WorkspaceTemplateDefinition;
   isExpanded?: boolean;
   isRoot?: boolean;
   order: number;
@@ -38,7 +39,67 @@ function normalizeRdpConfig(config: RDPConfig): RDPConfig {
   };
 }
 
+function sanitizeWorkspaceTemplate(
+  template: WorkspaceTemplateDefinition,
+): WorkspaceTemplateDefinition {
+  const sessions = Array.isArray(template.sessions) ? template.sessions : [];
+  return {
+    ...template,
+    sessions: sessions.map((session) => {
+      if (session.type === "ssh" && session.config?.sshConfig) {
+        return {
+          ...session,
+          config: {
+            host: session.config.host,
+            port: session.config.port,
+            sshConfig: {
+              ...session.config.sshConfig,
+              password: undefined,
+              privateKey: undefined,
+              privateKeyPassphrase: undefined,
+            },
+          },
+        };
+      }
+      if (session.type === "rdp" && session.config?.rdpConfig) {
+        return {
+          ...session,
+          config: {
+            host: session.config.host,
+            port: session.config.port,
+            rdpConfig: {
+              ...session.config.rdpConfig,
+              password: undefined,
+            },
+          },
+        };
+      }
+      if (session.type === "vnc" && session.config?.vncConfig) {
+        return {
+          ...session,
+          config: {
+            host: session.config.host,
+            port: session.config.port,
+            vncConfig: {
+              ...session.config.vncConfig,
+              password: undefined,
+            },
+          },
+        };
+      }
+      return session;
+    }),
+  };
+}
+
 function normalizeNode(node: SessionNode): SessionNode {
+  if (node.type === "workspace-template" && node.config) {
+    return {
+      ...node,
+      config: sanitizeWorkspaceTemplate(node.config as WorkspaceTemplateDefinition),
+    };
+  }
+
   if (node.type !== "rdp" || !node.config) {
     return node;
   }
@@ -58,7 +119,8 @@ interface SSHProfilesState {
   ensureRoot: () => void;
   syncRootFolderName: () => void;
   addFolder: (name: string, parentId: string) => void;
-  addProfile: (type: "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli", cfg: SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig, parentId: string) => void;
+  addProfile: (type: "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli", cfg: LocalConfig | SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig, parentId: string) => void;
+  addWorkspaceTemplate: (name: string, template: WorkspaceTemplateDefinition, parentId: string) => void;
   duplicateProfile: (id: string, name: string) => void;
   updateNode: (id: string, updates: Partial<SessionNode>) => void;
   removeNode: (id: string) => void;
@@ -135,7 +197,7 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
         };
       }),
 
-      addProfile: (type: "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli", cfg, parentId) => set((state) => {
+      addProfile: (type: "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli", cfg, parentId) => set((state) => {
         const siblings = state.nodes.filter(n => n.parentId === parentId);
         const maxOrder = siblings.length > 0 ? Math.max(...siblings.map(s => s.order)) : 0;
         const normalizedConfig = type === "rdp"
@@ -144,7 +206,11 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
         
         // 根据类型确定默认名称
         let defaultName = "AI CLI";
-        if (type === "ssh" || type === "rdp" || type === "vnc") {
+        if (type === "local") {
+          const localConfig = normalizedConfig as LocalConfig;
+          const shellName = localConfig.shell?.split(/[/\\]/).pop()?.replace(/\.exe$/i, "");
+          defaultName = localConfig.nickname || shellName || "Local";
+        } else if (type === "ssh" || type === "rdp" || type === "vnc") {
           defaultName = (normalizedConfig as any).nickname || (normalizedConfig as any).host || "";
         } else if (type === "serial") {
           defaultName = (normalizedConfig as any).nickname || (normalizedConfig as any).port || "Serial";
@@ -160,6 +226,25 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
         };
       }),
 
+      addWorkspaceTemplate: (name, template, parentId) => set((state) => {
+        const siblings = state.nodes.filter((node) => node.parentId === parentId);
+        const maxOrder = siblings.length > 0
+          ? Math.max(...siblings.map((sibling) => sibling.order))
+          : 0;
+        return {
+          nodes: state.nodes
+            .map((node) => node.id === parentId ? { ...node, isExpanded: true } : node)
+            .concat([{
+              id: `w_${Math.random().toString(36).slice(2, 9)}`,
+              type: "workspace-template",
+              name: name.trim(),
+              parentId,
+              config: sanitizeWorkspaceTemplate(template),
+              order: maxOrder + 1,
+            }]),
+        };
+      }),
+
       duplicateProfile: (id, name) => set((state) => {
         const source = state.nodes.find((node) => node.id === id);
         if (!source || source.type === "folder" || !source.config || source.parentId === null) {
@@ -171,7 +256,9 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
             ? { ...node, order: node.order + 1 }
             : node
         );
-        const config = { ...source.config, nickname: name };
+        const config = source.type === "workspace-template"
+          ? structuredClone(source.config)
+          : { ...source.config, nickname: name };
 
         return {
           nodes: nodes.concat([normalizeNode({

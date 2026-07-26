@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { CheckCircle, XCircle, Info, X, File } from "lucide-react";
 
@@ -27,6 +28,17 @@ function removeToast(id: number) {
   toastListeners.forEach(listener => listener());
 }
 
+function subscribeToToasts(listener: () => void) {
+  toastListeners.add(listener);
+  return () => {
+    toastListeners.delete(listener);
+  };
+}
+
+function getToastSnapshot() {
+  return globalToasts;
+}
+
 // 导出全局方法
 export const toast = {
   success: (text: string, files?: string[]) => addToast(text, 'success', files),
@@ -51,25 +63,21 @@ const toastConfig = {
 };
 
 export function ToastContainer() {
-  const [, forceUpdate] = useState({});
-
-  useEffect(() => {
-    const listener = () => forceUpdate({});
-    toastListeners.add(listener);
-    return () => {
-      toastListeners.delete(listener);
-    };
-  }, []);
+  const toasts = useSyncExternalStore(
+    subscribeToToasts,
+    getToastSnapshot,
+    getToastSnapshot,
+  );
 
   const handleClose = useCallback((id: number) => {
     removeToast(id);
   }, []);
 
-  if (globalToasts.length === 0) return null;
+  if (toasts.length === 0 || typeof document === "undefined") return null;
 
-  return (
-    <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm">
-      {globalToasts.map((toast) => {
+  return createPortal(
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[9999] flex max-w-sm flex-col gap-2">
+      {toasts.map((toast) => {
         const config = toastConfig[toast.type];
         const Icon = config.icon;
 
@@ -77,7 +85,7 @@ export function ToastContainer() {
           <div
             key={toast.id}
             className={cn(
-              "flex flex-col gap-2 border px-4 py-3 shadow-2xl backdrop-blur-xl",
+              "pointer-events-auto flex flex-col gap-2 border px-4 py-3 shadow-2xl backdrop-blur-xl",
               "animate-in slide-in-from-right duration-300",
               "rounded-md", // 改为小圆角
               config.className
@@ -87,8 +95,10 @@ export function ToastContainer() {
               <Icon className="h-5 w-5 shrink-0" />
               <span className="flex-1 text-sm font-medium">{toast.text}</span>
               <button
+                type="button"
                 onClick={() => handleClose(toast.id)}
-                className="shrink-0 rounded p-0.5 hover:bg-white/10 transition-colors"
+                className="shrink-0 rounded p-0.5 transition-colors hover:bg-white/10"
+                aria-label="Close"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -108,6 +118,7 @@ export function ToastContainer() {
           </div>
         );
       })}
-    </div>
+    </div>,
+    document.body,
   );
 }

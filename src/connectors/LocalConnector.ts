@@ -1,4 +1,4 @@
-import type { ConnectionStateEvent, ITerminalConnector } from "@/types/terminal";
+import type { ConnectionStateEvent, ITerminalConnector, LocalConfig } from "@/types/terminal";
 import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
@@ -6,12 +6,13 @@ import { invokeTauri, invokeTauriBackground, invokeTauriSerialized } from "@/ser
 
 export class LocalConnector implements ITerminalConnector {
   public readonly protocol = 'local' as const;
-  private config: { cwd?: string; shell?: string; admin?: boolean };
+  private config: LocalConfig;
   private unlistenFn: UnlistenFn | null = null;
   private sessionId: string | null = null;
+  private startupCommandSessionId: string | null = null;
   private readonly stateEmitter = new ConnectionStateEmitter("FE/connector/local/state");
 
-  constructor(config: { cwd?: string; shell?: string; admin?: boolean }) {
+  constructor(config: LocalConfig) {
     this.config = config;
   }
 
@@ -26,7 +27,7 @@ export class LocalConnector implements ITerminalConnector {
       this.sessionId = await invokeTauri<string>("create_terminal", {
         cwd: this.config.cwd,
         shell: this.config.shell,
-        admin: this.config.admin
+        admin: this.config.admin,
       }, {
         scope: "FE/connector/local/open",
         logStart: true,
@@ -85,6 +86,21 @@ export class LocalConnector implements ITerminalConnector {
       dataUnlisten();
       closeUnlisten();
     };
+
+    this.sendStartupCommandOnce();
+  }
+
+  private sendStartupCommandOnce(): void {
+    const sessionId = this.sessionId;
+    const startupCommand = this.config.startupCommand;
+    if (!sessionId || !startupCommand?.trim() || this.startupCommandSessionId === sessionId) {
+      return;
+    }
+
+    this.startupCommandSessionId = sessionId;
+    const normalizedCommand = startupCommand.replace(/\r\n|\n|\r/g, "\r");
+    this.write(normalizedCommand.endsWith("\r") ? normalizedCommand : `${normalizedCommand}\r`);
+    logger.info("FE/connector/local/startup-command", "本地终端启动命令已发送");
   }
 
   write(data: string | Uint8Array): void {

@@ -8,7 +8,12 @@ import {
 import { DEFAULT_LANGUAGE_SETTING, type AppLanguageSetting } from "@/i18n/config";
 import type { ConfigurableRdpBackend } from "@/lib/rdp-backend";
 import { gitAwareStorage } from "@/store/git-aware-storage";
-import { DEFAULT_QUICK_COMMAND_FONT_SIZE, normalizeQuickCommandFontSize } from "@/store/settings-values";
+import {
+  DEFAULT_LONG_COMMAND_THRESHOLD_MINUTES,
+  DEFAULT_QUICK_COMMAND_FONT_SIZE,
+  normalizeLongCommandThresholdMinutes,
+  normalizeQuickCommandFontSize,
+} from "@/store/settings-values";
 
 export type BackgroundImageUiMode = "frosted" | "clear";
 export type QuickCommandDisplayMode = "bar" | "panel";
@@ -56,6 +61,8 @@ interface SettingsData {
   terminalAutocomplete: boolean;
   autocompleteSource: ('history' | 'quick')[];  // 自动补全数据源（多选）
   terminalTimelineEnabled: boolean;
+  longCommandNotificationEnabled: boolean;
+  longCommandThresholdMinutes: number;
   copyOnSelect: boolean;
   terminalRightClickBehavior: TerminalRightClickBehavior;
   // 外观自定义
@@ -121,6 +128,8 @@ const defaultSettings: SettingsData = {
   terminalAutocomplete: false,
   autocompleteSource: [],  // 默认不启用任何自动补全数据源
   terminalTimelineEnabled: false,
+  longCommandNotificationEnabled: true,
+  longCommandThresholdMinutes: DEFAULT_LONG_COMMAND_THRESHOLD_MINUTES,
   copyOnSelect: false,
   terminalRightClickBehavior: "context-menu",
   // 外观自定义默认值
@@ -155,13 +164,20 @@ export const useSettingsStore = create<SettingsState>()(
         ...(newSettings.quickCommandFontSize !== undefined
           ? { quickCommandFontSize: normalizeQuickCommandFontSize(newSettings.quickCommandFontSize) }
           : {}),
+        ...(newSettings.longCommandThresholdMinutes !== undefined
+          ? {
+              longCommandThresholdMinutes: normalizeLongCommandThresholdMinutes(
+                newSettings.longCommandThresholdMinutes
+              ),
+            }
+          : {}),
       })),
       resetSettings: () => set(defaultSettings),
     }),
     {
       name: "lazy-term-settings",
       storage: createJSONStorage(() => gitAwareStorage),
-      version: 3,
+      version: 4,
       migrate: (persistedState, version) => {
         if (persistedState && typeof persistedState === "object") {
           const data: Partial<SettingsData> = { ...(persistedState as Partial<SettingsData>) };
@@ -186,6 +202,11 @@ export const useSettingsStore = create<SettingsState>()(
           if (version < 3) {
             data.copyOnSelect = true;
             data.terminalRightClickBehavior = "quick-copy-paste";
+          }
+
+          if (version < 4) {
+            data.longCommandNotificationEnabled = true;
+            data.longCommandThresholdMinutes = DEFAULT_LONG_COMMAND_THRESHOLD_MINUTES;
           }
 
           return data;

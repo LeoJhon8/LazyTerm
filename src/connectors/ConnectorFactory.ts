@@ -36,6 +36,7 @@ export interface SessionCreationData {
     telnetConfig?: TelnetConfig;
     aiCliConfig?: AiCliConfig;
     admin?: boolean;
+    startupCommand?: string;
   };
 }
 
@@ -58,9 +59,10 @@ export function createConnector(
   switch (sessionData.type) {
     case "local":
       return new LocalConnector({
-        cwd: sessionData.cwd,
+        cwd: sessionData.cwd ?? sessionData.config?.cwd,
         shell: sessionData.config?.shell,
         admin: sessionData.config?.admin,
+        startupCommand: sessionData.config?.startupCommand,
       });
     case "ssh":
       if (!sessionData.config?.sshConfig) {
