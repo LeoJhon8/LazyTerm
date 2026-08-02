@@ -90,6 +90,10 @@ export interface VncKeyboardPayload {
   down: boolean;
 }
 
+export interface VncKeySequencePayload {
+  keySyms: number[];
+}
+
 export interface VncCursorPayload {
   hotspotX: number;
   hotspotY: number;
@@ -164,6 +168,7 @@ export interface IVncConnector extends ISessionConnector {
   onClose(handler: () => void): () => void;
   sendPointer(payload: VncPointerPayload): void;
   sendKey(payload: VncKeyboardPayload): void;
+  sendKeySequence(payload: VncKeySequencePayload): void;
   pasteClipboard(text: string, keySym: number, modifierKeySyms: number[]): Promise<void>;
   typeText(text: string, modifierKeySyms: number[]): Promise<void>;
   requestFrame(full?: boolean): void;

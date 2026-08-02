@@ -21,12 +21,42 @@ import {
 } from "./BaseGraphicSessionView";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 
 const VNC_STARTUP_TRACE_WINDOW_MS = 15_000;
 const VNC_POINTER_MOVE_LOG_INTERVAL_MS = 250;
 const VNC_SLOW_DRAW_LOG_THRESHOLD_MS = 20;
 const VNC_ENABLE_DIAGNOSTIC_LOGS = false;
 const VNC_KEYSTROKE_PASTE_MAX_LENGTH = 4096;
+
+const VNC_KEY_SYM = {
+  backspace: 0xff08,
+  tab: 0xff09,
+  escape: 0xff1b,
+  printScreen: 0xff61,
+  delete: 0xffff,
+  controlLeft: 0xffe3,
+  altLeft: 0xffe9,
+  metaLeft: 0xffeb,
+} as const;
+
+const VNC_COMMON_KEY_SEQUENCES = [
+  { label: "Ctrl+Alt+Del", keySyms: [VNC_KEY_SYM.controlLeft, VNC_KEY_SYM.altLeft, VNC_KEY_SYM.delete] },
+  { label: "Ctrl+Esc", keySyms: [VNC_KEY_SYM.controlLeft, VNC_KEY_SYM.escape] },
+  { label: "Alt+Tab", keySyms: [VNC_KEY_SYM.altLeft, VNC_KEY_SYM.tab] },
+  { label: "Alt+Esc", keySyms: [VNC_KEY_SYM.altLeft, VNC_KEY_SYM.escape] },
+  { label: "Windows", keySyms: [VNC_KEY_SYM.metaLeft] },
+  { label: "Print Screen", keySyms: [VNC_KEY_SYM.printScreen] },
+  { label: "Ctrl+Alt+Backspace", keySyms: [VNC_KEY_SYM.controlLeft, VNC_KEY_SYM.altLeft, VNC_KEY_SYM.backspace] },
+] as const;
 
 function normalizeVncPasteText(text: string) {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -57,6 +87,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
 
   const pointerMaskRef = useRef(0);
   const pointerTargetRef = useRef<number | null>(null);
+  const contextMenuPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const pendingFrameRef = useRef<VncFramePayload | null>(null);
   const pendingFrameSeqRef = useRef(0);
   const decodeInFlightRef = useRef(false);
@@ -323,6 +354,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
   useEffect(() => {
     pointerMaskRef.current = 0;
     pointerTargetRef.current = null;
+    contextMenuPointRef.current = null;
     setCursorStyle("default");
   }, [activeSession?.id]);
 
@@ -387,6 +419,10 @@ export function VncViewClass(props: BaseSessionViewProps) {
     }
     event.preventDefault();
     event.currentTarget.focus();
+    if (event.button === 2 && !event.shiftKey) {
+      contextMenuPointRef.current = { clientX: event.clientX, clientY: event.clientY };
+      return;
+    }
     pointerTargetRef.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
     const bit = buttonBit(event.button);
@@ -399,6 +435,9 @@ export function VncViewClass(props: BaseSessionViewProps) {
       return;
     }
     event.preventDefault();
+    if (event.button === 2 && !event.shiftKey) {
+      return;
+    }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -494,6 +533,16 @@ export function VncViewClass(props: BaseSessionViewProps) {
     });
   };
 
+  const sendRemoteRightClick = () => {
+    const point = contextMenuPointRef.current;
+    if (!point || viewOnly || !connector.isConnected) {
+      return;
+    }
+
+    emitPointer(point.clientX, point.clientY, 4, "down");
+    emitPointer(point.clientX, point.clientY, 0, "up");
+  };
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) {
@@ -518,56 +567,97 @@ export function VncViewClass(props: BaseSessionViewProps) {
   }, [containerRef, emitPointer, viewOnly]);
 
   return (
-    <main
-      className={cn(VIEW_CONTAINER_CLASSNAME, "bg-(--terminal-shell)")}
-      data-view-type="vnc"
-      data-session-id={sessionId}
-      data-pane-id={paneId}
-    >
-      <div
-        ref={containerRef}
-        className={INTERACTIVE_CONTAINER_CLASSNAME}
-        style={{ cursor: cursorStyle }}
-        tabIndex={0}
-        onPointerMove={handlePointerMove}
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerCancel}
-        onKeyDown={(event) => handleKey(event, true)}
-        onKeyUp={(event) => handleKey(event, false)}
-        onPaste={handlePaste}
-        onBlur={() => {
-          pointerMaskRef.current = 0;
-          pointerTargetRef.current = null;
+    <ContextMenu>
+      <ContextMenuTrigger
+        asChild
+        onContextMenu={(event) => {
+          if (event.shiftKey) {
+            event.preventDefault();
+          }
         }}
       >
-        <SessionTransitionMask
-          visible={activeSession.connectionStatus.phase === "connected" && (!frameSize || resizeMaskVisible)}
-          text={!frameSize ? t("正在同步 VNC 画面...") : t("正在调整画面比例...")}
-        />
-        <canvas
-          ref={canvasRef}
-          className={frameSize ? CANVAS_CLASSNAME : HIDDEN_CLASSNAME}
-        />
+        <main
+          className={cn(VIEW_CONTAINER_CLASSNAME, "bg-(--terminal-shell)")}
+          data-view-type="vnc"
+          data-session-id={sessionId}
+          data-pane-id={paneId}
+        >
+          <div
+            ref={containerRef}
+            className={INTERACTIVE_CONTAINER_CLASSNAME}
+            style={{ cursor: cursorStyle }}
+            tabIndex={0}
+            onPointerMove={handlePointerMove}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onKeyDown={(event) => handleKey(event, true)}
+            onKeyUp={(event) => handleKey(event, false)}
+            onPaste={handlePaste}
+            onBlur={() => {
+              pointerMaskRef.current = 0;
+              pointerTargetRef.current = null;
+            }}
+          >
+            <SessionTransitionMask
+              visible={activeSession.connectionStatus.phase === "connected" && (!frameSize || resizeMaskVisible)}
+              text={!frameSize ? t("正在同步 VNC 画面...") : t("正在调整画面比例...")}
+            />
+            <canvas
+              ref={canvasRef}
+              className={frameSize ? CANVAS_CLASSNAME : HIDDEN_CLASSNAME}
+            />
 
-        {viewOnly && (
-          <div className="pointer-events-none absolute right-3 top-3 z-20 rounded-md border border-border/70 bg-background/85 px-2.5 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
-            {t("仅查看")}
+            {viewOnly && (
+              <div className="pointer-events-none absolute right-3 top-3 z-20 rounded-md border border-border/70 bg-background/85 px-2.5 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
+                {t("仅查看")}
+              </div>
+            )}
+
+            <ConnectionStatusOverlay
+              status={activeSession.connectionStatus}
+              protocol="VNC"
+              target={activeSession.config?.vncConfig?.host
+                ? `${activeSession.config.vncConfig.host}:${activeSession.config.vncConfig.port || 5900}`
+                : activeSession.title}
+              details={[
+                { label: t("颜色深度"), value: t("真彩色 (24-bit)") }
+              ]}
+              onReconnect={() => reconnectSession(activeSession.id)}
+            />
           </div>
-        )}
-
-        <ConnectionStatusOverlay
-          status={activeSession.connectionStatus}
-          protocol="VNC"
-          target={activeSession.config?.vncConfig?.host
-            ? `${activeSession.config.vncConfig.host}:${activeSession.config.vncConfig.port || 5900}`
-            : activeSession.title}
-          details={[
-            { label: t("颜色深度"), value: t("真彩色 (24-bit)") }
-          ]}
-          onReconnect={() => reconnectSession(activeSession.id)}
-        />
-      </div>
-    </main>
+        </main>
+      </ContextMenuTrigger>
+      <ContextMenuContent
+        className="min-w-52 text-xs"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          containerRef.current?.focus({ preventScroll: true });
+        }}
+      >
+        <ContextMenuLabel className="py-1 text-xs text-muted-foreground">
+          {t("发送常用按键")}
+        </ContextMenuLabel>
+        {VNC_COMMON_KEY_SEQUENCES.map((sequence) => (
+          <ContextMenuItem
+            key={sequence.label}
+            className="py-1.5 text-xs"
+            disabled={viewOnly || !connector.isConnected}
+            onSelect={() => connector.sendKeySequence({ keySyms: [...sequence.keySyms] })}
+          >
+            {sequence.label}
+          </ContextMenuItem>
+        ))}
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          className="py-1.5 text-xs"
+          disabled={viewOnly || !connector.isConnected || !contextMenuPointRef.current}
+          onSelect={sendRemoteRightClick}
+        >
+          {t("发送鼠标右键")}
+          <ContextMenuShortcut>Shift+{t("右键")}</ContextMenuShortcut>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

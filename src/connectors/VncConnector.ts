@@ -5,6 +5,7 @@ import type {
   VncCursorPayload,
   VncFramePayload,
   VncKeyboardPayload,
+  VncKeySequencePayload,
   VncPointerPayload,
 } from "@/types/terminal";
 import { logger } from "@/lib/logger";
@@ -85,6 +86,20 @@ export class VncConnector
       { scope: "FE/connector/vnc/key" },
     ).catch((error) => {
       logger.error("FE/connector/vnc/key", "Keyboard input failed", { error });
+    });
+  }
+
+  sendKeySequence(payload: VncKeySequencePayload): void {
+    if (!this.sessionId) {
+      return;
+    }
+
+    invokeTauri(
+      "send_vnc_key_sequence",
+      { sessionId: this.sessionId, payload },
+      { scope: "FE/connector/vnc/key-sequence" },
+    ).catch((error) => {
+      logger.error("FE/connector/vnc/key-sequence", "Keyboard sequence input failed", { error });
     });
   }
 

@@ -467,6 +467,59 @@ impl VncClient {
         .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
     }
 
+    /// 原子发送组合键，保证所有按下与释放事件在同一 I/O 锁内有序完成。
+    pub async fn send_key_sequence(&self, key_syms: Vec<u32>) -> VncResult<()> {
+        const MAX_SEQUENCE_LENGTH: usize = 16;
+
+        if key_syms.is_empty() || key_syms.len() > MAX_SEQUENCE_LENGTH {
+            return Err(VncError::ProtocolError(format!(
+                "Key sequence length must be between 1 and {MAX_SEQUENCE_LENGTH}"
+            )));
+        }
+
+        let inner = self.inner.clone();
+
+        task::spawn_blocking(move || {
+            let _io_guard = inner.io_lock.lock();
+            let client_ptr = *inner.raw_client.lock();
+
+            if let Some(ptr) = client_ptr {
+                unsafe {
+                    let client = ptr as *mut ffi::RfbClient;
+
+                    for (index, key_sym) in key_syms.iter().enumerate() {
+                        if ffi::SendKeyEvent(client, *key_sym, 1) == 0 {
+                            for pressed_key_sym in key_syms[..index].iter().rev() {
+                                let _ = ffi::SendKeyEvent(client, *pressed_key_sym, 0);
+                            }
+                            return Err(VncError::NetworkError(
+                                "Failed to press key in key sequence".to_string(),
+                            ));
+                        }
+                    }
+
+                    let mut release_failed = false;
+                    for key_sym in key_syms.iter().rev() {
+                        if ffi::SendKeyEvent(client, *key_sym, 0) == 0 {
+                            release_failed = true;
+                        }
+                    }
+                    if release_failed {
+                        return Err(VncError::NetworkError(
+                            "Failed to release key in key sequence".to_string(),
+                        ));
+                    }
+
+                    Ok(())
+                }
+            } else {
+                Err(VncError::SessionClosed)
+            }
+        })
+        .await
+        .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
+    }
+
     /// 将剪贴板文本同步到远端，并在同步成功后发送粘贴快捷键。
     pub async fn paste_clipboard(
         &self,

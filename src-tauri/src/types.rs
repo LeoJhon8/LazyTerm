@@ -121,6 +121,13 @@ pub struct VncKeyboardEventPayload {
     pub down: bool,
 }
 
+/// VNC 组合键载荷
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VncKeySequencePayload {
+    pub key_syms: Vec<u32>,
+}
+
 /// VNC 剪贴板粘贴事件载荷
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -142,6 +149,7 @@ pub struct VncTextInputPayload {
 pub enum VncControlMsg {
     Pointer(VncPointerEventPayload),
     Key(VncKeyboardEventPayload),
+    KeySequence(VncKeySequencePayload),
     PasteClipboard(VncClipboardPastePayload),
     TypeText(VncTextInputPayload),
     Refresh,

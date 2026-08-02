@@ -409,6 +409,27 @@ impl<R: Runtime> VncSessionRuntime<R> {
                 self.schedule_refresh(false, refresh_timer);
                 true
             }
+            VncControlMsg::KeySequence(payload) => {
+                if self.view_only {
+                    return true;
+                }
+
+                let client = Arc::clone(&self.client);
+                let session_id = self.session_id.clone();
+                let target = self.target.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = client.send_key_sequence(payload.key_syms).await {
+                        log::warn!(
+                            "VNC keyboard sequence input failed for {} ({}): {}",
+                            session_id,
+                            target,
+                            error
+                        );
+                    }
+                });
+                self.schedule_refresh(false, refresh_timer);
+                true
+            }
             VncControlMsg::PasteClipboard(payload) => {
                 if self.view_only {
                     return true;

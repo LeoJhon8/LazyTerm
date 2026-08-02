@@ -7,7 +7,7 @@ use super::vnc_core::{convert_config, run_vnc_session};
 use crate::utils::{log_vnc_error, log_vnc_info, vnc_target_label};
 use crate::{
     AppState, VncClipboardPastePayload, VncConnectConfig, VncControlMsg, VncKeyboardEventPayload,
-    VncPointerEventPayload, VncSession, VncTextInputPayload,
+    VncKeySequencePayload, VncPointerEventPayload, VncSession, VncTextInputPayload,
 };
 
 use std::sync::Arc;
@@ -126,6 +126,25 @@ pub fn send_vnc_key(
         session
             .control_tx
             .send(VncControlMsg::Key(payload))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("VNC 会话不存在".to_string())
+    }
+}
+
+/// 原子发送一组 VNC 组合键，按顺序按下并按相反顺序释放
+#[tauri::command]
+pub fn send_vnc_key_sequence(
+    state: State<'_, AppState>,
+    session_id: String,
+    payload: VncKeySequencePayload,
+) -> Result<(), String> {
+    let sessions = state.vnc_sessions.lock().unwrap();
+    if let Some(session) = sessions.get(&session_id) {
+        session
+            .control_tx
+            .send(VncControlMsg::KeySequence(payload))
             .map_err(|e| e.to_string())?;
         Ok(())
     } else {

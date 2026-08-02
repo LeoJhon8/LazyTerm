@@ -9,8 +9,10 @@ import { DEFAULT_LANGUAGE_SETTING, type AppLanguageSetting } from "@/i18n/config
 import type { ConfigurableRdpBackend } from "@/lib/rdp-backend";
 import { gitAwareStorage } from "@/store/git-aware-storage";
 import {
+  DEFAULT_LONG_COMMAND_IDLE_SECONDS,
   DEFAULT_LONG_COMMAND_THRESHOLD_MINUTES,
   DEFAULT_QUICK_COMMAND_FONT_SIZE,
+  normalizeLongCommandIdleSeconds,
   normalizeLongCommandThresholdMinutes,
   normalizeQuickCommandFontSize,
 } from "@/store/settings-values";
@@ -63,6 +65,7 @@ interface SettingsData {
   terminalTimelineEnabled: boolean;
   longCommandNotificationEnabled: boolean;
   longCommandThresholdMinutes: number;
+  longCommandIdleSeconds: number;
   copyOnSelect: boolean;
   terminalRightClickBehavior: TerminalRightClickBehavior;
   // 外观自定义
@@ -130,6 +133,7 @@ const defaultSettings: SettingsData = {
   terminalTimelineEnabled: false,
   longCommandNotificationEnabled: true,
   longCommandThresholdMinutes: DEFAULT_LONG_COMMAND_THRESHOLD_MINUTES,
+  longCommandIdleSeconds: DEFAULT_LONG_COMMAND_IDLE_SECONDS,
   copyOnSelect: false,
   terminalRightClickBehavior: "context-menu",
   // 外观自定义默认值
@@ -171,13 +175,20 @@ export const useSettingsStore = create<SettingsState>()(
               ),
             }
           : {}),
+        ...(newSettings.longCommandIdleSeconds !== undefined
+          ? {
+              longCommandIdleSeconds: normalizeLongCommandIdleSeconds(
+                newSettings.longCommandIdleSeconds
+              ),
+            }
+          : {}),
       })),
       resetSettings: () => set(defaultSettings),
     }),
     {
       name: "lazy-term-settings",
       storage: createJSONStorage(() => gitAwareStorage),
-      version: 4,
+      version: 5,
       migrate: (persistedState, version) => {
         if (persistedState && typeof persistedState === "object") {
           const data: Partial<SettingsData> = { ...(persistedState as Partial<SettingsData>) };
@@ -207,6 +218,10 @@ export const useSettingsStore = create<SettingsState>()(
           if (version < 4) {
             data.longCommandNotificationEnabled = true;
             data.longCommandThresholdMinutes = DEFAULT_LONG_COMMAND_THRESHOLD_MINUTES;
+          }
+
+          if (version < 5) {
+            data.longCommandIdleSeconds = DEFAULT_LONG_COMMAND_IDLE_SECONDS;
           }
 
           return data;

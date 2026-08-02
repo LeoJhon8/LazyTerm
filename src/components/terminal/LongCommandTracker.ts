@@ -2,13 +2,17 @@ import type { Terminal } from "@xterm/xterm";
 import { getCurrentLocale, tCurrent } from "@/i18n";
 import { useNotificationsStore } from "@/store/notifications";
 import { useSettingsStore } from "@/store/settings";
-import { normalizeLongCommandThresholdMinutes } from "@/store/settings-values";
+import {
+  normalizeLongCommandIdleSeconds,
+  normalizeLongCommandThresholdMinutes,
+} from "@/store/settings-values";
 import { parseTerminalCommandLine } from "./terminal-command-line";
 
 interface PendingCommand {
   command: string;
   startedAt: number;
   markedLong: boolean;
+  lastOutputAt: number | null;
 }
 
 interface LongCommandTrackerOptions {
@@ -50,6 +54,7 @@ export class LongCommandTracker {
   private pending: PendingCommand | null = null;
   private longThresholdTimer: number | null = null;
   private promptSettleTimer: number | null = null;
+  private idleCompletionTimer: number | null = null;
   private shellCommandRunning = false;
   private disposed = false;
   private readonly unsubscribeSettings: () => void;
@@ -61,8 +66,10 @@ export class LongCommandTracker {
       if (
         state.longCommandNotificationEnabled !== previousState.longCommandNotificationEnabled
         || state.longCommandThresholdMinutes !== previousState.longCommandThresholdMinutes
+        || state.longCommandIdleSeconds !== previousState.longCommandIdleSeconds
       ) {
         this.scheduleLongThresholdCheck();
+        this.scheduleIdleCompletionCheck();
       }
     });
   }
@@ -73,9 +80,6 @@ export class LongCommandTracker {
       return;
     }
 
-    if (this.pending && this.shellCommandRunning) {
-      return;
-    }
     if (this.pending) {
       this.completePending(submittedAt);
     }
@@ -84,8 +88,10 @@ export class LongCommandTracker {
       command: normalizedCommand,
       startedAt: submittedAt,
       markedLong: false,
+      lastOutputAt: null,
     };
     this.clearPromptSettleTimer();
+    this.clearIdleCompletionTimer();
     this.scheduleLongThresholdCheck();
   }
 
@@ -106,6 +112,11 @@ export class LongCommandTracker {
       return;
     }
 
+    if (this.pending.markedLong) {
+      this.pending.lastOutputAt = Date.now();
+      this.scheduleIdleCompletionCheck();
+    }
+
     this.clearPromptSettleTimer();
     this.promptSettleTimer = window.setTimeout(() => {
       this.promptSettleTimer = null;
@@ -122,6 +133,7 @@ export class LongCommandTracker {
     this.unsubscribeSettings();
     this.clearLongThresholdTimer();
     this.clearPromptSettleTimer();
+    this.clearIdleCompletionTimer();
     this.shellCommandRunning = false;
     this.pending = null;
   }
@@ -167,6 +179,7 @@ export class LongCommandTracker {
     this.shellCommandRunning = false;
     this.clearLongThresholdTimer();
     this.clearPromptSettleTimer();
+    this.clearIdleCompletionTimer();
 
     const settings = useSettingsStore.getState();
     const durationMs = Math.max(0, completedAt - pending.startedAt);
@@ -203,7 +216,11 @@ export class LongCommandTracker {
       normalizeLongCommandThresholdMinutes(settings.longCommandThresholdMinutes) * 60_000;
     const remainingMs = thresholdMs - (Date.now() - pending.startedAt);
     if (remainingMs <= 0) {
-      pending.markedLong = true;
+      if (!pending.markedLong) {
+        pending.markedLong = true;
+        pending.lastOutputAt = null;
+        this.clearIdleCompletionTimer();
+      }
       return;
     }
 
@@ -211,6 +228,34 @@ export class LongCommandTracker {
       this.longThresholdTimer = null;
       if (this.pending === pending) {
         this.scheduleLongThresholdCheck();
+      }
+    }, remainingMs);
+  }
+
+  private scheduleIdleCompletionCheck() {
+    this.clearIdleCompletionTimer();
+    const pending = this.pending;
+    const settings = useSettingsStore.getState();
+    if (
+      !pending
+      || !pending.markedLong
+      || pending.lastOutputAt === null
+      || !settings.longCommandNotificationEnabled
+    ) {
+      return;
+    }
+
+    const idleMs = normalizeLongCommandIdleSeconds(settings.longCommandIdleSeconds) * 1000;
+    const remainingMs = idleMs - (Date.now() - pending.lastOutputAt);
+    if (remainingMs <= 0) {
+      this.completePending(Date.now());
+      return;
+    }
+
+    this.idleCompletionTimer = window.setTimeout(() => {
+      this.idleCompletionTimer = null;
+      if (this.pending === pending) {
+        this.completePending(Date.now());
       }
     }, remainingMs);
   }
@@ -226,6 +271,13 @@ export class LongCommandTracker {
     if (this.promptSettleTimer !== null) {
       window.clearTimeout(this.promptSettleTimer);
       this.promptSettleTimer = null;
+    }
+  }
+
+  private clearIdleCompletionTimer() {
+    if (this.idleCompletionTimer !== null) {
+      window.clearTimeout(this.idleCompletionTimer);
+      this.idleCompletionTimer = null;
     }
   }
 }

@@ -397,7 +397,10 @@ const zhMessages = defineMessages({
   "命令运行超过设定时间后，在完成时发送通知中心消息": "命令运行超过设定时间后，在完成时发送通知中心消息",
   "长命令判定时间": "长命令判定时间",
   "默认 3 分钟，可设置 1 到 120 分钟": "默认 3 分钟，可设置 1 到 120 分钟",
+  "输出静默判定时间": "输出静默判定时间",
+  "默认 15 秒，可设置 5 到 300 秒": "默认 15 秒，可设置 5 到 300 秒",
   "分钟": "分钟",
+  "秒": "秒",
   "长命令已完成": "长命令已完成",
   "耗时：{duration}": ({ duration }) => `耗时：${duration}`,
   "会话：{session}": ({ session }) => `会话：${session}`,
@@ -566,6 +569,9 @@ const zhMessages = defineMessages({
   "与远程主机的连接已终止。": "与远程主机的连接已终止。",
   "系统菜单已打开，远程桌面画面暂时隐藏。": "系统菜单已打开，远程桌面画面暂时隐藏。",
   "正在同步 VNC 画面...": "正在同步 VNC 画面...",
+  "发送常用按键": "发送常用按键",
+  "发送鼠标右键": "发送鼠标右键",
+  "右键": "右键",
 });
 
 type TranslationKey = keyof typeof zhMessages;
@@ -958,7 +964,10 @@ const enMessages = defineMessages({
   "命令运行超过设定时间后，在完成时发送通知中心消息": "Notify you in Notification Center when a long-running command finishes",
   "长命令判定时间": "Long command threshold",
   "默认 3 分钟，可设置 1 到 120 分钟": "Defaults to 3 minutes; configurable from 1 to 120 minutes",
+  "输出静默判定时间": "Output idle threshold",
+  "默认 15 秒，可设置 5 到 300 秒": "Defaults to 15 seconds; configurable from 5 to 300 seconds",
   "分钟": "minutes",
+  "秒": "seconds",
   "长命令已完成": "Long command completed",
   "耗时：{duration}": ({ duration }) => `Duration: ${duration}`,
   "会话：{session}": ({ session }) => `Session: ${session}`,
@@ -1121,6 +1130,9 @@ const enMessages = defineMessages({
   "与远程主机的连接已终止。": "The connection to the remote host has ended.",
   "系统菜单已打开，远程桌面画面暂时隐藏。": "System menu is open. The remote desktop view is temporarily hidden.",
   "正在同步 VNC 画面...": "Synchronizing the VNC display...",
+  "发送常用按键": "Send common keys",
+  "发送鼠标右键": "Send right click",
+  "右键": "Right click",
 } satisfies Record<TranslationKey, MessageResolver>);
 
 const messages = {

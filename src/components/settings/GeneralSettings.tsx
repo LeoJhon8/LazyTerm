@@ -5,8 +5,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useSettingsStore, type TerminalRightClickBehavior } from "@/store/settings";
 import {
+  MAX_LONG_COMMAND_IDLE_SECONDS,
   MAX_LONG_COMMAND_THRESHOLD_MINUTES,
+  MIN_LONG_COMMAND_IDLE_SECONDS,
   MIN_LONG_COMMAND_THRESHOLD_MINUTES,
+  normalizeLongCommandIdleSeconds,
   normalizeLongCommandThresholdMinutes,
 } from "@/store/settings-values";
 import { APP_LANGUAGE_OPTIONS, useI18n } from "@/i18n";
@@ -27,6 +30,7 @@ export function GeneralSettings() {
     terminalTimelineEnabled,
     longCommandNotificationEnabled,
     longCommandThresholdMinutes,
+    longCommandIdleSeconds,
     copyOnSelect,
     terminalRightClickBehavior,
     setSettings,
@@ -193,36 +197,68 @@ export function GeneralSettings() {
               />
             </div>
             {longCommandNotificationEnabled && (
-              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
-                <div className="flex flex-col gap-0.5">
-                  <Label htmlFor="long-command-threshold" className="text-sm">
-                    {t("长命令判定时间")}
-                  </Label>
-                  <span className="text-xs text-muted-foreground">
-                    {t("默认 3 分钟，可设置 1 到 120 分钟")}
-                  </span>
+              <>
+                <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                  <div className="flex flex-col gap-0.5">
+                    <Label htmlFor="long-command-threshold" className="text-sm">
+                      {t("长命令判定时间")}
+                    </Label>
+                    <span className="text-xs text-muted-foreground">
+                      {t("默认 3 分钟，可设置 1 到 120 分钟")}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Input
+                      id="long-command-threshold"
+                      type="number"
+                      min={MIN_LONG_COMMAND_THRESHOLD_MINUTES}
+                      max={MAX_LONG_COMMAND_THRESHOLD_MINUTES}
+                      step={1}
+                      value={longCommandThresholdMinutes}
+                      onChange={(event) => {
+                        if (event.target.value === "") return;
+                        setSettings({
+                          longCommandThresholdMinutes: normalizeLongCommandThresholdMinutes(
+                            event.target.valueAsNumber
+                          ),
+                        });
+                      }}
+                      className="h-8 w-20 rounded-md bg-background/80 px-2 text-right"
+                    />
+                    <span className="text-sm text-muted-foreground">{t("分钟")}</span>
+                  </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Input
-                    id="long-command-threshold"
-                    type="number"
-                    min={MIN_LONG_COMMAND_THRESHOLD_MINUTES}
-                    max={MAX_LONG_COMMAND_THRESHOLD_MINUTES}
-                    step={1}
-                    value={longCommandThresholdMinutes}
-                    onChange={(event) => {
-                      if (event.target.value === "") return;
-                      setSettings({
-                        longCommandThresholdMinutes: normalizeLongCommandThresholdMinutes(
-                          event.target.valueAsNumber
-                        ),
-                      });
-                    }}
-                    className="h-8 w-20 rounded-md bg-background/80 px-2 text-right"
-                  />
-                  <span className="text-sm text-muted-foreground">{t("分钟")}</span>
+                <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                  <div className="flex flex-col gap-0.5">
+                    <Label htmlFor="long-command-idle-seconds" className="text-sm">
+                      {t("输出静默判定时间")}
+                    </Label>
+                    <span className="text-xs text-muted-foreground">
+                      {t("默认 15 秒，可设置 5 到 300 秒")}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Input
+                      id="long-command-idle-seconds"
+                      type="number"
+                      min={MIN_LONG_COMMAND_IDLE_SECONDS}
+                      max={MAX_LONG_COMMAND_IDLE_SECONDS}
+                      step={1}
+                      value={longCommandIdleSeconds}
+                      onChange={(event) => {
+                        if (event.target.value === "") return;
+                        setSettings({
+                          longCommandIdleSeconds: normalizeLongCommandIdleSeconds(
+                            event.target.valueAsNumber
+                          ),
+                        });
+                      }}
+                      className="h-8 w-20 rounded-md bg-background/80 px-2 text-right"
+                    />
+                    <span className="text-sm text-muted-foreground">{t("秒")}</span>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
             <div className="flex items-center justify-between px-4 py-2.5">
               <div className="flex flex-col gap-0.5">
