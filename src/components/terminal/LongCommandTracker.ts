@@ -245,17 +245,18 @@ export class LongCommandTracker {
       return;
     }
 
+    const completedAt = pending.lastOutputAt;
     const idleMs = normalizeLongCommandIdleSeconds(settings.longCommandIdleSeconds) * 1000;
-    const remainingMs = idleMs - (Date.now() - pending.lastOutputAt);
+    const remainingMs = idleMs - (Date.now() - completedAt);
     if (remainingMs <= 0) {
-      this.completePending(Date.now());
+      this.completePending(completedAt);
       return;
     }
 
     this.idleCompletionTimer = window.setTimeout(() => {
       this.idleCompletionTimer = null;
       if (this.pending === pending) {
-        this.completePending(Date.now());
+        this.completePending(completedAt);
       }
     }, remainingMs);
   }

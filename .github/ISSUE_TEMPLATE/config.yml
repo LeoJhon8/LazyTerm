@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞报告
+    url: https://github.com/An-egg/LazyTerm/security/advisories/new
+    about: 请通过 Private Vulnerability Reporting 私下报告安全问题。
+  - name: 使用和故障排查文档
+    url: https://github.com/An-egg/LazyTerm/blob/main/docs/user/troubleshooting.md
+    about: 提交 Issue 前先查看常见问题和排查方法。

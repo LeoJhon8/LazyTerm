@@ -8,6 +8,7 @@ import { usePanesStore } from "@/store/panes";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon, type ISearchOptions } from "@xterm/addon-search";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
 import { getResolvedTerminalTheme, toXtermTheme } from "@/config/themes";
@@ -39,11 +40,34 @@ import { LongCommandTracker } from "./LongCommandTracker";
 import { useI18n } from "@/i18n";
 import type { AppColorPalette } from "@/store/settings";
 import { onTerminalCommandSubmitted } from "@/lib/terminal-command-events";
+import {
+  TerminalSearchBar,
+  type TerminalSearchOptions,
+} from "./TerminalSearchBar";
 
 // 全局 Terminal 实例缓存，确保切换 tab 时输出历史不丢失
 const globalTerminalCache = new Map<string, TerminalInstance>();
 const globalContainerCache = new Map<string, HTMLDivElement>();
 const MAX_TERMINAL_OUTPUT_BATCH = 256 * 1024;
+const DEFAULT_TERMINAL_SEARCH_OPTIONS: TerminalSearchOptions = {
+  caseSensitive: false,
+  wholeWord: false,
+  regex: false,
+};
+const TERMINAL_SEARCH_DECORATIONS: NonNullable<ISearchOptions["decorations"]> = {
+  matchBorder: "#D6A700",
+  matchOverviewRuler: "#D6A700",
+  activeMatchBorder: "#FF8A00",
+  activeMatchColorOverviewRuler: "#FF8A00",
+};
+
+function getTerminalSearchOpenEventName(sessionId: string) {
+  return `lazy-term-search-open-${sessionId}`;
+}
+
+function getTerminalSearchResultsEventName(sessionId: string) {
+  return `lazy-term-search-results-${sessionId}`;
+}
 
 class OrderedTerminalOutput {
   private pending: string[] = [];
@@ -102,6 +126,9 @@ interface TerminalInstance {
   terminal: Terminal;
   output: OrderedTerminalOutput;
   fitAddon: FitAddon;
+  searchAddon: SearchAddon;
+  searchResultsDisposable: { dispose(): void };
+  searchActive: boolean;
   resizeObserver: ResizeObserver;
   timeline: CommandTimelineController;
   longCommandTracker: LongCommandTracker;
@@ -291,6 +318,17 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const terminalTimelineEnabled = useSettingsStore((state) => state.terminalTimelineEnabled);
   const terminalRightClickBehavior = useSettingsStore((state) => state.terminalRightClickBehavior);
   const [terminalContextMenuOpen, setTerminalContextMenuOpen] = useState(false);
+  const [terminalSearchOpen, setTerminalSearchOpen] = useState(false);
+  const [terminalSearchFocusRequest, setTerminalSearchFocusRequest] = useState(0);
+  const [terminalSearchQuery, setTerminalSearchQuery] = useState("");
+  const [terminalSearchOptions, setTerminalSearchOptions] = useState<TerminalSearchOptions>(
+    DEFAULT_TERMINAL_SEARCH_OPTIONS
+  );
+  const [terminalSearchResults, setTerminalSearchResults] = useState({
+    resultIndex: -1,
+    resultCount: 0,
+  });
+  const [terminalSearchInvalidRegex, setTerminalSearchInvalidRegex] = useState(false);
   const paneFontSizeOverrides = usePanesStore((state) => state.paneFontSizeOverrides);
   const setPaneFontSizeOverride = usePanesStore((state) => state.setPaneFontSizeOverride);
   const effectiveFontSize = paneFontSizeOverrides[paneId] ?? fontSize;
@@ -602,6 +640,14 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
 
+      const searchAddon = new SearchAddon();
+      term.loadAddon(searchAddon);
+      const searchResultsDisposable = searchAddon.onDidChangeResults((results) => {
+        window.dispatchEvent(new CustomEvent(getTerminalSearchResultsEventName(sessionId), {
+          detail: results,
+        }));
+      });
+
       let acAddon: AutocompleteTerminalAddon | null = null;
       if (useSettingsStore.getState().terminalAutocomplete) {
         acAddon = new AutocompleteTerminalAddon(
@@ -711,11 +757,21 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       });
 
       term.attachCustomKeyEventHandler((event) => {
-        if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey) {
+        if (event.type !== "keydown") {
           return true;
         }
 
         const key = event.key.toLowerCase();
+        if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && key === "f") {
+          event.preventDefault();
+          window.dispatchEvent(new Event(getTerminalSearchOpenEventName(sessionId)));
+          return false;
+        }
+
+        if (!event.ctrlKey || !event.shiftKey) {
+          return true;
+        }
+
         if (key === "c") {
           if (!term.hasSelection()) {
             return true;
@@ -750,7 +806,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       });
 
       const selectionDisposable = term.onSelectionChange(async () => {
-        if (useSettingsStore.getState().copyOnSelect && term.hasSelection()) {
+        const searchActive = terminalMap.current.get(sessionId)?.searchActive ?? false;
+        if (useSettingsStore.getState().copyOnSelect && !searchActive && term.hasSelection()) {
           try {
             await writeText(term.getSelection());
           } catch (e) {
@@ -768,6 +825,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         terminal: term,
         output,
         fitAddon,
+        searchAddon,
+        searchResultsDisposable,
+        searchActive: false,
         resizeObserver,
         timeline,
         longCommandTracker,
@@ -793,6 +853,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           if (termState.resizeTimeoutId) clearTimeout(termState.resizeTimeoutId);
           if (webglAddon) webglAddon.dispose();
           if (instance.acAddon) instance.acAddon.dispose();
+          searchResultsDisposable.dispose();
+          searchAddon.dispose();
           timeline.dispose();
           longCommandTracker.dispose();
           output.dispose();
@@ -974,6 +1036,126 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     return () => clearTimeout(timer);
   }, [sessionId, leftSlotCollapsed, rightSlotCollapsed, activateTerminal]);
 
+  const performTerminalSearch = useCallback((
+    query: string,
+    options: TerminalSearchOptions,
+    direction: "next" | "previous" = "next"
+  ) => {
+    const instance = terminalMap.current.get(sessionId);
+    if (!instance) return;
+
+    if (!query) {
+      instance.searchAddon.clearDecorations();
+      instance.terminal.clearSelection();
+      setTerminalSearchResults({ resultIndex: -1, resultCount: 0 });
+      setTerminalSearchInvalidRegex(false);
+      return;
+    }
+
+    const searchOptions: ISearchOptions = {
+      caseSensitive: options.caseSensitive,
+      wholeWord: options.wholeWord,
+      regex: options.regex,
+      incremental: direction === "next",
+      decorations: TERMINAL_SEARCH_DECORATIONS,
+    };
+
+    try {
+      setTerminalSearchInvalidRegex(false);
+      if (direction === "previous") {
+        instance.searchAddon.findPrevious(query, searchOptions);
+      } else {
+        instance.searchAddon.findNext(query, searchOptions);
+      }
+    } catch (error) {
+      instance.searchAddon.clearDecorations();
+      instance.terminal.clearSelection();
+      setTerminalSearchResults({ resultIndex: -1, resultCount: 0 });
+      setTerminalSearchInvalidRegex(options.regex);
+      logger.debug("FE/terminal-view/search", "Terminal search pattern is invalid", { error });
+    }
+  }, [sessionId]);
+
+  const openTerminalSearch = useCallback(() => {
+    const instance = terminalMap.current.get(sessionId);
+    if (!instance) return;
+
+    instance.searchActive = true;
+    setTerminalSearchOpen(true);
+    setTerminalSearchFocusRequest((request) => request + 1);
+    window.dispatchEvent(new CustomEvent(`autocomplete-suggest-${sessionId}`, {
+      detail: { active: false, buffer: "", x: 0, y: 0 },
+    }));
+
+    if (terminalSearchQuery) {
+      performTerminalSearch(terminalSearchQuery, terminalSearchOptions);
+    }
+  }, [performTerminalSearch, sessionId, terminalSearchOptions, terminalSearchQuery]);
+
+  const closeTerminalSearch = useCallback(() => {
+    const instance = terminalMap.current.get(sessionId);
+    if (instance) {
+      instance.searchActive = false;
+      instance.searchAddon.clearDecorations();
+      instance.terminal.clearSelection();
+    }
+
+    setTerminalSearchOpen(false);
+    setTerminalSearchResults({ resultIndex: -1, resultCount: 0 });
+    setTerminalSearchInvalidRegex(false);
+    activateTerminal(sessionId);
+  }, [activateTerminal, sessionId]);
+
+  const handleTerminalSearchQueryChange = useCallback((query: string) => {
+    setTerminalSearchQuery(query);
+    performTerminalSearch(query, terminalSearchOptions);
+  }, [performTerminalSearch, terminalSearchOptions]);
+
+  const handleTerminalSearchOptionsChange = useCallback((options: TerminalSearchOptions) => {
+    setTerminalSearchOptions(options);
+    const instance = terminalMap.current.get(sessionId);
+    instance?.searchAddon.clearDecorations();
+    instance?.terminal.clearSelection();
+    performTerminalSearch(terminalSearchQuery, options);
+  }, [performTerminalSearch, sessionId, terminalSearchQuery]);
+
+  const findNextTerminalSearchResult = useCallback(() => {
+    performTerminalSearch(terminalSearchQuery, terminalSearchOptions, "next");
+  }, [performTerminalSearch, terminalSearchOptions, terminalSearchQuery]);
+
+  const findPreviousTerminalSearchResult = useCallback(() => {
+    performTerminalSearch(terminalSearchQuery, terminalSearchOptions, "previous");
+  }, [performTerminalSearch, terminalSearchOptions, terminalSearchQuery]);
+
+  useEffect(() => {
+    const handleOpenSearch = () => openTerminalSearch();
+    window.addEventListener(getTerminalSearchOpenEventName(sessionId), handleOpenSearch);
+    return () => {
+      window.removeEventListener(getTerminalSearchOpenEventName(sessionId), handleOpenSearch);
+    };
+  }, [openTerminalSearch, sessionId]);
+
+  useEffect(() => {
+    const handleSearchResults = (event: Event) => {
+      const results = (event as CustomEvent<{ resultIndex: number; resultCount: number }>).detail;
+      setTerminalSearchResults(results);
+    };
+    const eventName = getTerminalSearchResultsEventName(sessionId);
+    window.addEventListener(eventName, handleSearchResults);
+    return () => window.removeEventListener(eventName, handleSearchResults);
+  }, [sessionId]);
+
+  useEffect(() => {
+    return () => {
+      const instance = terminalMap.current.get(sessionId);
+      if (!instance) return;
+
+      instance.searchActive = false;
+      instance.searchAddon.clearDecorations();
+      instance.terminal.clearSelection();
+    };
+  }, [sessionId]);
+
   const copyTerminalSelection = async (clearSelection = false) => {
     const instance = terminalMap.current.get(sessionId);
     if (!instance?.terminal.hasSelection()) return;
@@ -1078,6 +1260,21 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       data-session-id={sessionId}
       data-pane-id={paneId}
     >
+      {terminalSearchOpen && (
+        <TerminalSearchBar
+          focusRequest={terminalSearchFocusRequest}
+          query={terminalSearchQuery}
+          resultIndex={terminalSearchResults.resultIndex}
+          resultCount={terminalSearchResults.resultCount}
+          invalidRegex={terminalSearchInvalidRegex}
+          options={terminalSearchOptions}
+          onQueryChange={handleTerminalSearchQueryChange}
+          onOptionsChange={handleTerminalSearchOptionsChange}
+          onPrevious={findPreviousTerminalSearchResult}
+          onNext={findNextTerminalSearchResult}
+          onClose={closeTerminalSearch}
+        />
+      )}
       {terminalAutocomplete && (
         <TerminalAutocompleteUI
           sessionId={sessionId}
@@ -1184,6 +1381,18 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         >
           {t("粘贴剪贴板")}
           <ContextMenuShortcut>Ctrl+Shift+V</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          className="py-1.5 text-xs"
+          onSelect={() => {
+            window.setTimeout(() => {
+              window.dispatchEvent(new Event(getTerminalSearchOpenEventName(sessionId)));
+            }, 0);
+          }}
+        >
+          {t("查找终端内容")}
+          <ContextMenuShortcut>Ctrl+F</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem

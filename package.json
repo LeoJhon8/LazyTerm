@@ -1,7 +1,16 @@
 {
   "name": "lazy-term",
   "private": true,
-  "version": "26.72.10105",
+  "version": "26.80.4331",
+  "description": "A modern desktop terminal workspace for local shells, SSH, RDP, VNC, serial, Telnet, and SFTP.",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/An-egg/LazyTerm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/An-egg/LazyTerm/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -41,6 +50,7 @@
     "@tauri-apps/plugin-http": "^2.5.8",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",

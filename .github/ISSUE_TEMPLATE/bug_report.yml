@@ -1,0 +1,78 @@
+name: Bug Report
+description: 报告可以重复出现的软件缺陷
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你帮助改进 LazyTerm。请先搜索现有 Issue。
+        不要填写密码、私钥、Token、真实服务器地址或未脱敏日志。安全漏洞请使用 Private Vulnerability Reporting，不要继续填写此模板。
+  - type: input
+    id: version
+    attributes:
+      label: LazyTerm 版本
+      placeholder: 例如 26.72.10105
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      placeholder: 例如 Windows 11 24H2 x64
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: 相关连接类型
+      options:
+        - 本地终端
+        - SSH / SFTP
+        - RDP
+        - VNC
+        - 串口
+        - Telnet
+        - AI CLI
+        - 界面或其他功能
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 说明实际发生了什么，以及问题出现的频率。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开……
+        2. 连接……
+        3. 执行……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏后的日志或截图
+      description: 仅在必要时提供，并确认已经移除所有凭据、地址、用户名和个人数据。
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交确认
+      options:
+        - label: 我已经搜索过现有 Issue，没有发现相同问题。
+          required: true
+        - label: 我确认提交内容不包含凭据、真实连接信息或其他敏感数据。
+          required: true

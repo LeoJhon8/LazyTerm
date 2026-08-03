@@ -228,7 +228,9 @@ Windows 下需要先准备 LibVNCClient，可使用 `scripts/setup-libvncserver-
 
 ## 贡献
 
-欢迎提交 Issue 和 Pull Request。建议在提交前执行：
+欢迎提交 Issue 和 Pull Request。参与项目前请先阅读 [贡献指南](./CONTRIBUTING.md)；安全问题请按照 [安全政策](./SECURITY.md) 私下报告，普通使用问题见 [支持说明](./SUPPORT.md)。
+
+提交前建议执行：
 
 ```powershell
 npm run lint
@@ -237,9 +239,11 @@ npm run lint
 
 ## 许可
 
-本项目基于 [Apache License 2.0](./LICENSE) 开源。
+本项目基于 [GNU General Public License v3.0 or later](./LICENSE) 开源。你可以使用、研究、修改和再分发本项目；分发修改版或二进制版本时，需要按照 GPL 提供对应源代码并保留许可证声明。
 
-第三方字体与依赖的许可说明见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
+默认 VNC 构建会链接采用 GPL-2.0-or-later 的 LibVNCClient，因此 LazyTerm 采用 GPL-3.0-or-later 保持许可证兼容性。
+
+第三方组件、字体和随附二进制的许可说明见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
 
 Copyright (c) 2025-present LazyTerm Contributors
 

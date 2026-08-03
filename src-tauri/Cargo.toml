@@ -1,10 +1,10 @@
 [package]
 name = "app"
-version = "26.72.10105"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+version = "26.80.4331"
+description = "A modern desktop terminal workspace for local and remote sessions"
+authors = ["LazyTerm Contributors"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/An-egg/LazyTerm"
 edition = "2021"
 rust-version = "1.85"
 

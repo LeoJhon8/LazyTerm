@@ -21,5 +21,7 @@
 | [架构概览](./developer/architecture.md) | 前端、连接器、Tauri IPC、Rust 后端和持久化模型 |
 | [Windows 开发环境](./developer/development-setup-windows.md) | Windows 新机器所需工具链和项目依赖 |
 | [开发工作流](./developer/development-workflow.md) | 日常命令、代码检查、目录约定和变更注意事项 |
+| [依赖许可证审计](./developer/dependency-license-audit.md) | npm、Cargo 和系统链接依赖的许可证兼容性基线 |
+| [仓库公开前检查清单](./developer/public-release-checklist.md) | 许可证、身份、敏感信息、安全设置和首个公开版本检查项 |
 | [RDP 架构](./developer/rdp-architecture.md) | FreeRDP、MsTscAx sidecar 和性能路径 |
 | [视图模式](./developer/view-modes.md) | normal、focus、immersive 三种视图模式的维护说明 |

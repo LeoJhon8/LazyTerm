@@ -100,6 +100,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
   const lastPointerMoveLogAtRef = useRef(0);
   const suppressedPasteKeyCodesRef = useRef(new Set<string>());
   const [cursorStyle, setCursorStyle] = useState("default");
+  const [visuallyReadyConnector, setVisuallyReadyConnector] = useState<IVncConnector | null>(null);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
 
   const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
@@ -271,7 +272,10 @@ export function VncViewClass(props: BaseSessionViewProps) {
                   height: frame.desktopHeight,
                 }
           ));
-          notifyVisualReady();
+          if (frame.fullFrame) {
+            setVisuallyReadyConnector(connector);
+            notifyVisualReady();
+          }
         }
       } catch (error) {
         if (!disposed) {
@@ -566,14 +570,19 @@ export function VncViewClass(props: BaseSessionViewProps) {
     };
   }, [containerRef, emitPointer, viewOnly]);
 
+  const transitionMaskVisible = visuallyReadyConnector !== connector;
+
   return (
-    <ContextMenu>
+    <ContextMenu modal={false}>
       <ContextMenuTrigger
         asChild
         onContextMenu={(event) => {
           if (event.shiftKey) {
             event.preventDefault();
+            return;
           }
+
+          contextMenuPointRef.current = { clientX: event.clientX, clientY: event.clientY };
         }}
       >
         <main
@@ -600,8 +609,8 @@ export function VncViewClass(props: BaseSessionViewProps) {
             }}
           >
             <SessionTransitionMask
-              visible={activeSession.connectionStatus.phase === "connected" && (!frameSize || resizeMaskVisible)}
-              text={!frameSize ? t("正在同步 VNC 画面...") : t("正在调整画面比例...")}
+              visible={activeSession.connectionStatus.phase === "connected" && (transitionMaskVisible || resizeMaskVisible)}
+              text={transitionMaskVisible ? t("正在同步 VNC 画面...") : t("正在调整画面比例...")}
             />
             <canvas
               ref={canvasRef}
@@ -629,6 +638,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
         </main>
       </ContextMenuTrigger>
       <ContextMenuContent
+        updatePositionStrategy="always"
         className="min-w-52 text-xs"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
