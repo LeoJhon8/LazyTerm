@@ -11,12 +11,26 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon, type ISearchOptions } from "@xterm/addon-search";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
-import { getResolvedTerminalTheme, toXtermTheme } from "@/config/themes";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import {
+  getResolvedTerminalTheme,
+  toXtermTheme,
+} from "@/config/themes";
 import {
   type BaseSessionViewProps,
   VIEW_CONTAINER_CLASSNAME,
 } from "./BaseSessionView";
 import { ConnectionStatusOverlay } from "./ConnectionStatusOverlay";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -44,6 +58,7 @@ import {
   TerminalSearchBar,
   type TerminalSearchOptions,
 } from "./TerminalSearchBar";
+import { toast } from "@/components/ui/toast";
 
 // 全局 Terminal 实例缓存，确保切换 tab 时输出历史不丢失
 const globalTerminalCache = new Map<string, TerminalInstance>();
@@ -60,6 +75,39 @@ const TERMINAL_SEARCH_DECORATIONS: NonNullable<ISearchOptions["decorations"]> = 
   activeMatchBorder: "#FF8A00",
   activeMatchColorOverviewRuler: "#FF8A00",
 };
+
+function normalizeHttpUrl(value: string) {
+  const normalized = value.trim();
+  try {
+    const url = new URL(normalized);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? normalized
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+interface TerminalLinkOpenRequestDetail {
+  url: string;
+}
+
+function getTerminalLinkOpenRequestEventName(sessionId: string) {
+  return `lazy-term-link-open-request-${sessionId}`;
+}
+
+function requestTerminalLinkOpen(sessionId: string, value: string) {
+  const url = normalizeHttpUrl(value);
+  if (!url) {
+    logger.warn("FE/terminal-view/link", "Blocked non-HTTP terminal link");
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent<TerminalLinkOpenRequestDetail>(
+    getTerminalLinkOpenRequestEventName(sessionId),
+    { detail: { url } },
+  ));
+}
 
 function getTerminalSearchOpenEventName(sessionId: string) {
   return `lazy-term-search-open-${sessionId}`;
@@ -309,7 +357,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const customThemes = useSettingsStore((state) => state.customThemes);
   const terminalBackgroundMode = useSettingsStore((state) => state.terminalBackgroundMode);
   const terminalBackgroundColor = useSettingsStore((state) => state.terminalBackgroundColor);
-  const terminalOpacity = useSettingsStore((state) => state.terminalOpacity);
   const appBackgroundColor = useSettingsStore((state) => state.appBackgroundColor);
   const appColorPalette = useSettingsStore((state) => state.appColorPalette ?? DEFAULT_APP_COLOR_PALETTE);
   const backgroundImageEnabled = useSettingsStore((state) => state.backgroundImageEnabled);
@@ -318,6 +365,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const terminalTimelineEnabled = useSettingsStore((state) => state.terminalTimelineEnabled);
   const terminalRightClickBehavior = useSettingsStore((state) => state.terminalRightClickBehavior);
   const [terminalContextMenuOpen, setTerminalContextMenuOpen] = useState(false);
+  const [pendingTerminalLink, setPendingTerminalLink] = useState<string | null>(null);
   const [terminalSearchOpen, setTerminalSearchOpen] = useState(false);
   const [terminalSearchFocusRequest, setTerminalSearchFocusRequest] = useState(0);
   const [terminalSearchQuery, setTerminalSearchQuery] = useState("");
@@ -350,7 +398,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     customThemes,
     terminalBackgroundMode,
     terminalBackgroundColor,
-    terminalOpacity,
     appIsDark,
     hasBackgroundImage: !!(backgroundImageEnabled && backgroundImage),
     locale,
@@ -358,7 +405,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
   const activeSession = sessions.find((s) => s.id === sessionId);
   const activeConnector = isTerminalConnector(activeSession?.connector) ? activeSession.connector : undefined;
-  const hasBackgroundImage = backgroundImageEnabled && backgroundImage;
+  const hasBackgroundImage = backgroundImageEnabled && !!backgroundImage;
 
   addHistoryCommandRef.current = addHistoryCommand;
   setPaneFontSizeOverrideRef.current = setPaneFontSizeOverride;
@@ -372,7 +419,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     customThemes,
     terminalBackgroundMode,
     terminalBackgroundColor,
-    terminalOpacity,
     appIsDark,
     hasBackgroundImage: !!hasBackgroundImage,
     locale,
@@ -391,6 +437,30 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       media.removeEventListener("change", handleChange);
     };
   }, []);
+
+  useEffect(() => {
+    const eventName = getTerminalLinkOpenRequestEventName(sessionId);
+    const handleRequest = (event: Event) => {
+      const detail = (event as CustomEvent<TerminalLinkOpenRequestDetail>).detail;
+      if (detail?.url) {
+        setPendingTerminalLink(detail.url);
+      }
+    };
+
+    window.addEventListener(eventName, handleRequest);
+    return () => window.removeEventListener(eventName, handleRequest);
+  }, [sessionId]);
+
+  const confirmTerminalLinkOpen = useCallback(() => {
+    const url = pendingTerminalLink;
+    if (!url) return;
+
+    setPendingTerminalLink(null);
+    void openUrl(url).catch((error) => {
+      logger.error("FE/terminal-view/link", "Failed to open terminal link", { error });
+      toast.error(t("无法使用默认浏览器打开链接。"));
+    });
+  }, [pendingTerminalLink, t]);
 
   const setTimelineRail = useCallback((element: HTMLElement | null) => {
     timelineRailRef.current = element;
@@ -566,7 +636,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         customThemes: nextCustomThemes,
         terminalBackgroundMode: nextTerminalBackgroundMode,
         terminalBackgroundColor: nextTerminalBackgroundColor,
-        terminalOpacity: nextTerminalOpacity,
         appIsDark: nextAppIsDark,
         hasBackgroundImage: nextHasBackgroundImage,
         locale: nextLocale,
@@ -588,7 +657,10 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         scrollback: 10000,
         allowProposedApi: true,
         allowTransparency: true,
-        theme: toXtermTheme(colorScheme, nextTerminalOpacity),
+        linkHandler: {
+          activate: (_event, url) => requestTerminalLinkOpen(sessionId, url),
+        },
+        theme: toXtermTheme(colorScheme),
       });
 
       term.parser.registerEscHandler({ final: "c" }, () => {
@@ -663,7 +735,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       }
 
       let webglAddon: WebglAddon | null = null;
-      const shouldUseWebgl = !nextHasBackgroundImage && nextTerminalOpacity >= 100;
+      const shouldUseWebgl = !nextHasBackgroundImage;
       if (shouldUseWebgl) {
         try {
           webglAddon = new WebglAddon();
@@ -678,7 +750,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       const output = new OrderedTerminalOutput(term);
       const timeline = new CommandTimelineController(term);
       const longCommandTracker = new LongCommandTracker({
-        terminal: term,
         getSessionTitle: () =>
           useTabsStore.getState().sessions.find((session) => session.id === sessionId)?.title
           ?? sessionId,
@@ -686,7 +757,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       parserDisposables.push(
         term.parser.registerOscHandler(633, (data) => {
           timeline.handleShellIntegration(data);
-          longCommandTracker.handleShellIntegration(data);
           return true;
         }),
         term.onWriteParsed(() => longCommandTracker.handleTerminalWriteParsed())
@@ -742,16 +812,18 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           if (line) {
             const rawText = line.translateToString(true);
             const command = extractTerminalCommand(rawText);
+            longCommandTracker.record(command);
 
             if (command && command.length > 0) {
               timeline.record(command, Date.now(), submittedLine, rawText);
-              longCommandTracker.record(command);
 
               if (command !== lastCommandRef.current) {
                 addHistoryCommandRef.current(command);
                 lastCommandRef.current = command;
               }
             }
+          } else {
+            longCommandTracker.record("");
           }
         }
       });
@@ -904,7 +976,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       terminal.options.fontWeight = terminalNormalFontWeight;
       terminal.options.fontWeightBold = terminalBoldFontWeight;
       terminal.options.cursorStyle = terminalCursorStyle;
-      terminal.options.theme = toXtermTheme(colorScheme, terminalOpacity);
+      terminal.options.theme = toXtermTheme(colorScheme);
       instance.timeline.setAppearance({
         fontFamily,
         fontSize: nextFontSize,
@@ -912,7 +984,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         locale,
       });
       instance.timeline.setEnabled(terminalTimelineEnabled);
-      const shouldUseWebgl = !hasBackgroundImage && terminalOpacity >= 100;
+      const shouldUseWebgl = !hasBackgroundImage;
       if (shouldUseWebgl && !instance.webglAddon) {
         try {
           const addon = new WebglAddon();
@@ -975,7 +1047,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
       }
     });
-  }, [fontSize, paneFontSizeOverrides, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalBackgroundMode, terminalBackgroundColor, terminalOpacity, appBackgroundColor, appIsDark, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete, terminalTimelineEnabled, locale]);
+  }, [fontSize, paneFontSizeOverrides, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalBackgroundMode, terminalBackgroundColor, appBackgroundColor, appIsDark, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete, terminalTimelineEnabled, locale]);
 
   // 清理已被关闭的会话
   useEffect(() => {
@@ -1224,7 +1296,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     terminalBackgroundColor,
     appIsDark
   );
-  const xtermTheme = toXtermTheme(currentTheme, terminalOpacity);
+  const terminalSurfaceBackground = hasBackgroundImage
+    ? "transparent"
+    : currentTheme.background;
   const terminalTimelineWidth = getTerminalTimelineWidth(effectiveFontSize);
 
   if (!activeSession) {
@@ -1246,20 +1320,22 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
   const terminalView = (
     <main
       className={cn(
-        VIEW_CONTAINER_CLASSNAME, 
-        "bg-(--terminal-shell)",
+        VIEW_CONTAINER_CLASSNAME,
+        "bg-transparent",
         activeSession?.type === "ai-cli" && "is-ai-cli-mode"
       )}
       onClick={() => activateTerminal(sessionId)}
       onWheelCapture={handleTerminalWheel}
       onContextMenu={terminalRightClickBehavior === "quick-copy-paste" ? handleQuickCopyPaste : undefined}
-      style={{
-        backgroundColor: hasBackgroundImage ? "transparent" : xtermTheme.background,
-      }}
       data-view-type="terminal"
       data-session-id={sessionId}
       data-pane-id={paneId}
     >
+      <div
+        aria-hidden="true"
+        className="terminal-background-layer pointer-events-none absolute inset-0"
+        style={{ backgroundColor: terminalSurfaceBackground }}
+      />
       {terminalSearchOpen && (
         <TerminalSearchBar
           focusRequest={terminalSearchFocusRequest}
@@ -1348,19 +1424,49 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     </main>
   );
 
+  const terminalLinkConfirmation = (
+    <AlertDialog
+      open={pendingTerminalLink !== null}
+      onOpenChange={(open) => {
+        if (!open) setPendingTerminalLink(null);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("是否使用默认浏览器打开此链接？")}</AlertDialogTitle>
+          <AlertDialogDescription className="break-all font-mono text-xs">
+            {pendingTerminalLink}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
+          <AlertDialogAction onClick={confirmTerminalLinkOpen}>
+            {t("确定")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
   if (terminalRightClickBehavior === "quick-copy-paste") {
-    return terminalView;
+    return (
+      <>
+        {terminalView}
+        {terminalLinkConfirmation}
+      </>
+    );
   }
 
   const hasTerminalSelection = terminalContextMenuOpen
     && (terminalMap.current.get(sessionId)?.terminal.hasSelection() ?? false);
 
   return (
-    <ContextMenu onOpenChange={setTerminalContextMenuOpen}>
-      <ContextMenuTrigger asChild>
-        {terminalView}
-      </ContextMenuTrigger>
-      <ContextMenuContent
+    <>
+      <ContextMenu onOpenChange={setTerminalContextMenuOpen}>
+        <ContextMenuTrigger asChild>
+          {terminalView}
+        </ContextMenuTrigger>
+        <ContextMenuContent
         className="min-w-52 text-xs"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
@@ -1408,7 +1514,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         >
           {t("清除选区")}
         </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+        </ContextMenuContent>
+      </ContextMenu>
+      {terminalLinkConfirmation}
+    </>
   );
 }

@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "26.80.4331"
+version = "26.80.5446"
 description = "A modern desktop terminal workspace for local and remote sessions"
 authors = ["LazyTerm Contributors"]
 license = "GPL-3.0-or-later"
@@ -63,3 +63,4 @@ reqwest = { version = "0.12", features = ["stream"] }
 tokio-stream = "0.1.18"
 serialport = "4.3.0"
 tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"

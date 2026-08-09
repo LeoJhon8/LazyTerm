@@ -1,22 +1,18 @@
-//! VNC 客户端主模块
+//! 异步 VNC 客户端外观。
 //!
-//! 提供安全的、异步的 VNC 客户端 API
+//! 所有 LibVNCClient 原生调用都由 `io_actor` 的单一专属线程执行；本模块只负责参数校验、
+//! 有界命令排队以及异步响应。
 
-use parking_lot::{Mutex, RwLock};
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
-use std::ptr;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Receiver;
+use parking_lot::Mutex;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::task;
+use tokio::sync::{mpsc, oneshot};
 
-use super::super::vnc_ffi as ffi;
-use super::callbacks::{register_session, unregister_session, CallbackEvent, SessionContext};
-use super::frame::{FrameBuffer, FrameUpdateRegion};
+use super::callbacks::CallbackEvent;
+use super::frame::FrameUpdateRegion;
+use super::io_actor::{spawn_vnc_io_actor, VncActorShared, VncIoCommand};
 use super::{MouseButton, VncEncoding, VncError, VncResult};
 
-/// VNC 连接状态
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VncConnectionState {
     Disconnected,
@@ -26,7 +22,6 @@ pub enum VncConnectionState {
     Error,
 }
 
-/// VNC 客户端配置
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct VncClientConfig {
@@ -38,9 +33,11 @@ pub struct VncClientConfig {
     pub allow_jpeg: bool,
     pub use_remote_cursor: bool,
     pub handle_new_fb_size: bool,
-    pub jpeg_quality: u8,      // 0-9
-    pub compression_level: u8, // 0-9
-    pub encodings: Vec<super::VncEncoding>,
+    pub connect_timeout_secs: u32,
+    pub read_timeout_secs: u32,
+    pub jpeg_quality: u8,
+    pub compression_level: u8,
+    pub encodings: Vec<VncEncoding>,
 }
 
 impl Default for VncClientConfig {
@@ -54,6 +51,8 @@ impl Default for VncClientConfig {
             allow_jpeg: true,
             use_remote_cursor: false,
             handle_new_fb_size: true,
+            connect_timeout_secs: 15,
+            read_timeout_secs: 30,
             jpeg_quality: 8,
             compression_level: 6,
             encodings: vec![
@@ -66,461 +65,98 @@ impl Default for VncClientConfig {
     }
 }
 
-/// VNC 客户端
-///
-/// 线程安全的 VNC 客户端，所有操作都是异步的
 pub struct VncClient {
-    inner: Arc<VncClientInner>,
-}
-
-struct VncClientInner {
-    config: RwLock<VncClientConfig>,
-    state: RwLock<VncConnectionState>,
-    raw_client: Mutex<Option<usize>>, // 存储 *mut RfbClient 作为 usize
-    io_lock: Mutex<()>,
-    context: Mutex<Option<Arc<SessionContext>>>,
-    framebuffer: FrameBuffer,
-    closed: AtomicBool,
-}
-
-static PASSWORD_DATA_TAG: u8 = 0;
-
-fn password_data_tag() -> *mut c_void {
-    (&PASSWORD_DATA_TAG as *const u8).cast_mut().cast()
-}
-
-unsafe extern "C" fn get_password_callback(client: *mut ffi::RfbClient) -> *mut c_char {
-    let password_ptr = ffi::rfbClientGetClientData(client, password_data_tag());
-    if password_ptr.is_null() {
-        return ptr::null_mut();
-    }
-
-    let password = &*(password_ptr as *const String);
-    CString::new(password.replace('\0', ""))
-        .map(|value| ffi::RfbClientDupCString(value.as_ptr()))
-        .unwrap_or_else(|_| ptr::null_mut())
-}
-
-unsafe fn clear_password_data(client: *mut ffi::RfbClient) {
-    let password_ptr = ffi::rfbClientGetClientData(client, password_data_tag());
-    if !password_ptr.is_null() {
-        drop(Box::from_raw(password_ptr as *mut String));
-        ffi::rfbClientSetClientData(client, password_data_tag(), ptr::null_mut());
-    }
+    config: VncClientConfig,
+    shared: Arc<VncActorShared>,
+    command_tx: Mutex<Option<mpsc::Sender<VncIoCommand>>>,
 }
 
 impl VncClient {
-    /// 创建新的 VNC 客户端实例
     pub fn new(config: VncClientConfig) -> Self {
-        let framebuffer = FrameBuffer::new(1, 1);
-
         Self {
-            inner: Arc::new(VncClientInner {
-                config: RwLock::new(config),
-                state: RwLock::new(VncConnectionState::Disconnected),
-                raw_client: Mutex::new(None),
-                io_lock: Mutex::new(()),
-                context: Mutex::new(None),
-                framebuffer,
-                closed: AtomicBool::new(false),
-            }),
+            config,
+            shared: Arc::new(VncActorShared::new()),
+            command_tx: Mutex::new(None),
         }
     }
 
-    /// 连接到 VNC 服务器
-    ///
-    /// 此操作是阻塞的，应该在 spawn_blocking 中调用
-    pub async fn connect(&self) -> VncResult<Receiver<CallbackEvent>> {
-        // 检查当前状态
-        {
-            let state = self.inner.state.read();
-            if *state != VncConnectionState::Disconnected {
-                return Err(VncError::InvalidStateTransition {
-                    current: format!("{:?}", *state),
-                    target: "Connecting".to_string(),
-                });
-            }
-        }
-
-        let inner = self.inner.clone();
-
-        // 在阻塞线程中执行连接
-        task::spawn_blocking(move || Self::do_connect(inner))
-            .await
-            .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
-    }
-
-    /// 执行实际的连接（阻塞）
-    fn do_connect(inner: Arc<VncClientInner>) -> VncResult<Receiver<CallbackEvent>> {
-        let config = inner.config.read().clone();
-
-        *inner.state.write() = VncConnectionState::Connecting;
-
-        unsafe {
-            ffi::RfbClientRegisterIgnoreQemuExtension();
-            ffi::RfbClientInstallLogCapture();
-
-            // 创建客户端
-            let client = ffi::rfbGetClient(8, 3, 4); // bitsPerSample, samplesPerPixel, bytesPerPixel
-            if client.is_null() {
-                *inner.state.write() = VncConnectionState::Error;
-                return Err(VncError::MemoryAllocationFailed);
-            }
-
-            let (event_sender, event_receiver) = std::sync::mpsc::channel::<CallbackEvent>();
-            let context = Arc::new(SessionContext {
-                event_sender,
-                framebuffer: inner.framebuffer.clone(),
+    pub async fn connect(&self) -> VncResult<mpsc::UnboundedReceiver<CallbackEvent>> {
+        let current = *self.shared.state.read();
+        if current != VncConnectionState::Disconnected {
+            return Err(VncError::InvalidStateTransition {
+                current: format!("{current:?}"),
+                target: "Connecting".to_string(),
             });
-            let client_ptr = client as usize;
-
-            register_session(client_ptr, Arc::downgrade(&context));
-
-            ffi::RfbClientSetMallocFrameBuffer(
-                client,
-                super::callbacks::malloc_framebuffer_callback,
-            );
-            ffi::RfbClientSetGotFrameBufferUpdate(
-                client,
-                super::callbacks::framebuffer_update_callback,
-            );
-            ffi::RfbClientSetHandleCursorShape(
-                client,
-                super::callbacks::handle_cursor_shape_callback,
-            );
-            ffi::RfbClientSetGotXCutText(client, super::callbacks::got_xcut_text_callback);
-            ffi::RfbClientSetGotCursorPos(client, super::callbacks::got_cursor_pos_callback);
-            ffi::RfbClientSetGetPassword(client, get_password_callback);
-            ffi::RfbClientSetShared(client, if config.shared { 1 } else { 0 });
-            ffi::RfbClientSetViewOnly(client, if config.view_only { 1 } else { 0 });
-            ffi::RfbClientSetEnableJpeg(client, if config.allow_jpeg { 1 } else { 0 });
-            ffi::RfbClientSetUseRemoteCursor(client, if config.use_remote_cursor { 1 } else { 0 });
-            ffi::RfbClientSetHandleNewFBSize(client, if config.handle_new_fb_size { 1 } else { 0 });
-            ffi::RfbClientSetCompressLevel(client, config.compression_level as c_int);
-            ffi::RfbClientSetQualityLevel(client, config.jpeg_quality as c_int);
-
-            // 配置客户端。这些设置需要在 rfbInitClient 之前完成。
-            // 直接设置 host/port 比模拟命令行参数更稳定，尤其适合打包后的 GUI 应用。
-            let mut owned_cstrings: Vec<CString> = Vec::new();
-
-            let host_cstring = CString::new(config.host.clone())
-                .map_err(|_| VncError::FfiError("Invalid hostname".to_string()))?;
-            ffi::RfbClientSetServerHost(client, host_cstring.as_ptr());
-            ffi::RfbClientSetServerPort(client, config.port as c_int);
-            owned_cstrings.push(host_cstring);
-
-            // 编码
-            if !config.encodings.is_empty() {
-                let encodings_str = config
-                    .encodings
-                    .iter()
-                    .map(|e| match e {
-                        VncEncoding::Raw => "raw",
-                        VncEncoding::CopyRect => "copyrect",
-                        VncEncoding::Rre => "rre",
-                        VncEncoding::Hextile => "hextile",
-                        VncEncoding::Zlib => "zlib",
-                        VncEncoding::Tight => "tight",
-                        VncEncoding::ZlibHex => "zlibhex",
-                        VncEncoding::Zrle => "zrle",
-                        VncEncoding::OpenH264 => "openh264",
-                        VncEncoding::CursorPseudo => "cursor",
-                        VncEncoding::DesktopSizePseudo => "desktopsize",
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let encodings_cstring = CString::new(encodings_str)
-                    .map_err(|_| VncError::FfiError("Invalid encodings string".to_string()))?;
-                ffi::RfbClientSetEncodingsString(client, encodings_cstring.as_ptr());
-                owned_cstrings.push(encodings_cstring);
-            }
-
-            // 设置密码（如果提供）
-            if let Some(password) = config.password.clone() {
-                ffi::rfbClientSetClientData(
-                    client,
-                    password_data_tag(),
-                    Box::into_raw(Box::new(password)) as *mut c_void,
-                );
-            }
-
-            // 初始化客户端
-            *inner.state.write() = VncConnectionState::Authenticating;
-
-            let result = ffi::rfbInitClient(client, ptr::null_mut(), ptr::null_mut());
-
-            if result == 0 {
-                let last_error = {
-                    let error_ptr = ffi::RfbClientGetLastError(client);
-                    if error_ptr.is_null() {
-                        None
-                    } else {
-                        CStr::from_ptr(error_ptr)
-                            .to_str()
-                            .ok()
-                            .map(str::trim)
-                            .filter(|s| !s.is_empty())
-                            .map(ToOwned::to_owned)
-                    }
-                };
-                unregister_session(client_ptr);
-                *inner.state.write() = VncConnectionState::Error;
-                return Err(VncError::ConnectionFailed(
-                    last_error.unwrap_or_else(|| "Failed to initialize VNC client".to_string()),
-                ));
-            }
-
-            // 存储状态
-            *inner.raw_client.lock() = Some(client_ptr);
-            *inner.context.lock() = Some(context);
-            *inner.state.write() = VncConnectionState::Connected;
-
-            Ok(event_receiver)
         }
+
+        let (command_tx, event_rx) =
+            spawn_vnc_io_actor(self.config.clone(), Arc::clone(&self.shared)).await?;
+        *self.command_tx.lock() = Some(command_tx);
+        Ok(event_rx)
     }
 
-    /// 处理服务器消息
-    ///
-    /// 应该在事件循环中持续调用
-    pub async fn handle_message(&self) -> VncResult<bool> {
-        let inner = self.inner.clone();
+    async fn request<T>(
+        &self,
+        build: impl FnOnce(oneshot::Sender<VncResult<T>>) -> VncIoCommand,
+    ) -> VncResult<T>
+    where
+        T: Send + 'static,
+    {
+        if self.shared.closed.load(Ordering::SeqCst) {
+            return Err(VncError::SessionClosed);
+        }
 
-        task::spawn_blocking(move || Self::do_handle_message(inner))
+        let command_tx = self
+            .command_tx
+            .lock()
+            .clone()
+            .ok_or(VncError::SessionClosed)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(build(reply_tx))
             .await
-            .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
+            .map_err(|_| VncError::SessionClosed)?;
+        reply_rx.await.map_err(|_| VncError::SessionClosed)?
     }
 
-    #[allow(unreachable_code)]
-    fn do_handle_message(inner: Arc<VncClientInner>) -> VncResult<bool> {
-        const VNC_ENABLE_DIAGNOSTIC_LOGS: bool = false;
-        const VNC_SLOW_MESSAGE_TOTAL_MS: u128 = 30;
-        const VNC_SLOW_MESSAGE_HANDLE_MS: u128 = 20;
-
-        /// WaitForMessage 超时（微秒）。值越小 io_lock 持有时间越短，输入响应越快。
-        const VNC_WAIT_FOR_MESSAGE_TIMEOUT_US: u32 = 5_000;
-
-        let _io_guard = inner.io_lock.lock();
-        let client_ptr = *inner.raw_client.lock();
-
-        return if let Some(ptr) = client_ptr {
-            unsafe {
-                let client = ptr as *mut ffi::RfbClient;
-                let total_started_at = Instant::now();
-                let wait_started_at = Instant::now();
-                let result = ffi::WaitForMessage(client, VNC_WAIT_FOR_MESSAGE_TIMEOUT_US);
-                let wait_elapsed = wait_started_at.elapsed();
-
-                if result < 0 {
-                    Err(VncError::NetworkError("Connection closed".to_string()))
-                } else if result > 0 {
-                    let handle_started_at = Instant::now();
-                    let handled = ffi::HandleRFBServerMessage(client);
-                    let handle_elapsed = handle_started_at.elapsed();
-                    let total_elapsed = total_started_at.elapsed();
-                    if VNC_ENABLE_DIAGNOSTIC_LOGS
-                        && (total_elapsed.as_millis() >= VNC_SLOW_MESSAGE_TOTAL_MS
-                            || handle_elapsed.as_millis() >= VNC_SLOW_MESSAGE_HANDLE_MS)
-                    {
-                        let config = inner.config.read();
-                        let scope = format!("VNC/client/{}:{}/message", config.host, config.port);
-                        crate::logging::info(
-                            &scope,
-                            format!(
-                                "wait_ms={} handle_ms={} total_ms={} result={}",
-                                wait_elapsed.as_millis(),
-                                handle_elapsed.as_millis(),
-                                total_elapsed.as_millis(),
-                                result,
-                            ),
-                        );
-                    }
-                    if handled == 0 {
-                        Err(VncError::ProtocolError(
-                            "Failed to handle server message".to_string(),
-                        ))
-                    } else {
-                        Ok(true)
-                    }
-                } else {
-                    Ok(false)
-                }
-            }
-        } else {
-            Err(VncError::SessionClosed)
-        };
-
-        let _io_guard = inner.io_lock.lock();
-        let client_ptr = *inner.raw_client.lock();
-
-        if let Some(ptr) = client_ptr {
-            unsafe {
-                let client = ptr as *mut ffi::RfbClient;
-                let total_started_at = Instant::now();
-                let wait_started_at = Instant::now();
-
-                // 等待消息（100ms 超时）
-                let result = ffi::WaitForMessage(client, 100_000); // microseconds
-                let result = ffi::WaitForMessage(client, 100_000); // microseconds
-                let wait_elapsed = wait_started_at.elapsed();
-
-                if result < 0 {
-                    return Err(VncError::NetworkError("Connection closed".to_string()));
-                }
-
-                if result > 0 {
-                    // 有消息可处理
-                    let handle_started_at = Instant::now();
-                    let handled = ffi::HandleRFBServerMessage(client);
-                    let handle_elapsed = handle_started_at.elapsed();
-                    let total_elapsed = total_started_at.elapsed();
-                    if total_elapsed.as_millis() >= VNC_SLOW_MESSAGE_TOTAL_MS
-                        || handle_elapsed.as_millis() >= VNC_SLOW_MESSAGE_HANDLE_MS
-                    {
-                        let config = inner.config.read();
-                        let scope = format!("VNC/client/{}:{}/message", config.host, config.port);
-                        crate::logging::info(
-                            &scope,
-                            format!(
-                                "wait_ms={} handle_ms={} total_ms={} result={}",
-                                wait_elapsed.as_millis(),
-                                handle_elapsed.as_millis(),
-                                total_elapsed.as_millis(),
-                                result,
-                            ),
-                        );
-                    }
-                    if handled == 0 {
-                        return Err(VncError::ProtocolError(
-                            "Failed to handle server message".to_string(),
-                        ));
-                    }
-                    return Ok(true);
-                }
-
-                Ok(false) // 无消息
-            }
-        } else {
-            Err(VncError::SessionClosed)
-        }
-    }
-
-    /// 发送指针事件
     pub async fn send_pointer(&self, x: u16, y: u16, buttons: &[MouseButton]) -> VncResult<()> {
-        let button_mask = buttons.iter().fold(0, |acc, b| acc | b.to_mask());
-        self.send_pointer_raw(x, y, button_mask as u8).await
+        let button_mask = buttons
+            .iter()
+            .fold(0, |mask, button| mask | button.to_mask()) as u8;
+        self.send_pointer_raw(x, y, button_mask).await
     }
 
-    /// 发送指针事件（原始按钮掩码）
     pub async fn send_pointer_raw(&self, x: u16, y: u16, button_mask: u8) -> VncResult<()> {
-        let inner = self.inner.clone();
-
-        task::spawn_blocking(move || {
-            let _io_guard = inner.io_lock.lock();
-            let client_ptr = *inner.raw_client.lock();
-
-            if let Some(ptr) = client_ptr {
-                unsafe {
-                    let client = ptr as *mut ffi::RfbClient;
-                    let result =
-                        ffi::SendPointerEvent(client, x as c_int, y as c_int, button_mask as c_int);
-
-                    if result == 0 {
-                        return Err(VncError::NetworkError(
-                            "Failed to send pointer event".to_string(),
-                        ));
-                    }
-                    Ok(())
-                }
-            } else {
-                Err(VncError::SessionClosed)
-            }
+        self.request(|reply| VncIoCommand::Pointer {
+            x,
+            y,
+            button_mask,
+            reply,
         })
         .await
-        .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
     }
 
-    /// 发送键盘事件
     pub async fn send_key(&self, keysym: u32, down: bool) -> VncResult<()> {
-        let inner = self.inner.clone();
-
-        task::spawn_blocking(move || {
-            let _io_guard = inner.io_lock.lock();
-            let client_ptr = *inner.raw_client.lock();
-
-            if let Some(ptr) = client_ptr {
-                unsafe {
-                    let client = ptr as *mut ffi::RfbClient;
-                    let result = ffi::SendKeyEvent(client, keysym, if down { 1 } else { 0 } as u8);
-
-                    if result == 0 {
-                        return Err(VncError::NetworkError(
-                            "Failed to send key event".to_string(),
-                        ));
-                    }
-                    Ok(())
-                }
-            } else {
-                Err(VncError::SessionClosed)
-            }
+        self.request(|reply| VncIoCommand::Key {
+            keysym,
+            down,
+            reply,
         })
         .await
-        .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
     }
 
-    /// 原子发送组合键，保证所有按下与释放事件在同一 I/O 锁内有序完成。
     pub async fn send_key_sequence(&self, key_syms: Vec<u32>) -> VncResult<()> {
         const MAX_SEQUENCE_LENGTH: usize = 16;
-
         if key_syms.is_empty() || key_syms.len() > MAX_SEQUENCE_LENGTH {
             return Err(VncError::ProtocolError(format!(
                 "Key sequence length must be between 1 and {MAX_SEQUENCE_LENGTH}"
             )));
         }
 
-        let inner = self.inner.clone();
-
-        task::spawn_blocking(move || {
-            let _io_guard = inner.io_lock.lock();
-            let client_ptr = *inner.raw_client.lock();
-
-            if let Some(ptr) = client_ptr {
-                unsafe {
-                    let client = ptr as *mut ffi::RfbClient;
-
-                    for (index, key_sym) in key_syms.iter().enumerate() {
-                        if ffi::SendKeyEvent(client, *key_sym, 1) == 0 {
-                            for pressed_key_sym in key_syms[..index].iter().rev() {
-                                let _ = ffi::SendKeyEvent(client, *pressed_key_sym, 0);
-                            }
-                            return Err(VncError::NetworkError(
-                                "Failed to press key in key sequence".to_string(),
-                            ));
-                        }
-                    }
-
-                    let mut release_failed = false;
-                    for key_sym in key_syms.iter().rev() {
-                        if ffi::SendKeyEvent(client, *key_sym, 0) == 0 {
-                            release_failed = true;
-                        }
-                    }
-                    if release_failed {
-                        return Err(VncError::NetworkError(
-                            "Failed to release key in key sequence".to_string(),
-                        ));
-                    }
-
-                    Ok(())
-                }
-            } else {
-                Err(VncError::SessionClosed)
-            }
-        })
-        .await
-        .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
+        self.request(|reply| VncIoCommand::KeySequence { key_syms, reply })
+            .await
     }
 
-    /// 将剪贴板文本同步到远端，并在同步成功后发送粘贴快捷键。
     pub async fn paste_clipboard(
         &self,
         text: String,
@@ -528,146 +164,47 @@ impl VncClient {
         modifier_key_syms: Vec<u32>,
     ) -> VncResult<()> {
         const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024;
-        const CLIPBOARD_SYNC_DELAY: Duration = Duration::from_millis(80);
+        if text.len() > MAX_CLIPBOARD_BYTES {
+            return Err(VncError::ProtocolError(format!(
+                "Clipboard text exceeds {MAX_CLIPBOARD_BYTES} byte limit"
+            )));
+        }
 
-        let inner = self.inner.clone();
-
-        task::spawn_blocking(move || {
-            let text_bytes = text.as_bytes();
-            if text_bytes.len() > MAX_CLIPBOARD_BYTES {
-                return Err(VncError::ProtocolError(format!(
-                    "Clipboard text exceeds {} byte limit",
-                    MAX_CLIPBOARD_BYTES
-                )));
-            }
-
-            let text_len = c_int::try_from(text_bytes.len())
-                .map_err(|_| VncError::ProtocolError("Clipboard text is too large".to_string()))?;
-
-            let _io_guard = inner.io_lock.lock();
-            let client_ptr = *inner.raw_client.lock();
-
-            if let Some(ptr) = client_ptr {
-                unsafe {
-                    let client = ptr as *mut ffi::RfbClient;
-                    let result = ffi::SendClientCutText(
-                        client,
-                        text_bytes.as_ptr().cast::<c_char>(),
-                        text_len,
-                    );
-                    if result == 0 {
-                        return Err(VncError::NetworkError(
-                            "Failed to send clipboard text".to_string(),
-                        ));
-                    }
-
-                    std::thread::sleep(CLIPBOARD_SYNC_DELAY);
-
-                    for modifier in &modifier_key_syms {
-                        if ffi::SendKeyEvent(client, *modifier, 1) == 0 {
-                            return Err(VncError::NetworkError(
-                                "Failed to send clipboard modifier key".to_string(),
-                            ));
-                        }
-                    }
-
-                    if ffi::SendKeyEvent(client, key_sym, 1) == 0
-                        || ffi::SendKeyEvent(client, key_sym, 0) == 0
-                    {
-                        return Err(VncError::NetworkError(
-                            "Failed to send clipboard paste key".to_string(),
-                        ));
-                    }
-
-                    for modifier in modifier_key_syms.iter().rev() {
-                        if ffi::SendKeyEvent(client, *modifier, 0) == 0 {
-                            return Err(VncError::NetworkError(
-                                "Failed to release clipboard modifier key".to_string(),
-                            ));
-                        }
-                    }
-
-                    Ok(())
-                }
-            } else {
-                Err(VncError::SessionClosed)
-            }
+        self.request(|reply| VncIoCommand::PasteClipboard {
+            text,
+            key_sym,
+            modifier_key_syms,
+            reply,
         })
         .await
-        .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
     }
 
-    /// Types text as VNC key events for consoles without clipboard support.
-    pub async fn type_text(
-        &self,
-        text: String,
-        modifier_key_syms: Vec<u32>,
-    ) -> VncResult<()> {
+    pub async fn type_text(&self, text: String, modifier_key_syms: Vec<u32>) -> VncResult<()> {
         const MAX_TEXT_BYTES: usize = 16 * 1024;
-        const MODIFIER_RELEASE_DELAY: Duration = Duration::from_millis(10);
-        const KEY_DELAY: Duration = Duration::from_millis(5);
+        if text.len() > MAX_TEXT_BYTES {
+            return Err(VncError::ProtocolError(format!(
+                "Text input exceeds {MAX_TEXT_BYTES} byte limit"
+            )));
+        }
 
-        let inner = self.inner.clone();
+        let key_syms = text
+            .chars()
+            .map(|character| match character {
+                '\n' | '\r' => 0xff0d,
+                '\t' => 0xff09,
+                ' '..='\u{ff}' => character as u32,
+                _ => 0x0100_0000 | character as u32,
+            })
+            .collect();
 
-        task::spawn_blocking(move || {
-            if text.len() > MAX_TEXT_BYTES {
-                return Err(VncError::ProtocolError(format!(
-                    "Text input exceeds {} byte limit",
-                    MAX_TEXT_BYTES
-                )));
-            }
-
-            let key_syms = text
-                .chars()
-                .map(|ch| match ch {
-                    '\n' | '\r' => Ok(0xff0d),
-                    '\t' => Ok(0xff09),
-                    ' '..='~' => Ok(ch as u32),
-                    _ => Err(VncError::ProtocolError(
-                        "Text input contains unsupported characters".to_string(),
-                    )),
-                })
-                .collect::<VncResult<Vec<_>>>()?;
-
-            let _io_guard = inner.io_lock.lock();
-            let client_ptr = *inner.raw_client.lock();
-
-            if let Some(ptr) = client_ptr {
-                unsafe {
-                    let client = ptr as *mut ffi::RfbClient;
-                    for modifier in modifier_key_syms.iter().rev() {
-                        if ffi::SendKeyEvent(client, *modifier, 0) == 0 {
-                            return Err(VncError::NetworkError(
-                                "Failed to release text input modifier key".to_string(),
-                            ));
-                        }
-                    }
-                    if !modifier_key_syms.is_empty() {
-                        std::thread::sleep(MODIFIER_RELEASE_DELAY);
-                    }
-
-                    for key_sym in key_syms {
-                        if ffi::SendKeyEvent(client, key_sym, 1) == 0
-                            || ffi::SendKeyEvent(client, key_sym, 0) == 0
-                        {
-                            return Err(VncError::NetworkError(
-                                "Failed to send typed text key event".to_string(),
-                            ));
-                        }
-                        std::thread::sleep(KEY_DELAY);
-                    }
-
-                    Ok(())
-                }
-            } else {
-                Err(VncError::SessionClosed)
-            }
+        self.request(|reply| VncIoCommand::TypeText {
+            key_syms,
+            modifier_key_syms,
+            reply,
         })
         .await
-        .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
     }
 
-    /// Requests a framebuffer update.
     pub async fn request_update(
         &self,
         x: u16,
@@ -676,108 +213,82 @@ impl VncClient {
         height: u16,
         incremental: bool,
     ) -> VncResult<()> {
-        let inner = self.inner.clone();
+        if width == 0 || height == 0 {
+            return Err(VncError::ProtocolError(
+                "Framebuffer update dimensions must be non-zero".to_string(),
+            ));
+        }
 
-        task::spawn_blocking(move || {
-            let _io_guard = inner.io_lock.lock();
-            let client_ptr = *inner.raw_client.lock();
-
-            if let Some(ptr) = client_ptr {
-                unsafe {
-                    let client = ptr as *mut ffi::RfbClient;
-                    let result = ffi::SendFramebufferUpdateRequest(
-                        client,
-                        x as c_int,
-                        y as c_int,
-                        width as c_int,
-                        height as c_int,
-                        if incremental { 1 } else { 0 } as u8,
-                    );
-
-                    if result == 0 {
-                        return Err(VncError::NetworkError(
-                            "Failed to send update request".to_string(),
-                        ));
-                    }
-                    Ok(())
-                }
-            } else {
-                Err(VncError::SessionClosed)
-            }
+        self.request(|reply| VncIoCommand::RequestUpdate {
+            x,
+            y,
+            width,
+            height,
+            incremental,
+            reply,
         })
         .await
-        .map_err(|e| VncError::FfiError(format!("Join error: {e}")))?
     }
 
-    /// 获取当前帧缓冲区
+    /// 请求服务端调整桌面尺寸。返回 false 表示服务端尚未声明 ExtendedDesktopSize 能力。
+    pub async fn resize_desktop(&self, width: u16, height: u16) -> VncResult<bool> {
+        let pixel_count = usize::from(width).saturating_mul(usize::from(height));
+        if width < 200
+            || height < 200
+            || width > 8192
+            || height > 8192
+            || pixel_count > 32 * 1024 * 1024
+        {
+            return Err(VncError::ProtocolError(
+                "Desktop dimensions are outside the supported safety limits".to_string(),
+            ));
+        }
+
+        self.request(|reply| VncIoCommand::ResizeDesktop {
+            width,
+            height,
+            reply,
+        })
+        .await
+    }
+
     pub fn framebuffer_size(&self) -> (u16, u16) {
-        self.inner.framebuffer.size()
+        self.shared.framebuffer.size()
     }
 
     pub fn snapshot_rgba(&self) -> (u16, u16, Vec<u8>) {
-        self.inner.framebuffer.snapshot_rgba()
+        self.shared.framebuffer.snapshot_rgba()
     }
 
     pub fn snapshot_region_rgba(&self, region: FrameUpdateRegion) -> Option<Vec<u8>> {
-        self.inner.framebuffer.snapshot_region_rgba(region)
+        self.shared.framebuffer.snapshot_region_rgba(region)
     }
 
-    /// 获取当前状态
     #[allow(dead_code)]
     pub fn state(&self) -> VncConnectionState {
-        *self.inner.state.read()
+        *self.shared.state.read()
     }
 
-    /// 关闭连接
     pub async fn close(&self) {
-        if self.inner.closed.swap(true, Ordering::SeqCst) {
-            return; // 已经关闭
+        if self.shared.closed.swap(true, Ordering::SeqCst) {
+            return;
         }
 
-        let inner = self.inner.clone();
-
-        task::spawn_blocking(move || {
-            let _io_guard = inner.io_lock.lock();
-            let client_ptr = inner.raw_client.lock().take();
-            *inner.context.lock() = None;
-
-            if let Some(ptr) = client_ptr {
-                unsafe {
-                    unregister_session(ptr);
-                    let client = ptr as *mut ffi::RfbClient;
-                    clear_password_data(client);
-                    ffi::rfbClientCleanup(client);
-                }
-            }
-
-            *inner.state.write() = VncConnectionState::Disconnected;
-        })
-        .await
-        .ok();
+        let command_tx = self.command_tx.lock().take();
+        if let Some(command_tx) = command_tx {
+            let _ = command_tx.send(VncIoCommand::Close).await;
+        }
     }
 }
 
 impl Drop for VncClient {
     fn drop(&mut self) {
-        if !self.inner.closed.load(Ordering::SeqCst) {
-            // 尝试同步关闭
-            let inner = self.inner.clone();
-            let _io_guard = inner.io_lock.lock();
-            let client_ptr = inner.raw_client.lock().take();
-            *inner.context.lock() = None;
+        if self.shared.closed.swap(true, Ordering::SeqCst) {
+            return;
+        }
 
-            if let Some(ptr) = client_ptr {
-                unsafe {
-                    unregister_session(ptr);
-                    let client = ptr as *mut ffi::RfbClient;
-                    clear_password_data(client);
-                    ffi::rfbClientCleanup(client);
-                }
-            }
+        if let Some(command_tx) = self.command_tx.get_mut().take() {
+            let _ = command_tx.try_send(VncIoCommand::Close);
         }
     }
 }
-
-// 确保线程安全
-unsafe impl Send for VncClient {}
-unsafe impl Sync for VncClient {}

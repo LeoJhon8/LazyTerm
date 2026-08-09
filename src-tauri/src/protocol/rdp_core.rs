@@ -150,8 +150,9 @@ mod freerdp_runtime {
             .ok_or_else(|| "RDP 连接当前仅支持密码认证。".to_string())?;
         let requested_resolution = (config.width, config.height);
         let (width, height) = match requested_resolution {
-            (Some(width), Some(height))
-                if RDP_RESOLUTION_PRESETS.contains(&(width, height)) => (width, height),
+            (Some(width), Some(height)) if RDP_RESOLUTION_PRESETS.contains(&(width, height)) => {
+                (width, height)
+            }
             _ => DEFAULT_RDP_RESOLUTION,
         };
 

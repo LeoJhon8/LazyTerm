@@ -172,7 +172,7 @@ export function GeneralSettings() {
             )}
             <div className="flex items-center justify-between px-4 py-2.5">
               <div className="flex flex-col gap-0.5">
-                <Label htmlFor="terminal-timeline" className="text-sm cursor-pointer">{t("显示命令时间线")}</Label>
+                <Label htmlFor="terminal-timeline" className="text-sm cursor-pointer">{t("命令时间线")}</Label>
                 <span className="text-xs text-muted-foreground">{t("关闭时仍保留当前会话最近 500 条命令时间")}</span>
               </div>
               <Switch
@@ -262,7 +262,7 @@ export function GeneralSettings() {
             )}
             <div className="flex items-center justify-between px-4 py-2.5">
               <div className="flex flex-col gap-0.5">
-                <Label htmlFor="copy-on-select" className="text-sm cursor-pointer">{t("选中后自动复制")}</Label>
+                <Label htmlFor="copy-on-select" className="text-sm cursor-pointer">{t("选中即复制")}</Label>
                 <span className="text-xs text-muted-foreground">{t("选中文本后立即写入剪贴板")}</span>
               </div>
               <Switch
@@ -283,7 +283,7 @@ export function GeneralSettings() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="context-menu">{t("打开快捷菜单")}</SelectItem>
+                  <SelectItem value="context-menu">{t("快捷菜单")}</SelectItem>
                   <SelectItem value="quick-copy-paste">{t("快捷复制/粘贴")}</SelectItem>
                 </SelectContent>
               </Select>

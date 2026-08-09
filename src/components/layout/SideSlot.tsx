@@ -4,6 +4,7 @@ import { useTabsStore } from "@/store/tabs";
 import { Button } from "@/components/ui/button";
 import { getValidActivityModules } from "@/components/layout/activity-registry";
 import { cn } from "@/lib/utils";
+import { isAiConfigured, useAiConfigStore } from "@/store/ai";
 
 interface SideSlotProps {
   side: "left" | "right";
@@ -18,10 +19,11 @@ export function SideSlot({ side }: SideSlotProps) {
     setSlotCollapsed,
   } = useSlotConfigStore();
   const { focusSessionId, sessions } = useTabsStore();
+  const aiConfigured = useAiConfigStore(isAiConfigured);
   const { modules, activeModule, collapsed } = currentConfig[side];
   const focusSession = sessions.find((session) => session.id === focusSessionId);
   const isRdpActive = focusSession?.type === "rdp" || focusSession?.type === "vnc";
-  const validModules = getValidActivityModules(modules);
+  const validModules = getValidActivityModules(modules, aiConfigured);
 
   useEffect(() => {
     if (isRdpActive && activeModule === "HistoryModule" && !collapsed) {
@@ -33,7 +35,7 @@ export function SideSlot({ side }: SideSlotProps) {
     return null;
   }
 
-  const activeDefinition = getValidActivityModules([activeModule])[0];
+  const activeDefinition = getValidActivityModules([activeModule], aiConfigured)[0];
   const ActiveComponent = activeDefinition?.component;
   const isLeft = side === "left";
 

@@ -75,14 +75,13 @@ interface SettingsData {
   customThemes: TerminalColorScheme[];          // 用户自定义终端配色方案列表
   terminalBackgroundMode: TerminalBackgroundMode; // 终端区域底色模式
   terminalBackgroundColor: string;              // 自定义终端区域底色
-  terminalOpacity: number;            // 终端背景透明度 0~100
   backgroundImageEnabled: boolean;    // 是否开启图片背景
   backgroundImagePath: string;        // 背景图片的真实路径(用于展示)
   backgroundImage: string;            // 背景图片路径/URL(用于渲染)
   backgroundImageUiMode: BackgroundImageUiMode; // 图片背景下 UI 呈现方式
   backgroundBlur: number;             // 背景模糊度 0~20 (px)
   backgroundOpacity: number;          // 背景图片不透明度 0~100
-  uiOpacity: number;                  // UI 面板不透明度 30~100
+  uiOpacity: number;                  // UI 面板不透明度 0~100
   // 视图模式
   viewMode: ViewMode;                  // 当前视图模式（不持久化）
   immersiveHoverBarDelay: number;      // 悬浮标题栏消失延迟 (ms)
@@ -143,7 +142,6 @@ const defaultSettings: SettingsData = {
   customThemes: [],
   terminalBackgroundMode: "auto",
   terminalBackgroundColor: DEFAULT_TERMINAL_BACKGROUND_COLOR,
-  terminalOpacity: 100,
   backgroundImageEnabled: false,
   backgroundImagePath: "",
   backgroundImage: "",
@@ -188,10 +186,12 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: "lazy-term-settings",
       storage: createJSONStorage(() => gitAwareStorage),
-      version: 5,
+      version: 6,
       migrate: (persistedState, version) => {
         if (persistedState && typeof persistedState === "object") {
-          const data: Partial<SettingsData> = { ...(persistedState as Partial<SettingsData>) };
+          const data: Partial<SettingsData> & { terminalOpacity?: number } = {
+            ...(persistedState as Partial<SettingsData> & { terminalOpacity?: number }),
+          };
 
           if (version < 1 && data.fontFamily === LEGACY_DEFAULT_FONT_FAMILY) {
             data.fontFamily = DEFAULT_FONT_FAMILY;
@@ -222,6 +222,10 @@ export const useSettingsStore = create<SettingsState>()(
 
           if (version < 5) {
             data.longCommandIdleSeconds = DEFAULT_LONG_COMMAND_IDLE_SECONDS;
+          }
+
+          if (version < 6) {
+            delete data.terminalOpacity;
           }
 
           return data;

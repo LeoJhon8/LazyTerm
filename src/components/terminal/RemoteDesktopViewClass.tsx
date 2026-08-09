@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { logger } from "@/lib/logger";
+import { useSettingsStore } from "@/store/settings";
 import { useTabsStore } from "@/store/tabs";
 import { NativeRdpHostView } from "@/components/terminal/NativeRdpHostView";
 import type { INativeRdpConnector, IRdpConnector, RdpFramePayload } from "@/types/terminal";
@@ -11,7 +12,6 @@ import {
   INTERACTIVE_CONTAINER_CLASSNAME,
 } from "./BaseSessionView";
 import { ConnectionStatusOverlay } from "./ConnectionStatusOverlay";
-import { SessionTransitionMask } from "./SessionTransitionMask";
 import {
   useBaseGraphicSessionView,
   getPointerPositionCentered,
@@ -39,6 +39,9 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
 
   // RDP 特有状态
   const { sessions } = useTabsStore();
+  const hasBackgroundImage = useSettingsStore(
+    (state) => state.backgroundImageEnabled && !!state.backgroundImage,
+  );
   const activeSession = sessions.find((session) => session.id === sessionId);
   const connector = activeSession?.connector?.protocol === "rdp" ? activeSession.connector : null;
   const backend = connector?.backend ?? activeSession?.config?.rdpConfig?.backend ?? "freerdp";
@@ -48,15 +51,12 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   const canvasConnector = connector && backend !== "msrdpax" ? connector as IRdpConnector : null;
 
   const resizeTimerRef = useRef<number | null>(null);
-  const resizeMaskTimerRef = useRef<number | null>(null);
   const frameSizeRef = useRef(frameSize);
   const pendingFrameRef = useRef<RdpFramePayload | null>(null);
   const decodeInFlightRef = useRef(false);
   const drawTokenRef = useRef(0);
-  const transitionMaskVisibleRef = useRef(true);
+  const visualReadyNotifiedRef = useRef(false);
   const notifyVisualReadyRef = useRef(notifyVisualReady);
-  const [transitionMaskVisible, setTransitionMaskVisible] = useState(true);
-  const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
 
   useEffect(() => {
@@ -68,9 +68,8 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   }, [frameSize]);
 
   const markVisualReady = useCallback(() => {
-    if (!transitionMaskVisibleRef.current) return;
-    transitionMaskVisibleRef.current = false;
-    setTransitionMaskVisible(false);
+    if (visualReadyNotifiedRef.current) return;
+    visualReadyNotifiedRef.current = true;
     notifyVisualReadyRef.current();
   }, []);
 
@@ -133,9 +132,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
           const blob = new Blob([frame.imageBytes], { type: "image/jpeg" });
           if (frame.fullFrame) {
             success = await renderBlobFrame(canvas, blob, frame.desktopWidth, frame.desktopHeight, {
-              disposed,
-              token: drawToken,
-              currentToken: drawTokenRef.current,
+              isCurrent: () => !disposed && drawToken === drawTokenRef.current,
             });
           } else {
             const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
@@ -226,8 +223,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
       disposed = true;
       pendingFrameRef.current = null;
       decodeInFlightRef.current = false;
-      transitionMaskVisibleRef.current = true;
-      setTransitionMaskVisible(true);
+      visualReadyNotifiedRef.current = false;
       setFrameSize(null);
       if (cleanupCanvas) {
         const context = cleanupCanvas.getContext("2d");
@@ -239,8 +235,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
 
   // 重置视觉就绪状态
   useEffect(() => {
-    transitionMaskVisibleRef.current = true;
-    setTransitionMaskVisible(true);
+    visualReadyNotifiedRef.current = false;
   }, [activeSession?.id]);
 
   // Native RDP 状态处理
@@ -309,15 +304,6 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
         resizeTimerRef.current = null;
       }
 
-      setResizeMaskVisible(true);
-      if (resizeMaskTimerRef.current !== null) {
-        window.clearTimeout(resizeMaskTimerRef.current);
-      }
-      resizeMaskTimerRef.current = window.setTimeout(() => {
-        setResizeMaskVisible(false);
-        resizeMaskTimerRef.current = null;
-      }, 2000);
-
       if (nextWidth === currentFrameSize.width && nextHeight === currentFrameSize.height) {
         return;
       }
@@ -332,15 +318,10 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
 
     return () => {
       resizeObserver.disconnect();
-      if (resizeMaskTimerRef.current !== null) {
-        window.clearTimeout(resizeMaskTimerRef.current);
-        resizeMaskTimerRef.current = null;
-      }
       if (resizeTimerRef.current !== null) {
         window.clearTimeout(resizeTimerRef.current);
         resizeTimerRef.current = null;
       }
-      setResizeMaskVisible(false);
     };
   }, [activeSession?.config?.rdpConfig?.autoResize, backend, canvasConnector, containerRef]);
 
@@ -430,6 +411,7 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   return (
     <main
       className={cn(VIEW_CONTAINER_CLASSNAME, "bg-(--terminal-shell)")}
+      style={{ backgroundColor: hasBackgroundImage ? "transparent" : undefined }}
       data-view-type="rdp"
       data-session-id={sessionId}
       data-pane-id={paneId}
@@ -464,10 +446,6 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
           onReconnect={() => reconnectSession(activeSession.id)}
         />
 
-        <SessionTransitionMask
-          visible={activeSession.connectionStatus.phase === "connected" && (transitionMaskVisible || resizeMaskVisible)}
-          text={transitionMaskVisible ? t("正在同步 Windows 远程桌面画面...") : t("正在调整会话尺寸...")}
-        />
       </div>
     </main>
   );

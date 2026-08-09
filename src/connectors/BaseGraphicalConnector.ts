@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
 import type { ConnectionStateEvent } from "@/types/terminal";
 import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
+import { logger } from "@/lib/logger";
 
 /**
  * 图形协议连接器的基础抽象类
@@ -48,10 +49,14 @@ export abstract class BaseGraphicalConnector<
     this.stateEmitter = new ConnectionStateEmitter(`FE/connector/${protocolName}/state`);
     this.config = config;
     this.frameChannel = new Channel<ArrayBuffer>((packet) => {
-      const frame = frameParser(packet);
-      this.frameSize = this.extractFrameSize(frame);
-      this.latestFrame = frame;
-      this.frameHandler?.(frame);
+      try {
+        const frame = frameParser(packet);
+        this.frameSize = this.extractFrameSize(frame);
+        this.latestFrame = frame;
+        this.frameHandler?.(frame);
+      } catch (error) {
+        this.handleFrameParseError(error);
+      }
     });
   }
 
@@ -70,31 +75,48 @@ export abstract class BaseGraphicalConnector<
     if (!this.connectPromise) {
       this.stateEmitter.emit({ phase: "connecting" });
       this.closedBeforeConnect = false;
-      this.connectPromise = invokeTauri<string>(
-        this.createSessionCommand,
-        this.buildCreateSessionArgs(),
-        {
-          scope: `FE/connector/${this.protocolName}/open`,
-          logStart: true,
-          logSuccess: true,
-        },
-      ).then((sessionId) => {
+      const requestedSessionId = this.getRequestedSessionId();
+      this.connectPromise = (async () => {
+        if (requestedSessionId) {
+          await this.ensureCloseListener(requestedSessionId);
+        }
+
+        return await invokeTauri<string>(
+          this.createSessionCommand,
+          this.buildCreateSessionArgs(),
+          {
+            scope: `FE/connector/${this.protocolName}/open`,
+            logStart: true,
+            logSuccess: true,
+          },
+        );
+      })().then(async (sessionId) => {
         if (this.closedBeforeConnect) {
           invokeTauriBackground(
             this.closeSessionCommand,
             { sessionId },
             { scope: `FE/connector/${this.protocolName}/close` },
           );
+          this.cleanupListeners();
           throw new Error(
             `${this.protocolName.toUpperCase()} connection was closed before initialization completed`,
           );
         }
 
         this.sessionId = sessionId;
-        void this.ensureCloseListener(sessionId);
+        await this.ensureCloseListener(sessionId);
         this.stateEmitter.emit({ phase: "connected" });
         return sessionId;
       }).catch((error) => {
+        if (this.sessionId) {
+          invokeTauriBackground(
+            this.closeSessionCommand,
+            { sessionId: this.sessionId },
+            { scope: `FE/connector/${this.protocolName}/close` },
+          );
+        }
+        this.sessionId = null;
+        this.cleanupListeners();
         this.stateEmitter.emit({
           phase: "failed",
           reason: `${this.protocolName.toUpperCase()} 连接失败`,
@@ -111,6 +133,10 @@ export abstract class BaseGraphicalConnector<
 
   onConnectionState(handler: (event: ConnectionStateEvent) => void): () => void {
     return this.stateEmitter.subscribe(handler);
+  }
+
+  protected emitConnectionState(event: ConnectionStateEvent): void {
+    this.stateEmitter.emit(event);
   }
 
   /**
@@ -201,6 +227,21 @@ export abstract class BaseGraphicalConnector<
   protected abstract buildCreateSessionArgs(): Record<string, unknown>;
 
   /**
+   * 可选的前端预分配会话 ID，用于在发起连接前注册精确的关闭监听器。
+   */
+  protected getRequestedSessionId(): string | null {
+    return null;
+  }
+
+  protected handleFrameParseError(error: unknown): void {
+    logger.error(
+      `FE/connector/${this.protocolName}/frame`,
+      "Rejected malformed graphical frame",
+      { error },
+    );
+  }
+
+  /**
    * 从帧数据中提取尺寸信息
    */
   protected abstract extractFrameSize(frame: TFramePayload): { width: number; height: number };
@@ -234,7 +275,11 @@ export abstract class BaseGraphicalConnector<
     this.closeUnlisten = await listen(
       `${this.closeEventPrefix}-${sessionId}`,
       () => {
-        this.handleDisconnect();
+        if (this.sessionId === sessionId) {
+          this.handleDisconnect();
+        } else {
+          this.closedBeforeConnect = true;
+        }
       },
     );
   }

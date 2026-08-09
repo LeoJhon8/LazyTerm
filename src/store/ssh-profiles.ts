@@ -121,7 +121,7 @@ interface SSHProfilesState {
   addFolder: (name: string, parentId: string) => void;
   addProfile: (type: "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli", cfg: LocalConfig | SSHConfig | RDPConfig | VNCConfig | SerialConfig | TelnetConfig | AiCliConfig, parentId: string) => void;
   addWorkspaceTemplate: (name: string, template: WorkspaceTemplateDefinition, parentId: string) => void;
-  duplicateProfile: (id: string, name: string) => void;
+  duplicateProfile: (id: string, name: string, configOverride?: SessionNode["config"]) => void;
   updateNode: (id: string, updates: Partial<SessionNode>) => void;
   removeNode: (id: string) => void;
   removeNodes: (ids: string[]) => void;
@@ -245,7 +245,7 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
         };
       }),
 
-      duplicateProfile: (id, name) => set((state) => {
+      duplicateProfile: (id, name, configOverride) => set((state) => {
         const source = state.nodes.find((node) => node.id === id);
         if (!source || source.type === "folder" || !source.config || source.parentId === null) {
           return state;
@@ -256,9 +256,10 @@ export const useSshProfilesStore = create<SSHProfilesState>()(
             ? { ...node, order: node.order + 1 }
             : node
         );
+        const baseConfig = configOverride ?? source.config;
         const config = source.type === "workspace-template"
-          ? structuredClone(source.config)
-          : { ...source.config, nickname: name };
+          ? structuredClone(baseConfig)
+          : { ...baseConfig, nickname: name };
 
         return {
           nodes: nodes.concat([normalizeNode({

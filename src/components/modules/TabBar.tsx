@@ -769,7 +769,7 @@ export function TabBar() {
                   style={{ width: "180px", cursor: "grabbing" }}
                 >
                   <span className="pointer-events-none max-w-32 flex-1 truncate text-[13px]">
-                    {tabs.find((t) => t.id === activeDragId)?.title || t("标签页（单数）")}
+                    {tabs.find((t) => t.id === activeDragId)?.title || t("标签")}
                   </span>
                   <Button
                     variant="ghost"

@@ -34,7 +34,7 @@ pub use crate::types::{
     SftpUploadItem, SftpUploadProgress, ShellInfo, SshConnectConfig, SshControlMsg,
     SshTerminalSession, TelnetConnectConfig, TelnetSession, VncClipboardPastePayload,
     VncConnectConfig, VncControlMsg, VncControlOutcome, VncCursorEventPayload,
-    VncKeyboardEventPayload, VncKeySequencePayload, VncPointerEventPayload, VncSession,
+    VncKeySequencePayload, VncKeyboardEventPayload, VncPointerEventPayload, VncSession,
     VncTextInputPayload,
 };
 
@@ -51,6 +51,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
         .manage(protocol::UpdateDownloadState::default())
         .manage(AppState {
             local_sessions: Arc::new(StdMutex::new(HashMap::new())),
@@ -98,6 +99,7 @@ pub fn run() {
             protocol::paste_vnc_clipboard,
             protocol::type_vnc_text,
             protocol::request_vnc_refresh,
+            protocol::resize_vnc_session,
             protocol::release_rdp_inputs,
             protocol::resize_terminal,
             protocol::resize_ssh_session,

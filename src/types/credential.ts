@@ -1,4 +1,4 @@
-export type CredentialType = "password" | "ssh-key";
+export type CredentialType = "password" | "ssh-key" | "api-key";
 
 export interface CredentialMetadata {
   id: string;
@@ -13,6 +13,7 @@ export interface CredentialMetadata {
 
 export interface CredentialSecret {
   password?: string;
+  apiKey?: string;
   privateKey?: string;
   privateKeyPassphrase?: string;
 }

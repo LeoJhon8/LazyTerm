@@ -5,35 +5,6 @@ import { logger } from "@/lib/logger";
 import { invokeTauri, invokeTauriBackground, invokeTauriSerialized } from "@/services/tauri";
 import { useNotificationsStore } from "@/store/notifications";
 
-function stripAnsiSequences(value: string) {
-  return value
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b\][^\x07]*(\x07|\x1b\\)/g, "")
-    .replace(/\r/g, "\n");
-}
-
-function containsAiConfirmationPrompt(text: string) {
-  const normalized = text.toLowerCase();
-  return [
-    "do you want to",
-    "would you like to",
-    "are you sure",
-    "proceed?",
-    "continue?",
-    "allow",
-    "approve",
-    "confirm",
-    "yes/no",
-    "[y/n]",
-    "(y/n)",
-    "是否继续",
-    "确认",
-    "允许",
-    "批准",
-    "继续吗",
-  ].some((pattern) => normalized.includes(pattern));
-}
-
 function isSessionVisible(appSessionId: string | null) {
   if (!appSessionId) return false;
   return Array.from(document.querySelectorAll("[data-session-id]")).some(
@@ -49,13 +20,7 @@ export class AiCliConnector implements ITerminalConnector {
   private appSessionId: string | null = null;
   private readonly stateEmitter = new ConnectionStateEmitter("FE/connector/ai-cli/state");
   private dataHandler: ((data: string) => void) | null = null;
-  private promptState = {
-    waitingForOutput: false,
-    hasOutput: false,
-    outputBuffer: "",
-    completionTimerId: undefined as number | undefined,
-    confirmationNotified: false,
-  };
+  private listenerSetupPromise: Promise<void> | null = null;
 
   constructor(config: AiCliConfig, appSessionId?: string) {
     this.config = config;
@@ -137,10 +102,6 @@ export class AiCliConnector implements ITerminalConnector {
     const sessionId = this.sessionId;
     const dataStr = typeof data === "string" ? data : new TextDecoder().decode(data);
 
-    if (dataStr.includes("\r") || dataStr.includes("\n")) {
-      this.startPromptTracking();
-    }
-
     invokeTauriSerialized(`ai-cli:${sessionId}:write`, "write_to_terminal", {
       sessionId,
       data: dataStr,
@@ -180,25 +141,56 @@ export class AiCliConnector implements ITerminalConnector {
       this.unlistenFn = null;
     }
     this.dataHandler = null;
-    this.clearPromptTimer();
   }
 
   private async ensureListeners(): Promise<void> {
     if (!this.sessionId || this.unlistenFn) return;
+    if (this.listenerSetupPromise) {
+      await this.listenerSetupPromise;
+      return;
+    }
 
     const sessionId = this.sessionId;
-    const dataUnlisten = await listen<string>(`terminal-data-${sessionId}`, (event) => {
-      this.handleData(event.payload);
-    });
-    const closeUnlisten = await listen(`terminal-close-${sessionId}`, () => {
-      this.notifyExit();
-      this.handleDisconnect();
-    });
+    const setupPromise = this.registerListeners(sessionId);
+    this.listenerSetupPromise = setupPromise;
 
-    this.unlistenFn = () => {
-      dataUnlisten();
-      closeUnlisten();
-    };
+    try {
+      await setupPromise;
+    } finally {
+      if (this.listenerSetupPromise === setupPromise) {
+        this.listenerSetupPromise = null;
+      }
+    }
+  }
+
+  private async registerListeners(sessionId: string): Promise<void> {
+    let dataUnlisten: UnlistenFn | null = null;
+    let closeUnlisten: UnlistenFn | null = null;
+
+    try {
+      dataUnlisten = await listen<string>(`terminal-data-${sessionId}`, (event) => {
+        this.handleData(event.payload);
+      });
+      closeUnlisten = await listen(`terminal-close-${sessionId}`, () => {
+        this.notifyExit();
+        this.handleDisconnect();
+      });
+
+      if (this.sessionId !== sessionId || this.unlistenFn) {
+        dataUnlisten();
+        closeUnlisten();
+        return;
+      }
+
+      this.unlistenFn = () => {
+        dataUnlisten?.();
+        closeUnlisten?.();
+      };
+    } catch (error) {
+      dataUnlisten?.();
+      closeUnlisten?.();
+      throw error;
+    }
   }
 
   private getDisplayName(): string {
@@ -222,60 +214,8 @@ export class AiCliConnector implements ITerminalConnector {
     this.notify(`退出 ${this.getDisplayName()} AI CLI`, "AI CLI 会话已结束");
   }
 
-  private startPromptTracking(): void {
-    this.clearPromptTimer();
-    this.promptState = {
-      waitingForOutput: true,
-      hasOutput: false,
-      outputBuffer: "",
-      completionTimerId: undefined,
-      confirmationNotified: false,
-    };
-  }
-
-  private clearPromptTimer(): void {
-    if (this.promptState.completionTimerId) {
-      window.clearTimeout(this.promptState.completionTimerId);
-    }
-    this.promptState.completionTimerId = undefined;
-  }
-
   private handleData(data: string): void {
     this.dataHandler?.(data);
-
-    const state = this.promptState;
-    if (!state.waitingForOutput) {
-      return;
-    }
-
-    const text = stripAnsiSequences(data);
-    if (!text.trim()) {
-      return;
-    }
-
-    state.hasOutput = true;
-    state.outputBuffer = `${state.outputBuffer}${text}`.slice(-4000);
-
-    if (!state.confirmationNotified && containsAiConfirmationPrompt(state.outputBuffer)) {
-      this.notify("AI 请求确认");
-      state.confirmationNotified = true;
-    }
-
-    this.clearPromptTimer();
-    state.completionTimerId = window.setTimeout(() => {
-      if (!this.promptState.waitingForOutput || !this.promptState.hasOutput || this.promptState.confirmationNotified) {
-        return;
-      }
-
-      this.notify("AI 任务完成");
-      this.promptState = {
-        waitingForOutput: false,
-        hasOutput: false,
-        outputBuffer: "",
-        completionTimerId: undefined,
-        confirmationNotified: false,
-      };
-    }, 10000);
   }
 
   private handleDisconnect(): void {
@@ -291,7 +231,6 @@ export class AiCliConnector implements ITerminalConnector {
       this.unlistenFn = null;
     }
     this.dataHandler = null;
-    this.clearPromptTimer();
 
   }
 }

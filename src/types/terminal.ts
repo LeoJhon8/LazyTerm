@@ -172,6 +172,7 @@ export interface IVncConnector extends ISessionConnector {
   pasteClipboard(text: string, keySym: number, modifierKeySyms: number[]): Promise<void>;
   typeText(text: string, modifierKeySyms: number[]): Promise<void>;
   requestFrame(full?: boolean): void;
+  resize(width: number, height: number): void;
   getFrameSize(): { width: number; height: number } | null;
 }
 

@@ -619,7 +619,7 @@ export function VncForm({ onSubmit, submitLabel }: { onSubmit: (config: VNCConfi
             onCheckedChange={(checked) => setViewOnly(checked === true)}
           />
           <Label htmlFor="vnc-view-only-qc" className="text-sm text-muted-foreground">
-            {t("启用只读模式")}
+            {t("只读模式")}
           </Label>
         </div>
       </FormField>

@@ -6,7 +6,7 @@
 //! # 设计原则
 //!
 //! 1. **线程安全**: 使用 `Send + Sync` 包装器确保跨线程安全
-//! 2. **异步友好**: 所有阻塞操作都在 `spawn_blocking` 中执行
+//! 2. **异步友好**: 原生 I/O 由单线程 Actor 执行，异步侧只传递有界命令
 //! 3. **类型安全**: 使用强类型避免常见错误
 //! 4. **资源管理**: 使用 RAII 模式自动清理资源
 //!
@@ -20,6 +20,7 @@ mod callbacks;
 mod client;
 mod feature_gate;
 mod frame;
+mod io_actor;
 
 pub use callbacks::CallbackEvent as VncClientEvent;
 pub use client::{VncClient, VncClientConfig};

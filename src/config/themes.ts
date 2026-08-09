@@ -126,7 +126,7 @@ export const DEFAULT_DARK_THEME: Omit<TerminalColorScheme, "name" | "label"> = {
 export const TERMINAL_THEMES: TerminalColorScheme[] = [
   {
     name: "system-auto",
-    label: "跟随终端底色 (自动)",
+    label: "跟随底色",
     isDark: true,
     background: "auto",
     foreground: "auto",
@@ -425,7 +425,7 @@ export const TERMINAL_THEMES: TerminalColorScheme[] = [
 export const TERMINAL_THEME_ECOSYSTEMS: TerminalThemeEcosystem[] = [
   {
     name: "system-auto",
-    label: "跟随终端底色 (自动)",
+    label: "跟随底色",
     darkThemeName: "app-dark",
     lightThemeName: "app-light",
   },
@@ -585,17 +585,11 @@ export function getResolvedTerminalTheme(
   };
 }
 
-export function toXtermTheme(scheme: TerminalColorScheme, opacityPercent: number = 100) {
-  const bg = scheme.background;
-  const backgroundWithOpacity =
-    opacityPercent <= 0
-      ? "rgba(0,0,0,0)"
-      : opacityPercent < 100
-        ? (bg === "transparent" ? "transparent" : hexToRgba(bg, opacityPercent / 100))
-        : bg;
-
+export function toXtermTheme(scheme: TerminalColorScheme) {
   return {
-    background: backgroundWithOpacity,
+    // Xterm falls back to its default black background for the CSS keyword
+    // "transparent". An explicit alpha channel keeps the renderer transparent.
+    background: "rgba(0, 0, 0, 0)",
     foreground: scheme.foreground,
     cursor: scheme.cursor,
     cursorAccent: scheme.cursorAccent,
@@ -618,16 +612,4 @@ export function toXtermTheme(scheme: TerminalColorScheme, opacityPercent: number
     brightCyan: scheme.brightCyan,
     brightWhite: scheme.brightWhite,
   };
-}
-
-function hexToRgba(hex: string, alpha: number): string {
-  hex = hex.replace("#", "");
-  if (hex.length === 3) {
-    hex = hex.split("").map((c) => c + c).join("");
-  }
-  if (hex.length !== 6) return `rgba(0,0,0,${alpha})`;
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
 }

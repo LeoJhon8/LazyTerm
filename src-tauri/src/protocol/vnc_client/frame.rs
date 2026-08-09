@@ -119,11 +119,27 @@ impl FrameBuffer {
         Some(region_data)
     }
 
-    pub(crate) fn resize(&self, width: u16, height: u16) {
+    pub(crate) fn try_resize(&self, width: u16, height: u16) -> bool {
+        let Some(required_len) = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|pixels| pixels.checked_mul(4))
+        else {
+            return false;
+        };
         let mut inner = self.inner.write();
+        let current_len = inner.data.len();
+        if required_len > inner.data.capacity()
+            && inner
+                .data
+                .try_reserve_exact(required_len - current_len)
+                .is_err()
+        {
+            return false;
+        }
         inner.width = width;
         inner.height = height;
-        inner.data.resize(width as usize * height as usize * 4, 0);
+        inner.data.resize(required_len, 0);
+        true
     }
 
     pub(crate) fn write_native_region(
@@ -371,4 +387,28 @@ fn decode_pixel_to_rgba(format: RfbPixelFormat, pixel: &[u8]) -> [u8; 4] {
         1 => [pixel[0], pixel[0], pixel[0], 255],
         _ => [0, 0, 0, 255],
     }
+}
+
+pub(crate) fn decode_cursor_to_rgba(
+    width: usize,
+    height: usize,
+    server_format: RfbPixelFormat,
+    source: &[u8],
+    mask: &[u8],
+) -> Option<Vec<u8>> {
+    let pixel_count = width.checked_mul(height)?;
+    let source_bpp = bytes_per_pixel(server_format);
+    let source_len = pixel_count.checked_mul(source_bpp)?;
+    if source_bpp == 0 || source.len() < source_len || mask.len() < pixel_count {
+        return None;
+    }
+
+    let mut rgba = Vec::with_capacity(pixel_count.checked_mul(4)?);
+    for (index, source_pixel) in source[..source_len].chunks_exact(source_bpp).enumerate() {
+        let mut decoded = decode_pixel_to_rgba(server_format, source_pixel);
+        decoded[3] = if mask[index] == 0 { 0 } else { 255 };
+        rgba.extend_from_slice(&decoded);
+    }
+
+    Some(rgba)
 }

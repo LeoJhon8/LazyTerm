@@ -7,6 +7,7 @@ import { useI18n } from "@/i18n";
 import { useUpdateNotification } from "@/hooks/useUpdateNotification";
 import { useViewMode } from "@/hooks/useViewMode";
 import { countValidModules, getValidActivityModules } from "@/components/layout/activity-registry";
+import { AI_MODULE_ID, isAiConfigured, useAiConfigStore } from "@/store/ai";
 
 import { PaneContainer } from "@/components/layout/PaneContainer";
 import { SlotManager } from "@/components/layout/SlotManager";
@@ -176,6 +177,7 @@ function App() {
   const resolvedAppColorPalette = appColorPalette ?? DEFAULT_APP_COLOR_PALETTE;
 
   const { currentConfig: slotConfig } = useSlotConfigStore();
+  const aiConfigured = useAiConfigStore(isAiConfigured);
   const { getAllConnectors, connectionError, clearConnectionError, focusSessionId, sessions } = useTabsStore();
   const effectiveBottomPanelHeight = quickCommandDisplayMode === "panel"
     ? Math.max(112, bottomPanelHeight * 3)
@@ -188,14 +190,14 @@ function App() {
     : null;
   const shouldHideQuickCmdBar = !slotConfig.quickCmdBarEnabled || focusSession?.type === "rdp" || focusSession?.type === "vnc";
   const effectiveBottomRowHeight = shouldHideQuickCmdBar || bottomPanelCollapsed ? 0 : effectiveBottomPanelHeight;
-  const leftValidCount = countValidModules(slotConfig.left.modules);
-  const rightValidCount = countValidModules(slotConfig.right.modules);
+  const leftValidCount = countValidModules(slotConfig.left.modules, aiConfigured);
+  const rightValidCount = countValidModules(slotConfig.right.modules, aiConfigured);
   const hideLeft = isImmersive || isFocus || leftValidCount === 0;
   const hideRight = isImmersive || isFocus || rightValidCount === 0;
   const getActivityPanelWidth = (side: "left" | "right") => {
     const slot = slotConfig[side];
     const hidden = side === "left" ? hideLeft : hideRight;
-    const activeDefinition = getValidActivityModules([slot.activeModule])[0];
+    const activeDefinition = getValidActivityModules([slot.activeModule], aiConfigured)[0];
 
     if (hidden || slot.collapsed || !activeDefinition) {
       return 0;
@@ -219,6 +221,17 @@ function App() {
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
+
+  useEffect(() => {
+    if (aiConfigured) return;
+    const slotStore = useSlotConfigStore.getState();
+    if (slotConfig.left.modules.includes(AI_MODULE_ID)) {
+      slotStore.removeModuleFromSlot("left", AI_MODULE_ID);
+    }
+    if (slotConfig.right.modules.includes(AI_MODULE_ID)) {
+      slotStore.removeModuleFromSlot("right", AI_MODULE_ID);
+    }
+  }, [aiConfigured, slotConfig.left.modules, slotConfig.right.modules]);
 
   useEffect(() => {
     void initializeCredentialVault();

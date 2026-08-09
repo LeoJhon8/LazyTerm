@@ -27,7 +27,7 @@ export interface BaseGraphicSessionViewResult {
     blob: Blob,
     width: number,
     height: number,
-    signal?: { disposed: boolean; token: number; currentToken: number }
+    guard?: { isCurrent: () => boolean }
   ) => Promise<boolean>;
 }
 
@@ -90,7 +90,7 @@ export function useBaseGraphicSessionView(
     blob: Blob,
     width: number,
     height: number,
-    signal?: { disposed: boolean; token: number; currentToken: number }
+    guard?: { isCurrent: () => boolean }
   ): Promise<boolean> => {
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
@@ -126,8 +126,8 @@ export function useBaseGraphicSessionView(
         decodedSource = image;
       }
 
-      // 检查是否被取消
-      if (signal && (signal.disposed || signal.currentToken !== signal.token)) {
+      // 解码是异步的，提交前必须读取实时状态，避免会话切换后绘制旧画面。
+      if (guard && !guard.isCurrent()) {
         decodedBitmap?.close();
         return false;
       }
@@ -398,7 +398,11 @@ export function mapVncKeyboardEvent(event: React.KeyboardEvent<HTMLDivElement>):
   }
 
   if (event.key.length === 1) {
-    return event.key.codePointAt(0) ?? null;
+    const codePoint = event.key.codePointAt(0);
+    if (codePoint === undefined) {
+      return null;
+    }
+    return codePoint <= 0xff ? codePoint : 0x01000000 | codePoint;
   }
 
   return null;

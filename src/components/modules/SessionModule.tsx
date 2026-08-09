@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useSshProfilesStore, type SessionNode } from "@/store/ssh-profiles";
-import { secureConnectionConfig } from "@/store/credentials";
+import { duplicateConnectionCredential, secureConnectionConfig } from "@/store/credentials";
 import { useI18n } from "@/i18n";
 import { useTabsStore } from "@/store/tabs";
 import { usePanesStore } from "@/store/panes";
@@ -352,7 +352,28 @@ export function SessionModule() {
     editing: SessionNode | null,
   ) => {
     try {
-      const secured = await secureConnectionConfig(type, config);
+      const hasNewSecret = type === "ssh"
+        ? Boolean(
+            (config as SSHConfig).password
+            || (config as SSHConfig).privateKey
+            || (config as SSHConfig).privateKeyPassphrase
+          )
+        : Boolean((config as RDPConfig | VNCConfig).password);
+      const credentialIsShared = Boolean(
+        editing
+        && hasNewSecret
+        && config.credentialId
+        && nodes.some((node) => (
+          node.id !== editing.id
+          && node.config
+          && "credentialId" in node.config
+          && node.config.credentialId === config.credentialId
+        )),
+      );
+      const configToSecure = credentialIsShared
+        ? { ...config, credentialId: undefined }
+        : config;
+      const secured = await secureConnectionConfig(type, configToSecure);
       if (editing) {
         updateNode(editing.id, { config: secured, name: config.nickname || config.host });
       } else if (parentId) {
@@ -618,7 +639,28 @@ export function SessionModule() {
         duplicateName = t("{name} 副本 {index}", { name: node.name, index });
         index += 1;
       }
-      duplicateProfile(node.id, duplicateName);
+      void (async () => {
+        try {
+          let configOverride: SessionNode["config"];
+          if (
+            (node.type === "ssh" || node.type === "rdp" || node.type === "vnc")
+            && node.config
+            && "credentialId" in node.config
+            && node.config.credentialId
+          ) {
+            const credentialId = await duplicateConnectionCredential(
+              node.config.credentialId,
+              duplicateName,
+            );
+            configOverride = { ...node.config, credentialId };
+          }
+
+          duplicateProfile(node.id, duplicateName, configOverride);
+        } catch (error) {
+          logger.error("FE/session/duplicate-profile", "Failed to duplicate remote session credentials", { error });
+          toast.error(t("无法复制会话凭据，请先解锁凭据保险库。"));
+        }
+      })();
     } else if (type === 'new-connection') { setEditNode(null); openDialog('newConnection', node); }
     else if (type === 'new-folder') { setEditNode(null); openDialog('folder', node); }
     else if (type === 'edit') { 

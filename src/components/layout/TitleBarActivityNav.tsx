@@ -11,6 +11,7 @@ import { getValidActivityModules } from "@/components/layout/activity-registry";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
 import { cn } from "@/lib/utils";
+import { isAiConfigured, useAiConfigStore } from "@/store/ai";
 
 const VISIBLE_ACTIVITY_LIMIT = 4;
 
@@ -34,12 +35,13 @@ export function TitleBarActivityNav() {
     toggleSlotCollapse,
   } = useSlotConfigStore();
   const { focusSessionId, sessions } = useTabsStore();
+  const aiConfigured = useAiConfigStore(isAiConfigured);
   const focusSession = sessions.find((session) => session.id === focusSessionId);
   const isRdpActive = focusSession?.type === "rdp" || focusSession?.type === "vnc";
 
   const entries: ActivityEntry[] = (["left", "right"] as const).flatMap((side) => {
     const slot = currentConfig[side];
-    return getValidActivityModules(slot.modules).map((module) => ({
+    return getValidActivityModules(slot.modules, aiConfigured).map((module) => ({
       id: module.id,
       side,
       icon: module.icon,

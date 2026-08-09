@@ -104,6 +104,7 @@ async function decryptText(key: CryptoKey, encrypted: EncryptedCredentialSecret,
 function getSecret(credential: Credential | CredentialInput): CredentialSecret {
   return {
     password: credential.password || undefined,
+    apiKey: credential.apiKey || undefined,
     privateKey: credential.privateKey || undefined,
     privateKeyPassphrase: credential.privateKeyPassphrase || undefined,
   };

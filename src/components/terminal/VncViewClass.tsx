@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { logger } from "@/lib/logger";
+import { useSettingsStore } from "@/store/settings";
 import { useTabsStore } from "@/store/tabs";
 import type { IVncConnector, VncFramePayload } from "@/types/terminal";
 import {
@@ -12,7 +13,6 @@ import {
   INTERACTIVE_CONTAINER_CLASSNAME,
 } from "./BaseSessionView";
 import { ConnectionStatusOverlay } from "./ConnectionStatusOverlay";
-import { SessionTransitionMask } from "./SessionTransitionMask";
 import {
   useBaseGraphicSessionView,
   getPointerPositionScaled,
@@ -36,6 +36,13 @@ const VNC_POINTER_MOVE_LOG_INTERVAL_MS = 250;
 const VNC_SLOW_DRAW_LOG_THRESHOLD_MS = 20;
 const VNC_ENABLE_DIAGNOSTIC_LOGS = false;
 const VNC_KEYSTROKE_PASTE_MAX_LENGTH = 4096;
+const VNC_FRAME_QUEUE_MAX_LENGTH = 120;
+const VNC_FULL_FRAME_WATCHDOG_MS = 3_000;
+
+interface QueuedVncFrame {
+  frame: VncFramePayload;
+  sequence: number;
+}
 
 const VNC_KEY_SYM = {
   backspace: 0xff08,
@@ -81,15 +88,25 @@ export function VncViewClass(props: BaseSessionViewProps) {
   } = useBaseGraphicSessionView(props);
 
   const { sessions } = useTabsStore();
+  const hasBackgroundImage = useSettingsStore(
+    (state) => state.backgroundImageEnabled && !!state.backgroundImage,
+  );
   const activeSession = sessions.find((session) => session.id === sessionId);
   const connector = activeSession?.connector?.protocol === "vnc" ? activeSession.connector as IVncConnector : null;
   const viewOnly = activeSession?.config?.vncConfig?.viewOnly ?? false;
 
   const pointerMaskRef = useRef(0);
   const pointerTargetRef = useRef<number | null>(null);
+  const pointerMoveFrameRef = useRef<number | null>(null);
+  const pendingPointerMoveRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const lastPointerPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const contextMenuPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
-  const pendingFrameRef = useRef<VncFramePayload | null>(null);
-  const pendingFrameSeqRef = useRef(0);
+  const frameQueueRef = useRef<QueuedVncFrame[]>([]);
+  const activeFrameRef = useRef<VncFramePayload | null>(null);
+  const awaitingFullFrameRef = useRef(true);
+  const fullRefreshRequestedRef = useRef(false);
+  const fullRefreshRequestedAtRef = useRef<number | null>(null);
+  const desktopSizeRef = useRef<{ width: number; height: number } | null>(null);
   const decodeInFlightRef = useRef(false);
   const drawTokenRef = useRef(0);
   const traceStartedAtRef = useRef(
@@ -100,71 +117,63 @@ export function VncViewClass(props: BaseSessionViewProps) {
   const lastPointerMoveLogAtRef = useRef(0);
   const suppressedPasteKeyCodesRef = useRef(new Set<string>());
   const [cursorStyle, setCursorStyle] = useState("default");
-  const [visuallyReadyConnector, setVisuallyReadyConnector] = useState<IVncConnector | null>(null);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
 
-  const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
-  const resizeTimerRef = useRef<number | null>(null);
+  const resizeRequestTimerRef = useRef<number | null>(null);
 
-  // 仅在 VNC 画布的实际显示尺寸变化时显示比例调整遮罩。
+  // 容器稳定后请求 ExtendedDesktopSize；不支持该能力的服务端会由后端安全忽略。
   useEffect(() => {
     const container = containerRef.current;
-    const canvas = canvasRef.current;
-    if (!container || !canvas || !frameSize) {
+    if (!container || !frameSize || !connector || viewOnly) {
       return;
     }
 
-    const readRenderedSize = () => {
-      const rect = canvas.getBoundingClientRect();
-      const pixelRatio = window.devicePixelRatio || 1;
-      return {
-        width: Math.round(rect.width * pixelRatio),
-        height: Math.round(rect.height * pixelRatio),
+    const readRequestedSize = () => {
+      const rect = container.getBoundingClientRect();
+      const clampDimension = (value: number, minimum: number) => {
+        const rounded = Math.round(value);
+        const even = rounded - (rounded % 2);
+        return Math.min(8192, Math.max(minimum, even));
       };
+      let width = clampDimension(rect.width, 320);
+      let height = clampDimension(rect.height, 240);
+      const maximumPixels = 32 * 1024 * 1024;
+      if (width * height > maximumPixels) {
+        const scale = Math.sqrt(maximumPixels / (width * height));
+        width = clampDimension(width * scale, 320);
+        height = clampDimension(height * scale, 240);
+      }
+      return { width, height };
     };
-    let lastRenderedSize: { width: number; height: number } | null = readRenderedSize();
 
-    const resizeObserver = new ResizeObserver(() => {
-      const nextRenderedSize = readRenderedSize();
-      if (nextRenderedSize.width <= 0 || nextRenderedSize.height <= 0) {
-        return;
-      }
+    const scheduleResize = () => {
+      const requestedSize = readRequestedSize();
       if (
-        !lastRenderedSize
-        || lastRenderedSize.width <= 0
-        || lastRenderedSize.height <= 0
-      ) {
-        lastRenderedSize = nextRenderedSize;
-        return;
-      }
-      if (
-        nextRenderedSize.width === lastRenderedSize.width
-        && nextRenderedSize.height === lastRenderedSize.height
+        requestedSize.width === frameSize.width
+        && requestedSize.height === frameSize.height
       ) {
         return;
       }
-
-      lastRenderedSize = nextRenderedSize;
-      setResizeMaskVisible(true);
-      if (resizeTimerRef.current !== null) {
-        window.clearTimeout(resizeTimerRef.current);
+      if (resizeRequestTimerRef.current !== null) {
+        window.clearTimeout(resizeRequestTimerRef.current);
       }
-      resizeTimerRef.current = window.setTimeout(() => {
-        setResizeMaskVisible(false);
-        resizeTimerRef.current = null;
-      }, 2000);
-    });
+      resizeRequestTimerRef.current = window.setTimeout(() => {
+        connector.resize(requestedSize.width, requestedSize.height);
+        resizeRequestTimerRef.current = null;
+      }, 350);
+    };
 
+    const resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(container);
+    scheduleResize();
     return () => {
       resizeObserver.disconnect();
-      if (resizeTimerRef.current !== null) {
-        window.clearTimeout(resizeTimerRef.current);
-        resizeTimerRef.current = null;
+      if (resizeRequestTimerRef.current !== null) {
+        window.clearTimeout(resizeRequestTimerRef.current);
+        resizeRequestTimerRef.current = null;
       }
-      setResizeMaskVisible(false);
     };
-  }, [canvasRef, containerRef, frameSize?.height, frameSize?.width]);
+  }, [connector, containerRef, frameSize?.height, frameSize?.width, viewOnly]);
 
   const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
   const elapsedMs = () => Math.round(nowMs() - traceStartedAtRef.current);
@@ -198,31 +207,81 @@ export function VncViewClass(props: BaseSessionViewProps) {
     frameSeqRef.current = 0;
     inputSeqRef.current = 0;
     lastPointerMoveLogAtRef.current = 0;
-    pendingFrameSeqRef.current = 0;
+    frameQueueRef.current = [];
+    activeFrameRef.current = null;
+    awaitingFullFrameRef.current = true;
+    fullRefreshRequestedRef.current = false;
+    fullRefreshRequestedAtRef.current = null;
+    desktopSizeRef.current = null;
 
-    const drawLatestFrame = async () => {
+    const requestFullFrame = () => {
+      if (disposed || !awaitingFullFrameRef.current) {
+        return;
+      }
+
+      const requestedAt = fullRefreshRequestedAtRef.current;
+      if (
+        fullRefreshRequestedRef.current
+        && requestedAt !== null
+        && nowMs() - requestedAt < VNC_FULL_FRAME_WATCHDOG_MS
+      ) {
+        return;
+      }
+
+      fullRefreshRequestedRef.current = true;
+      fullRefreshRequestedAtRef.current = nowMs();
+      connector.requestFrame(true);
+    };
+
+    const recoverWithFullFrame = () => {
+      awaitingFullFrameRef.current = true;
+      fullRefreshRequestedRef.current = false;
+      fullRefreshRequestedAtRef.current = null;
+      frameQueueRef.current = [];
+      drawTokenRef.current += 1;
+      requestFullFrame();
+    };
+
+    const drawNextFrame = async () => {
       if (decodeInFlightRef.current || disposed) {
         return;
       }
 
-      const frame = pendingFrameRef.current;
-      const frameSeq = pendingFrameSeqRef.current;
-      const canvas = canvasRef.current;
-      if (!frame || !canvas) {
+      const queuedFrame = frameQueueRef.current.shift();
+      if (!queuedFrame) {
         return;
       }
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        frameQueueRef.current.unshift(queuedFrame);
+        return;
+      }
+      const { frame, sequence: frameSeq } = queuedFrame;
 
       if (frame.encoding !== "rgba" && frame.encoding !== "png" && frame.encoding !== "jpeg") {
-        pendingFrameRef.current = null;
+        recoverWithFullFrame();
         return;
       }
 
       decodeInFlightRef.current = true;
+      activeFrameRef.current = frame;
       const drawToken = ++drawTokenRef.current;
       const drawStartedAt = nowMs();
 
       try {
         let success = false;
+        const regionRight = frame.regionLeft + frame.regionWidth;
+        const regionBottom = frame.regionTop + frame.regionHeight;
+        if (
+          frame.regionWidth === 0
+          || frame.regionHeight === 0
+          || regionRight > frame.desktopWidth
+          || regionBottom > frame.desktopHeight
+        ) {
+          throw new Error(
+            `Invalid VNC frame region: ${frame.regionWidth}x${frame.regionHeight}@${frame.regionLeft},${frame.regionTop} for ${frame.desktopWidth}x${frame.desktopHeight}`,
+          );
+        }
 
         if (canvas.width !== frame.desktopWidth || canvas.height !== frame.desktopHeight) {
           canvas.width = frame.desktopWidth;
@@ -230,9 +289,16 @@ export function VncViewClass(props: BaseSessionViewProps) {
         }
 
         if (frame.encoding === "rgba") {
+          const expectedLength = frame.regionWidth * frame.regionHeight * 4;
+          if (frame.imageBytes.byteLength !== expectedLength) {
+            throw new Error(
+              `Unexpected VNC RGBA frame size: ${frame.imageBytes.byteLength} !== ${expectedLength}`,
+            );
+          }
+
           const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
           if (!context) {
-            return;
+            throw new Error("VNC canvas 2D context is unavailable");
           }
 
           context.imageSmoothingEnabled = false;
@@ -251,9 +317,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
             type: frame.encoding === "png" ? "image/png" : "image/jpeg",
           });
           success = await renderBlobFrame(canvas, blob, frame.desktopWidth, frame.desktopHeight, {
-            disposed,
-            token: drawToken,
-            currentToken: drawTokenRef.current,
+            isCurrent: () => !disposed && drawToken === drawTokenRef.current,
           });
         }
 
@@ -261,9 +325,13 @@ export function VncViewClass(props: BaseSessionViewProps) {
           const drawElapsed = Math.round(nowMs() - drawStartedAt);
           if (inStartupTraceWindow() || drawElapsed >= VNC_SLOW_DRAW_LOG_THRESHOLD_MS) {
             logFrame(
-              `t=${elapsedMs()}ms seq=${frameSeq} phase=draw encoding=${frame.encoding} full=${frame.fullFrame} region=${frame.regionWidth}x${frame.regionHeight}@${frame.regionLeft},${frame.regionTop} area_pct=${frameAreaPct(frame)} draw_ms=${drawElapsed} decode_in_flight=${decodeInFlightRef.current} pending_replaced=${pendingFrameRef.current !== frame}`,
+              `t=${elapsedMs()}ms seq=${frameSeq} phase=draw encoding=${frame.encoding} full=${frame.fullFrame} region=${frame.regionWidth}x${frame.regionHeight}@${frame.regionLeft},${frame.regionTop} area_pct=${frameAreaPct(frame)} draw_ms=${drawElapsed} decode_in_flight=${decodeInFlightRef.current} queued=${frameQueueRef.current.length}`,
             );
           }
+          desktopSizeRef.current = {
+            width: frame.desktopWidth,
+            height: frame.desktopHeight,
+          };
           setFrameSize((current) => (
             current?.width === frame.desktopWidth && current?.height === frame.desktopHeight
               ? current
@@ -273,36 +341,78 @@ export function VncViewClass(props: BaseSessionViewProps) {
                 }
           ));
           if (frame.fullFrame) {
-            setVisuallyReadyConnector(connector);
             notifyVisualReady();
           }
+        } else if (!disposed && drawToken === drawTokenRef.current) {
+          recoverWithFullFrame();
         }
       } catch (error) {
         if (!disposed) {
           logger.error("FE/terminal-view/vnc", "Canvas decode failed", { error });
+          if (drawToken === drawTokenRef.current) {
+            recoverWithFullFrame();
+          }
         }
       } finally {
+        activeFrameRef.current = null;
         decodeInFlightRef.current = false;
-        if (!disposed && pendingFrameRef.current !== frame) {
-          void drawLatestFrame();
+        if (!disposed && frameQueueRef.current.length > 0) {
+          void drawNextFrame();
         }
       }
     };
 
+    const fullFrameWatchdog = window.setInterval(() => {
+      if (awaitingFullFrameRef.current) {
+        requestFullFrame();
+      }
+    }, 1_000);
+
     connector.onFrame((nextFrame) => {
       const frameSeq = ++frameSeqRef.current;
-      pendingFrameSeqRef.current = frameSeq;
       if (inStartupTraceWindow() || nextFrame.fullFrame || decodeInFlightRef.current) {
         logFrame(
-          `t=${elapsedMs()}ms seq=${frameSeq} phase=recv encoding=${nextFrame.encoding} full=${nextFrame.fullFrame} region=${nextFrame.regionWidth}x${nextFrame.regionHeight}@${nextFrame.regionLeft},${nextFrame.regionTop} area_pct=${frameAreaPct(nextFrame)} decode_in_flight=${decodeInFlightRef.current} has_pending=${pendingFrameRef.current !== null}`,
+          `t=${elapsedMs()}ms seq=${frameSeq} phase=recv encoding=${nextFrame.encoding} full=${nextFrame.fullFrame} region=${nextFrame.regionWidth}x${nextFrame.regionHeight}@${nextFrame.regionLeft},${nextFrame.regionTop} area_pct=${frameAreaPct(nextFrame)} decode_in_flight=${decodeInFlightRef.current} queued=${frameQueueRef.current.length}`,
         );
       }
-      pendingFrameRef.current = nextFrame;
-      void drawLatestFrame();
-    }).then(() => {
-      if (!disposed) {
-        connector.requestFrame(true);
+
+      const knownDesktopSize = desktopSizeRef.current;
+      const desktopChanged = knownDesktopSize !== null
+        && (knownDesktopSize.width !== nextFrame.desktopWidth
+          || knownDesktopSize.height !== nextFrame.desktopHeight);
+
+      if (nextFrame.fullFrame) {
+        awaitingFullFrameRef.current = false;
+        fullRefreshRequestedRef.current = false;
+        fullRefreshRequestedAtRef.current = null;
+        desktopSizeRef.current = {
+          width: nextFrame.desktopWidth,
+          height: nextFrame.desktopHeight,
+        };
+        frameQueueRef.current = [{ frame: nextFrame, sequence: frameSeq }];
+
+        if (decodeInFlightRef.current && activeFrameRef.current?.encoding !== "rgba") {
+          drawTokenRef.current += 1;
+        }
+      } else {
+        if (desktopChanged) {
+          recoverWithFullFrame();
+          return;
+        }
+        if (awaitingFullFrameRef.current) {
+          requestFullFrame();
+          return;
+        }
+        if (frameQueueRef.current.length >= VNC_FRAME_QUEUE_MAX_LENGTH) {
+          recoverWithFullFrame();
+          return;
+        }
+        frameQueueRef.current.push({ frame: nextFrame, sequence: frameSeq });
       }
+
+      void drawNextFrame();
+    }).then(() => {
+      requestFullFrame();
     }).catch((error) => {
       if (connector.isConnected) {
         logger.error("FE/terminal-view/vnc", "Register frame listener failed", { error });
@@ -339,12 +449,23 @@ export function VncViewClass(props: BaseSessionViewProps) {
 
     return () => {
       disposed = true;
+      window.clearInterval(fullFrameWatchdog);
       drawTokenRef.current += 1;
       pointerMaskRef.current = 0;
       pointerTargetRef.current = null;
+      pendingPointerMoveRef.current = null;
+      lastPointerPointRef.current = null;
+      if (pointerMoveFrameRef.current !== null) {
+        window.cancelAnimationFrame(pointerMoveFrameRef.current);
+        pointerMoveFrameRef.current = null;
+      }
       suppressedPasteKeyCodesRef.current.clear();
-      pendingFrameRef.current = null;
-      pendingFrameSeqRef.current = 0;
+      frameQueueRef.current = [];
+      activeFrameRef.current = null;
+      awaitingFullFrameRef.current = true;
+      fullRefreshRequestedRef.current = false;
+      fullRefreshRequestedAtRef.current = null;
+      desktopSizeRef.current = null;
       decodeInFlightRef.current = false;
       setFrameSize(null);
       setCursorStyle("default");
@@ -358,9 +479,30 @@ export function VncViewClass(props: BaseSessionViewProps) {
   useEffect(() => {
     pointerMaskRef.current = 0;
     pointerTargetRef.current = null;
+    pendingPointerMoveRef.current = null;
+    lastPointerPointRef.current = null;
+    if (pointerMoveFrameRef.current !== null) {
+      window.cancelAnimationFrame(pointerMoveFrameRef.current);
+      pointerMoveFrameRef.current = null;
+    }
     contextMenuPointRef.current = null;
     setCursorStyle("default");
   }, [activeSession?.id]);
+
+  useEffect(() => {
+    if (activeSession?.connectionStatus.phase !== "reconnecting") {
+      return;
+    }
+
+    drawTokenRef.current += 1;
+    frameQueueRef.current = [];
+    activeFrameRef.current = null;
+    decodeInFlightRef.current = false;
+    awaitingFullFrameRef.current = true;
+    fullRefreshRequestedRef.current = false;
+    fullRefreshRequestedAtRef.current = null;
+    desktopSizeRef.current = null;
+  }, [activeSession?.connectionStatus.phase]);
 
   if (!activeSession || !connector) {
     return null;
@@ -393,7 +535,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
       }
       inputSeqRef.current += 1;
       logInput(
-        `t=${elapsedMs()}ms seq=${inputSeqRef.current} kind=${source} x=${point.x} y=${point.y} button_mask=${buttonMask} decode_in_flight=${decodeInFlightRef.current} has_pending=${pendingFrameRef.current !== null}`,
+        `t=${elapsedMs()}ms seq=${inputSeqRef.current} kind=${source} x=${point.x} y=${point.y} button_mask=${buttonMask} decode_in_flight=${decodeInFlightRef.current} queued=${frameQueueRef.current.length}`,
       );
     }
 
@@ -413,8 +555,39 @@ export function VncViewClass(props: BaseSessionViewProps) {
     }
   };
 
+  const discardPendingPointerMove = () => {
+    pendingPointerMoveRef.current = null;
+    if (pointerMoveFrameRef.current !== null) {
+      window.cancelAnimationFrame(pointerMoveFrameRef.current);
+      pointerMoveFrameRef.current = null;
+    }
+  };
+
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    emitPointer(event.clientX, event.clientY, pointerMaskRef.current, "move");
+    if (viewOnly) {
+      return;
+    }
+
+    const point = { clientX: event.clientX, clientY: event.clientY };
+    lastPointerPointRef.current = point;
+    pendingPointerMoveRef.current = point;
+    if (pointerMoveFrameRef.current !== null) {
+      return;
+    }
+
+    pointerMoveFrameRef.current = window.requestAnimationFrame(() => {
+      pointerMoveFrameRef.current = null;
+      const pendingPoint = pendingPointerMoveRef.current;
+      pendingPointerMoveRef.current = null;
+      if (pendingPoint) {
+        emitPointer(
+          pendingPoint.clientX,
+          pendingPoint.clientY,
+          pointerMaskRef.current,
+          "move",
+        );
+      }
+    });
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -423,6 +596,8 @@ export function VncViewClass(props: BaseSessionViewProps) {
     }
     event.preventDefault();
     event.currentTarget.focus();
+    discardPendingPointerMove();
+    lastPointerPointRef.current = { clientX: event.clientX, clientY: event.clientY };
     if (event.button === 2 && !event.shiftKey) {
       contextMenuPointRef.current = { clientX: event.clientX, clientY: event.clientY };
       return;
@@ -439,6 +614,8 @@ export function VncViewClass(props: BaseSessionViewProps) {
       return;
     }
     event.preventDefault();
+    discardPendingPointerMove();
+    lastPointerPointRef.current = { clientX: event.clientX, clientY: event.clientY };
     if (event.button === 2 && !event.shiftKey) {
       return;
     }
@@ -456,6 +633,8 @@ export function VncViewClass(props: BaseSessionViewProps) {
       return;
     }
     event.preventDefault();
+    discardPendingPointerMove();
+    lastPointerPointRef.current = { clientX: event.clientX, clientY: event.clientY };
     if (pointerTargetRef.current !== null && event.currentTarget.hasPointerCapture(pointerTargetRef.current)) {
       event.currentTarget.releasePointerCapture(pointerTargetRef.current);
     }
@@ -479,6 +658,10 @@ export function VncViewClass(props: BaseSessionViewProps) {
 
   const handleKey = (event: React.KeyboardEvent<HTMLDivElement>, down: boolean) => {
     if (viewOnly) {
+      return;
+    }
+    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+      event.preventDefault();
       return;
     }
 
@@ -515,7 +698,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
     if (inStartupTraceWindow()) {
       inputSeqRef.current += 1;
       logInput(
-        `t=${elapsedMs()}ms seq=${inputSeqRef.current} kind=key key_sym=${keySym} down=${down} code=${event.code} decode_in_flight=${decodeInFlightRef.current} has_pending=${pendingFrameRef.current !== null}`,
+        `t=${elapsedMs()}ms seq=${inputSeqRef.current} kind=key key_sym=${keySym} down=${down} code=${event.code} decode_in_flight=${decodeInFlightRef.current} queued=${frameQueueRef.current.length}`,
       );
     }
     connector.sendKey({ keySym, down });
@@ -534,6 +717,17 @@ export function VncViewClass(props: BaseSessionViewProps) {
     event.preventDefault();
     void pasteLocalText(text, 0x76, [0xffe3]).catch((error) => {
       logger.error("FE/terminal-view/vnc/clipboard", "Paste local clipboard failed", { error });
+    });
+  };
+
+  const handleCompositionEnd = (event: React.CompositionEvent<HTMLDivElement>) => {
+    if (viewOnly || !event.data) {
+      return;
+    }
+
+    event.preventDefault();
+    void connector.typeText(event.data, []).catch((error) => {
+      logger.error("FE/terminal-view/vnc/input", "IME text input failed", { error });
     });
   };
 
@@ -558,6 +752,8 @@ export function VncViewClass(props: BaseSessionViewProps) {
         return;
       }
       event.preventDefault();
+      discardPendingPointerMove();
+      lastPointerPointRef.current = { clientX: event.clientX, clientY: event.clientY };
 
       const wheelMask = event.deltaY < 0 ? 8 : 16;
       emitPointer(event.clientX, event.clientY, pointerMaskRef.current | wheelMask, "wheel");
@@ -569,8 +765,6 @@ export function VncViewClass(props: BaseSessionViewProps) {
       container.removeEventListener("wheel", onNativeWheel);
     };
   }, [containerRef, emitPointer, viewOnly]);
-
-  const transitionMaskVisible = visuallyReadyConnector !== connector;
 
   return (
     <ContextMenu modal={false}>
@@ -587,6 +781,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
       >
         <main
           className={cn(VIEW_CONTAINER_CLASSNAME, "bg-(--terminal-shell)")}
+          style={{ backgroundColor: hasBackgroundImage ? "transparent" : undefined }}
           data-view-type="vnc"
           data-session-id={sessionId}
           data-pane-id={paneId}
@@ -602,16 +797,18 @@ export function VncViewClass(props: BaseSessionViewProps) {
             onPointerCancel={handlePointerCancel}
             onKeyDown={(event) => handleKey(event, true)}
             onKeyUp={(event) => handleKey(event, false)}
+            onCompositionEnd={handleCompositionEnd}
             onPaste={handlePaste}
             onBlur={() => {
+              discardPendingPointerMove();
+              const lastPoint = lastPointerPointRef.current;
+              if (pointerMaskRef.current !== 0 && lastPoint) {
+                emitPointer(lastPoint.clientX, lastPoint.clientY, 0, "cancel");
+              }
               pointerMaskRef.current = 0;
               pointerTargetRef.current = null;
             }}
           >
-            <SessionTransitionMask
-              visible={activeSession.connectionStatus.phase === "connected" && (transitionMaskVisible || resizeMaskVisible)}
-              text={transitionMaskVisible ? t("正在同步 VNC 画面...") : t("正在调整画面比例...")}
-            />
             <canvas
               ref={canvasRef}
               className={frameSize ? CANVAS_CLASSNAME : HIDDEN_CLASSNAME}

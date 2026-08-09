@@ -4,18 +4,21 @@
 //! and publish high-level client events to Rust.
 
 use std::collections::HashMap;
-use std::ffi::{c_char, c_int};
+use std::ffi::{c_char, c_int, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, Weak};
 
 use once_cell::sync::Lazy;
+use tokio::sync::mpsc::UnboundedSender;
 
 use super::super::vnc_ffi as ffi;
-use super::frame::{FrameBuffer, FrameUpdateRegion};
+use super::frame::{decode_cursor_to_rgba, FrameBuffer, FrameUpdateRegion};
 use super::ClipboardEvent;
 
 const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024;
+const MAX_DESKTOP_DIMENSION: usize = 8192;
+const MAX_DESKTOP_PIXELS: usize = 32 * 1024 * 1024;
+const MAX_CURSOR_PIXELS: usize = 1024 * 1024;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -44,11 +47,15 @@ pub enum CallbackEvent {
     Clipboard(ClipboardEvent),
     CursorPosition { x: u16, y: u16 },
     ResolutionChange { width: u16, height: u16 },
+    ServerMessageHandled,
+    ConnectionClosed { reason: String },
 }
 
 pub(crate) struct SessionContext {
-    pub event_sender: Sender<CallbackEvent>,
+    pub event_sender: UnboundedSender<CallbackEvent>,
     pub framebuffer: FrameBuffer,
+    pub password: Option<String>,
+    pub encodings_string: Option<CString>,
 }
 
 static SESSIONS: Lazy<Mutex<HashMap<usize, Weak<SessionContext>>>> =
@@ -67,6 +74,10 @@ pub(crate) fn unregister_session(ptr: usize) {
 fn get_context(ptr: usize) -> Option<Arc<SessionContext>> {
     let sessions = SESSIONS.lock().unwrap();
     sessions.get(&ptr).and_then(|weak| weak.upgrade())
+}
+
+pub(crate) fn password_for_session(ptr: usize) -> Option<String> {
+    get_context(ptr).and_then(|context| context.password.clone())
 }
 
 unsafe fn framebuffer_update_callback_impl(
@@ -150,23 +161,49 @@ unsafe fn handle_cursor_shape_callback_impl(
     yhot: c_int,
     width: c_int,
     height: c_int,
-    _bytes_per_pixel: c_int,
+    bytes_per_pixel: c_int,
 ) {
     let ptr = client as usize;
 
     if let Some(ctx) = get_context(ptr) {
-        let cursor_size = (width.max(0) as usize)
-            .saturating_mul(height.max(0) as usize)
-            .saturating_mul(4);
+        if width <= 0 || height <= 0 || !(1..=4).contains(&bytes_per_pixel) {
+            return;
+        }
+
+        let width_usize = width as usize;
+        let height_usize = height as usize;
+        let Some(pixel_count) = width_usize.checked_mul(height_usize) else {
+            return;
+        };
+        if pixel_count > MAX_CURSOR_PIXELS {
+            return;
+        }
+        let Some(source_len) = pixel_count.checked_mul(bytes_per_pixel as usize) else {
+            return;
+        };
+        let source_ptr = ffi::RfbClientGetCursorSource(client);
+        let mask_ptr = ffi::RfbClientGetCursorMask(client);
+        if source_ptr.is_null() || mask_ptr.is_null() {
+            return;
+        }
+
+        let source = std::slice::from_raw_parts(source_ptr, source_len);
+        let mask = std::slice::from_raw_parts(mask_ptr, pixel_count);
+        let pixel_format = ffi::RfbClientGetPixelFormat(client);
+        let Some(rgba_data) =
+            decode_cursor_to_rgba(width_usize, height_usize, pixel_format, source, mask)
+        else {
+            return;
+        };
 
         let _ = ctx
             .event_sender
             .send(CallbackEvent::CursorShape(CursorInfo {
-                hotspot_x: xhot.max(0) as u16,
-                hotspot_y: yhot.max(0) as u16,
-                width: width.max(0) as u16,
-                height: height.max(0) as u16,
-                rgba_data: vec![0u8; cursor_size],
+                hotspot_x: xhot.clamp(0, width - 1) as u16,
+                hotspot_y: yhot.clamp(0, height - 1) as u16,
+                width: width as u16,
+                height: height as u16,
+                rgba_data,
             }));
     }
 }
@@ -237,10 +274,28 @@ unsafe fn malloc_framebuffer_callback_impl(client: *mut ffi::RfbClient) -> i8 {
     let ptr = client as usize;
 
     if let Some(ctx) = get_context(ptr) {
-        let width = ffi::RfbClientGetScreenWidth(client).max(0) as u16;
-        let height = ffi::RfbClientGetScreenHeight(client).max(0) as u16;
+        let width = ffi::RfbClientGetScreenWidth(client);
+        let height = ffi::RfbClientGetScreenHeight(client);
+        if width <= 0 || height <= 0 {
+            return 0;
+        }
+        let width_usize = width as usize;
+        let height_usize = height as usize;
+        let Some(pixel_count) = width_usize.checked_mul(height_usize) else {
+            return 0;
+        };
+        if width_usize > MAX_DESKTOP_DIMENSION
+            || height_usize > MAX_DESKTOP_DIMENSION
+            || pixel_count > MAX_DESKTOP_PIXELS
+        {
+            return 0;
+        }
+        let width = width as u16;
+        let height = height as u16;
 
-        ctx.framebuffer.resize(width, height);
+        if !ctx.framebuffer.try_resize(width, height) {
+            return 0;
+        }
 
         let _ = ctx
             .event_sender

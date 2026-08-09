@@ -50,6 +50,7 @@ function cleanInput(input: CredentialInput): CredentialInput {
     name: input.name.trim(),
     username: input.username?.trim() || undefined,
     password: input.password || undefined,
+    apiKey: input.apiKey || undefined,
     privateKeyPath: input.privateKeyPath?.trim() || undefined,
     privateKey: input.privateKey || undefined,
     privateKeyPassphrase: input.privateKeyPassphrase || undefined,
@@ -227,6 +228,30 @@ export const useCredentialsStore = create<CredentialsState>((set, get) => ({
 
 export function exportCredentialVault(): CredentialVaultDocument | null {
   return useCredentialsStore.getState().vault;
+}
+
+export async function duplicateConnectionCredential(id: string, name: string): Promise<string> {
+  const store = useCredentialsStore.getState();
+  if (store.status !== "unlocked") {
+    throw new Error("凭据保险库尚未解锁");
+  }
+
+  const credential = store.getCredential(id);
+  if (!credential) {
+    throw new Error("找不到会话凭据");
+  }
+
+  return store.addCredential({
+    name,
+    type: credential.type,
+    username: credential.username,
+    password: credential.password,
+    apiKey: credential.apiKey,
+    privateKeyPath: credential.privateKeyPath,
+    privateKey: credential.privateKey,
+    privateKeyPassphrase: credential.privateKeyPassphrase,
+    note: credential.note,
+  });
 }
 
 export async function secureConnectionConfig(

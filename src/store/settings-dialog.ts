@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 /** 设置弹窗可打开的 Tab 页 */
-export type SettingsTab = "general" | "appearance" | "layout" | "credentials" | "data" | "about";
+export type SettingsTab = "general" | "appearance" | "layout" | "ai" | "credentials" | "data" | "about";
 
 interface SettingsDialogData {
   /** 弹窗是否打开 */

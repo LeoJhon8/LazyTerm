@@ -152,7 +152,8 @@ pub enum VncControlMsg {
     KeySequence(VncKeySequencePayload),
     PasteClipboard(VncClipboardPastePayload),
     TypeText(VncTextInputPayload),
-    Refresh,
+    Refresh { full: bool },
+    Resize(u16, u16),
     Close,
 }
 
@@ -164,7 +165,7 @@ pub enum VncControlOutcome {
 
 /// VNC 会话
 pub struct VncSession {
-    pub control_tx: mpsc::UnboundedSender<VncControlMsg>,
+    pub control_tx: mpsc::Sender<VncControlMsg>,
 }
 
 // ==================== 本地终端类型 ====================
@@ -320,6 +321,14 @@ pub struct VncCursorEventPayload {
     pub width: u16,
     pub height: u16,
     pub rgba_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VncRecoveryEventPayload {
+    pub phase: String,
+    pub attempt: u8,
+    pub reason: Option<String>,
 }
 
 // ==================== 应用状态 ====================

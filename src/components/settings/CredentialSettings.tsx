@@ -83,10 +83,14 @@ export function CredentialSettings() {
     changeMasterPassword,
     disableMasterPassword,
   } = useCredentialsStore();
-  const [selectedId, setSelectedId] = useState<string | null>(credentials[0]?.id ?? null);
+  const visibleCredentials = useMemo(
+    () => credentials.filter((credential) => credential.type !== "api-key"),
+    [credentials],
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(visibleCredentials[0]?.id ?? null);
   const selectedCredential = useMemo(
-    () => credentials.find((credential) => credential.id === selectedId) ?? null,
-    [credentials, selectedId],
+    () => visibleCredentials.find((credential) => credential.id === selectedId) ?? null,
+    [visibleCredentials, selectedId],
   );
   const [form, setForm] = useState<CredentialInput>(() => selectedCredential ? toForm(selectedCredential) : EMPTY_FORM);
   const [masterPassword, setMasterPassword] = useState("");
@@ -152,7 +156,7 @@ export function CredentialSettings() {
     setBusy(true);
     try {
       await removeCredential(selectedId);
-      const next = credentials.find((credential) => credential.id !== selectedId) ?? null;
+      const next = visibleCredentials.find((credential) => credential.id !== selectedId) ?? null;
       setSelectedId(next?.id ?? null);
       setForm(next ? toForm(next) : EMPTY_FORM);
       setMessage({ type: "success", text: "凭据已删除" });
@@ -212,10 +216,10 @@ export function CredentialSettings() {
           </Button>
         </div>
         <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden">
-          {credentials.length === 0 && (
+          {visibleCredentials.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">暂无保存的凭据</div>
           )}
-          {credentials.map((credential) => (
+          {visibleCredentials.map((credential) => (
             <button
               key={credential.id}
               type="button"

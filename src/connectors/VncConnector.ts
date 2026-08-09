@@ -17,12 +17,14 @@ export class VncConnector
   implements IVncConnector
 {
   readonly protocol = "vnc" as const;
+  private readonly requestedSessionId = crypto.randomUUID();
 
   private cursorUnlisten: UnlistenFn | null = null;
   private cursorHandler: ((cursor: VncCursorPayload) => void) | null = null;
   private latestCursor: VncCursorPayload | null = null;
   private clipboardUnlisten: UnlistenFn | null = null;
   private clipboardHandler: ((text: string) => void) | null = null;
+  private recoveryUnlisten: UnlistenFn | null = null;
   private sessionListenersPromise: Promise<void> | null = null;
 
   constructor(config: VNCConfig) {
@@ -145,9 +147,18 @@ export class VncConnector
     });
   }
 
-  resize(): void {
-    // VNC 暂不支持动态调整大小
-    logger.debug("FE/connector/vnc/resize", "VNC resize not supported");
+  resize(width: number, height: number): void {
+    if (!this.sessionId) {
+      return;
+    }
+
+    invokeTauri(
+      "resize_vnc_session",
+      { sessionId: this.sessionId, width, height },
+      { scope: "FE/connector/vnc/resize" },
+    ).catch((error) => {
+      logger.error("FE/connector/vnc/resize", "Desktop resize request failed", { error });
+    });
   }
 
   close(): void {
@@ -157,6 +168,7 @@ export class VncConnector
 
   protected buildCreateSessionArgs(): Record<string, unknown> {
     return {
+      sessionId: this.requestedSessionId,
       config: {
         host: this.config.host,
         port: this.config.port,
@@ -168,6 +180,15 @@ export class VncConnector
       },
       frameChannel: this.frameChannel,
     };
+  }
+
+  protected getRequestedSessionId(): string {
+    return this.requestedSessionId;
+  }
+
+  protected handleFrameParseError(error: unknown): void {
+    super.handleFrameParseError(error);
+    this.requestFrame(true);
   }
 
   protected extractFrameSize(frame: VncFramePayload): { width: number; height: number } {
@@ -192,6 +213,10 @@ export class VncConnector
     if (this.clipboardUnlisten) {
       this.clipboardUnlisten();
       this.clipboardUnlisten = null;
+    }
+    if (this.recoveryUnlisten) {
+      this.recoveryUnlisten();
+      this.recoveryUnlisten = null;
     }
     this.sessionListenersPromise = null;
   }
@@ -230,6 +255,22 @@ export class VncConnector
       this.clipboardUnlisten = await listen<string>(`vnc-clipboard-${sessionId}`, (event) => {
         this.clipboardHandler?.(event.payload);
       });
+
+      this.recoveryUnlisten = await listen<{
+        phase: "reconnecting" | "connected";
+        attempt: number;
+        reason: string | null;
+      }>(`vnc-recovery-${sessionId}`, (event) => {
+        if (event.payload.phase === "reconnecting") {
+          this.emitConnectionState({
+            phase: "reconnecting",
+            reason: `VNC 正在重连（第 ${event.payload.attempt} 次）`,
+            technicalDetails: event.payload.reason ?? undefined,
+          });
+        } else {
+          this.emitConnectionState({ phase: "connected" });
+        }
+      });
     } catch (error) {
       this.cleanupVncListeners();
       throw error;
@@ -237,6 +278,11 @@ export class VncConnector
   }
 
   private static parseFramePacket(packet: ArrayBuffer): VncFramePayload {
+    const headerSize = BaseGraphicalConnector.FRAME_HEADER_SIZE;
+    if (packet.byteLength < headerSize) {
+      throw new Error(`VNC frame packet is shorter than ${headerSize} bytes`);
+    }
+
     const view = new DataView(packet);
     const desktopWidth = view.getUint16(0, true);
     const desktopHeight = view.getUint16(2, true);
@@ -249,7 +295,29 @@ export class VncConnector
     const isRgba = (flags & 0x02) === 0x02;
     const isPng = (flags & 0x04) === 0x04;
     const encoding = isRgba ? "rgba" : (isPng ? "png" : "jpeg");
-    const imageBytes = packet.slice(BaseGraphicalConnector.FRAME_HEADER_SIZE);
+    const imageBytes = packet.slice(headerSize);
+
+    const desktopPixels = desktopWidth * desktopHeight;
+    const regionRight = regionLeft + regionWidth;
+    const regionBottom = regionTop + regionHeight;
+    if (
+      desktopWidth === 0
+      || desktopHeight === 0
+      || desktopWidth > 8192
+      || desktopHeight > 8192
+      || desktopPixels > 32 * 1024 * 1024
+      || regionWidth === 0
+      || regionHeight === 0
+      || regionRight > desktopWidth
+      || regionBottom > desktopHeight
+      || imageBytes.byteLength === 0
+      || imageBytes.byteLength > 128 * 1024 * 1024
+    ) {
+      throw new Error("VNC frame packet contains invalid geometry or payload size");
+    }
+    if (isRgba && imageBytes.byteLength !== regionWidth * regionHeight * 4) {
+      throw new Error("VNC RGBA frame packet length does not match its region");
+    }
 
     return {
       desktopWidth,

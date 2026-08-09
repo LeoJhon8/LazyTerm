@@ -41,9 +41,9 @@ export const TERMINAL_CURSOR_STYLE_OPTIONS: Array<{
   value: TerminalCursorStyle;
   labelKey: TranslationKey;
 }> = [
-  { value: "bar", labelKey: "Cursor style bar" },
-  { value: "block", labelKey: "Cursor style block" },
-  { value: "underline", labelKey: "Cursor style underline" },
+  { value: "bar", labelKey: "竖线" },
+  { value: "block", labelKey: "块状" },
+  { value: "underline", labelKey: "下划线" },
 ];
 
 // 可编辑的主题颜色项

@@ -71,6 +71,18 @@ uint8_t* RfbClientGetFrameBuffer(rfbClient* client) {
     return client ? client->frameBuffer : NULL;
 }
 
+const uint8_t* RfbClientGetCursorSource(rfbClient* client) {
+    return client ? client->rcSource : NULL;
+}
+
+const uint8_t* RfbClientGetCursorMask(rfbClient* client) {
+    return client ? client->rcMask : NULL;
+}
+
+rfbBool RfbClientSupportsDesktopResize(rfbClient* client) {
+    return client && client->screen.width > 0 && client->screen.height > 0;
+}
+
 rfbPixelFormat RfbClientGetPixelFormat(rfbClient* client) {
     rfbPixelFormat fmt = {0};
     if (client) {
@@ -88,12 +100,9 @@ void RfbClientSetEncodingsString(rfbClient* client, const char* encodings) {
         return;
     }
 
-    if (!encodings) {
-        client->appData.encodingsString = NULL;
-        return;
-    }
-
-    client->appData.encodingsString = strdup(encodings);
+    // LibVNCClient treats this field as borrowed storage. Rust keeps the CString
+    // alive in the per-session context until rfbClientCleanup has completed.
+    client->appData.encodingsString = (char*)encodings;
 }
 
 char* RfbClientDupCString(const char* value) {
@@ -119,6 +128,18 @@ void RfbClientSetUseRemoteCursor(rfbClient* client, rfbBool enable) {
 void RfbClientSetHandleNewFBSize(rfbClient* client, rfbBool enable) {
     if (client) {
         client->canHandleNewFBSize = enable;
+    }
+}
+
+void RfbClientSetConnectTimeout(rfbClient* client, unsigned int timeout_seconds) {
+    if (client) {
+        client->connectTimeout = timeout_seconds;
+    }
+}
+
+void RfbClientSetReadTimeout(rfbClient* client, unsigned int timeout_seconds) {
+    if (client) {
+        client->readTimeout = timeout_seconds;
     }
 }
 
@@ -261,7 +282,13 @@ void RfbClientSetPixelFormat(rfbClient* client, int bits_per_pixel, int depth,
 // 错误处理
 // ============================================================================
 
-static char lastError[1024] = {0};
+#if defined(_MSC_VER)
+#define RFB_THREAD_LOCAL __declspec(thread)
+#else
+#define RFB_THREAD_LOCAL _Thread_local
+#endif
+
+static RFB_THREAD_LOCAL char lastError[1024] = {0};
 
 static void RfbClientCaptureLog(const char* format, ...) {
     if (!format) {

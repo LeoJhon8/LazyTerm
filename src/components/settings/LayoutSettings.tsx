@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { AVAILABLE_MODULES, LOCKED_MODULES } from "@/config/default-slot-config";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useSettingsStore } from "@/store/settings";
+import { isAiConfigured, useAiConfigStore } from "@/store/ai";
 import {
   MAX_QUICK_COMMAND_FONT_SIZE,
   MIN_QUICK_COMMAND_FONT_SIZE,
@@ -40,10 +41,11 @@ export function LayoutSettings() {
   const { locale, t } = useI18n();
   const { currentConfig, updateSlotConfig, resetToDefault } = useSlotConfigStore();
   const { quickCommandDisplayMode, quickCommandFontSize, setSettings } = useSettingsStore();
+  const aiConfigured = useAiConfigStore(isAiConfigured);
 
   // 过滤掉锁定的模块（TabModule、QuickCmdModule 等固定位置）
   const displayModules = AVAILABLE_MODULES.filter(
-    (mod) => !LOCKED_MODULES.includes(mod.id)
+    (mod) => !LOCKED_MODULES.includes(mod.id) && (mod.id !== "AiModule" || aiConfigured)
   );
 
   /** 将模块分配到指定侧（联动：自动从另一侧移除） */

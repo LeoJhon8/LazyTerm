@@ -1,63 +1,42 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useSettingsStore } from "@/store/settings";
-import { useSlotConfigStore } from "@/store/slot-config";
+import { cn } from "@/lib/utils";
 
 interface ResizeHandleProps {
   side: "left" | "right";
 }
 
 export function ResizeHandle({ side }: ResizeHandleProps) {
-  const { setSettings, leftPanelWidth, rightPanelWidth } = useSettingsStore();
-  const { setSlotCollapsed, currentConfig } = useSlotConfigStore();
-  const leftSlotCollapsed = currentConfig.left.collapsed;
-  const rightSlotCollapsed = currentConfig.right.collapsed;
+  const { setSettings } = useSettingsStore();
   const [isDragging, setIsDragging] = useState(false);
-  const prevWidthRef = useRef<number | null>(null);
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       setIsDragging(true);
-      // 记录当前宽度以便收起后恢复
-      if (side === "left") prevWidthRef.current = leftPanelWidth;
-      else prevWidthRef.current = rightPanelWidth;
     },
-    [side, leftPanelWidth, rightPanelWidth]
+    []
   );
 
   useEffect(() => {
     if (!isDragging) return;
 
-    const COLLAPSE_THRESHOLD = 220; // 拖到这个像素范围内视为收起
-    const MIN_WIDTH = 220; // 可恢复时的最小宽度
+    const MIN_WIDTH = 220;
     const MAX_WIDTH = 400;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
 
     const onMouseMove = (e: MouseEvent) => {
       if (side === "left") {
         const raw = e.clientX;
-        // 当拖到靠近左侧（小于阈值）时收起（折叠插槽为图标栏），不使用全局隐藏
-        if (raw <= COLLAPSE_THRESHOLD) {
-          if (!leftSlotCollapsed) {
-            prevWidthRef.current = leftPanelWidth;
-          }
-          setSlotCollapsed("left", true);
-        } else {
-          const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, raw));
-          setSlotCollapsed("left", false);
-          setSettings({ leftPanelWidth: newWidth });
-        }
+        const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, raw));
+        setSettings({ leftPanelWidth: newWidth });
       } else {
         const raw = window.innerWidth - e.clientX;
-        if (raw <= COLLAPSE_THRESHOLD) {
-          if (!rightSlotCollapsed) {
-            prevWidthRef.current = rightPanelWidth;
-          }
-          setSlotCollapsed("right", true);
-        } else {
-          const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, raw));
-          setSlotCollapsed("right", false);
-          setSettings({ rightPanelWidth: newWidth });
-        }
+        const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, raw));
+        setSettings({ rightPanelWidth: newWidth });
       }
     };
 
@@ -71,15 +50,28 @@ export function ResizeHandle({ side }: ResizeHandleProps) {
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
     };
-  }, [isDragging, side, leftPanelWidth, leftSlotCollapsed, rightPanelWidth, rightSlotCollapsed, setSettings, setSlotCollapsed]);
+  }, [isDragging, side, setSettings]);
 
   return (
     <div
       onMouseDown={onMouseDown}
-      className={`absolute top-0 bottom-0 w-1 cursor-col-resize z-50 hover:bg-primary/30 transition-colors ${
-        side === "left" ? "right-0" : "left-0"
-      } ${isDragging ? "bg-primary/50" : ""}`}
-    />
+      className={cn(
+        "group absolute inset-y-0 z-50 w-3 cursor-ew-resize select-none",
+        side === "left" ? "right-0 translate-x-1/2" : "left-0 -translate-x-1/2",
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full transition-all duration-200",
+          isDragging
+            ? "h-20 w-0.5 bg-primary/80 opacity-100 shadow-[0_0_10px_color-mix(in_srgb,var(--primary)_45%,transparent)]"
+            : "h-10 w-px bg-border/80 opacity-55 group-hover:h-16 group-hover:w-0.5 group-hover:bg-primary/60 group-hover:opacity-100",
+        )}
+      />
+    </div>
   );
 }

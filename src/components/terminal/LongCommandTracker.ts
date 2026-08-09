@@ -1,4 +1,3 @@
-import type { Terminal } from "@xterm/xterm";
 import { getCurrentLocale, tCurrent } from "@/i18n";
 import { useNotificationsStore } from "@/store/notifications";
 import { useSettingsStore } from "@/store/settings";
@@ -6,7 +5,6 @@ import {
   normalizeLongCommandIdleSeconds,
   normalizeLongCommandThresholdMinutes,
 } from "@/store/settings-values";
-import { parseTerminalCommandLine } from "./terminal-command-line";
 
 interface PendingCommand {
   command: string;
@@ -16,12 +14,8 @@ interface PendingCommand {
 }
 
 interface LongCommandTrackerOptions {
-  terminal: Terminal;
   getSessionTitle: () => string;
 }
-
-const PROMPT_SETTLE_DELAY_MS = 300;
-const MIN_PROMPT_DETECTION_DELAY_MS = 250;
 
 function normalizeCommandLabel(command: string) {
   const normalized = command.replace(/\s+/g, " ").trim();
@@ -49,18 +43,14 @@ function formatDuration(durationMs: number) {
 }
 
 export class LongCommandTracker {
-  private readonly terminal: Terminal;
   private readonly getSessionTitle: () => string;
   private pending: PendingCommand | null = null;
   private longThresholdTimer: number | null = null;
-  private promptSettleTimer: number | null = null;
   private idleCompletionTimer: number | null = null;
-  private shellCommandRunning = false;
   private disposed = false;
   private readonly unsubscribeSettings: () => void;
 
-  constructor({ terminal, getSessionTitle }: LongCommandTrackerOptions) {
-    this.terminal = terminal;
+  constructor({ getSessionTitle }: LongCommandTrackerOptions) {
     this.getSessionTitle = getSessionTitle;
     this.unsubscribeSettings = useSettingsStore.subscribe((state, previousState) => {
       if (
@@ -76,35 +66,29 @@ export class LongCommandTracker {
 
   record(command: string, submittedAt = Date.now()) {
     const normalizedCommand = normalizeCommandLabel(command);
-    if (this.disposed || !normalizedCommand) {
+    if (this.disposed) {
       return;
     }
 
+    const trackedCommand = normalizedCommand || this.pending?.command;
     if (this.pending) {
-      this.completePending(submittedAt);
+      this.pending = null;
+      this.clearLongThresholdTimer();
+      this.clearIdleCompletionTimer();
+    }
+
+    if (!trackedCommand) {
+      return;
     }
 
     this.pending = {
-      command: normalizedCommand,
+      command: trackedCommand,
       startedAt: submittedAt,
       markedLong: false,
       lastOutputAt: null,
     };
-    this.clearPromptSettleTimer();
     this.clearIdleCompletionTimer();
     this.scheduleLongThresholdCheck();
-  }
-
-  handleShellIntegration(data: string) {
-    const markerType = data.split(";", 1)[0];
-    if (markerType === "C" && this.pending) {
-      this.shellCommandRunning = true;
-      return;
-    }
-    if (markerType === "D") {
-      this.shellCommandRunning = false;
-      this.completePending(Date.now());
-    }
   }
 
   handleTerminalWriteParsed() {
@@ -112,16 +96,10 @@ export class LongCommandTracker {
       return;
     }
 
+    this.pending.lastOutputAt = Date.now();
     if (this.pending.markedLong) {
-      this.pending.lastOutputAt = Date.now();
       this.scheduleIdleCompletionCheck();
     }
-
-    this.clearPromptSettleTimer();
-    this.promptSettleTimer = window.setTimeout(() => {
-      this.promptSettleTimer = null;
-      this.completeFromVisiblePrompt();
-    }, PROMPT_SETTLE_DELAY_MS);
   }
 
   dispose() {
@@ -132,41 +110,8 @@ export class LongCommandTracker {
     this.disposed = true;
     this.unsubscribeSettings();
     this.clearLongThresholdTimer();
-    this.clearPromptSettleTimer();
     this.clearIdleCompletionTimer();
-    this.shellCommandRunning = false;
     this.pending = null;
-  }
-
-  private completeFromVisiblePrompt() {
-    const pending = this.pending;
-    if (!pending || this.shellCommandRunning) {
-      return;
-    }
-
-    const promptDetectionAllowedAt = pending.startedAt + MIN_PROMPT_DETECTION_DELAY_MS;
-    if (Date.now() < promptDetectionAllowedAt) {
-      this.promptSettleTimer = window.setTimeout(() => {
-        this.promptSettleTimer = null;
-        this.completeFromVisiblePrompt();
-      }, promptDetectionAllowedAt - Date.now());
-      return;
-    }
-
-    const buffer = this.terminal.buffer.active;
-    if (buffer.type !== "normal") {
-      return;
-    }
-
-    const cursorLine = buffer.getLine(buffer.baseY + buffer.cursorY);
-    if (!cursorLine) {
-      return;
-    }
-
-    const parsed = parseTerminalCommandLine(cursorLine.translateToString(true));
-    if (parsed.commandStartX > 0 && parsed.command.length === 0) {
-      this.completePending(Date.now());
-    }
   }
 
   private completePending(completedAt: number) {
@@ -176,9 +121,7 @@ export class LongCommandTracker {
     }
 
     this.pending = null;
-    this.shellCommandRunning = false;
     this.clearLongThresholdTimer();
-    this.clearPromptSettleTimer();
     this.clearIdleCompletionTimer();
 
     const settings = useSettingsStore.getState();
@@ -187,7 +130,7 @@ export class LongCommandTracker {
       normalizeLongCommandThresholdMinutes(settings.longCommandThresholdMinutes) * 60_000;
     if (
       !settings.longCommandNotificationEnabled
-      || (!pending.markedLong && durationMs < thresholdMs)
+      || durationMs < thresholdMs
     ) {
       return;
     }
@@ -218,10 +161,14 @@ export class LongCommandTracker {
     if (remainingMs <= 0) {
       if (!pending.markedLong) {
         pending.markedLong = true;
-        pending.lastOutputAt = null;
-        this.clearIdleCompletionTimer();
+        this.scheduleIdleCompletionCheck();
       }
       return;
+    }
+
+    if (pending.markedLong) {
+      pending.markedLong = false;
+      this.clearIdleCompletionTimer();
     }
 
     this.longThresholdTimer = window.setTimeout(() => {
@@ -236,10 +183,13 @@ export class LongCommandTracker {
     this.clearIdleCompletionTimer();
     const pending = this.pending;
     const settings = useSettingsStore.getState();
+    const thresholdMs =
+      normalizeLongCommandThresholdMinutes(settings.longCommandThresholdMinutes) * 60_000;
     if (
       !pending
       || !pending.markedLong
       || pending.lastOutputAt === null
+      || pending.lastOutputAt - pending.startedAt < thresholdMs
       || !settings.longCommandNotificationEnabled
     ) {
       return;
@@ -265,13 +215,6 @@ export class LongCommandTracker {
     if (this.longThresholdTimer !== null) {
       window.clearTimeout(this.longThresholdTimer);
       this.longThresholdTimer = null;
-    }
-  }
-
-  private clearPromptSettleTimer() {
-    if (this.promptSettleTimer !== null) {
-      window.clearTimeout(this.promptSettleTimer);
-      this.promptSettleTimer = null;
     }
   }
 

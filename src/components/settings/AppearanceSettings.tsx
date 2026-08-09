@@ -69,7 +69,6 @@ export function AppearanceSettings() {
   const customThemes = useSettingsStore((s) => s.customThemes);
   const terminalBackgroundMode = useSettingsStore((s) => s.terminalBackgroundMode);
   const terminalBackgroundColor = useSettingsStore((s) => s.terminalBackgroundColor);
-  const terminalOpacity = useSettingsStore((s) => s.terminalOpacity);
   const backgroundImageEnabled = useSettingsStore((s) => s.backgroundImageEnabled);
   const backgroundImage = useSettingsStore((s) => s.backgroundImage);
   const backgroundImagePath = useSettingsStore((s) => s.backgroundImagePath);
@@ -500,12 +499,12 @@ export function AppearanceSettings() {
 
               <div className="border-t border-border/30 divide-y divide-border/30">
                 <div className="flex items-center justify-between px-4 py-2.5">
-                  <Label className="text-sm">{t("Cursor style")}</Label>
+                  <Label className="text-sm">{t("光标样式")}</Label>
                   <Select
                     value={terminalCursorStyle}
                     onValueChange={(value) => setSettings({ terminalCursorStyle: value as typeof terminalCursorStyle })}
                   >
-                    <SelectTrigger className="h-8 w-36 bg-background/80 border-0 shadow-none focus:ring-1 focus:ring-primary/30 text-sm" aria-label={t("Cursor style")}>
+                    <SelectTrigger className="h-8 w-36 bg-background/80 border-0 shadow-none focus:ring-1 focus:ring-primary/30 text-sm" aria-label={t("光标样式")}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -518,22 +517,10 @@ export function AppearanceSettings() {
                   </Select>
                 </div>
                 <div className="flex items-center justify-between px-4 py-2.5">
-                  <Label className="text-sm">{t("终端背景不透明度")}</Label>
-                  <div className="flex items-center gap-3">
-                    <Slider
-                      min={0} max={100} step={5}
-                      value={[terminalOpacity]}
-                      onValueChange={([v]) => setSettings({ terminalOpacity: v })}
-                      className="w-24"
-                    />
-                    <span className="text-xs font-mono text-muted-foreground w-10 text-right">{terminalOpacity}%</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between px-4 py-2.5">
                   <Label className="text-sm">{t("UI 侧栏不透明度")}</Label>
                   <div className="flex items-center gap-3">
                     <Slider
-                      min={30} max={100} step={5}
+                      min={0} max={100} step={5}
                       value={[uiOpacity]}
                       onValueChange={([v]) => setSettings({ uiOpacity: v })}
                       className="w-24"
@@ -550,7 +537,7 @@ export function AppearanceSettings() {
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("背景图片")}</Label>
             <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
               <div className="flex items-center justify-between px-4 py-2.5">
-                <Label htmlFor="enable-bg-img" className="text-sm cursor-pointer">{t("开启图片背景")}</Label>
+                <Label htmlFor="enable-bg-img" className="text-sm cursor-pointer">{t("图片背景")}</Label>
                 <Switch
                   id="enable-bg-img"
                   checked={backgroundImageEnabled}
@@ -599,8 +586,8 @@ export function AppearanceSettings() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="frosted">{t("保留面板毛玻璃")}</SelectItem>
-                    <SelectItem value="clear">{t("完全清晰")}</SelectItem>
+                    <SelectItem value="frosted">{t("毛玻璃")}</SelectItem>
+                    <SelectItem value="clear">{t("清晰")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

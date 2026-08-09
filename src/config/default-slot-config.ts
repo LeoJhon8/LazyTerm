@@ -43,6 +43,7 @@ export const DEFAULT_SLOT_CONFIG: SlotConfig = {
 export const AVAILABLE_MODULES = [
   { id: 'SessionModule', name: '会话管理', icon: 'Folder' },
   { id: 'HistoryModule', name: '历史命令', icon: 'History' },
+  { id: 'AiModule', name: 'AI 助手', icon: 'Bot' },
   { id: 'TabModule', name: '标签页', icon: 'Tabs' },
   { id: 'QuickCmdModule', name: '快捷命令', icon: 'Bolt' }
 ];

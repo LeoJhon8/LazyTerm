@@ -11,6 +11,7 @@ import { useTabsStore } from "@/store/tabs";
 import { useViewMode } from "@/hooks/useViewMode";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
 import { cn } from "@/lib/utils";
+import { isAiConfigured, useAiConfigStore } from "@/store/ai";
 
 export function SlotManager() {
   const {
@@ -26,6 +27,7 @@ export function SlotManager() {
     quickCommandDisplayMode,
   } = useSettingsStore();
   const { currentConfig, setSlotCollapsed } = useSlotConfigStore();
+  const aiConfigured = useAiConfigStore(isAiConfigured);
   const { focusSessionId, sessions } = useTabsStore();
   const { isFocus } = useViewMode();
   const effectiveBottomPanelHeight = quickCommandDisplayMode === "panel"
@@ -40,8 +42,8 @@ export function SlotManager() {
     ? { backgroundColor: `color-mix(in srgb, var(--color-background) ${uiOpacity}%, transparent)` }
     : {};
 
-  const leftValidCount = countValidModules(currentConfig.left.modules);
-  const rightValidCount = countValidModules(currentConfig.right.modules);
+  const leftValidCount = countValidModules(currentConfig.left.modules, aiConfigured);
+  const rightValidCount = countValidModules(currentConfig.right.modules, aiConfigured);
   const hideLeft = isFocus || leftValidCount === 0;
   const hideRight = isFocus || rightValidCount === 0;
   const hideBottom = isFocus;
@@ -60,7 +62,7 @@ export function SlotManager() {
   const getActivityPanelWidth = (side: "left" | "right") => {
     const slot = currentConfig[side];
     const hidden = side === "left" ? hideLeft : hideRight;
-    const activeDefinition = getValidActivityModules([slot.activeModule])[0];
+    const activeDefinition = getValidActivityModules([slot.activeModule], aiConfigured)[0];
 
     if (hidden || slot.collapsed || !activeDefinition) {
       return 0;
@@ -74,7 +76,7 @@ export function SlotManager() {
 
   const renderActivityPanel = (side: "left" | "right") => {
     const slot = currentConfig[side];
-    const activeDefinition = getValidActivityModules([slot.activeModule])[0];
+    const activeDefinition = getValidActivityModules([slot.activeModule], aiConfigured)[0];
     const hidden = side === "left" ? hideLeft : hideRight;
 
     if (hidden || slot.collapsed || !activeDefinition) {

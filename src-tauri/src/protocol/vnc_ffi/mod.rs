@@ -190,6 +190,9 @@ extern "C" {
         button_mask: c_int,
     ) -> c_uchar;
 
+    pub fn SendExtDesktopSize(client: *mut RfbClient, width: c_ushort, height: c_ushort)
+        -> c_uchar;
+
     /// 发送键盘事件
     ///
     /// # Safety
@@ -237,6 +240,9 @@ extern "C" {
     pub fn RfbClientGetScreenWidth(client: *mut RfbClient) -> c_int;
     pub fn RfbClientGetScreenHeight(client: *mut RfbClient) -> c_int;
     pub fn RfbClientGetFrameBuffer(client: *mut RfbClient) -> *mut c_uchar;
+    pub fn RfbClientGetCursorSource(client: *mut RfbClient) -> *const c_uchar;
+    pub fn RfbClientGetCursorMask(client: *mut RfbClient) -> *const c_uchar;
+    pub fn RfbClientSupportsDesktopResize(client: *mut RfbClient) -> c_uchar;
     pub fn RfbClientGetPixelFormat(client: *mut RfbClient) -> RfbPixelFormat;
     pub fn RfbClientRegisterIgnoreQemuExtension();
     pub fn RfbClientSetEncodingsString(client: *mut RfbClient, encodings: *const c_char);
@@ -244,6 +250,8 @@ extern "C" {
     pub fn RfbClientSetEnableJpeg(client: *mut RfbClient, enable: c_uchar);
     pub fn RfbClientSetUseRemoteCursor(client: *mut RfbClient, enable: c_uchar);
     pub fn RfbClientSetHandleNewFBSize(client: *mut RfbClient, enable: c_uchar);
+    pub fn RfbClientSetConnectTimeout(client: *mut RfbClient, timeout_seconds: c_uint);
+    pub fn RfbClientSetReadTimeout(client: *mut RfbClient, timeout_seconds: c_uint);
     pub fn RfbClientSetCompressLevel(client: *mut RfbClient, level: c_int);
     pub fn RfbClientSetQualityLevel(client: *mut RfbClient, level: c_int);
     pub fn RfbClientSetShared(client: *mut RfbClient, shared: c_uchar);

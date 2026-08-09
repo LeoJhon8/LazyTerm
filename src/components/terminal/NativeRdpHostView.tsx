@@ -91,13 +91,6 @@ function sameHostRect(a: NativeHostRect | null, b: NativeHostRect): boolean {
     && a.scaleFactor === b.scaleFactor;
 }
 
-function sameHostSize(a: NativeHostRect | null, b: NativeHostRect): boolean {
-  return !!a
-    && a.width === b.width
-    && a.height === b.height
-    && a.scaleFactor === b.scaleFactor;
-}
-
 export function NativeRdpHostView({
   sessionId,
   hostLabel,
@@ -128,9 +121,7 @@ export function NativeRdpHostView({
   const [overlayMode, setOverlayMode] = useState<"connecting" | "failed" | "disconnected" | "none">(initialOverlayMode);
   const [state, setState] = useState<NativeRdpStatePayload>(initialState);
   const stateRef = useRef(state);
-  const [resizeMaskVisible, setResizeMaskVisible] = useState(false);
   const [hostRectMounted, setHostRectMounted] = useState(false);
-  const resizeMaskTimerRef = useRef<number | null>(null);
   const visualReadyNotifiedRef = useRef(false);
   const lastMountedRectRef = useRef<NativeHostRect | null>(null);
 
@@ -231,21 +222,9 @@ export function NativeRdpHostView({
     let resizeObserver: ResizeObserver | null = null;
     let scheduledPushTimer: ReturnType<typeof setTimeout> | null = null;
     let scheduledPushFrame: number | null = null;
-    let pendingResizeMask = false;
     setHostRectMounted(false);
 
-    const showResizeMask = () => {
-      setResizeMaskVisible(true);
-      if (resizeMaskTimerRef.current !== null) {
-        window.clearTimeout(resizeMaskTimerRef.current);
-      }
-      resizeMaskTimerRef.current = window.setTimeout(() => {
-        setResizeMaskVisible(false);
-        resizeMaskTimerRef.current = null;
-      }, 1200);
-    };
-
-    const pushRect = async (initial: boolean = false, showMaskOnSizeChange: boolean = false) => {
+    const pushRect = async (initial: boolean = false) => {
       const rect = await readHostRect(element);
       if (disposed) {
         return;
@@ -254,10 +233,6 @@ export function NativeRdpHostView({
       const previousRect = lastMountedRectRef.current;
       if (!initial && sameHostRect(previousRect, rect)) {
         return;
-      }
-
-      if (!initial && showMaskOnSizeChange && !sameHostSize(previousRect, rect)) {
-        showResizeMask();
       }
 
       try {
@@ -281,12 +256,10 @@ export function NativeRdpHostView({
       }
     };
 
-    const schedulePushRect = (delayMs: number, showMask: boolean) => {
+    const schedulePushRect = (delayMs: number) => {
       if (!initialMountDone || disposed) {
         return;
       }
-
-      pendingResizeMask = pendingResizeMask || showMask;
 
       if (scheduledPushTimer !== null) {
         clearTimeout(scheduledPushTimer);
@@ -301,9 +274,7 @@ export function NativeRdpHostView({
         scheduledPushTimer = null;
         scheduledPushFrame = requestAnimationFrame(() => {
           scheduledPushFrame = null;
-          const showMaskOnSizeChange = pendingResizeMask;
-          pendingResizeMask = false;
-          void pushRect(false, showMaskOnSizeChange);
+          void pushRect(false);
         });
       }, delayMs);
     };
@@ -338,7 +309,7 @@ export function NativeRdpHostView({
       }
       resizeTimeoutId = setTimeout(() => {
         resizeTimeoutId = null;
-        schedulePushRect(0, true);
+        schedulePushRect(0);
       }, 160);
     });
 
@@ -349,25 +320,25 @@ export function NativeRdpHostView({
     let moveStabilizeTimer: ReturnType<typeof setTimeout> | null = null;
     const currentWindow = getCurrentWindow();
     void currentWindow.onMoved(() => {
-      schedulePushRect(0, false);
+      schedulePushRect(0);
       if (moveStabilizeTimer !== null) {
         clearTimeout(moveStabilizeTimer);
       }
       moveStabilizeTimer = setTimeout(() => {
         moveStabilizeTimer = null;
-        schedulePushRect(0, false);
+        schedulePushRect(0);
       }, 180);
     }).then((fn) => {
       moveUnlisten = fn;
     });
     void currentWindow.onResized(() => {
-      schedulePushRect(80, false);
+      schedulePushRect(80);
     }).then((fn) => {
       resizedUnlisten = fn;
     });
 
     const handleViewportChange = () => {
-      schedulePushRect(80, false);
+      schedulePushRect(80);
     };
     window.addEventListener("resize", handleViewportChange);
     window.visualViewport?.addEventListener("resize", handleViewportChange);
@@ -395,9 +366,6 @@ export function NativeRdpHostView({
       }
       if (resizeObserver) {
         resizeObserver.disconnect();
-      }
-      if (resizeMaskTimerRef.current !== null) {
-        window.clearTimeout(resizeMaskTimerRef.current);
       }
       moveUnlisten?.();
       resizedUnlisten?.();
@@ -464,7 +432,6 @@ export function NativeRdpHostView({
     }
 
     const hasOverlay = menuMaskVisible
-      || resizeMaskVisible
       || overlayMode !== "none"
       || connectionStatus?.phase !== "connected";
     if (hasOverlay) {
@@ -472,7 +439,7 @@ export function NativeRdpHostView({
     } else {
       void connector.setVisible(true);
     }
-  }, [connectionStatus?.phase, hostRectMounted, menuMaskVisible, overlayMode, resizeMaskVisible, connector]);
+  }, [connectionStatus?.phase, hostRectMounted, menuMaskVisible, overlayMode, connector]);
 
   useEffect(() => {
     const applyMenuOverlay = (active: boolean) => {
@@ -521,13 +488,6 @@ export function NativeRdpHostView({
   }, [connector]);
 
   const showMenuMask = menuMaskVisible && connectionStatus?.phase === "connected";
-  const showTransitionMask = connectionStatus?.phase === "connected"
-    && (showMenuMask || resizeMaskVisible || overlayMode !== "none");
-  const transitionText = showMenuMask
-    ? t("系统菜单已打开，远程桌面画面暂时隐藏。")
-    : resizeMaskVisible
-      ? t("正在调整会话尺寸...")
-      : t("正在同步 Windows 远程桌面画面...");
 
   const handleReconnect = () => {
     if (retrying) {
@@ -573,7 +533,10 @@ export function NativeRdpHostView({
         />
       ) : null}
 
-      <SessionTransitionMask visible={showTransitionMask} text={transitionText} />
+      <SessionTransitionMask
+        visible={showMenuMask}
+        text={t("系统菜单已打开，远程桌面画面暂时隐藏。")}
+      />
     </main>
   );
 }
