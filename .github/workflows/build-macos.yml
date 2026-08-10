@@ -1,4 +1,4 @@
-name: Build macOS App
+name: Build macOS ARM64 App
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -12,7 +12,7 @@ on:
       - 'v*'
 
 jobs:
-  build-macos:
+  build-macos-arm64:
     runs-on: macos-latest
 
     steps:
@@ -28,30 +28,31 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          # 添加对 Intel 和 Apple Silicon (M1/M2/M3) 双架构的支持
-          targets: x86_64-apple-darwin, aarch64-apple-darwin
+          # 仅构建 Apple Silicon (ARM64)
+          targets: aarch64-apple-darwin
 
-      - name: Install System Dependencies (LibVNCClient)
-        run: |
-          brew update
-          brew install libvncserver
+      - name: Install System Dependencies
+        run: brew install libvncserver freerdp
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install frontend dependencies
+        run: npm ci
 
       - name: Update App Version
         run: node scripts/update-version.js
 
-      - name: Build and Release Tauri App
+      - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload macOS Artifacts
-        uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
+          APPLE_SIGNING_IDENTITY: '-'
         with:
-          name: macOS-Installers
+          args: --target aarch64-apple-darwin
+
+      - name: Upload macOS ARM64 Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS-ARM64-Installers
           path: |
-            src-tauri/target/**/release/bundle/dmg/*.dmg
-            src-tauri/target/**/release/bundle/macos/*.app
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
+          if-no-files-found: error

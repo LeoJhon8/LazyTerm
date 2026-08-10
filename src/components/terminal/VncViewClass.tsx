@@ -121,6 +121,24 @@ export function VncViewClass(props: BaseSessionViewProps) {
 
   const resizeRequestTimerRef = useRef<number | null>(null);
 
+  const focusVncView = useCallback(() => {
+    if (useTabsStore.getState().focusSessionId !== sessionId) {
+      return;
+    }
+
+    containerRef.current?.focus({ preventScroll: true });
+  }, [containerRef, sessionId]);
+
+  useEffect(() => {
+    const animationFrameId = window.requestAnimationFrame(focusVncView);
+    window.addEventListener("lazy-term-focus", focusVncView);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+      window.removeEventListener("lazy-term-focus", focusVncView);
+    };
+  }, [focusVncView]);
+
   // 容器稳定后请求 ExtendedDesktopSize；不支持该能力的服务端会由后端安全忽略。
   useEffect(() => {
     const container = containerRef.current;
