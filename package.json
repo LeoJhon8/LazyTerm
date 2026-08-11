@@ -1,7 +1,7 @@
 {
   "name": "lazy-term",
   "private": true,
-  "version": "26.80.5446",
+  "version": "26.81.1573",
   "description": "A modern desktop terminal workspace for local shells, SSH, RDP, VNC, serial, Telnet, and SFTP.",
   "license": "GPL-3.0-or-later",
   "repository": {
