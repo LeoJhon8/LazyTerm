@@ -11,8 +11,75 @@ export type SessionConnectionPhase =
   | 'failed'
   | 'closing';
 
+export type ConnectionStage =
+  | 'idle'
+  | 'resolving'
+  | 'transport'
+  | 'security'
+  | 'authentication'
+  | 'session'
+  | 'first-data'
+  | 'steady'
+  | 'closing';
+
+export type ConnectionHealth = 'unknown' | 'healthy' | 'degraded' | 'stalled';
+
+export type ConnectionErrorCategory =
+  | 'network'
+  | 'authentication'
+  | 'security'
+  | 'protocol'
+  | 'device'
+  | 'configuration'
+  | 'resource'
+  | 'internal';
+
+export type ConnectionErrorCode =
+  | 'DNS_NOT_FOUND'
+  | 'NETWORK_UNREACHABLE'
+  | 'CONNECT_REFUSED'
+  | 'CONNECT_TIMEOUT'
+  | 'IO_TIMEOUT'
+  | 'REMOTE_CLOSED'
+  | 'AUTH_REJECTED'
+  | 'HOST_KEY_CHANGED'
+  | 'CERT_UNTRUSTED'
+  | 'PROTOCOL_NEGOTIATION_FAILED'
+  | 'DEVICE_NOT_FOUND'
+  | 'DEVICE_BUSY'
+  | 'DEVICE_REMOVED'
+  | 'CONFIG_INVALID'
+  | 'QUEUE_OVERFLOW'
+  | 'INTERNAL_ERROR'
+  | 'UNKNOWN';
+
+export interface ConnectionFailure {
+  code: ConnectionErrorCode;
+  category: ConnectionErrorCategory;
+  stage: ConnectionStage;
+  retryable: boolean;
+  technicalDetails: string;
+}
+
+export type ConnectionQualityMode = 'interactive' | 'balanced' | 'background' | 'suspended';
+
+export interface ConnectionQualityPolicy {
+  mode: ConnectionQualityMode;
+  priority: number;
+  targetFrameRate: number;
+  jpegQualityCap: number;
+  suspendVisuals: boolean;
+}
+
 export interface ConnectionStateEvent {
   phase: SessionConnectionPhase;
+  stage?: ConnectionStage;
+  health?: ConnectionHealth;
+  terminal?: boolean;
+  failure?: ConnectionFailure;
+  generation?: number;
+  attempt?: number;
+  retryAt?: number;
   reason?: string;
   technicalDetails?: string;
 }
@@ -30,6 +97,7 @@ export interface ISessionConnector {
   open(): Promise<void>;
   close(): void;
   onConnectionState(handler: (event: ConnectionStateEvent) => void): () => void;
+  applyQualityPolicy?(policy: ConnectionQualityPolicy): void;
 }
 
 // 终端连接器接口定义
@@ -108,6 +176,7 @@ export interface NativeHostRect {
   width: number;
   height: number;
   scaleFactor: number;
+  generation?: number;
 }
 
 export type NativeRdpSessionState =
@@ -141,7 +210,7 @@ export interface IRdpConnector extends ISessionConnector {
   sendPointer(payload: RdpPointerPayload): void;
   sendKey(payload: RdpKeyboardPayload): void;
   releaseInputs(): void;
-  resize(width: number, height: number): void;
+  setInitialViewportSize(width: number, height: number): void;
   requestFrame(): void;
   getFrameSize(): { width: number; height: number } | null;
 }
@@ -155,6 +224,7 @@ export interface INativeRdpConnector extends ISessionConnector {
   onState(handler: (payload: NativeRdpStatePayload) => void): Promise<void>;
   onClose(handler: () => void): () => void;
   mount(rect: NativeHostRect): Promise<void>;
+  setOverlayRect(rect: NativeHostRect | null): Promise<void>;
   setVisible(visible: boolean): Promise<void>;
   focus(): Promise<void>;
 }
@@ -233,7 +303,6 @@ export interface RDPConfig {
   nickname?: string;
   width?: number;
   height?: number;
-  autoResize?: boolean;
   backend?: RdpBackend;
 }
 

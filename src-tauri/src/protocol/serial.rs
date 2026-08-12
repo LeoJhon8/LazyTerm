@@ -163,7 +163,9 @@ pub async fn open_serial_session<R: Runtime>(
                 }
                 Err(e) => {
                     println!("Serial port read error: {:?}", e);
-                    let _ = app.emit(&close_event_name, ());
+                    let reason = e.to_string();
+                    SERIAL_SESSIONS.lock().unwrap().remove(&session_id_clone);
+                    let _ = app.emit(&close_event_name, reason);
                     break;
                 }
             }
@@ -176,13 +178,17 @@ pub async fn open_serial_session<R: Runtime>(
 #[tauri::command]
 pub fn write_serial(session_id: String, data: String) -> Result<(), String> {
     let mut sessions = SERIAL_SESSIONS.lock().unwrap();
-    if let Some(port) = sessions.get_mut(&session_id) {
-        port.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
-        port.flush().map_err(|e| e.to_string())?;
-        Ok(())
+    let result = if let Some(port) = sessions.get_mut(&session_id) {
+        port.write_all(data.as_bytes())
+            .and_then(|_| port.flush())
+            .map_err(|e| e.to_string())
     } else {
-        Err("Serial session not found".to_string())
+        return Err("Serial session not found".to_string());
+    };
+    if result.is_err() {
+        sessions.remove(&session_id);
     }
+    result
 }
 
 #[tauri::command]

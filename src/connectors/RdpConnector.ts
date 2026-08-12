@@ -1,5 +1,6 @@
 import type {
   IRdpConnector,
+  ConnectionQualityPolicy,
   RDPConfig,
   RdpFramePayload,
   RdpKeyboardPayload,
@@ -15,6 +16,13 @@ export class RdpConnector
 {
   readonly protocol = "rdp" as const;
   readonly backend = "freerdp" as const;
+  private readonly requestedSessionId = crypto.randomUUID();
+  private initialViewportSize: { width: number; height: number } | null = null;
+  private initialViewportLocked = false;
+  private resolveInitialViewport: (() => void) | null = null;
+  private readonly initialViewportReady = new Promise<void>((resolve) => {
+    this.resolveInitialViewport = resolve;
+  });
 
   constructor(config: RDPConfig) {
     super(
@@ -28,7 +36,7 @@ export class RdpConnector
   }
 
   sendPointer(payload: RdpPointerPayload): void {
-    if (!this.sessionId) {
+    if (!this.isConnected || !this.sessionId) {
       return;
     }
 
@@ -42,7 +50,7 @@ export class RdpConnector
   }
 
   sendKey(payload: RdpKeyboardPayload): void {
-    if (!this.sessionId) {
+    if (!this.isConnected || !this.sessionId) {
       return;
     }
 
@@ -56,7 +64,7 @@ export class RdpConnector
   }
 
   releaseInputs(): void {
-    if (!this.sessionId) {
+    if (!this.isConnected || !this.sessionId) {
       return;
     }
 
@@ -69,22 +77,35 @@ export class RdpConnector
     });
   }
 
-  resize(width: number, height: number): void {
-    if (!this.sessionId) {
+  setInitialViewportSize(width: number, height: number): void {
+    if (this.initialViewportLocked || width <= 0 || height <= 0) {
+      return;
+    }
+
+    this.initialViewportSize = {
+      width: Math.min(8192, Math.max(200, Math.floor(width))),
+      height: Math.min(8192, Math.max(200, Math.floor(height))),
+    };
+    this.resolveInitialViewport?.();
+    this.resolveInitialViewport = null;
+  }
+
+  applyQualityPolicy(policy: ConnectionQualityPolicy): void {
+    if (!this.isConnected || !this.sessionId) {
       return;
     }
 
     invokeTauri(
-      "resize_rdp_session",
-      { sessionId: this.sessionId, width, height },
-      { scope: "FE/connector/rdp/resize" },
+      "set_rdp_quality_policy",
+      { sessionId: this.sessionId, policy },
+      { scope: "FE/connector/rdp/quality" },
     ).catch((error) => {
-      logger.error("FE/connector/rdp/resize", "Resize failed", error);
+      logger.error("FE/connector/rdp/quality", "Applying quality policy failed", error);
     });
   }
 
   requestFrame(): void {
-    if (!this.sessionId) {
+    if (!this.isConnected || !this.sessionId) {
       return;
     }
 
@@ -98,19 +119,45 @@ export class RdpConnector
   }
 
   protected buildCreateSessionArgs(): Record<string, unknown> {
+    const initialSize = this.initialViewportSize ?? {
+      width: this.config.width,
+      height: this.config.height,
+    };
+
     return {
+      sessionId: this.requestedSessionId,
       config: {
         host: this.config.host,
         port: this.config.port,
         username: this.config.username,
         password: this.config.password,
         domain: this.config.domain,
-        width: this.config.width,
-        height: this.config.height,
-        auto_resize: this.config.autoResize ?? false,
+        width: initialSize.width,
+        height: initialSize.height,
       },
       frameChannel: this.frameChannel,
     };
+  }
+
+  protected getRequestedSessionId(): string {
+    return this.requestedSessionId;
+  }
+
+  protected async prepareProtocolListeners(): Promise<void> {
+    let timeoutId: number | undefined;
+    try {
+      await Promise.race([
+        this.initialViewportReady,
+        new Promise<void>((resolve) => {
+          timeoutId = window.setTimeout(resolve, 300);
+        }),
+      ]);
+    } finally {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+      this.initialViewportLocked = true;
+    }
   }
 
   protected extractFrameSize(frame: RdpFramePayload): { width: number; height: number } {

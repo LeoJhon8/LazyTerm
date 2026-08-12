@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::time::{interval, Instant};
 
-use crate::types::{VncControlMsg, VncCursorEventPayload, VncRecoveryEventPayload};
+use crate::types::{ConnectionQualityPolicyPayload, VncControlMsg, VncCursorEventPayload};
 use crate::utils::log_vnc_info;
 
 use super::vnc_client::{
@@ -37,9 +37,6 @@ const VNC_ENABLE_DIAGNOSTIC_LOGS: bool = false;
 const VNC_TRACE_ONLY_FULL_REFRESH: bool = true;
 const VNC_STARTUP_FULL_REFRESH_RETRY_INTERVAL: Duration = Duration::from_secs(3);
 const VNC_SLOW_COMMIT_LOG_THRESHOLD: Duration = Duration::from_millis(30);
-const VNC_RECONNECT_MAX_ATTEMPTS: u8 = 5;
-const VNC_RECONNECT_INITIAL_DELAY: Duration = Duration::from_millis(500);
-const VNC_RECONNECT_MAX_DELAY: Duration = Duration::from_secs(8);
 const VNC_DESKTOP_RESIZE_TIMEOUT: Duration = Duration::from_secs(3);
 
 fn emit_vnc_frame(
@@ -166,7 +163,6 @@ struct VncSessionRuntime<R: Runtime> {
     app: AppHandle<R>,
     session_id: String,
     target: String,
-    client_config: VncClientConfig,
     client: Arc<VncClient>,
     event_receiver: mpsc::UnboundedReceiver<VncClientEvent>,
     frame_channel: tauri::ipc::Channel<Response>,
@@ -190,6 +186,9 @@ struct VncSessionRuntime<R: Runtime> {
     encode_ewma_ms: Option<f64>,
     adaptive_jpeg_quality: u8,
     compressed_frame_interval: Duration,
+    quality_frame_interval: Duration,
+    quality_jpeg_cap: u8,
+    suspend_visuals: bool,
     adaptive_recovery_ticks: u8,
     force_full_rgba: bool,
     session_started_at: Instant,
@@ -212,17 +211,11 @@ struct DirtyRegion {
     height: u16,
 }
 
-enum ReconnectOutcome {
-    Reconnected,
-    Closed,
-}
-
 impl<R: Runtime> VncSessionRuntime<R> {
     fn new(
         app: AppHandle<R>,
         session_id: String,
         target: String,
-        client_config: VncClientConfig,
         client: VncClient,
         event_receiver: mpsc::UnboundedReceiver<VncClientEvent>,
         frame_channel: tauri::ipc::Channel<Response>,
@@ -234,7 +227,6 @@ impl<R: Runtime> VncSessionRuntime<R> {
             app,
             session_id,
             target,
-            client_config,
             client: Arc::new(client),
             event_receiver,
             frame_channel,
@@ -256,6 +248,9 @@ impl<R: Runtime> VncSessionRuntime<R> {
             encode_ewma_ms: None,
             adaptive_jpeg_quality: jpeg_quality.clamp(VNC_ADAPTIVE_JPEG_MIN_QUALITY, 90),
             compressed_frame_interval: VNC_COMPRESSED_FRAME_INITIAL_INTERVAL,
+            quality_frame_interval: VNC_RGBA_FRAME_MIN_INTERVAL,
+            quality_jpeg_cap: jpeg_quality.clamp(VNC_ADAPTIVE_JPEG_MIN_QUALITY, 90),
+            suspend_visuals: false,
             adaptive_recovery_ticks: 0,
             force_full_rgba: false,
             session_started_at: Instant::now(),
@@ -301,6 +296,9 @@ impl<R: Runtime> VncSessionRuntime<R> {
                 }
 
                 _ = refresh_timer.tick() => {
+                    if self.suspend_visuals {
+                        continue;
+                    }
                     if !self.has_received_frame && self.startup_full_refresh_in_flight {
                         let Some(sent_at) = self.startup_full_refresh_sent_at else {
                             continue;
@@ -356,21 +354,21 @@ impl<R: Runtime> VncSessionRuntime<R> {
                     };
                     let message_handled = match message_handled {
                         Ok(message_handled) => message_handled,
-                        Err(reason) => {
-                            match self.recover_connection(reason).await? {
-                                ReconnectOutcome::Reconnected => continue,
-                                ReconnectOutcome::Closed => break,
-                            }
-                        }
+                        Err(reason) => return Err(reason),
                     };
 
                     if message_handled {
                         self.refresh_desktop_metrics()?;
-                        self.mark_snapshot_dirty_from_client()?;
+                        if self.suspend_visuals {
+                            self.snapshot_dirty = false;
+                            self.dirty_region = None;
+                        } else {
+                            self.mark_snapshot_dirty_from_client()?;
+                        }
                         if let Some((width, height)) = self.desired_desktop_size {
                             self.request_desktop_resize(width, height).await;
                         }
-                        if self.has_received_frame {
+                        if self.has_received_frame && !self.suspend_visuals {
                             let (request_width, request_height) = self.refresh_dimensions();
                             let full_refresh = self.pending_refresh;
                             if let Err(error) = self.client
@@ -383,15 +381,9 @@ impl<R: Runtime> VncSessionRuntime<R> {
                                 )
                                 .await
                             {
-                                match self
-                                    .recover_connection(format!(
-                                        "send follow-up VNC refresh request failed: {error}"
-                                    ))
-                                    .await?
-                                {
-                                    ReconnectOutcome::Reconnected => continue,
-                                    ReconnectOutcome::Closed => break,
-                                }
+                                return Err(format!(
+                                    "send follow-up VNC refresh request failed: {error}"
+                                ));
                             }
                             self.log_refresh_request("followup", full_refresh, !full_refresh, request_width, request_height);
                             self.pending_refresh = false;
@@ -418,90 +410,6 @@ impl<R: Runtime> VncSessionRuntime<R> {
         Ok(())
     }
 
-    async fn recover_connection(
-        &mut self,
-        initial_reason: String,
-    ) -> Result<ReconnectOutcome, String> {
-        self.client.close().await;
-        let mut last_reason = initial_reason;
-
-        for attempt in 1..=VNC_RECONNECT_MAX_ATTEMPTS {
-            self.emit_recovery_event("reconnecting", attempt, Some(last_reason.clone()));
-            let exponent = u32::from(attempt.saturating_sub(1));
-            let delay_ms = VNC_RECONNECT_INITIAL_DELAY
-                .as_millis()
-                .saturating_mul(2u128.saturating_pow(exponent))
-                .min(VNC_RECONNECT_MAX_DELAY.as_millis());
-            let delay = tokio::time::sleep(Duration::from_millis(delay_ms as u64));
-            tokio::pin!(delay);
-
-            loop {
-                tokio::select! {
-                    _ = &mut delay => break,
-                    maybe_control = self.control_rx.recv() => {
-                        match maybe_control {
-                            Some(VncControlMsg::Close) | None => return Ok(ReconnectOutcome::Closed),
-                            Some(VncControlMsg::Resize(width, height)) => {
-                                self.desired_desktop_size = Some((width, height));
-                            }
-                            Some(VncControlMsg::Refresh { .. }) => {
-                                self.pending_refresh = true;
-                            }
-                            Some(_) => {
-                                // 输入事件不跨断线缓存，避免重连后执行已经过期的按键或鼠标操作。
-                            }
-                        }
-                    }
-                }
-            }
-
-            let candidate = VncClient::new(self.client_config.clone());
-            match candidate.connect().await {
-                Ok(event_receiver) => {
-                    self.client = Arc::new(candidate);
-                    self.event_receiver = event_receiver;
-                    self.reset_after_reconnect();
-                    match self.initialize_connection().await {
-                        Ok(()) => {
-                            self.emit_recovery_event("connected", attempt, None);
-                            return Ok(ReconnectOutcome::Reconnected);
-                        }
-                        Err(error) => {
-                            last_reason = error;
-                            self.client.close().await;
-                        }
-                    }
-                }
-                Err(error) => {
-                    last_reason = error.to_string();
-                }
-            }
-        }
-
-        Err(format!(
-            "VNC reconnect failed after {} attempts: {}",
-            VNC_RECONNECT_MAX_ATTEMPTS, last_reason
-        ))
-    }
-
-    fn reset_after_reconnect(&mut self) {
-        self.desktop_width = 0;
-        self.desktop_height = 0;
-        self.pending_refresh = true;
-        self.startup_full_refresh_in_flight = false;
-        self.startup_full_refresh_sent_at = None;
-        self.snapshot_dirty = false;
-        self.dirty_region = None;
-        self.has_received_frame = false;
-        self.ever_received_frame = false;
-        self.last_compressed_frame_at = None;
-        self.last_frame_emitted_at = None;
-        self.pending_desktop_resize = None;
-        self.pending_desktop_resize_sent_at = None;
-        self.desktop_resize_unavailable = false;
-        self.force_full_rgba = false;
-    }
-
     fn recover_frame_pipeline(&mut self, reason: &str) {
         log::warn!(
             "VNC frame pipeline recovery for {} ({}): {}",
@@ -519,17 +427,6 @@ impl<R: Runtime> VncSessionRuntime<R> {
         self.last_frame_emitted_at = None;
         // 压缩路径异常时，下一张基线帧先走一次 RGBA，避免 JPEG 编码器异常导致恢复循环。
         self.force_full_rgba = true;
-    }
-
-    fn emit_recovery_event(&self, phase: &str, attempt: u8, reason: Option<String>) {
-        let _ = self.app.emit(
-            &format!("vnc-recovery-{}", self.session_id),
-            VncRecoveryEventPayload {
-                phase: phase.to_string(),
-                attempt,
-                reason,
-            },
-        );
     }
 
     async fn handle_control(
@@ -674,6 +571,19 @@ impl<R: Runtime> VncSessionRuntime<R> {
                 self.request_desktop_resize(width, height).await;
                 true
             }
+            VncControlMsg::SetQuality(policy) => {
+                let was_suspended = self.suspend_visuals;
+                self.apply_quality_policy(policy);
+                if self.suspend_visuals {
+                    self.snapshot_dirty = false;
+                    self.dirty_region = None;
+                }
+                if was_suspended && !self.suspend_visuals {
+                    self.force_full_rgba = true;
+                    self.schedule_refresh(true, refresh_timer);
+                }
+                true
+            }
             VncControlMsg::Close => {
                 self.client.close().await;
                 false
@@ -688,6 +598,18 @@ impl<R: Runtime> VncSessionRuntime<R> {
 
         self.pending_refresh = self.pending_refresh || full_refresh;
         refresh_timer.reset_at(Instant::now() + VNC_INPUT_REFRESH_DELAY);
+    }
+
+    fn apply_quality_policy(&mut self, policy: ConnectionQualityPolicyPayload) {
+        let target_frame_rate = policy.target_frame_rate.clamp(1, 60);
+        self.quality_frame_interval =
+            Duration::from_millis((1_000u64 / u64::from(target_frame_rate)).max(1));
+        self.quality_jpeg_cap = policy
+            .jpeg_quality_cap
+            .clamp(VNC_ADAPTIVE_JPEG_MIN_QUALITY, 90)
+            .min(self.jpeg_quality.clamp(VNC_ADAPTIVE_JPEG_MIN_QUALITY, 90));
+        self.adaptive_jpeg_quality = self.adaptive_jpeg_quality.min(self.quality_jpeg_cap);
+        self.suspend_visuals = policy.suspend_visuals;
     }
 
     fn take_pending_control(&mut self) -> Option<VncControlMsg> {
@@ -903,7 +825,7 @@ impl<R: Runtime> VncSessionRuntime<R> {
                     &self.session_id,
                     &self.target,
                     "resolution",
-                    "server did not advertise ExtendedDesktopSize; keeping remote resolution",
+                    "server did not advertise client-initiated desktop resize; keeping remote resolution",
                 );
             }
             Err(error) => {
@@ -961,6 +883,11 @@ impl<R: Runtime> VncSessionRuntime<R> {
     }
 
     async fn commit_snapshot_frame(&mut self) -> Result<(), String> {
+        if self.suspend_visuals {
+            self.snapshot_dirty = false;
+            self.dirty_region = None;
+            return Ok(());
+        }
         if self.desktop_width == 0 || self.desktop_height == 0 {
             self.snapshot_dirty = false;
             return Ok(());
@@ -988,7 +915,7 @@ impl<R: Runtime> VncSessionRuntime<R> {
         let prefer_full_compressed =
             self.should_use_full_jpeg(full_frame, area_pct, estimated_rgba_bytes);
 
-        let rgba_interval = if self
+        let adaptive_rgba_interval = if self
             .encode_ewma_ms
             .is_some_and(|elapsed| elapsed >= VNC_ADAPTIVE_SLOW_ENCODE_MS)
         {
@@ -996,6 +923,7 @@ impl<R: Runtime> VncSessionRuntime<R> {
         } else {
             VNC_RGBA_FRAME_MIN_INTERVAL
         };
+        let rgba_interval = adaptive_rgba_interval.max(self.quality_frame_interval);
         if !prefer_full_compressed
             && self
                 .last_frame_emitted_at
@@ -1009,7 +937,10 @@ impl<R: Runtime> VncSessionRuntime<R> {
         if prefer_full_compressed {
             if let Some(last_sent_at) = self.last_compressed_frame_at {
                 let elapsed = Instant::now().saturating_duration_since(last_sent_at);
-                if elapsed < self.compressed_frame_interval {
+                let compressed_interval = self
+                    .compressed_frame_interval
+                    .max(self.quality_frame_interval);
+                if elapsed < compressed_interval {
                     if VNC_ENABLE_DIAGNOSTIC_LOGS && !VNC_TRACE_ONLY_FULL_REFRESH {
                         self.commit_seq += 1;
                         log_vnc_info(
@@ -1026,7 +957,7 @@ impl<R: Runtime> VncSessionRuntime<R> {
                                 region.y,
                                 area_pct,
                                 elapsed.as_millis(),
-                                self.compressed_frame_interval.as_millis(),
+                                compressed_interval.as_millis(),
                             ),
                         );
                     }
@@ -1039,7 +970,7 @@ impl<R: Runtime> VncSessionRuntime<R> {
             let client = Arc::clone(&self.client);
             let desktop_width = self.desktop_width;
             let desktop_height = self.desktop_height;
-            let jpeg_quality = self.adaptive_jpeg_quality;
+            let jpeg_quality = self.adaptive_jpeg_quality.min(self.quality_jpeg_cap);
             let (jpeg_bytes, snapshot_elapsed, encode_elapsed) =
                 tokio::task::spawn_blocking(move || {
                     let snapshot_started_at = std::time::Instant::now();
@@ -1235,7 +1166,7 @@ impl<R: Runtime> VncSessionRuntime<R> {
                 self.adaptive_jpeg_quality = self
                     .adaptive_jpeg_quality
                     .saturating_add(2)
-                    .min(self.jpeg_quality.clamp(VNC_ADAPTIVE_JPEG_MIN_QUALITY, 90));
+                    .min(self.quality_jpeg_cap);
                 let interval_ms = self
                     .compressed_frame_interval
                     .as_millis()
@@ -1408,7 +1339,6 @@ pub async fn run_vnc_session<R: Runtime>(
     app: AppHandle<R>,
     session_id: String,
     target: String,
-    client_config: VncClientConfig,
     client: VncClient,
     event_receiver: mpsc::UnboundedReceiver<VncClientEvent>,
     frame_channel: tauri::ipc::Channel<Response>,
@@ -1420,7 +1350,6 @@ pub async fn run_vnc_session<R: Runtime>(
         app,
         session_id,
         target,
-        client_config,
         client,
         event_receiver,
         frame_channel,

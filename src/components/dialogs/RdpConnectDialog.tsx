@@ -3,23 +3,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import type { RDPConfig } from "@/types/terminal";
 import { useI18n } from "@/i18n";
 import { resolveRdpBackend } from "@/lib/rdp-backend";
-import {
-  DEFAULT_RDP_RESOLUTION_VALUE,
-  getClosestRdpResolutionPreset,
-  getRdpResolutionPreset,
-  RDP_RESOLUTION_PRESETS,
-} from "@/lib/rdp-resolution";
 import { useSettingsStore } from "@/store/settings";
 
 interface RdpConnectDialogProps {
@@ -34,14 +20,12 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
   const { t } = useI18n();
   const configuredRdpBackend = useSettingsStore((state) => state.rdpBackend);
   const fixedBackend = resolveRdpBackend(configuredRdpBackend);
-  const usesNativeRdp = fixedBackend === "msrdpax";
   const [host, setHost] = useState("");
   const [port, setPort] = useState("3389");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [domain, setDomain] = useState("");
   const [nickname, setNickname] = useState("");
-  const [resolution, setResolution] = useState(DEFAULT_RDP_RESOLUTION_VALUE);
 
   useEffect(() => {
     if (!open) {
@@ -56,7 +40,6 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
         setPassword(initialConfig.password || "");
         setDomain(initialConfig.domain || "");
         setNickname(initialConfig.nickname || "");
-        setResolution(getClosestRdpResolutionPreset(initialConfig.width, initialConfig.height).value);
         return;
       }
 
@@ -66,7 +49,6 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       setPassword("");
       setDomain("");
       setNickname("");
-      setResolution(DEFAULT_RDP_RESOLUTION_VALUE);
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -77,8 +59,6 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       return;
     }
 
-    const selectedResolution = getRdpResolutionPreset(resolution);
-
     onSave({
       host,
       port: parseInt(port, 10) || 3389,
@@ -87,9 +67,6 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
       password: password || undefined,
       domain: domain || undefined,
       nickname: nickname || undefined,
-      width: usesNativeRdp ? undefined : selectedResolution.width,
-      height: usesNativeRdp ? undefined : selectedResolution.height,
-      autoResize: usesNativeRdp ? true : false,
       backend: fixedBackend,
     });
     onOpenChange(false);
@@ -135,26 +112,10 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
               <Input id="rdp-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="col-span-3" autoComplete="off" />
             </div>
 
-            {!usesNativeRdp && (
-              <>
-                <Separator className="col-span-4" />
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="rdp-resolution" className="text-right">{t("桌面分辨率")}</Label>
-                  <Select value={resolution} onValueChange={setResolution}>
-                    <SelectTrigger id="rdp-resolution" className="col-span-3">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {RDP_RESOLUTION_PRESETS.map((preset) => (
-                        <SelectItem key={preset.value} value={preset.value}>
-                          {preset.width} × {preset.height}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
+            <p className="col-span-4 text-xs text-muted-foreground">
+              {t("远程桌面尺寸将在连接时按当前窗口锁定；调整到期望大小后重连即可更新。")}
+            </p>
+
           </div>
 
           <DialogFooter>

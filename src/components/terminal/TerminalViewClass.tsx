@@ -59,11 +59,16 @@ import {
   type TerminalSearchOptions,
 } from "./TerminalSearchBar";
 import { toast } from "@/components/ui/toast";
+import {
+  windowResizeCoordinator,
+  type WindowResizeSnapshot,
+} from "@/services/windowResizeCoordinator";
 
 // 全局 Terminal 实例缓存，确保切换 tab 时输出历史不丢失
 const globalTerminalCache = new Map<string, TerminalInstance>();
 const globalContainerCache = new Map<string, HTMLDivElement>();
 const MAX_TERMINAL_OUTPUT_BATCH = 256 * 1024;
+const TERMINAL_REMOTE_RESIZE_INTERVAL_MS = 96;
 const DEFAULT_TERMINAL_SEARCH_OPTIONS: TerminalSearchOptions = {
   caseSensitive: false,
   wholeWord: false,
@@ -177,7 +182,7 @@ interface TerminalInstance {
   searchAddon: SearchAddon;
   searchResultsDisposable: { dispose(): void };
   searchActive: boolean;
-  resizeObserver: ResizeObserver;
+  resizeUnsubscribe: () => void;
   timeline: CommandTimelineController;
   longCommandTracker: LongCommandTracker;
   connector?: ITerminalConnector;
@@ -187,32 +192,111 @@ interface TerminalInstance {
   dispose: () => void;
   webglAddon?: WebglAddon | null;
   acAddon?: AutocompleteTerminalAddon | null;
+  visible: boolean;
   termState: {
     isTransitioning: boolean;
     timeoutId?: number;
-    resizeTimeoutId?: number;
+    lastSentConnector?: ITerminalConnector;
+    lastSentCols?: number;
+    lastSentRows?: number;
+    lastRemoteResizeAt?: number;
   };
 }
 
-function syncTerminalDimensions(
-  terminal: Terminal,
-  fitAddon: FitAddon,
-  connector?: ITerminalConnector
-) {
-  const dims = fitAddon.proposeDimensions();
-  if (!dims) return;
-
-  const previousCols = terminal.cols;
-  const previousRows = terminal.rows;
-
-  fitAddon.fit();
-
-  const sizeChanged =
-    terminal.cols !== previousCols || terminal.rows !== previousRows;
-  if (sizeChanged && connector) {
-    // fit() 会再次测量容器；必须同步最终实际生效的尺寸，不能发送 fit 前的估算值。
-    connector.resize?.(terminal.cols, terminal.rows);
+function refreshTerminalViewport(terminal: Terminal) {
+  if (terminal.rows > 0) {
+    terminal.refresh(0, terminal.rows - 1);
   }
+}
+
+function syncTerminalDimensions(
+  instance: TerminalInstance,
+  options: {
+    notifyRemote?: boolean;
+    refreshViewport?: boolean;
+    throttleRemote?: boolean;
+  } = {},
+) {
+  if (!instance.visible) return;
+
+  const {
+    notifyRemote = true,
+    refreshViewport = true,
+    throttleRemote = false,
+  } = options;
+  const { terminal, fitAddon, connector, termState } = instance;
+  const dims = fitAddon.proposeDimensions();
+  if (!dims || dims.cols <= 0 || dims.rows <= 0) return;
+
+  if (dims.cols !== terminal.cols || dims.rows !== terminal.rows) {
+    fitAddon.fit();
+  }
+
+  if (refreshViewport) {
+    refreshTerminalViewport(terminal);
+  }
+
+  if (!notifyRemote || !connector?.isConnected) return;
+
+  const now = performance.now();
+  if (
+    throttleRemote
+    && termState.lastRemoteResizeAt !== undefined
+    && now - termState.lastRemoteResizeAt < TERMINAL_REMOTE_RESIZE_INTERVAL_MS
+  ) {
+    return;
+  }
+
+  if (!instance.visible || instance.connector !== connector || !connector.isConnected) {
+    return;
+  }
+
+  const cols = terminal.cols;
+  const rows = terminal.rows;
+  if (
+    termState.lastSentConnector === connector
+    && termState.lastSentCols === cols
+    && termState.lastSentRows === rows
+  ) {
+    return;
+  }
+
+  termState.lastSentConnector = connector;
+  termState.lastSentCols = cols;
+  termState.lastSentRows = rows;
+  termState.lastRemoteResizeAt = now;
+  connector.resize?.(cols, rows);
+}
+
+function applyTerminalResizeSnapshot(
+  instance: TerminalInstance,
+  snapshot: WindowResizeSnapshot,
+) {
+  if (!instance.visible) return;
+
+  if (snapshot.sources.every((source) => source === "move")) {
+    return;
+  }
+
+  const isAlternateScreen = instance.terminal.buffer.active.type === "alternate";
+  if (snapshot.phase !== "idle" && isAlternateScreen) {
+    refreshTerminalViewport(instance.terminal);
+    return;
+  }
+
+  syncTerminalDimensions(instance, {
+    notifyRemote: snapshot.phase !== "settling",
+    throttleRemote: snapshot.phase === "resizing",
+  });
+}
+
+function observeTerminalContainer(
+  instance: TerminalInstance,
+  container: HTMLDivElement,
+): () => void {
+  return windowResizeCoordinator.observe(container, (snapshot) => {
+    applyTerminalResizeSnapshot(instance, snapshot);
+  });
 }
 
 function shouldBlockIndexedColorChange(data: string): boolean {
@@ -337,7 +421,7 @@ function isTerminalConnector(connector: SessionConnector | undefined): connector
 
 export function TerminalViewClass(props: BaseSessionViewProps) {
   const { locale, t } = useI18n();
-  const { paneId, sessionId } = props;
+  const { paneId, sessionId, isVisible = true } = props;
   const acAddonRef = useRef<AutocompleteTerminalAddon | null>(null);
   const timelineRailRef = useRef<HTMLElement | null>(null);
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
@@ -478,13 +562,13 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       const instance = terminalMap.current.get(targetSessionId);
       const container = containerMap.current.get(targetSessionId);
 
-      if (instance && container) {
+      if (instance && container && instance.visible) {
         requestAnimationFrame(() => {
           try {
             const hasLayoutSize = container.clientWidth > 0 && container.clientHeight > 0;
 
             if (hasLayoutSize) {
-              syncTerminalDimensions(instance.terminal, instance.fitAddon, instance.connector);
+              syncTerminalDimensions(instance);
             }
 
             if (requireFocus) {
@@ -519,9 +603,12 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
     const existingInstance = terminalMap.current.get(sessionId);
     if (existingInstance?.connector === connector) {
+      existingInstance.visible = isVisible;
       acAddonRef.current = existingInstance.acAddon ?? null;
       existingInstance.timeline.attachRail(timelineRailRef.current);
-      activateTerminal(sessionId);
+      if (isVisible) {
+        activateTerminal(sessionId);
+      }
       return;
     }
 
@@ -552,6 +639,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
       if (existingInstance?.connector === connector) {
         currentTermInstance = existingInstance;
+        existingInstance.visible = isVisible;
         existingInstance.dataUnsubscribe?.();
         existingInstance.dataUnsubscribe = () => {
           isCurrentConnector = false;
@@ -565,7 +653,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           tempBuffer = "";
         }
 
-        activateTerminal(sessionId);
+        if (isVisible) {
+          activateTerminal(sessionId);
+        }
         return;
       }
 
@@ -579,6 +669,11 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         existingInstance.inputDisposable?.dispose();
         existingInstance.connector?.close();
         existingInstance.connector = connector;
+        existingInstance.visible = isVisible;
+        existingInstance.termState.lastSentConnector = undefined;
+        existingInstance.termState.lastSentCols = undefined;
+        existingInstance.termState.lastSentRows = undefined;
+        existingInstance.termState.lastRemoteResizeAt = undefined;
 
         existingInstance.termState.isTransitioning = true;
         if (existingInstance.termState.timeoutId) {
@@ -619,12 +714,17 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           tempBuffer = "";
         }
 
-        activateTerminal(sessionId);
+        if (isVisible) {
+          activateTerminal(sessionId);
+        }
         return;
       }
 
       // 创建全新 Terminal 实例
-      const termState = { isTransitioning: false, timeoutId: undefined, resizeTimeoutId: undefined };
+      const termState: TerminalInstance["termState"] = {
+        isTransitioning: false,
+        timeoutId: undefined,
+      };
 
       const {
         fontSize: nextFontSize,
@@ -770,12 +870,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       timeline.setEnabled(useSettingsStore.getState().terminalTimelineEnabled);
       timeline.attachRail(timelineRailRef.current);
 
-      try {
-        syncTerminalDimensions(term, fitAddon, connector);
-      } catch (e) {
-        logger.warn("FE/terminal-view/fit", "Initial fit failed", { e });
-      }
-
       const handleWheel = (e: WheelEvent) => {
         if (e.ctrlKey) {
           e.preventDefault();
@@ -888,11 +982,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         }
       });
 
-      const resizeObserver = new ResizeObserver(() => {
-        activateTerminal(sessionId, false);
-      });
-      resizeObserver.observe(containerEl);
-
       const instance: TerminalInstance = {
         terminal: term,
         output,
@@ -900,7 +989,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         searchAddon,
         searchResultsDisposable,
         searchActive: false,
-        resizeObserver,
+        resizeUnsubscribe: () => undefined,
         timeline,
         longCommandTracker,
         connector,
@@ -910,6 +999,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         termState,
         webglAddon,
         acAddon,
+        visible: isVisible,
 
         dispose: () => {
           dataUnsubscribe();
@@ -920,9 +1010,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           parserDisposables.forEach((disposable) => disposable.dispose());
           keyDisposable.dispose();
           selectionDisposable.dispose();
-          resizeObserver.disconnect();
+          instance.resizeUnsubscribe();
           if (termState.timeoutId) clearTimeout(termState.timeoutId);
-          if (termState.resizeTimeoutId) clearTimeout(termState.resizeTimeoutId);
           if (webglAddon) webglAddon.dispose();
           if (instance.acAddon) instance.acAddon.dispose();
           searchResultsDisposable.dispose();
@@ -934,6 +1023,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         },
       };
 
+      instance.resizeUnsubscribe = observeTerminalContainer(instance, containerEl);
+
       terminalMap.current.set(sessionId, instance);
 
       currentTermInstance = instance;
@@ -942,7 +1033,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         tempBuffer = "";
       }
 
-      activateTerminal(sessionId);
+      if (isVisible) {
+        activateTerminal(sessionId);
+      }
     };
 
     initTerminal();
@@ -956,7 +1049,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         });
       }
     };
-  }, [sessionId, activeConnector, activateTerminal]);
+  }, [sessionId, activeConnector, activateTerminal, isVisible]);
 
   // 监听设置变化
   useEffect(() => {
@@ -967,87 +1060,72 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       terminalBackgroundColor,
       appIsDark
     );
-    terminalMap.current.forEach((instance, id) => {
-      const { terminal, fitAddon, connector, termState } = instance;
-      const nextFontSize = getEffectiveFontSizeForSession(id, fontSize, paneFontSizeOverrides);
+    const instance = terminalMap.current.get(sessionId);
+    if (!instance) {
+      return;
+    }
 
-      terminal.options.fontSize = nextFontSize;
-      terminal.options.fontFamily = fontFamily;
-      terminal.options.fontWeight = terminalNormalFontWeight;
-      terminal.options.fontWeightBold = terminalBoldFontWeight;
-      terminal.options.cursorStyle = terminalCursorStyle;
-      terminal.options.theme = toXtermTheme(colorScheme);
-      instance.timeline.setAppearance({
-        fontFamily,
-        fontSize: nextFontSize,
-        fontWeight: terminalNormalFontWeight,
-        locale,
-      });
-      instance.timeline.setEnabled(terminalTimelineEnabled);
-      const shouldUseWebgl = !hasBackgroundImage;
-      if (shouldUseWebgl && !instance.webglAddon) {
-        try {
-          const addon = new WebglAddon();
-          terminal.loadAddon(addon);
-          instance.webglAddon = addon;
-        } catch (e) {
-          logger.warn("FE/terminal-view/webgl", "WebGL failed during settings update", { e });
-          instance.webglAddon = null;
-        }
-      }
-      if (!shouldUseWebgl && instance.webglAddon) {
-        instance.webglAddon.dispose();
+    const { terminal } = instance;
+    const nextFontSize = getEffectiveFontSizeForSession(sessionId, fontSize, paneFontSizeOverrides);
+
+    terminal.options.fontSize = nextFontSize;
+    terminal.options.fontFamily = fontFamily;
+    terminal.options.fontWeight = terminalNormalFontWeight;
+    terminal.options.fontWeightBold = terminalBoldFontWeight;
+    terminal.options.cursorStyle = terminalCursorStyle;
+    terminal.options.theme = toXtermTheme(colorScheme);
+    instance.timeline.setAppearance({
+      fontFamily,
+      fontSize: nextFontSize,
+      fontWeight: terminalNormalFontWeight,
+      locale,
+    });
+    instance.timeline.setEnabled(terminalTimelineEnabled);
+    const shouldUseWebgl = !hasBackgroundImage;
+    if (shouldUseWebgl && !instance.webglAddon) {
+      try {
+        const addon = new WebglAddon();
+        terminal.loadAddon(addon);
+        instance.webglAddon = addon;
+      } catch (e) {
+        logger.warn("FE/terminal-view/webgl", "WebGL failed during settings update", { e });
         instance.webglAddon = null;
       }
+    }
+    if (!shouldUseWebgl && instance.webglAddon) {
+      instance.webglAddon.dispose();
+      instance.webglAddon = null;
+    }
 
-      if (terminalAutocomplete && !instance.acAddon) {
-        const acAddon = new AutocompleteTerminalAddon(
-           id,
-           (text) => {
-              if (instance.connector) {
-                 instance.connector.write(text);
-              }
-           }
-        );
-        terminal.loadAddon(acAddon);
-        instance.acAddon = acAddon;
-        if (id === sessionId) {
-          acAddonRef.current = acAddon;
-        }
-      } else if (!terminalAutocomplete && instance.acAddon) {
-        instance.acAddon.dispose();
-        instance.acAddon = null;
-        if (id === sessionId) {
-          acAddonRef.current = null;
-        }
-      }
-
-      if (id === sessionId) {
-        requestAnimationFrame(() => {
-          try {
-            const dims = fitAddon.proposeDimensions();
-            const sizeChanged =
-              !!dims && (dims.cols !== terminal.cols || dims.rows !== terminal.rows);
-
-            fitAddon.fit();
-
-            if (dims && connector && sizeChanged) {
-              if (termState.resizeTimeoutId) {
-                clearTimeout(termState.resizeTimeoutId);
-              }
-              termState.resizeTimeoutId = window.setTimeout(() => {
-                // 防抖期间布局可能继续变化，发送执行时 xterm 的最终尺寸，避免旧尺寸覆盖新尺寸。
-                connector.resize?.(terminal.cols, terminal.rows);
-              }, 300);
-            }
-            terminal.focus();
-          } catch (e) {
-            logger.warn("FE/terminal-view/fit", "Terminal fit failed after settings change", { e });
+    if (terminalAutocomplete && !instance.acAddon) {
+      const acAddon = new AutocompleteTerminalAddon(
+        sessionId,
+        (text) => {
+          if (instance.connector) {
+            instance.connector.write(text);
           }
-        });
-      }
-    });
-  }, [fontSize, paneFontSizeOverrides, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalBackgroundMode, terminalBackgroundColor, appBackgroundColor, appIsDark, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete, terminalTimelineEnabled, locale]);
+        }
+      );
+      terminal.loadAddon(acAddon);
+      instance.acAddon = acAddon;
+      acAddonRef.current = acAddon;
+    } else if (!terminalAutocomplete && instance.acAddon) {
+      instance.acAddon.dispose();
+      instance.acAddon = null;
+      acAddonRef.current = null;
+    }
+
+    if (isVisible && instance.visible) {
+      requestAnimationFrame(() => {
+        try {
+          syncTerminalDimensions(instance);
+          terminal.focus();
+        } catch (e) {
+          logger.warn("FE/terminal-view/fit", "Terminal fit failed after settings change", { e });
+        }
+      });
+    }
+  }, [fontSize, paneFontSizeOverrides, fontFamily, terminalNormalFontWeight, terminalBoldFontWeight, terminalColorScheme, terminalCursorStyle, customThemes, terminalBackgroundMode, terminalBackgroundColor, appBackgroundColor, appIsDark, systemPrefersDark, sessionId, hasBackgroundImage, terminalAutocomplete, terminalTimelineEnabled, locale, isVisible]);
 
   // 清理已被关闭的会话
   useEffect(() => {
@@ -1063,50 +1141,68 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
   // 标签页切换激活
   useEffect(() => {
-    activateTerminal(sessionId);
-  }, [sessionId, activateTerminal]);
+    const instance = terminalMap.current.get(sessionId);
+    if (instance) {
+      instance.visible = isVisible;
+      if (!isVisible) {
+        return;
+      }
+    }
+
+    if (isVisible) {
+      activateTerminal(sessionId);
+    }
+  }, [sessionId, isVisible, activateTerminal]);
 
   useEffect(() => {
-    const handler = () => activateTerminal(sessionId);
+    const handler = () => {
+      if (isVisible) activateTerminal(sessionId);
+    };
     window.addEventListener("lazy-term-focus", handler);
     return () => window.removeEventListener("lazy-term-focus", handler);
-  }, [sessionId, activateTerminal]);
+  }, [sessionId, isVisible, activateTerminal]);
 
   useEffect(() => {
-    const handler = () => activateTerminal(sessionId);
+    const handler = () => {
+      if (isVisible) activateTerminal(sessionId);
+    };
     window.addEventListener("focus", handler);
     return () => window.removeEventListener("focus", handler);
-  }, [sessionId, activateTerminal]);
+  }, [sessionId, isVisible, activateTerminal]);
 
   // 窗口可见性改变激活
   useEffect(() => {
     const handler = () => {
-      if (document.visibilityState === "visible") {
+      if (isVisible && document.visibilityState === "visible") {
         activateTerminal(sessionId);
       }
     };
     document.addEventListener("visibilitychange", handler);
     return () => document.removeEventListener("visibilitychange", handler);
-  }, [sessionId, activateTerminal]);
+  }, [sessionId, isVisible, activateTerminal]);
 
   // 窗口缩放调整终端尺寸
   useEffect(() => {
-    const handler = () => activateTerminal(sessionId, false);
+    const handler = () => {
+      if (isVisible) activateTerminal(sessionId, false);
+    };
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
-  }, [sessionId, activateTerminal]);
+  }, [sessionId, isVisible, activateTerminal]);
 
   // 监听侧边栏折叠状态变化
   const leftSlotCollapsed = useSlotConfigStore((state) => state.currentConfig.left.collapsed);
   const rightSlotCollapsed = useSlotConfigStore((state) => state.currentConfig.right.collapsed);
 
   useEffect(() => {
+    if (!isVisible) return;
+
     const timer = setTimeout(() => {
       activateTerminal(sessionId, true);
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [sessionId, leftSlotCollapsed, rightSlotCollapsed, activateTerminal]);
+  }, [sessionId, leftSlotCollapsed, rightSlotCollapsed, isVisible, activateTerminal]);
 
   const performTerminalSearch = useCallback((
     query: string,
@@ -1380,6 +1476,10 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
             // 检查是否有缓存的容器和终端实例
             const cachedContainer = containerMap.current.get(sessionId);
             const cachedInstance = terminalMap.current.get(sessionId);
+
+            if (cachedInstance) {
+              cachedInstance.visible = isVisible;
+            }
             
             if (cachedContainer && cachedInstance && cachedContainer !== el) {
               // 将终端的 DOM 元素移动到新容器中
@@ -1390,16 +1490,12 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
               // 更新缓存的容器引用
               containerMap.current.set(sessionId, el);
               // 分屏结构变化会重建容器，尺寸监听必须跟随终端迁移到新容器。
-              cachedInstance.resizeObserver.disconnect();
-              cachedInstance.resizeObserver.observe(el);
+              cachedInstance.resizeUnsubscribe();
+              cachedInstance.resizeUnsubscribe = observeTerminalContainer(cachedInstance, el);
               // 同步 xterm 与远端 PTY 的行列数，避免两端宽度不一致导致长命令覆盖。
               requestAnimationFrame(() => {
                 try {
-                  syncTerminalDimensions(
-                    cachedInstance.terminal,
-                    cachedInstance.fitAddon,
-                    cachedInstance.connector
-                  );
+                  syncTerminalDimensions(cachedInstance);
                 } catch (e) {
                   logger.warn("FE/terminal-view/refit", "Terminal refit failed after container move", { e });
                 }

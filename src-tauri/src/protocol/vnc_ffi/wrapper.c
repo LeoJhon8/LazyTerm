@@ -20,6 +20,7 @@
 #include <rfb/rfbclient.h>
 #include <rfb/rfbproto.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -80,7 +81,10 @@ const uint8_t* RfbClientGetCursorMask(rfbClient* client) {
 }
 
 rfbBool RfbClientSupportsDesktopResize(rfbClient* client) {
-    return client && client->screen.width > 0 && client->screen.height > 0;
+    return client
+        && client->screen.width > 0
+        && client->screen.height > 0
+        && SupportsClient2Server(client, rfbSetDesktopSize);
 }
 
 rfbPixelFormat RfbClientGetPixelFormat(rfbClient* client) {
@@ -211,6 +215,13 @@ void RfbClientSetServerHost(rfbClient* client, const char* host) {
 void RfbClientSetServerPort(rfbClient* client, int port) {
     if (client) {
         client->serverPort = port;
+    }
+}
+
+void RfbClientAdoptConnectedSocket(rfbClient* client, uintptr_t socketHandle) {
+    if (client) {
+        client->sock = (rfbSocket)socketHandle;
+        client->listenSpecified = TRUE;
     }
 }
 

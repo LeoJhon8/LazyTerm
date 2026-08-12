@@ -23,7 +23,6 @@ src/components/terminal/
 ├── VncViewClass.tsx              # VNC 桌面视图
 ├── NativeRdpHostView.tsx         # Native RDP 宿主视图
 ├── ConnectionStatusOverlay.tsx   # 连接状态遮罩
-├── SessionTransitionMask.tsx     # 画面过渡遮罩
 └── index.ts                      # 统一导出
 ```
 

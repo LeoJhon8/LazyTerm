@@ -1,6 +1,7 @@
 //! RDP 命令模块（从 commands/rdp.rs 迁移）
 
 use super::{build_rdp_config, connect_rdp, run_rdp_session};
+use crate::types::ConnectionQualityPolicyPayload;
 use crate::utils::{log_rdp_error, log_rdp_info, rdp_target_label};
 use crate::{
     AppState, RdpConnectConfig, RdpControlMsg, RdpKeyboardEventPayload, RdpPointerEventPayload,
@@ -9,17 +10,16 @@ use crate::{
 use std::sync::{mpsc as std_mpsc, Arc};
 use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, Emitter, Runtime, State};
-use uuid::Uuid;
 
 /// 创建 RDP 会话
 #[tauri::command]
 pub async fn create_rdp_session<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
+    session_id: String,
     config: RdpConnectConfig,
     frame_channel: Channel<Response>,
 ) -> Result<String, String> {
-    let session_id = Uuid::new_v4().to_string();
     let target = rdp_target_label(&config);
     log_rdp_info(
         &session_id,
@@ -78,17 +78,23 @@ pub async fn create_rdp_session<R: Runtime>(
             }
         };
 
-        match run_result {
-            Ok(()) => log_rdp_info(
-                &session_id_clone,
-                &target_clone,
-                "close",
-                "session loop ended",
-            ),
-            Err(error) => log_rdp_error(&session_id_clone, &target_clone, "runtime", &error),
-        }
+        let close_reason = match run_result {
+            Ok(()) => {
+                log_rdp_info(
+                    &session_id_clone,
+                    &target_clone,
+                    "close",
+                    "session loop ended",
+                );
+                None
+            }
+            Err(error) => {
+                log_rdp_error(&session_id_clone, &target_clone, "runtime", &error);
+                Some(error)
+            }
+        };
         rdp_sessions.lock().unwrap().remove(&session_id_clone);
-        let _ = app_clone.emit(&format!("rdp-close-{}", session_id_clone), ());
+        let _ = app_clone.emit(&format!("rdp-close-{}", session_id_clone), close_reason);
     });
 
     match start_rx.recv() {
@@ -158,26 +164,6 @@ pub fn release_rdp_inputs(state: State<'_, AppState>, session_id: String) -> Res
     }
 }
 
-/// 调整 RDP 会话分辨率
-#[tauri::command]
-pub fn resize_rdp_session(
-    state: State<'_, AppState>,
-    session_id: String,
-    width: u16,
-    height: u16,
-) -> Result<(), String> {
-    let sessions = state.rdp_sessions.lock().unwrap();
-    if let Some(session) = sessions.get(&session_id) {
-        session
-            .control_tx
-            .send(RdpControlMsg::Resize(width, height))
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    } else {
-        Err("RDP 会话不存在".to_string())
-    }
-}
-
 /// 请求 RDP 会话重新发送完整画面
 #[tauri::command]
 pub fn request_rdp_refresh(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
@@ -186,6 +172,25 @@ pub fn request_rdp_refresh(state: State<'_, AppState>, session_id: String) -> Re
         session
             .control_tx
             .send(RdpControlMsg::Refresh)
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("RDP 会话不存在".to_string())
+    }
+}
+
+/// 应用统一质量调度器下发的 RDP 预算
+#[tauri::command]
+pub fn set_rdp_quality_policy(
+    state: State<'_, AppState>,
+    session_id: String,
+    policy: ConnectionQualityPolicyPayload,
+) -> Result<(), String> {
+    let sessions = state.rdp_sessions.lock().unwrap();
+    if let Some(session) = sessions.get(&session_id) {
+        session
+            .control_tx
+            .send(RdpControlMsg::SetQuality(policy))
             .map_err(|e| e.to_string())?;
         Ok(())
     } else {

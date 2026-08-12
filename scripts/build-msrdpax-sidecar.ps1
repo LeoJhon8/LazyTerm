@@ -8,7 +8,10 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectPath = Join-Path $scriptDir "..\src-tauri\native\msrdpax-host\msrdpax-host.csproj"
+$projectDir = Split-Path -Parent $projectPath
 $publishDir = Join-Path $scriptDir "..\src-tauri\native\msrdpax-host\publish\win-x64"
+$debugOutputDir = Join-Path $projectDir "bin\Debug\net8.0-windows"
+$targetDebugResourceDir = Join-Path $scriptDir "..\src-tauri\target\debug\msrdpax-host"
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
   throw "dotnet SDK was not found. Install .NET SDK 8 or newer, then rebuild msrdpax sidecar."
@@ -25,6 +28,18 @@ if ($Configuration -eq "Release") {
     -p:DebugType=None `
     -p:DebugSymbols=false `
     -o $publishDir
+
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to publish msrdpax sidecar (exit code $LASTEXITCODE)."
+  }
 } else {
   dotnet build $projectPath -c $Configuration
+
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to build msrdpax sidecar (exit code $LASTEXITCODE)."
+  }
+
+  New-Item -ItemType Directory -Force -Path $targetDebugResourceDir | Out-Null
+  Copy-Item -Path (Join-Path $debugOutputDir "*") -Destination $targetDebugResourceDir -Recurse -Force
+  Write-Host "Synced Debug sidecar to $targetDebugResourceDir"
 }

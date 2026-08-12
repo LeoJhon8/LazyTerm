@@ -4,6 +4,7 @@
 
 use super::vnc_client::VncClient;
 use super::vnc_core::{convert_config, run_vnc_session};
+use crate::types::ConnectionQualityPolicyPayload;
 use crate::utils::{log_vnc_error, log_vnc_info, vnc_target_label};
 use crate::{
     AppState, VncClipboardPastePayload, VncConnectConfig, VncControlMsg, VncKeySequencePayload,
@@ -77,11 +78,10 @@ pub async fn create_vnc_session<R: Runtime>(
     let view_only = config.view_only.unwrap_or(false);
 
     tokio::spawn(async move {
-        match run_vnc_session(
+        let close_reason = match run_vnc_session(
             app_clone.clone(),
             session_id_clone.clone(),
             target_clone.clone(),
-            client_config,
             client,
             event_receiver,
             frame_channel,
@@ -91,18 +91,24 @@ pub async fn create_vnc_session<R: Runtime>(
         )
         .await
         {
-            Ok(()) => log_vnc_info(
-                &session_id_clone,
-                &target_clone,
-                "close",
-                "session loop ended",
-            ),
-            Err(error) => log_vnc_error(&session_id_clone, &target_clone, "runtime", &error),
-        }
+            Ok(()) => {
+                log_vnc_info(
+                    &session_id_clone,
+                    &target_clone,
+                    "close",
+                    "session loop ended",
+                );
+                None
+            }
+            Err(error) => {
+                log_vnc_error(&session_id_clone, &target_clone, "runtime", &error);
+                Some(error)
+            }
+        };
 
         // 清理会话
         vnc_sessions.lock().unwrap().remove(&session_id_clone);
-        let _ = app_clone.emit(&format!("vnc-close-{}", session_id_clone), ());
+        let _ = app_clone.emit(&format!("vnc-close-{}", session_id_clone), close_reason);
     });
 
     Ok(session_id)
@@ -196,6 +202,16 @@ pub async fn resize_vnc_session(
     height: u16,
 ) -> Result<(), String> {
     send_vnc_control(&state, &session_id, VncControlMsg::Resize(width, height)).await
+}
+
+/// 应用统一质量调度器下发的 VNC 预算
+#[tauri::command]
+pub async fn set_vnc_quality_policy(
+    state: State<'_, AppState>,
+    session_id: String,
+    policy: ConnectionQualityPolicyPayload,
+) -> Result<(), String> {
+    send_vnc_control(&state, &session_id, VncControlMsg::SetQuality(policy)).await
 }
 
 /// 关闭 VNC 会话

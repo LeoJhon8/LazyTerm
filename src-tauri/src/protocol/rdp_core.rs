@@ -12,10 +12,13 @@ mod freerdp_runtime {
     use tauri::{AppHandle, Runtime};
 
     use crate::protocol::freerdp_client::{FreeRdpClient, FreeRdpClientConfig, FreeRdpFrame};
-    use crate::types::{RdpConnectConfig, RdpControlMsg, RdpPointerEventPayload};
+    use crate::types::{
+        ConnectionQualityPolicyPayload, RdpConnectConfig, RdpControlMsg, RdpPointerEventPayload,
+    };
     use crate::utils::log_rdp_info;
 
     const RDP_POLL_TIMEOUT: Duration = Duration::from_millis(16);
+    const RDP_SUSPENDED_POLL_TIMEOUT: Duration = Duration::from_millis(100);
     const RDP_IDLE_FRAME_INTERVAL: Duration = Duration::from_millis(33);
     const RDP_INTERACTIVE_FRAME_INTERVAL: Duration = Duration::from_millis(16);
     const RDP_FULL_JPEG_QUALITY: u8 = 58;
@@ -25,26 +28,41 @@ mod freerdp_runtime {
     const RDP_CLICK_JPEG_QUALITY: u8 = 46;
     const RDP_INTERACTION_WINDOW: Duration = Duration::from_millis(320);
     const DEFAULT_RDP_RESOLUTION: (u32, u32) = (1280, 720);
-    const RDP_RESOLUTION_PRESETS: &[(u32, u32)] = &[
-        (1024, 768),
-        (1280, 720),
-        (1280, 800),
-        (1280, 1024),
-        (1366, 768),
-        (1440, 900),
-        (1600, 900),
-        (1680, 1050),
-        (1920, 1080),
-        (1920, 1200),
-        (2560, 1440),
-        (3840, 2160),
-    ];
 
     pub struct RdpFrameEncoderState {
         rgb_buffer: Vec<u8>,
         jpeg_buffer: Vec<u8>,
         packet_buffer: Vec<u8>,
         last_interaction: Option<(RdpInteractionKind, Instant)>,
+    }
+
+    struct RdpQualityState {
+        frame_interval: Duration,
+        jpeg_quality_cap: u8,
+        suspend_visuals: bool,
+        allow_raw_interaction: bool,
+    }
+
+    impl Default for RdpQualityState {
+        fn default() -> Self {
+            Self {
+                frame_interval: RDP_IDLE_FRAME_INTERVAL,
+                jpeg_quality_cap: RDP_FULL_JPEG_QUALITY,
+                suspend_visuals: false,
+                allow_raw_interaction: false,
+            }
+        }
+    }
+
+    impl RdpQualityState {
+        fn apply(&mut self, policy: ConnectionQualityPolicyPayload) {
+            let target_frame_rate = policy.target_frame_rate.clamp(1, 60);
+            self.frame_interval =
+                Duration::from_millis((1_000u64 / u64::from(target_frame_rate)).max(1));
+            self.jpeg_quality_cap = policy.jpeg_quality_cap.clamp(20, 90);
+            self.suspend_visuals = policy.suspend_visuals;
+            self.allow_raw_interaction = policy.mode == "interactive";
+        }
     }
 
     #[derive(Clone, Copy)]
@@ -114,23 +132,28 @@ mod freerdp_runtime {
             })
         }
 
-        fn encode_mode(&self, prioritize_speed: bool) -> RdpFrameEncodeMode {
+        fn encode_mode(
+            &self,
+            prioritize_speed: bool,
+            quality_state: &RdpQualityState,
+        ) -> RdpFrameEncodeMode {
             if let Some(kind) = self.interaction_kind() {
-                if kind.prefer_raw_rgba() {
+                if kind.prefer_raw_rgba() && quality_state.allow_raw_interaction {
                     return RdpFrameEncodeMode::RawRgba;
                 }
 
                 return RdpFrameEncodeMode::Jpeg {
-                    quality: kind.jpeg_quality(),
+                    quality: kind.jpeg_quality().min(quality_state.jpeg_quality_cap),
                 };
             }
 
             RdpFrameEncodeMode::Jpeg {
-                quality: if prioritize_speed {
+                quality: (if prioritize_speed {
                     RDP_FULL_JPEG_QUALITY.saturating_sub(8)
                 } else {
                     RDP_FULL_JPEG_QUALITY
-                },
+                })
+                .min(quality_state.jpeg_quality_cap),
             }
         }
     }
@@ -148,13 +171,14 @@ mod freerdp_runtime {
             .password
             .clone()
             .ok_or_else(|| "RDP 连接当前仅支持密码认证。".to_string())?;
-        let requested_resolution = (config.width, config.height);
-        let (width, height) = match requested_resolution {
-            (Some(width), Some(height)) if RDP_RESOLUTION_PRESETS.contains(&(width, height)) => {
-                (width, height)
-            }
-            _ => DEFAULT_RDP_RESOLUTION,
-        };
+        let width = config
+            .width
+            .unwrap_or(DEFAULT_RDP_RESOLUTION.0)
+            .clamp(200, 8192);
+        let height = config
+            .height
+            .unwrap_or(DEFAULT_RDP_RESOLUTION.1)
+            .clamp(200, 8192);
 
         Ok(FreeRdpClientConfig {
             host: config.host.clone(),
@@ -213,6 +237,7 @@ mod freerdp_runtime {
         control_rx: std_mpsc::Receiver<RdpControlMsg>,
     ) -> Result<(), String> {
         let mut encoder_state = RdpFrameEncoderState::new();
+        let mut quality_state = RdpQualityState::default();
         let mut input_state = RdpInputState::default();
         let mut has_emitted_frame = false;
         let mut pending_frame: Option<FreeRdpFrame> = None;
@@ -228,8 +253,13 @@ mod freerdp_runtime {
 
         loop {
             while let Ok(control) = control_rx.try_recv() {
-                if !handle_rdp_control(control, &mut client, &mut input_state, &mut encoder_state)?
-                {
+                if !handle_rdp_control(
+                    control,
+                    &mut client,
+                    &mut input_state,
+                    &mut encoder_state,
+                    &mut quality_state,
+                )? {
                     log_rdp_info(
                         &session_id,
                         &target,
@@ -240,17 +270,25 @@ mod freerdp_runtime {
                 }
             }
 
-            let frame_interval = if encoder_state.interaction_kind().is_some() {
-                RDP_INTERACTIVE_FRAME_INTERVAL
+            let frame_interval = if quality_state.allow_raw_interaction
+                && encoder_state.interaction_kind().is_some()
+            {
+                quality_state
+                    .frame_interval
+                    .min(RDP_INTERACTIVE_FRAME_INTERVAL)
             } else {
-                RDP_IDLE_FRAME_INTERVAL
+                quality_state.frame_interval
             };
 
-            let poll_timeout = pending_frame
-                .as_ref()
-                .and_then(|_| frame_due_in(last_frame_emitted_at, frame_interval))
-                .map(|remaining| remaining.min(RDP_POLL_TIMEOUT))
-                .unwrap_or(RDP_POLL_TIMEOUT);
+            let poll_timeout = if quality_state.suspend_visuals {
+                RDP_SUSPENDED_POLL_TIMEOUT
+            } else {
+                pending_frame
+                    .as_ref()
+                    .and_then(|_| frame_due_in(last_frame_emitted_at, frame_interval))
+                    .map(|remaining| remaining.min(RDP_POLL_TIMEOUT))
+                    .unwrap_or(RDP_POLL_TIMEOUT)
+            };
 
             if let Some(frame) = client.poll_frame(poll_timeout)? {
                 if !has_emitted_frame {
@@ -268,13 +306,18 @@ mod freerdp_runtime {
                 pending_frame = Some(frame);
             }
 
+            if quality_state.suspend_visuals {
+                pending_frame = None;
+                continue;
+            }
+
             if let Some(frame) = pending_frame.take() {
                 if !should_emit_frame(last_frame_emitted_at, frame_interval) {
                     pending_frame = Some(frame);
                     continue;
                 }
 
-                let encode_mode = encoder_state.encode_mode(!has_emitted_frame);
+                let encode_mode = encoder_state.encode_mode(!has_emitted_frame, &quality_state);
                 emit_rdp_frame(&frame_channel, &frame, &mut encoder_state, encode_mode)?;
                 has_emitted_frame = true;
                 last_frame_emitted_at = Some(Instant::now());
@@ -301,6 +344,7 @@ mod freerdp_runtime {
         client: &mut FreeRdpClient,
         input_state: &mut RdpInputState,
         encoder_state: &mut RdpFrameEncoderState,
+        quality_state: &mut RdpQualityState,
     ) -> Result<bool, String> {
         match control {
             RdpControlMsg::Pointer(payload) => {
@@ -336,10 +380,12 @@ mod freerdp_runtime {
                 client.request_refresh()?;
                 Ok(true)
             }
-            RdpControlMsg::Resize(width, height) => {
-                let width = u32::from(width).clamp(200, 8192);
-                let height = u32::from(height).clamp(200, 8192);
-                client.resize(width, height)?;
+            RdpControlMsg::SetQuality(policy) => {
+                let was_suspended = quality_state.suspend_visuals;
+                quality_state.apply(policy);
+                if was_suspended && !quality_state.suspend_visuals {
+                    client.request_refresh()?;
+                }
                 Ok(true)
             }
             RdpControlMsg::Close => {

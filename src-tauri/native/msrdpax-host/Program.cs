@@ -215,13 +215,10 @@ internal sealed class HostApplicationContext : ApplicationContext
                     Emit(new SidecarOutboundMessage { Type = "error", Detail = "mount 缺少 rect。" });
                     return;
                 }
-                _hostForm.BeginInvoke(new Action(() => _hostForm.UpdateRect(message.Rect)));
-                Emit(new SidecarOutboundMessage
-                {
-                    Type = "mounted",
-                    Detail = $"宿主窗口位置已更新: x={message.Rect.X} y={message.Rect.Y} w={message.Rect.Width} h={message.Rect.Height} scale={message.Rect.ScaleFactor}",
-                    Rect = message.Rect,
-                });
+                _hostForm.QueueRectUpdate(message.Rect);
+                return;
+            case "overlay":
+                _hostForm.BeginInvoke(new Action(() => _hostForm.SetOverlayRect(message.Rect)));
                 return;
             case "show":
                 _hostForm.BeginInvoke(new Action(() => _hostForm.ShowHost()));
@@ -269,12 +266,17 @@ internal sealed class HostApplicationContext : ApplicationContext
 internal sealed class HostForm : Form
 {
     private readonly Panel _panel;
+    private readonly Panel _desktopSurface;
+    private readonly HScrollBar _horizontalScrollBar;
+    private readonly VScrollBar _verticalScrollBar;
+    private readonly Panel _scrollCorner;
     private readonly Panel _statusPanel;
     private readonly Label _titleLabel;
     private readonly Label _detailLabel;
     private readonly Action<SidecarOutboundMessage> _emit;
     private readonly System.Windows.Forms.Timer _stateTimer;
     private readonly System.Windows.Forms.Timer _revealTimer;
+    private readonly System.Windows.Forms.Timer _scrollBarVisibilityTimer;
     private RdpActiveXHost? _rdpHost;
     private SidecarInitPayload? _init;
     private IntPtr _parentHwnd;
@@ -284,6 +286,14 @@ internal sealed class HostForm : Form
     private bool _showRequested;
     private bool _hostVisible;
     private bool _hostWindowCreated;
+    private long _lastAppliedGeneration = -1;
+    private Size _remoteDesktopSize = Size.Empty;
+    private bool _horizontalOverflow;
+    private bool _verticalOverflow;
+    private readonly object _rectUpdateLock = new();
+    private NativeHostRectPayload? _pendingRect;
+    private bool _rectUpdatePosted;
+    private NativeHostRectPayload? _overlayRect;
 
     public event Action? HostClicked;
     public NativeHostRectPayload? CurrentRect { get; private set; }
@@ -298,13 +308,35 @@ internal sealed class HostForm : Form
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.FromArgb(18, 18, 18);
         ForeColor = Color.White;
-        MinimumSize = new Size(200, 200);
+        MinimumSize = Size.Empty;
         Opacity = 0;
 
         _panel = new Panel
         {
             Dock = DockStyle.Fill,
             BackColor = Color.Black,
+        };
+
+        _desktopSurface = new Panel
+        {
+            BackColor = Color.Black,
+            Visible = false,
+        };
+
+        _horizontalScrollBar = new HScrollBar
+        {
+            Visible = false,
+        };
+
+        _verticalScrollBar = new VScrollBar
+        {
+            Visible = false,
+        };
+
+        _scrollCorner = new Panel
+        {
+            BackColor = SystemColors.Control,
+            Visible = false,
         };
 
         _statusPanel = new Panel
@@ -333,8 +365,16 @@ internal sealed class HostForm : Form
 
         _statusPanel.Controls.Add(_detailLabel);
         _statusPanel.Controls.Add(_titleLabel);
+        _panel.Controls.Add(_desktopSurface);
+        _panel.Controls.Add(_horizontalScrollBar);
+        _panel.Controls.Add(_verticalScrollBar);
+        _panel.Controls.Add(_scrollCorner);
         _panel.Controls.Add(_statusPanel);
         Controls.Add(_panel);
+
+        _panel.Resize += (_, _) => LayoutRemoteDesktop();
+        _horizontalScrollBar.Scroll += (_, _) => LayoutRemoteDesktop();
+        _verticalScrollBar.Scroll += (_, _) => LayoutRemoteDesktop();
 
         _panel.Click += (_, _) => HostClicked?.Invoke();
         _titleLabel.Click += (_, _) => HostClicked?.Invoke();
@@ -363,6 +403,145 @@ internal sealed class HostForm : Form
 
             EmitState("visible", "宿主窗口已在延迟显现后真正可见。", CurrentRect);
         };
+
+        _scrollBarVisibilityTimer = new System.Windows.Forms.Timer { Interval = 75 };
+        _scrollBarVisibilityTimer.Tick += (_, _) => UpdateScrollBarVisibility();
+        _scrollBarVisibilityTimer.Start();
+    }
+
+    private bool InitializeRemoteDesktop(NativeHostRectPayload rect)
+    {
+        if (!_remoteDesktopSize.IsEmpty)
+        {
+            return true;
+        }
+
+        if (rect.Width <= 0 || rect.Height <= 0)
+        {
+            return false;
+        }
+
+        _remoteDesktopSize = new Size(
+            Math.Clamp(rect.Width, 200, 8192),
+            Math.Clamp(rect.Height, 200, 8192));
+        _desktopSurface.Size = _remoteDesktopSize;
+        _desktopSurface.Visible = true;
+        LayoutRemoteDesktop();
+        EmitState(
+            "state",
+            $"本次连接的远程桌面尺寸已锁定为 {_remoteDesktopSize.Width}x{_remoteDesktopSize.Height}。",
+            rect);
+        return true;
+    }
+
+    private void LayoutRemoteDesktop()
+    {
+        if (_remoteDesktopSize.IsEmpty || _panel.ClientSize.Width <= 0 || _panel.ClientSize.Height <= 0)
+        {
+            _horizontalOverflow = false;
+            _verticalOverflow = false;
+            _horizontalScrollBar.Visible = false;
+            _verticalScrollBar.Visible = false;
+            _scrollCorner.Visible = false;
+            return;
+        }
+
+        var fullWidth = _panel.ClientSize.Width;
+        var fullHeight = _panel.ClientSize.Height;
+        var horizontalHeight = SystemInformation.HorizontalScrollBarHeight;
+        var verticalWidth = SystemInformation.VerticalScrollBarWidth;
+        _horizontalOverflow = _remoteDesktopSize.Width > fullWidth;
+        _verticalOverflow = _remoteDesktopSize.Height > fullHeight;
+
+        // Scroll bars are overlays and do not reduce the remote desktop viewport.
+        // Otherwise one bar can consume enough space to incorrectly trigger the
+        // other axis even though the remote desktop fits in that direction.
+        var horizontalBarWidth = Math.Max(0, fullWidth - (_verticalOverflow ? verticalWidth : 0));
+        var verticalBarHeight = Math.Max(0, fullHeight - (_horizontalOverflow ? horizontalHeight : 0));
+        var horizontalBarY = Math.Max(0, fullHeight - horizontalHeight);
+        var verticalBarX = Math.Max(0, fullWidth - verticalWidth);
+
+        ConfigureScrollBar(_horizontalScrollBar, _horizontalOverflow, fullWidth, _remoteDesktopSize.Width);
+        ConfigureScrollBar(_verticalScrollBar, _verticalOverflow, fullHeight, _remoteDesktopSize.Height);
+
+        _horizontalScrollBar.Bounds = new Rectangle(0, horizontalBarY, horizontalBarWidth, horizontalHeight);
+        _verticalScrollBar.Bounds = new Rectangle(verticalBarX, 0, verticalWidth, verticalBarHeight);
+        _scrollCorner.Bounds = new Rectangle(verticalBarX, horizontalBarY, verticalWidth, horizontalHeight);
+
+        var desktopX = _horizontalOverflow
+            ? -_horizontalScrollBar.Value
+            : Math.Max(0, (fullWidth - _remoteDesktopSize.Width) / 2);
+        var desktopY = _verticalOverflow
+            ? -_verticalScrollBar.Value
+            : Math.Max(0, (fullHeight - _remoteDesktopSize.Height) / 2);
+        _desktopSurface.Bounds = new Rectangle(
+            desktopX,
+            desktopY,
+            _remoteDesktopSize.Width,
+            _remoteDesktopSize.Height);
+
+        _desktopSurface.Visible = true;
+        _horizontalScrollBar.BringToFront();
+        _verticalScrollBar.BringToFront();
+        _scrollCorner.BringToFront();
+        UpdateScrollBarVisibility();
+        if (_statusPanel.Visible)
+        {
+            _statusPanel.BringToFront();
+        }
+    }
+
+    private void UpdateScrollBarVisibility()
+    {
+        if (!IsHandleCreated || !_hostVisible || !_panel.IsHandleCreated)
+        {
+            _horizontalScrollBar.Visible = false;
+            _verticalScrollBar.Visible = false;
+            _scrollCorner.Visible = false;
+            return;
+        }
+
+        var cursor = _panel.PointToClient(Cursor.Position);
+        var clientBounds = _panel.ClientRectangle;
+        var cursorInside = clientBounds.Contains(cursor);
+        const int revealDistance = 32;
+        const int keepVisibleDistance = 56;
+        var horizontalDistance = _horizontalScrollBar.Visible ? keepVisibleDistance : revealDistance;
+        var verticalDistance = _verticalScrollBar.Visible ? keepVisibleDistance : revealDistance;
+        var showHorizontal = _horizontalOverflow
+            && (_horizontalScrollBar.Capture
+                || (cursorInside && cursor.Y >= clientBounds.Bottom - horizontalDistance));
+        var showVertical = _verticalOverflow
+            && (_verticalScrollBar.Capture
+                || (cursorInside && cursor.X >= clientBounds.Right - verticalDistance));
+
+        _horizontalScrollBar.Visible = showHorizontal;
+        _verticalScrollBar.Visible = showVertical;
+        _scrollCorner.Visible = showHorizontal && showVertical;
+    }
+
+    private static void ConfigureScrollBar(
+        ScrollBar scrollBar,
+        bool visible,
+        int viewportSize,
+        int contentSize)
+    {
+        if (!visible)
+        {
+            scrollBar.Visible = false;
+            scrollBar.Value = 0;
+            return;
+        }
+
+        var largeChange = Math.Max(1, viewportSize);
+        var maximumOffset = Math.Max(0, contentSize - viewportSize);
+        var nextValue = Math.Min(scrollBar.Value, maximumOffset);
+        scrollBar.Value = 0;
+        scrollBar.Minimum = 0;
+        scrollBar.SmallChange = Math.Max(1, viewportSize / 10);
+        scrollBar.LargeChange = largeChange;
+        scrollBar.Maximum = maximumOffset + largeChange - 1;
+        scrollBar.Value = nextValue;
     }
 
     public void AttachToParent(long parentHwnd, SidecarInitPayload init)
@@ -377,7 +556,6 @@ internal sealed class HostForm : Form
         _titleLabel.Text = $"MsTscAx Native Host · {init.Host}:{init.Port}";
 
         EnsureRdpHost();
-        ConnectRdp();
         if (!_hostWindowCreated)
         {
             Show();
@@ -387,15 +565,80 @@ internal sealed class HostForm : Form
         _hostVisible = false;
     }
 
-    public void UpdateRect(NativeHostRectPayload rect)
+    public void QueueRectUpdate(NativeHostRectPayload rect)
     {
+        lock (_rectUpdateLock)
+        {
+            if (_pendingRect is { } pending)
+            {
+                var pendingGeneration = pending.Generation ?? -1;
+                var nextGeneration = rect.Generation ?? -1;
+                if (nextGeneration < pendingGeneration)
+                {
+                    return;
+                }
+            }
+
+            _pendingRect = rect;
+            if (_rectUpdatePosted)
+            {
+                return;
+            }
+            _rectUpdatePosted = true;
+        }
+
+        BeginInvoke(new Action(ApplyPendingRect));
+    }
+
+    private void ApplyPendingRect()
+    {
+        NativeHostRectPayload? rect;
+        lock (_rectUpdateLock)
+        {
+            rect = _pendingRect;
+            _pendingRect = null;
+            _rectUpdatePosted = false;
+        }
+
+        if (rect is not null)
+        {
+            UpdateRect(rect);
+        }
+
+        lock (_rectUpdateLock)
+        {
+            if (_pendingRect is null || _rectUpdatePosted)
+            {
+                return;
+            }
+            _rectUpdatePosted = true;
+        }
+        BeginInvoke(new Action(ApplyPendingRect));
+    }
+
+    private void UpdateRect(NativeHostRectPayload rect)
+    {
+        if (rect.Generation is long generation && generation < _lastAppliedGeneration)
+        {
+            return;
+        }
+        if (rect.Generation is long nextGeneration)
+        {
+            _lastAppliedGeneration = nextGeneration;
+        }
+
         CurrentRect = rect;
+        var desktopInitialized = InitializeRemoteDesktop(rect);
         if (_hostVisible)
         {
             ApplyHostWindowRect(rect);
         }
 
-        ApplyDisplayLayout(rect);
+        LayoutRemoteDesktop();
+        if (desktopInitialized && !_connectIssued)
+        {
+            ConnectRdp();
+        }
     }
 
     public void ShowHost()
@@ -437,14 +680,85 @@ internal sealed class HostForm : Form
 
     private void ApplyHostWindowRect(NativeHostRectPayload rect)
     {
+        var hostWidth = Math.Max(0, rect.Width);
+        var hostHeight = Math.Max(0, rect.Height);
+        if (!_remoteDesktopSize.IsEmpty)
+        {
+            hostWidth = Math.Min(hostWidth, _remoteDesktopSize.Width);
+            hostHeight = Math.Min(hostHeight, _remoteDesktopSize.Height);
+        }
+
+        var hostX = rect.X + Math.Max(0, (rect.Width - hostWidth) / 2);
+        var hostY = rect.Y + Math.Max(0, (rect.Height - hostHeight) / 2);
         NativeMethods.SetWindowPos(
             Handle,
             NativeMethods.HWND_TOP,
-            rect.X,
-            rect.Y,
-            Math.Max(0, rect.Width),
-            Math.Max(0, rect.Height),
-            NativeMethods.SWP_NOACTIVATE);
+            hostX,
+            hostY,
+            hostWidth,
+            hostHeight,
+            NativeMethods.SWP_NOACTIVATE
+                | NativeMethods.SWP_NOZORDER
+                | NativeMethods.SWP_NOOWNERZORDER);
+        ApplyOverlayRegion(hostX, hostY, hostWidth, hostHeight);
+    }
+
+    public void SetOverlayRect(NativeHostRectPayload? rect)
+    {
+        _overlayRect = rect;
+        ApplyOverlayRegion(Left, Top, Width, Height);
+    }
+
+    private void ApplyOverlayRegion(int hostX, int hostY, int hostWidth, int hostHeight)
+    {
+        if (_overlayRect is null || hostWidth <= 0 || hostHeight <= 0)
+        {
+            NativeMethods.SetWindowRgn(Handle, IntPtr.Zero, true);
+            return;
+        }
+
+        var hostBounds = new Rectangle(hostX, hostY, hostWidth, hostHeight);
+        var overlayBounds = new Rectangle(
+            _overlayRect.X,
+            _overlayRect.Y,
+            Math.Max(0, _overlayRect.Width),
+            Math.Max(0, _overlayRect.Height));
+        var overlap = Rectangle.Intersect(hostBounds, overlayBounds);
+        if (overlap.IsEmpty)
+        {
+            NativeMethods.SetWindowRgn(Handle, IntPtr.Zero, true);
+            return;
+        }
+
+        var windowRegion = NativeMethods.CreateRectRgn(0, 0, hostWidth, hostHeight);
+        var overlayRegion = NativeMethods.CreateRectRgn(
+            overlap.Left - hostX,
+            overlap.Top - hostY,
+            overlap.Right - hostX,
+            overlap.Bottom - hostY);
+        if (windowRegion == IntPtr.Zero || overlayRegion == IntPtr.Zero)
+        {
+            if (windowRegion != IntPtr.Zero)
+            {
+                NativeMethods.DeleteObject(windowRegion);
+            }
+            if (overlayRegion != IntPtr.Zero)
+            {
+                NativeMethods.DeleteObject(overlayRegion);
+            }
+            return;
+        }
+
+        NativeMethods.CombineRgn(
+            windowRegion,
+            windowRegion,
+            overlayRegion,
+            NativeMethods.RGN_DIFF);
+        NativeMethods.DeleteObject(overlayRegion);
+        if (NativeMethods.SetWindowRgn(Handle, windowRegion, true) == 0)
+        {
+            NativeMethods.DeleteObject(windowRegion);
+        }
     }
 
     private void ParkHostWindow()
@@ -504,6 +818,7 @@ internal sealed class HostForm : Form
             var cp = base.CreateParams;
             // WS_EX_TOOLWINDOW: hide from taskbar and Alt+Tab list.
             cp.ExStyle |= 0x00000080;
+            cp.Style |= NativeMethods.WS_CLIPCHILDREN | NativeMethods.WS_CLIPSIBLINGS;
             return cp;
         }
     }
@@ -512,6 +827,8 @@ internal sealed class HostForm : Form
     {
         if (disposing)
         {
+            _scrollBarVisibilityTimer.Stop();
+            _scrollBarVisibilityTimer.Dispose();
             _revealTimer.Stop();
             _revealTimer.Dispose();
             _stateTimer.Stop();
@@ -537,7 +854,7 @@ internal sealed class HostForm : Form
                 BackColor = Color.Black,
             };
 
-            _panel.Controls.Add(_rdpHost);
+            _desktopSurface.Controls.Add(_rdpHost);
             _rdpHost.BringToFront();
             HideStatus();
             EmitState("control-created", "MsTscAx ActiveX 控件已创建。", CurrentRect);
@@ -551,7 +868,7 @@ internal sealed class HostForm : Form
 
     private void ConnectRdp()
     {
-        if (_rdpHost is null || _init is null)
+        if (_rdpHost is null || _init is null || _remoteDesktopSize.IsEmpty)
         {
             return;
         }
@@ -577,21 +894,13 @@ internal sealed class HostForm : Form
             SetComProperty(client, "Server", _init.Host);
             SetComProperty(client, "UserName", loginUser);
 
-            if (_init.Width is int width && width > 0)
-            {
-                SetComProperty(client, "DesktopWidth", width);
-            }
-
-            if (_init.Height is int height && height > 0)
-            {
-                SetComProperty(client, "DesktopHeight", height);
-            }
+            SetComProperty(client, "DesktopWidth", _remoteDesktopSize.Width);
+            SetComProperty(client, "DesktopHeight", _remoteDesktopSize.Height);
 
             SetComProperty(client, "ColorDepth", 32);
 
             if (TryGetComProperty(client, "AdvancedSettings9") is { } advanced9)
             {
-                TrySetComProperty(advanced9, "SmartSizing", true);
                 TrySetComProperty(advanced9, "EnableAutoReconnect", true);
                 TrySetComProperty(advanced9, "RedirectDrives", false);
                 TrySetComProperty(advanced9, "RedirectClipboard", true);
@@ -604,7 +913,6 @@ internal sealed class HostForm : Form
             }
             else if (TryGetComProperty(client, "AdvancedSettings2") is { } advanced2)
             {
-                TrySetComProperty(advanced2, "SmartSizing", true);
                 TrySetComProperty(advanced2, "EnableCredSspSupport", true);
                 TrySetComProperty(advanced2, "NegotiateSecurityLayer", true);
                 TrySetComProperty(advanced2, "AuthenticationLevel", 2);
@@ -653,64 +961,6 @@ internal sealed class HostForm : Form
         }
     }
 
-    private void ApplyDisplayLayout(NativeHostRectPayload rect)
-    {
-        if (_rdpHost is null || _rdpHost.IsDisposed)
-        {
-            return;
-        }
-
-        try
-        {
-            if (!_rdpHost.TryGetOcxObject(out var client) || client is null)
-            {
-                return;
-            }
-
-            var targetWidth = Math.Max(1, rect.Width);
-            var targetHeight = Math.Max(1, rect.Height);
-
-            TrySetComProperty(client, "DesktopWidth", targetWidth);
-            TrySetComProperty(client, "DesktopHeight", targetHeight);
-
-            if (TryGetComProperty(client, "AdvancedSettings9") is { } advanced9)
-            {
-                TrySetComProperty(advanced9, "SmartSizing", true);
-            }
-            else if (TryGetComProperty(client, "AdvancedSettings2") is { } advanced2)
-            {
-                TrySetComProperty(advanced2, "SmartSizing", true);
-            }
-
-            var connected = ReadConnectedState(client);
-            if (connected == 1)
-            {
-                // Prefer dynamic display update when available so the remote desktop
-                // resizes to the current tab content area instead of staying at the
-                // initial connection resolution.
-                var updated = TryInvokeComMethod(
-                    client,
-                    "UpdateSessionDisplaySettings",
-                    targetWidth,
-                    targetHeight,
-                    targetWidth,
-                    targetHeight,
-                    0,
-                    100,
-                    100);
-
-                if (!updated)
-                {
-                    TryInvokeComMethod(client, "Reconnect", targetWidth, targetHeight);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            EmitState("state", $"应用显示尺寸失败: {ex.Message}", rect);
-        }
-    }
-
     private void PollConnectionState()
     {
         if (_rdpHost is null || _rdpHost.IsDisposed)
@@ -722,6 +972,10 @@ internal sealed class HostForm : Form
         {
             if (!_connectIssued)
             {
+                if (_remoteDesktopSize.IsEmpty)
+                {
+                    return;
+                }
                 ConnectRdp();
                 if (!_connectIssued)
                 {
@@ -847,18 +1101,6 @@ internal sealed class HostForm : Form
         target.GetType().InvokeMember(methodName, BindingFlags.InvokeMethod, null, target, null);
     }
 
-    private static bool TryInvokeComMethod(object target, string methodName, params object?[] args)
-    {
-        try
-        {
-            target.GetType().InvokeMember(methodName, BindingFlags.InvokeMethod, null, target, args);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 }
 
 internal sealed class RdpActiveXHost : AxHost
@@ -911,12 +1153,17 @@ internal static class NativeMethods
     public const int GWL_STYLE = -16;
     public const long WS_CHILD = 0x40000000L;
     public const long WS_POPUP = unchecked((int)0x80000000L);
+    public const int WS_CLIPCHILDREN = 0x02000000;
+    public const int WS_CLIPSIBLINGS = 0x04000000;
     public static readonly IntPtr HWND_TOP = new IntPtr(0);
     public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
+    public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_NOACTIVATE = 0x0010;
+    public const uint SWP_NOOWNERZORDER = 0x0200;
     public const uint SWP_SHOWWINDOW = 0x0040;
+    public const int RGN_DIFF = 4;
     public const int SW_SHOW = 5;
     public const int SW_HIDE = 0;
 
@@ -931,6 +1178,18 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    public static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    public static extern int CombineRgn(IntPtr destination, IntPtr source1, IntPtr source2, int combineMode);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    public static extern bool DeleteObject(IntPtr objectHandle);
 
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -963,8 +1222,6 @@ internal sealed class SidecarInitPayload
     public string Username { get; set; } = string.Empty;
     public string? Password { get; set; }
     public string? Domain { get; set; }
-    public int? Width { get; set; }
-    public int? Height { get; set; }
 }
 
 internal sealed class NativeHostRectPayload
@@ -974,4 +1231,5 @@ internal sealed class NativeHostRectPayload
     public int Width { get; set; }
     public int Height { get; set; }
     public double ScaleFactor { get; set; }
+    public long? Generation { get; set; }
 }

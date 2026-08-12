@@ -1,10 +1,13 @@
 use crate::state::AppState;
 use crate::types::{TelnetConnectConfig, TelnetSession};
 use log::{error, info, warn};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 // Telnet Protocol Bytes
 const IAC: u8 = 255;
@@ -24,25 +27,43 @@ pub async fn open_telnet_session(
 ) -> Result<(), String> {
     info!("TELNET connecting to {}:{}", config.host, config.port);
 
-    let stream = match TcpStream::connect((config.host.as_str(), config.port)).await {
-        Ok(s) => s,
-        Err(e) => {
+    let stream = match tokio::time::timeout(
+        Duration::from_secs(30),
+        TcpStream::connect((config.host.as_str(), config.port)),
+    )
+    .await
+    {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
             error!("TELNET connection failed: {:?}", e);
             return Err(e.to_string());
         }
+        Err(_) => return Err("TELNET connection timed out after 30000 ms".to_string()),
     };
 
     let (mut read_half, mut write_half) = stream.into_split();
     let (control_tx, mut control_rx) = mpsc::unbounded_channel::<String>();
+    let (close_tx, _) = watch::channel(false);
 
     // Register session
     {
         let mut sessions = state.telnet_sessions.lock().await;
-        sessions.insert(session_id.clone(), TelnetSession { control_tx });
+        sessions.insert(
+            session_id.clone(),
+            TelnetSession {
+                control_tx,
+                close_tx: close_tx.clone(),
+            },
+        );
     }
 
     let session_id_clone = session_id.clone();
     let app_clone = app.clone();
+    let sessions_clone = state.telnet_sessions.clone();
+    let close_emitted = Arc::new(AtomicBool::new(false));
+    let reader_close_emitted = Arc::clone(&close_emitted);
+    let reader_close_tx = close_tx.clone();
+    let mut reader_close_rx = close_tx.subscribe();
 
     let (write_tx, mut write_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
@@ -51,14 +72,27 @@ pub async fn open_telnet_session(
         let mut buffer = [0u8; 8192];
         let mut state = 0; // 0: Normal, 1: IAC, 2: IAC+DO/DONT/WILL/WONT, 3: IAC+SB, 4: IAC+SB...+IAC
         let mut cmd = 0;
+        let close_reason;
 
         loop {
-            match read_half.read(&mut buffer).await {
+            let read_result = tokio::select! {
+                result = read_half.read(&mut buffer) => result,
+                changed = reader_close_rx.changed() => {
+                    close_reason = if changed.is_ok() {
+                        "local-close".to_string()
+                    } else {
+                        "close-signal-dropped".to_string()
+                    };
+                    break;
+                }
+            };
+            match read_result {
                 Ok(n) if n == 0 => {
                     info!(
                         "TELNET connection closed by remote (session {})",
                         session_id_clone
                     );
+                    close_reason = "Remote Telnet connection closed".to_string();
                     break;
                 }
                 Ok(n) => {
@@ -146,26 +180,57 @@ pub async fn open_telnet_session(
                 }
                 Err(e) => {
                     error!("TELNET read error (session {}): {:?}", session_id_clone, e);
+                    close_reason = e.to_string();
                     break;
                 }
             }
         }
-        let _ = app_clone.emit(&format!("telnet-close-{}", session_id_clone), ());
+        let _ = reader_close_tx.send(true);
+        sessions_clone.lock().await.remove(&session_id_clone);
+        if !reader_close_emitted.swap(true, Ordering::Relaxed) {
+            let _ = app_clone.emit(&format!("telnet-close-{}", session_id_clone), close_reason);
+        }
     });
 
     // Task to handle writing to TCP from frontend
+    let writer_app = app.clone();
+    let writer_session_id = session_id.clone();
+    let writer_sessions = state.telnet_sessions.clone();
+    let writer_close_emitted = Arc::clone(&close_emitted);
+    let writer_close_tx = close_tx.clone();
+    let mut writer_close_rx = close_tx.subscribe();
     tokio::spawn(async move {
         loop {
             tokio::select! {
+                _ = writer_close_rx.changed() => {
+                    let _ = write_half.shutdown().await;
+                    break;
+                }
                 Some(payload) = write_rx.recv() => {
                     if let Err(e) = write_half.write_all(&payload).await {
                         error!("TELNET local write error: {:?}", e);
+                        writer_sessions.lock().await.remove(&writer_session_id);
+                        if !writer_close_emitted.swap(true, Ordering::Relaxed) {
+                            let _ = writer_app.emit(
+                                &format!("telnet-close-{}", writer_session_id),
+                                e.to_string(),
+                            );
+                        }
+                        let _ = writer_close_tx.send(true);
                         break;
                     }
                 }
                 Some(text) = control_rx.recv() => {
                     if let Err(e) = write_half.write_all(text.as_bytes()).await {
                         error!("TELNET user write error: {:?}", e);
+                        writer_sessions.lock().await.remove(&writer_session_id);
+                        if !writer_close_emitted.swap(true, Ordering::Relaxed) {
+                            let _ = writer_app.emit(
+                                &format!("telnet-close-{}", writer_session_id),
+                                e.to_string(),
+                            );
+                        }
+                        let _ = writer_close_tx.send(true);
                         break;
                     }
                 }
@@ -187,8 +252,7 @@ pub async fn write_telnet(
 ) -> Result<(), String> {
     let sessions = state.telnet_sessions.lock().await;
     if let Some(session) = sessions.get(&session_id) {
-        let _ = session.control_tx.send(data);
-        Ok(())
+        session.control_tx.send(data).map_err(|e| e.to_string())
     } else {
         Err("TELNET session not found".to_string())
     }
@@ -213,6 +277,8 @@ pub async fn close_telnet(
 ) -> Result<(), String> {
     info!("Closing TELNET session {}", session_id);
     let mut sessions = state.telnet_sessions.lock().await;
-    sessions.remove(&session_id);
+    if let Some(session) = sessions.remove(&session_id) {
+        let _ = session.close_tx.send(true);
+    }
     Ok(())
 }

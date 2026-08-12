@@ -27,19 +27,21 @@ export function ConnectionStatusOverlay({
   const isConnecting = status.phase === "connecting"
     || status.phase === "authenticating"
     || status.phase === "reconnecting";
-  const isFailure = status.phase === "failed" || status.phase === "disconnected";
+  const isFailurePhase = status.phase === "failed" || status.phase === "disconnected";
+  const isTerminalFailure = isFailurePhase && status.terminal === true;
+  const isRecovering = isConnecting || (isFailurePhase && !isTerminalFailure);
 
-  if (!isConnecting && !isFailure) {
+  if (!isRecovering && !isTerminalFailure) {
     return null;
   }
 
   const phaseText = status.phase === "authenticating"
     ? t("正在验证凭据...")
-    : status.phase === "reconnecting"
+    : status.phase === "reconnecting" || (isFailurePhase && !isTerminalFailure)
       ? t("正在重新连接...")
       : t("正在建立连接...");
 
-  if (isConnecting) {
+  if (isRecovering) {
     return (
       <div className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm ${zIndexClass}`}>
         <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-popover/90 px-5 py-3 text-foreground shadow-2xl backdrop-blur-xl">
@@ -48,6 +50,9 @@ export function ConnectionStatusOverlay({
             <div className="text-sm font-medium">{phaseText}</div>
             <div className="mt-0.5 max-w-80 truncate text-xs text-muted-foreground">
               {protocol} · {target}
+              {(status.phase === "reconnecting" || isFailurePhase) && status.attempt > 0
+                ? ` · ${t("第 {count} 次连接尝试", { count: status.attempt })}`
+                : ""}
             </div>
           </div>
         </div>
@@ -61,6 +66,10 @@ export function ConnectionStatusOverlay({
     : t("与远程主机的连接已终止。");
   const diagnosticDetails = [
     { label: t("目标地址"), value: target },
+    ...(status.failure ? [
+      { label: t("错误代码"), value: status.failure.code },
+      { label: t("连接阶段"), value: status.failure.stage },
+    ] : []),
     ...details,
   ];
 

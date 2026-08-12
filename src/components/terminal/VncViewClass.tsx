@@ -15,7 +15,7 @@ import {
 import { ConnectionStatusOverlay } from "./ConnectionStatusOverlay";
 import {
   useBaseGraphicSessionView,
-  getPointerPositionScaled,
+  getPointerPositionCentered,
   mapVncKeyboardEvent,
   buildCursorStyleFromRgba,
 } from "./BaseGraphicSessionView";
@@ -30,6 +30,7 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { windowResizeCoordinator } from "@/services/windowResizeCoordinator";
 
 const VNC_STARTUP_TRACE_WINDOW_MS = 15_000;
 const VNC_POINTER_MOVE_LOG_INTERVAL_MS = 250;
@@ -77,7 +78,7 @@ function canPasteVncTextAsKeystrokes(text: string) {
 
 export function VncViewClass(props: BaseSessionViewProps) {
   const { t } = useI18n();
-  const { paneId, sessionId } = props;
+  const { paneId, sessionId, isVisible = true } = props;
   const {
     canvasRef,
     containerRef,
@@ -119,15 +120,15 @@ export function VncViewClass(props: BaseSessionViewProps) {
   const [cursorStyle, setCursorStyle] = useState("default");
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
 
-  const resizeRequestTimerRef = useRef<number | null>(null);
+  const lastResizeRequestRef = useRef<{ width: number; height: number } | null>(null);
 
   const focusVncView = useCallback(() => {
-    if (useTabsStore.getState().focusSessionId !== sessionId) {
+    if (!isVisible || useTabsStore.getState().focusSessionId !== sessionId) {
       return;
     }
 
     containerRef.current?.focus({ preventScroll: true });
-  }, [containerRef, sessionId]);
+  }, [containerRef, isVisible, sessionId]);
 
   useEffect(() => {
     const animationFrameId = window.requestAnimationFrame(focusVncView);
@@ -142,12 +143,11 @@ export function VncViewClass(props: BaseSessionViewProps) {
   // 容器稳定后请求 ExtendedDesktopSize；不支持该能力的服务端会由后端安全忽略。
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !frameSize || !connector || viewOnly) {
+    if (!isVisible || !container || !frameSize || !connector || viewOnly) {
       return;
     }
 
-    const readRequestedSize = () => {
-      const rect = container.getBoundingClientRect();
+    const readRequestedSize = (rect: DOMRectReadOnly) => {
       const clampDimension = (value: number, minimum: number) => {
         const rounded = Math.round(value);
         const even = rounded - (rounded % 2);
@@ -164,34 +164,30 @@ export function VncViewClass(props: BaseSessionViewProps) {
       return { width, height };
     };
 
-    const scheduleResize = () => {
-      const requestedSize = readRequestedSize();
+    return windowResizeCoordinator.observe(container, (snapshot, rect) => {
+      if (snapshot.phase !== "idle" || !isVisible) {
+        return;
+      }
+
+      const requestedSize = readRequestedSize(rect);
       if (
         requestedSize.width === frameSize.width
         && requestedSize.height === frameSize.height
       ) {
+        lastResizeRequestRef.current = requestedSize;
         return;
       }
-      if (resizeRequestTimerRef.current !== null) {
-        window.clearTimeout(resizeRequestTimerRef.current);
+      if (
+        lastResizeRequestRef.current?.width === requestedSize.width
+        && lastResizeRequestRef.current?.height === requestedSize.height
+      ) {
+        return;
       }
-      resizeRequestTimerRef.current = window.setTimeout(() => {
-        connector.resize(requestedSize.width, requestedSize.height);
-        resizeRequestTimerRef.current = null;
-      }, 350);
-    };
 
-    const resizeObserver = new ResizeObserver(scheduleResize);
-    resizeObserver.observe(container);
-    scheduleResize();
-    return () => {
-      resizeObserver.disconnect();
-      if (resizeRequestTimerRef.current !== null) {
-        window.clearTimeout(resizeRequestTimerRef.current);
-        resizeRequestTimerRef.current = null;
-      }
-    };
-  }, [connector, containerRef, frameSize?.height, frameSize?.width, viewOnly]);
+      lastResizeRequestRef.current = requestedSize;
+      connector.resize(requestedSize.width, requestedSize.height);
+    });
+  }, [connector, containerRef, frameSize?.height, frameSize?.width, isVisible, viewOnly]);
 
   const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
   const elapsedMs = () => Math.round(nowMs() - traceStartedAtRef.current);
@@ -532,7 +528,7 @@ export function VncViewClass(props: BaseSessionViewProps) {
       return;
     }
 
-    const point = getPointerPositionScaled(
+    const point = getPointerPositionCentered(
       pointerSurface,
       {
         desktopWidth: frameSize.width,

@@ -614,36 +614,6 @@ int lazy_freerdp_client_send_key(LazyFreeRdpClient* client, uint32_t scancode, u
     return 1;
 }
 
-int lazy_freerdp_client_resize(LazyFreeRdpClient* client, uint32_t width, uint32_t height)
-{
-    if (!client || !client->connected || !client->context || !client->context->settings)
-        return 0;
-
-    if (width == 0 || height == 0)
-        return 0;
-
-    if (!freerdp_settings_set_uint32(client->context->settings, FreeRDP_DesktopWidth, width))
-        return 0;
-    if (!freerdp_settings_set_uint32(client->context->settings, FreeRDP_DesktopHeight, height))
-        return 0;
-
-    MONITOR_DEF monitor;
-    memset(&monitor, 0, sizeof(monitor));
-    monitor.left = 0;
-    monitor.top = 0;
-    monitor.right = (INT32)width - 1;
-    monitor.bottom = (INT32)height - 1;
-    monitor.flags = MONITOR_PRIMARY;
-
-    if (!freerdp_display_send_monitor_layout(client->context, 1, &monitor))
-    {
-        lazy_set_error(client, "failed to send FreeRDP monitor layout update");
-        return 0;
-    }
-
-    return 1;
-}
-
 int lazy_freerdp_client_request_refresh(LazyFreeRdpClient* client)
 {
     rdpGdi* gdi = client && client->context ? client->context->gdi : NULL;

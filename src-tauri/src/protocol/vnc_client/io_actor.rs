@@ -6,6 +6,13 @@ use std::sync::{Arc, Once};
 use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 
+#[cfg(windows)]
+use std::net::{TcpStream, ToSocketAddrs};
+#[cfg(windows)]
+use std::os::windows::io::IntoRawSocket;
+#[cfg(windows)]
+use std::time::Duration;
+
 use super::super::vnc_ffi as ffi;
 use super::callbacks::{
     password_for_session, register_session, unregister_session, CallbackEvent, SessionContext,
@@ -196,6 +203,8 @@ impl NativeVncClient {
         let host_cstring = CString::new(config.host.clone())
             .map_err(|_| VncError::FfiError("Invalid hostname".to_string()))?;
         let encodings_string = build_encodings_string(&config.encodings)?;
+        #[cfg(windows)]
+        let connected_stream = connect_windows_tcp_stream(config)?;
 
         unsafe {
             VNC_GLOBAL_INIT.call_once(|| {
@@ -242,6 +251,8 @@ impl NativeVncClient {
             ffi::RfbClientSetQualityLevel(client, config.jpeg_quality as c_int);
             ffi::RfbClientSetServerHost(client, host_cstring.as_ptr());
             ffi::RfbClientSetServerPort(client, config.port as c_int);
+            #[cfg(windows)]
+            ffi::RfbClientAdoptConnectedSocket(client, connected_stream.into_raw_socket() as usize);
 
             if let Some(encodings) = context.encodings_string.as_ref() {
                 ffi::RfbClientSetEncodingsString(client, encodings.as_ptr());
@@ -326,6 +337,7 @@ impl NativeVncClient {
             }
 
             let handle_started_at = Instant::now();
+            ffi::RfbClientSetLastError(self.client, ptr::null());
             let handled = ffi::HandleRFBServerMessage(self.client);
             let handle_elapsed = handle_started_at.elapsed();
             let total_elapsed = total_started_at.elapsed();
@@ -348,7 +360,8 @@ impl NativeVncClient {
 
             if handled == 0 {
                 Err(VncError::ProtocolError(
-                    "Failed to handle server message".to_string(),
+                    read_last_error(self.client)
+                        .unwrap_or_else(|| "Failed to handle server message".to_string()),
                 ))
             } else {
                 Ok(true)
@@ -519,6 +532,65 @@ impl Drop for NativeVncClient {
             ffi::rfbClientCleanup(self.client);
         }
     }
+}
+
+#[cfg(windows)]
+fn connect_windows_tcp_stream(config: &VncClientConfig) -> VncResult<TcpStream> {
+    let addresses = (config.host.as_str(), config.port)
+        .to_socket_addrs()
+        .map_err(|error| {
+            VncError::ConnectionFailed(format!(
+                "Unable to resolve VNC server {}:{}: {error}",
+                config.host, config.port
+            ))
+        })?;
+    let timeout = Duration::from_secs(u64::from(config.connect_timeout_secs.max(1)));
+    let mut last_error = None;
+
+    for address in addresses {
+        match TcpStream::connect_timeout(&address, timeout) {
+            Ok(stream) => {
+                stream.set_nodelay(true).map_err(|error| {
+                    VncError::ConnectionFailed(format!(
+                        "Unable to configure VNC connection to {address}: {error}"
+                    ))
+                })?;
+                let io_timeout = Duration::from_secs(u64::from(config.read_timeout_secs.max(1)));
+                stream.set_read_timeout(Some(io_timeout)).map_err(|error| {
+                    VncError::ConnectionFailed(format!(
+                        "Unable to configure VNC read timeout for {address}: {error}"
+                    ))
+                })?;
+                stream
+                    .set_write_timeout(Some(io_timeout))
+                    .map_err(|error| {
+                        VncError::ConnectionFailed(format!(
+                            "Unable to configure VNC write timeout for {address}: {error}"
+                        ))
+                    })?;
+                // LibVNCClient's buffered reader can exhaust its retry counter immediately
+                // on a non-blocking Windows socket when only part of a server message has
+                // arrived. Keep the adopted socket blocking and let SO_RCVTIMEO/SO_SNDTIMEO
+                // enforce the actual I/O deadline.
+                stream.set_nonblocking(false).map_err(|error| {
+                    VncError::ConnectionFailed(format!(
+                        "Unable to prepare VNC connection to {address}: {error}"
+                    ))
+                })?;
+                return Ok(stream);
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    Err(VncError::ConnectionFailed(format!(
+        "Unable to connect to VNC server {}:{}: {}",
+        config.host,
+        config.port,
+        last_error
+            .map(|error| error.to_string())
+            .unwrap_or_else(|| "no socket addresses were resolved".to_string())
+    )))
 }
 
 fn reply_result<T>(reply: IoReply<T>, result: VncResult<T>) -> Option<String> {

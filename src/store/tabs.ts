@@ -8,6 +8,8 @@ import {
   getSessionTargetLabel,
   type SessionConnectionError,
 } from "@/services/connectionErrorService";
+import { ConnectionSupervisor } from "@/services/connection/ConnectionSupervisor";
+import { connectionQualityScheduler } from "@/services/connection/ConnectionQualityScheduler";
 
 /**
  * Session 生命周期回调接口
@@ -133,52 +135,186 @@ interface TabsState {
 
 export const useTabsStore = create<TabsState>()(
   (set, get) => {
-      const stateUnsubscribers = new Map<string, () => void>();
-      const reconnectingSessions = new Set<string>();
+      const connectionSupervisor = new ConnectionSupervisor();
+      type ReconnectTrigger = "manual" | "automatic" | "local";
+      let replaceConnector: (sessionId: string, trigger: ReconnectTrigger) => Promise<void>;
 
-      const attachConnectionState = (sessionId: string, connector: SessionConnector) => {
-        stateUnsubscribers.get(sessionId)?.();
-        const unsubscribe = connector.onConnectionState((event: ConnectionStateEvent) => {
-          if (event.phase === "idle" && reconnectingSessions.has(sessionId)) {
-            return;
-          }
-          const now = Date.now();
-          let shouldReconnectLocal = false;
-          set((state) => ({
-            sessions: state.sessions.map((session) => {
-              if (session.id !== sessionId) return session;
-              const isReconnectTransition = reconnectingSessions.has(sessionId)
-                && (event.phase === "connecting" || event.phase === "authenticating");
-              const phase = isReconnectTransition ? "reconnecting" : event.phase;
-              const attempt = event.phase === "connecting"
-                ? session.connectionStatus.attempt + 1
-                : session.connectionStatus.attempt;
-              if (event.phase === "connected" || event.phase === "failed" || event.phase === "disconnected") {
-                reconnectingSessions.delete(sessionId);
-              }
-              shouldReconnectLocal = session.type === "local" && event.phase === "disconnected";
-              return {
-                ...session,
-                connectionStatus: {
-                  phase,
-                  reason: event.reason,
-                  technicalDetails: event.technicalDetails,
-                  changedAt: now,
-                  connectedAt: event.phase === "connected"
-                    ? (session.connectionStatus.connectedAt ?? now)
-                    : session.connectionStatus.connectedAt,
-                  attempt,
-                },
-              };
-            }),
-          }));
+      const applyConnectionState = (sessionId: string, event: ConnectionStateEvent) => {
+        const now = Date.now();
+        let shouldReconnectLocal = false;
+        set((state) => ({
+          sessions: state.sessions.map((session) => {
+            if (session.id !== sessionId) return session;
+            const isRecoveringLocal = session.type === "local" && event.phase === "disconnected";
+            shouldReconnectLocal = isRecoveringLocal;
+            const visibleEvent: ConnectionStateEvent = isRecoveringLocal
+              ? {
+                  ...event,
+                  phase: "reconnecting",
+                  stage: "transport",
+                  health: "degraded",
+                  terminal: false,
+                  failure: undefined,
+                  reason: undefined,
+                  technicalDetails: undefined,
+                }
+              : event;
+            return {
+              ...session,
+              connectionStatus: {
+                ...session.connectionStatus,
+                ...visibleEvent,
+                changedAt: now,
+                connectedAt: event.phase === "connected" ? now : session.connectionStatus.connectedAt,
+                attempt: event.attempt ?? session.connectionStatus.attempt,
+                terminal: visibleEvent.terminal,
+                reason: visibleEvent.reason,
+                technicalDetails: visibleEvent.technicalDetails,
+                failure: visibleEvent.failure,
+                retryAt: visibleEvent.retryAt,
+              },
+            };
+          }),
+        }));
 
-          if (shouldReconnectLocal) {
-            logger.info("FE/store/tabs/local-reconnect", `Local session ${sessionId} disconnected, recreating`);
-            window.setTimeout(() => get().reconnectSession(sessionId), 0);
+        if (event.phase === "connected") {
+          connectionQualityScheduler.refreshSession(sessionId);
+        }
+
+        if (shouldReconnectLocal) {
+          logger.info("FE/store/tabs/local-reconnect", `Local session ${sessionId} disconnected, recreating`);
+          window.setTimeout(() => {
+            void replaceConnector(sessionId, "local");
+          }, 0);
+        }
+      };
+
+      const publishConnectionError = (
+        sessionData: Omit<TerminalSession, "id" | "connector" | "connectionStatus">,
+        sessionId: string,
+        error: unknown,
+      ) => {
+        const errorPresentation = getConnectionErrorPresentation(sessionData.type, error);
+        set((state) => {
+          if (!state.sessions.some((session) => session.id === sessionId)) {
+            return state;
           }
+          return {
+            connectionError: {
+              sessionId,
+              sessionTitle: sessionData.title,
+              sessionType: sessionData.type,
+              sessionTarget: getSessionTargetLabel(sessionData),
+              summary: errorPresentation.summary,
+              guidance: errorPresentation.guidance,
+              technicalDetails: errorPresentation.technicalDetails,
+              failure: errorPresentation.failure,
+            },
+          };
         });
-        stateUnsubscribers.set(sessionId, unsubscribe);
+      };
+
+      const attachConnection = (
+        sessionId: string,
+        connector: SessionConnector,
+        reconnecting: boolean,
+        preserveRetryCount: boolean,
+      ): number => {
+        const initialAttempt = get().sessions.find((session) => session.id === sessionId)
+          ?.connectionStatus.attempt ?? 0;
+        connectionQualityScheduler.register(sessionId, connector);
+        return connectionSupervisor.register({
+          sessionId,
+          protocol: connector.protocol,
+          connector,
+          initialAttempt,
+          reconnecting,
+          preserveRetryCount,
+          onState: (event) => {
+            applyConnectionState(sessionId, event);
+            if (!event.terminal || !event.failure) {
+              return;
+            }
+            const session = get().sessions.find((candidate) => candidate.id === sessionId);
+            const isRecoveringLocal = session?.type === "local" && event.phase === "disconnected";
+            if (session && !isRecoveringLocal) {
+              publishConnectionError(session, sessionId, event.failure);
+            }
+          },
+          onReconnect: () => replaceConnector(sessionId, "automatic"),
+        });
+      };
+
+      const openConnector = async (
+        sessionId: string,
+        connector: SessionConnector,
+        generation: number,
+      ): Promise<void> => {
+        try {
+          await connector.open();
+        } catch (error) {
+          if (connectionSupervisor.isCurrent(sessionId, generation)) {
+            if (!connectionSupervisor.hasReportedFailure(sessionId, generation)) {
+              connectionSupervisor.reportFailure(sessionId, generation, error);
+            }
+          }
+          throw error;
+        }
+      };
+
+      replaceConnector = async (sessionId, trigger) => {
+        const currentSession = get().sessions.find((session) => session.id === sessionId);
+        if (!currentSession) {
+          throw new Error(`Session ${sessionId} not found`);
+        }
+
+        if (trigger === "manual") {
+          connectionSupervisor.resetRetryState(sessionId);
+        }
+
+        const oldConnector = currentSession.connector;
+        let newConnector: SessionConnector;
+        try {
+          newConnector = createConnector(currentSession as SessionCreationData, sessionId);
+        } catch (error) {
+          const generation = connectionSupervisor.getGeneration(sessionId);
+          if (generation !== undefined) {
+            connectionSupervisor.reportFailure(sessionId, generation, error);
+          }
+          throw error;
+        }
+        set((state) => ({
+          sessions: state.sessions.map((session) => session.id === sessionId ? {
+            ...session,
+            connector: newConnector,
+            connectionStatus: {
+              ...session.connectionStatus,
+              phase: "reconnecting",
+              stage: "transport",
+              health: "degraded",
+              terminal: false,
+              failure: undefined,
+              reason: undefined,
+              technicalDetails: undefined,
+              retryAt: undefined,
+              changedAt: Date.now(),
+            },
+          } : session),
+          connectionError: null,
+        }));
+
+        const generation = attachConnection(
+          sessionId,
+          newConnector,
+          true,
+          trigger === "automatic",
+        );
+        oldConnector?.close();
+        await openConnector(
+          sessionId,
+          newConnector,
+          generation,
+        );
       };
 
       return {
@@ -201,6 +337,8 @@ export const useTabsStore = create<TabsState>()(
             connector,
             connectionStatus: {
               phase: "idle",
+              stage: "idle",
+              health: "unknown",
               changedAt: Date.now(),
               attempt: 0,
             },
@@ -212,7 +350,8 @@ export const useTabsStore = create<TabsState>()(
             focusSessionId: id,
             connectionError: null,
           }));
-          attachConnectionState(id, connector);
+          const generation = attachConnection(id, connector, false, false);
+          connectionQualityScheduler.setFocusedSession(id);
 
           // 通知生命周期回调（由 TabBar 处理 pane 创建）
           if (options?.notifyLifecycle !== false && sessionLifecycleCallbacks) {
@@ -220,39 +359,8 @@ export const useTabsStore = create<TabsState>()(
           }
 
           // 异步打开 Tauri 侧的 PTY 进程
-          connector.open().catch((error: unknown) => {
+          openConnector(id, connector, generation).catch((error: unknown) => {
             logger.error("FE/store/tabs/open-error", getOpenFailureLogLabel(sessionData.type), {error});
-
-            const errorPresentation = getConnectionErrorPresentation(sessionData.type, error);
-
-            set((state) => {
-              const sessionExists = state.sessions.some((session) => session.id === id);
-              if (!sessionExists) {
-                return state;
-              }
-
-              return {
-                sessions: state.sessions.map((session) => session.id === id ? {
-                  ...session,
-                  connectionStatus: {
-                    ...session.connectionStatus,
-                    phase: "failed",
-                    reason: errorPresentation.summary,
-                    technicalDetails: errorPresentation.technicalDetails,
-                    changedAt: Date.now(),
-                  },
-                } : session),
-                connectionError: {
-                  sessionId: id,
-                  sessionTitle: sessionData.title,
-                  sessionType: sessionData.type,
-                  sessionTarget: getSessionTargetLabel(sessionData),
-                  summary: errorPresentation.summary,
-                  guidance: errorPresentation.guidance,
-                  technicalDetails: errorPresentation.technicalDetails,
-                },
-              };
-            });
           });
 
           // 返回新创建的会话 ID
@@ -262,9 +370,8 @@ export const useTabsStore = create<TabsState>()(
         removeSession: (id, options) => {
           const targetSession = get().sessions.find(s => s.id === id);
           const remainingCount = get().sessions.length - 1;
-          stateUnsubscribers.get(id)?.();
-          stateUnsubscribers.delete(id);
-          reconnectingSessions.delete(id);
+          connectionSupervisor.unregister(id);
+          connectionQualityScheduler.unregister(id);
           
           // 1. 先触发连接器的资源回收逻辑（通知 Rust 关闭进程）
           if (targetSession?.connector) {
@@ -293,6 +400,7 @@ export const useTabsStore = create<TabsState>()(
               focusSessionId: newFocusId,
             };
           });
+          connectionQualityScheduler.setFocusedSession(nextFocusId);
 
           // 3. 通知生命周期回调（状态更新后触发，确保 TabBar 能获取最新状态）
           if (options?.notifyLifecycle !== false && sessionLifecycleCallbacks) {
@@ -393,6 +501,7 @@ export const useTabsStore = create<TabsState>()(
 
         setFocusSession: (id) => {
           set({ focusSessionId: id });
+          connectionQualityScheduler.setFocusedSession(id);
         },
 
         updateSession: (id, updates) => {
@@ -410,32 +519,7 @@ export const useTabsStore = create<TabsState>()(
         },
 
         reconnectSession: (sessionId) => {
-          const currentSession = get().sessions.find((session) => session.id === sessionId);
-          if (!currentSession) {
-            logger.error("FE/store/tabs/reconnect", `Session ${sessionId} not found`);
-            return;
-          }
-
-          stateUnsubscribers.get(sessionId)?.();
-          currentSession.connector?.close();
-          reconnectingSessions.add(sessionId);
-          const newConnector = createConnector(currentSession as SessionCreationData, sessionId);
-          set((state) => ({
-            sessions: state.sessions.map((session) => session.id === sessionId ? {
-              ...session,
-              connector: newConnector,
-              connectionStatus: {
-                ...session.connectionStatus,
-                phase: "reconnecting",
-                reason: undefined,
-                technicalDetails: undefined,
-                changedAt: Date.now(),
-              },
-            } : session),
-            connectionError: null,
-          }));
-          attachConnectionState(sessionId, newConnector);
-          newConnector.open().catch((error: unknown) => {
+          void replaceConnector(sessionId, "manual").catch((error: unknown) => {
             logger.error("FE/store/tabs/reconnect", "Failed to reconnect session", { error });
           });
         },

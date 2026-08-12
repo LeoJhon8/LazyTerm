@@ -55,7 +55,7 @@ import type { ShellInfo } from "@/types/shell";
 import type { SessionConnectionPhase } from "@/types/terminal";
 import { getAvailableShells } from "@/services/shellService";
 import { startTabDrag, endTabDrag } from "@/lib/tab-drag-state";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { WorkspaceTemplateDialog } from "@/components/modules/WorkspaceTemplateDialog";
@@ -155,6 +155,8 @@ function SortableTab({
     transition,
     isDragging,
   } = useSortable({ id });
+  const [contextMenuKey, setContextMenuKey] = useState(0);
+  const contextMenuTriggerRef = useRef<HTMLDivElement | null>(null);
 
   const handleKeyUp = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -165,6 +167,33 @@ function SortableTab({
 
   const handleClosePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     event.stopPropagation();
+  };
+
+  const handleContextMenuPointerDownCapture = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 2) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const { clientX, clientY, screenX, screenY } = event;
+    // Recreate the Root synchronously, then open the new trigger directly at
+    // this pointer. This avoids Radix batching the old close and new open into
+    // one unchanged `open=true` state on repeated right clicks.
+    flushSync(() => {
+      setContextMenuKey((current) => current + 1);
+    });
+    contextMenuTriggerRef.current?.dispatchEvent(new window.MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      button: 2,
+      buttons: 2,
+      clientX,
+      clientY,
+      screenX,
+      screenY,
+      view: window,
+    }));
   };
 
   const tabIcon = getTabIcon(sessionType, isSplit);
@@ -180,9 +209,13 @@ function SortableTab({
       }}
       className="shrink-0"
     >
-      <ContextMenu>
+      <ContextMenu
+        key={contextMenuKey}
+        modal={false}
+      >
         <ContextMenuTrigger asChild>
           <div
+            ref={contextMenuTriggerRef}
             className={`tab-item group relative cursor-pointer select-none ${
               active
                 ? "tab-item-active"
@@ -194,6 +227,7 @@ function SortableTab({
             onKeyUp={handleKeyUp}
             {...attributes}
             {...listeners}
+            onPointerDownCapture={handleContextMenuPointerDownCapture}
           >
             <span className="pointer-events-none min-w-0 truncate text-[13px] flex items-center justify-center gap-1.5 leading-none">
               {tabIcon}

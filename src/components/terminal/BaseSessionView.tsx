@@ -6,6 +6,8 @@ export interface BaseSessionViewProps {
   paneId: string;
   /** 会话 ID */
   sessionId: string;
+  /** 当前工作区中的视图是否可见 */
+  isVisible?: boolean;
   /** 视觉准备就绪回调 */
   onVisualReady?: (sessionId: string) => void;
 }
@@ -26,7 +28,7 @@ export const VIEW_CONTAINER_CLASSNAME =
 /**
  * Canvas 容器样式类名
  */
-export const CANVAS_CLASSNAME = "max-h-full max-w-full select-none object-contain";
+export const CANVAS_CLASSNAME = "h-full w-full select-none object-contain";
 
 /**
  * 隐藏元素样式类名

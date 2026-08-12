@@ -572,9 +572,7 @@ export function SessionModule() {
 
     if (node.type === "rdp" && isRdpConfig(node.config)) {
       const backend = resolveRdpBackend(useSettingsStore.getState().rdpBackend);
-      const rdpConfig = backend === "msrdpax"
-        ? { ...node.config, backend, width: undefined, height: undefined, autoResize: true }
-        : { ...node.config, backend, autoResize: false };
+      const rdpConfig = { ...node.config, backend };
       return { title: node.name, type: "rdp", host: rdpConfig.host, config: { host: rdpConfig.host, port: rdpConfig.port, rdpConfig } };
     }
 

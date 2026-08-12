@@ -21,19 +21,12 @@ export interface SessionNode {
 }
 
 function normalizeRdpConfig(config: RDPConfig): RDPConfig {
-  if (config.backend === "msrdpax") {
-    return {
-      ...config,
-      width: undefined,
-      height: undefined,
-      autoResize: true,
-    };
-  }
-
+  const normalizedConfig = { ...config } as RDPConfig & { autoResize?: boolean };
+  delete normalizedConfig.autoResize;
   const resolution = getClosestRdpResolutionPreset(config.width, config.height);
 
   return {
-    ...config,
+    ...normalizedConfig,
     width: resolution.width,
     height: resolution.height,
   };

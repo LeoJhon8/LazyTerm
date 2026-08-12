@@ -5,19 +5,18 @@ use crate::protocol::ssh_auth;
 use crate::{AppState, SshConnectConfig, SshControlMsg, SshTerminalSession};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::sync::{mpsc, oneshot};
-use uuid::Uuid;
 
 /// 创建 SSH 会话
 #[tauri::command]
 pub async fn create_ssh_session<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
+    session_id: String,
     config: SshConnectConfig,
 ) -> Result<String, String> {
-    let session_id = Uuid::new_v4().to_string();
-
     logging::info(
         "SSH/connect",
         format!(
@@ -30,57 +29,72 @@ pub async fn create_ssh_session<R: Runtime>(
         ),
     );
 
-    // 使用 protocol::ssh_auth 中的 connect_and_authenticate 一站式完成连接和认证
-    let handle = ssh_auth::connect_and_authenticate(&config)
-        .await
-        .map_err(|e| {
-            logging::error("SSH/connect", format!("连接或认证失败: {e}"));
-            e
-        })?;
+    let ready_timeout =
+        Duration::from_millis(config.ready_timeout.unwrap_or(30_000).clamp(1_000, 120_000));
+    let readiness_result = tokio::time::timeout(ready_timeout, async {
+        // 使用 protocol::ssh_auth 中的 connect_and_authenticate 一站式完成连接和认证
+        let handle = ssh_auth::connect_and_authenticate(&config)
+            .await
+            .map_err(|e| {
+                logging::error("SSH/connect", format!("连接或认证失败: {e}"));
+                e
+            })?;
 
-    logging::info("SSH/connect", "认证通过，初始化会话通道");
+        logging::info("SSH/connect", "认证通过，初始化会话通道");
 
-    let channel = handle
-        .channel_open_session()
-        .await
-        .map_err(|e| e.to_string())?;
-    let initial_cols = config.initial_cols.unwrap_or(80).clamp(40, 400);
-    let initial_rows = config.initial_rows.unwrap_or(24).clamp(12, 200);
-    channel
-        .request_pty(
-            true,
-            "xterm-256color",
-            initial_cols,
-            initial_rows,
-            0,
-            0,
-            &[],
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-    logging::info(
-        "SSH/channel",
-        format!("session {session_id} pty ok: {initial_cols}x{initial_rows}"),
-    );
-    let _ = channel.set_env(false, "TERM_PROGRAM", "LazyTerm").await;
-    let _ = channel
-        .set_env(false, "TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"))
-        .await;
-    let _ = channel.set_env(false, "COLORTERM", "truecolor").await;
-    channel
-        .request_shell(true)
-        .await
-        .map_err(|e| e.to_string())?;
-    logging::info("SSH/channel", format!("session {session_id} shell ok"));
+        let channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|e| e.to_string())?;
+        let initial_cols = config.initial_cols.unwrap_or(80).clamp(40, 400);
+        let initial_rows = config.initial_rows.unwrap_or(24).clamp(12, 200);
+        channel
+            .request_pty(
+                true,
+                "xterm-256color",
+                initial_cols,
+                initial_rows,
+                0,
+                0,
+                &[],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        logging::info(
+            "SSH/channel",
+            format!("session {session_id} pty ok: {initial_cols}x{initial_rows}"),
+        );
+        let _ = channel.set_env(false, "TERM_PROGRAM", "LazyTerm").await;
+        let _ = channel
+            .set_env(false, "TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"))
+            .await;
+        let _ = channel.set_env(false, "COLORTERM", "truecolor").await;
+        channel
+            .request_shell(true)
+            .await
+            .map_err(|e| e.to_string())?;
+        logging::info("SSH/channel", format!("session {session_id} shell ok"));
+
+        Ok::<_, String>((handle, channel))
+    })
+    .await
+    .map_err(|_| format!("SSH 会话就绪超时（{} ms）", ready_timeout.as_millis()))?;
+    let (handle, channel) = readiness_result?;
 
     let (control_tx, mut control_rx) = mpsc::unbounded_channel::<SshControlMsg>();
     let (mut channel_reader, channel_writer) = channel.split();
     let (channel_closed_tx, mut channel_closed_rx) = oneshot::channel::<()>();
     let close_emitted = Arc::new(AtomicBool::new(false));
 
+    state.ssh_sessions.lock().await.insert(
+        session_id.clone(),
+        SshTerminalSession { control_tx, handle },
+    );
+
     let reader_app = app.clone();
     let reader_session_id = session_id.clone();
     let reader_close_emitted = Arc::clone(&close_emitted);
+    let reader_sessions = Arc::clone(&state.ssh_sessions);
     tokio::spawn(async move {
         let event_name = format!("terminal-data-{reader_session_id}");
         let close_event_name = format!("terminal-close-{reader_session_id}");
@@ -154,11 +168,13 @@ pub async fn create_ssh_session<R: Runtime>(
         if !reader_close_emitted.swap(true, Ordering::Relaxed) {
             let _ = reader_app.emit(&close_event_name, close_reason);
         }
+        reader_sessions.lock().await.remove(&reader_session_id);
         let _ = channel_closed_tx.send(());
     });
 
     let writer_session_id = session_id.clone();
     let writer_close_emitted = Arc::clone(&close_emitted);
+    let writer_sessions = Arc::clone(&state.ssh_sessions);
     tokio::spawn(async move {
         let close_event_name = format!("terminal-close-{writer_session_id}");
 
@@ -179,6 +195,11 @@ pub async fn create_ssh_session<R: Runtime>(
                                     "SSH/channel",
                                     format!("session {writer_session_id} failed to send data: {error}"),
                                 );
+                                if !writer_close_emitted.swap(true, Ordering::Relaxed) {
+                                    let _ = app.emit(&close_event_name, error.to_string());
+                                }
+                                writer_sessions.lock().await.remove(&writer_session_id);
+                                break;
                             }
                         }
                         Some(SshControlMsg::Resize(cols, rows)) => {
@@ -187,6 +208,11 @@ pub async fn create_ssh_session<R: Runtime>(
                                     "SSH/channel",
                                     format!("session {writer_session_id} failed to resize to {cols}x{rows}: {error}"),
                                 );
+                                if !writer_close_emitted.swap(true, Ordering::Relaxed) {
+                                    let _ = app.emit(&close_event_name, error.to_string());
+                                }
+                                writer_sessions.lock().await.remove(&writer_session_id);
+                                break;
                             }
                         }
                         Some(SshControlMsg::Close) => {
@@ -216,11 +242,6 @@ pub async fn create_ssh_session<R: Runtime>(
             }
         }
     });
-
-    state.ssh_sessions.lock().await.insert(
-        session_id.clone(),
-        SshTerminalSession { control_tx, handle },
-    );
 
     Ok(session_id)
 }

@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{mpsc as std_mpsc, Arc, Mutex as StdMutex};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 // 前向声明，避免循环依赖
 // NativeRdpSession 在 native_rdp 模块中定义，这里只存储在 AppState 中
@@ -23,6 +23,7 @@ pub struct SshConnectConfig {
     pub private_key_passphrase: Option<String>,
     pub keep_alive: Option<bool>,
     pub keep_alive_interval: Option<u64>,
+    pub ready_timeout: Option<u64>,
     pub initial_cols: Option<u32>,
     pub initial_rows: Option<u32>,
 }
@@ -52,7 +53,6 @@ pub struct RdpConnectConfig {
     pub domain: Option<String>,
     pub width: Option<u32>,
     pub height: Option<u32>,
-    pub auto_resize: Option<bool>,
 }
 
 /// RDP 指针事件载荷
@@ -74,13 +74,24 @@ pub struct RdpKeyboardEventPayload {
     pub down: bool,
 }
 
+/// 图形远端会话的统一质量预算
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionQualityPolicyPayload {
+    pub mode: String,
+    pub priority: u8,
+    pub target_frame_rate: u16,
+    pub jpeg_quality_cap: u8,
+    pub suspend_visuals: bool,
+}
+
 /// RDP 控制消息
 pub enum RdpControlMsg {
     Pointer(RdpPointerEventPayload),
     Key(RdpKeyboardEventPayload),
     Refresh,
     ReleaseAll,
-    Resize(u16, u16),
+    SetQuality(ConnectionQualityPolicyPayload),
     Close,
 }
 
@@ -154,6 +165,7 @@ pub enum VncControlMsg {
     TypeText(VncTextInputPayload),
     Refresh { full: bool },
     Resize(u16, u16),
+    SetQuality(ConnectionQualityPolicyPayload),
     Close,
 }
 
@@ -198,6 +210,7 @@ pub struct TelnetConnectConfig {
 /// Telnet 终端会话
 pub struct TelnetSession {
     pub control_tx: mpsc::UnboundedSender<String>,
+    pub close_tx: watch::Sender<bool>,
 }
 
 // ==================== SFTP 相关类型 ====================
@@ -290,6 +303,7 @@ pub struct NativeHostRect {
     pub width: i32,
     pub height: i32,
     pub scale_factor: f64,
+    pub generation: Option<u64>,
 }
 
 /// 原生 RDP 状态事件载荷
@@ -321,14 +335,6 @@ pub struct VncCursorEventPayload {
     pub width: u16,
     pub height: u16,
     pub rgba_bytes: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VncRecoveryEventPayload {
-    pub phase: String,
-    pub attempt: u8,
-    pub reason: Option<String>,
 }
 
 // ==================== 应用状态 ====================

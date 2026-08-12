@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   IVncConnector,
+  ConnectionQualityPolicy,
   VNCConfig,
   VncCursorPayload,
   VncFramePayload,
@@ -18,13 +19,14 @@ export class VncConnector
 {
   readonly protocol = "vnc" as const;
   private readonly requestedSessionId = crypto.randomUUID();
+  private lastResize: { sessionId: string; width: number; height: number } | null = null;
 
   private cursorUnlisten: UnlistenFn | null = null;
   private cursorHandler: ((cursor: VncCursorPayload) => void) | null = null;
   private latestCursor: VncCursorPayload | null = null;
   private clipboardUnlisten: UnlistenFn | null = null;
   private clipboardHandler: ((text: string) => void) | null = null;
-  private recoveryUnlisten: UnlistenFn | null = null;
+  private latestClipboard: string | null = null;
   private sessionListenersPromise: Promise<void> | null = null;
 
   constructor(config: VNCConfig) {
@@ -40,16 +42,12 @@ export class VncConnector
 
   async onFrame(handler: (frame: VncFramePayload) => void): Promise<void> {
     await super.onFrame(handler);
-    // VNC 特有的：确保监听器已设置（包括光标）
-    const sessionId = await this.waitForSessionId();
-    await this.ensureSessionListeners(sessionId);
   }
 
   async onCursor(handler: (cursor: VncCursorPayload) => void): Promise<void> {
-    const sessionId = await this.waitForSessionId();
-
+    await this.ensureSessionListeners(this.requestedSessionId);
+    await this.waitUntilUsable();
     this.cursorHandler = handler;
-    await this.ensureSessionListeners(sessionId);
 
     if (this.latestCursor) {
       handler(this.latestCursor);
@@ -57,14 +55,16 @@ export class VncConnector
   }
 
   async onClipboard(handler: (text: string) => void): Promise<void> {
-    const sessionId = await this.waitForSessionId();
-
+    await this.ensureSessionListeners(this.requestedSessionId);
+    await this.waitUntilUsable();
     this.clipboardHandler = handler;
-    await this.ensureSessionListeners(sessionId);
+    if (this.latestClipboard !== null) {
+      handler(this.latestClipboard);
+    }
   }
 
   sendPointer(payload: VncPointerPayload): void {
-    if (!this.sessionId) {
+    if (!this.isConnected || !this.sessionId) {
       return;
     }
 
@@ -78,7 +78,7 @@ export class VncConnector
   }
 
   sendKey(payload: VncKeyboardPayload): void {
-    if (!this.sessionId) {
+    if (!this.isConnected || !this.sessionId) {
       return;
     }
 
@@ -92,7 +92,7 @@ export class VncConnector
   }
 
   sendKeySequence(payload: VncKeySequencePayload): void {
-    if (!this.sessionId) {
+    if (!this.isConnected || !this.sessionId) {
       return;
     }
 
@@ -134,7 +134,7 @@ export class VncConnector
   }
 
   requestFrame(full = false): void {
-    if (!this.sessionId) {
+    if (!this.isConnected || !this.sessionId) {
       return;
     }
 
@@ -148,20 +148,55 @@ export class VncConnector
   }
 
   resize(width: number, height: number): void {
-    if (!this.sessionId) {
+    if (!this.isConnected || !this.sessionId) {
+      return;
+    }
+
+    const sessionId = this.sessionId;
+    const normalizedWidth = Math.max(1, Math.floor(width));
+    const normalizedHeight = Math.max(1, Math.floor(height));
+    if (
+      this.lastResize?.sessionId === sessionId
+      && this.lastResize.width === normalizedWidth
+      && this.lastResize.height === normalizedHeight
+    ) {
+      return;
+    }
+    const request = {
+      sessionId,
+      width: normalizedWidth,
+      height: normalizedHeight,
+    };
+    this.lastResize = request;
+
+    invokeTauri(
+      "resize_vnc_session",
+      request,
+      { scope: "FE/connector/vnc/resize" },
+    ).catch((error) => {
+      logger.error("FE/connector/vnc/resize", "Desktop resize request failed", { error });
+      if (this.lastResize === request) {
+        this.lastResize = null;
+      }
+    });
+  }
+
+  applyQualityPolicy(policy: ConnectionQualityPolicy): void {
+    if (!this.isConnected || !this.sessionId) {
       return;
     }
 
     invokeTauri(
-      "resize_vnc_session",
-      { sessionId: this.sessionId, width, height },
-      { scope: "FE/connector/vnc/resize" },
+      "set_vnc_quality_policy",
+      { sessionId: this.sessionId, policy },
+      { scope: "FE/connector/vnc/quality" },
     ).catch((error) => {
-      logger.error("FE/connector/vnc/resize", "Desktop resize request failed", { error });
+      logger.error("FE/connector/vnc/quality", "Applying quality policy failed", { error });
     });
   }
 
   close(): void {
+    this.lastResize = null;
     super.close();
     this.cleanupVncListeners();
   }
@@ -186,6 +221,10 @@ export class VncConnector
     return this.requestedSessionId;
   }
 
+  protected async prepareProtocolListeners(sessionId: string): Promise<void> {
+    await this.ensureSessionListeners(sessionId);
+  }
+
   protected handleFrameParseError(error: unknown): void {
     super.handleFrameParseError(error);
     this.requestFrame(true);
@@ -203,6 +242,8 @@ export class VncConnector
     this.cleanupVncListeners();
     this.cursorHandler = null;
     this.clipboardHandler = null;
+    this.latestCursor = null;
+    this.latestClipboard = null;
   }
 
   private cleanupVncListeners(): void {
@@ -213,10 +254,6 @@ export class VncConnector
     if (this.clipboardUnlisten) {
       this.clipboardUnlisten();
       this.clipboardUnlisten = null;
-    }
-    if (this.recoveryUnlisten) {
-      this.recoveryUnlisten();
-      this.recoveryUnlisten = null;
     }
     this.sessionListenersPromise = null;
   }
@@ -232,8 +269,10 @@ export class VncConnector
   }
 
   private async setupSessionListeners(sessionId: string): Promise<void> {
+    let cursorUnlisten: UnlistenFn | null = null;
+    let clipboardUnlisten: UnlistenFn | null = null;
     try {
-      this.cursorUnlisten = await listen<{
+      cursorUnlisten = await listen<{
         hotspotX: number;
         hotspotY: number;
         width: number;
@@ -252,27 +291,18 @@ export class VncConnector
         this.cursorHandler?.(cursor);
       });
 
-      this.clipboardUnlisten = await listen<string>(`vnc-clipboard-${sessionId}`, (event) => {
+      clipboardUnlisten = await listen<string>(`vnc-clipboard-${sessionId}`, (event) => {
+        this.latestClipboard = event.payload;
         this.clipboardHandler?.(event.payload);
       });
-
-      this.recoveryUnlisten = await listen<{
-        phase: "reconnecting" | "connected";
-        attempt: number;
-        reason: string | null;
-      }>(`vnc-recovery-${sessionId}`, (event) => {
-        if (event.payload.phase === "reconnecting") {
-          this.emitConnectionState({
-            phase: "reconnecting",
-            reason: `VNC 正在重连（第 ${event.payload.attempt} 次）`,
-            technicalDetails: event.payload.reason ?? undefined,
-          });
-        } else {
-          this.emitConnectionState({ phase: "connected" });
-        }
-      });
+      if (this.isConnectionClosed()) {
+        throw new Error("VNC connection closed while event listeners were registering");
+      }
+      this.cursorUnlisten = cursorUnlisten;
+      this.clipboardUnlisten = clipboardUnlisten;
     } catch (error) {
-      this.cleanupVncListeners();
+      cursorUnlisten?.();
+      clipboardUnlisten?.();
       throw error;
     }
   }

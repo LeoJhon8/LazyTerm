@@ -17,12 +17,14 @@ import {
   TAB_DRAG_END_EVENT,
 } from "@/lib/tab-drag-state";
 import { useI18n } from "@/i18n";
+import { connectionQualityScheduler } from "@/services/connection/ConnectionQualityScheduler";
 
 interface PaneViewProps {
   paneId: string;
+  isVisible: boolean;
 }
 
-export function PaneView({ paneId }: PaneViewProps) {
+export function PaneView({ paneId, isVisible }: PaneViewProps) {
   const activeTabId = useTabsStore((state) => state.activeTabId);
   const focusedPaneId = usePanesStore((state) =>
     activeTabId ? state.workspaces[activeTabId]?.focusedPaneId : null
@@ -49,6 +51,15 @@ export function PaneView({ paneId }: PaneViewProps) {
   const isNativeRdpPane = session?.type === "rdp" && session.connector?.protocol === "rdp" && session.connector.backend === "msrdpax";
   const showDockedPaneControls = paneCount > 1 && isNativeRdpPane;
 
+  useEffect(() => {
+    const sessionId = session?.id;
+    if (!sessionId) {
+      return;
+    }
+    connectionQualityScheduler.setSessionVisible(sessionId, isVisible);
+    return () => connectionQualityScheduler.setSessionVisible(sessionId, false);
+  }, [isVisible, session?.id]);
+
   const syncSinglePaneTabTitle = useCallback((tabId: string) => {
     const remainingLeaves = usePanesStore.getState().getAllLeaves(tabId);
     if (remainingLeaves.length !== 1) {
@@ -71,6 +82,12 @@ export function PaneView({ paneId }: PaneViewProps) {
   }, []);
 
   useEffect(() => {
+    if (!isVisible) {
+      setIsTabDragging(false);
+      setDropZone(null);
+      return;
+    }
+
     const handleDragStart = () => {
       setIsTabDragging(true);
     };
@@ -147,7 +164,7 @@ export function PaneView({ paneId }: PaneViewProps) {
       window.removeEventListener(TAB_DRAG_MOVE_EVENT, handleDragMove);
       window.removeEventListener(TAB_DRAG_END_EVENT, handleDragEnd);
     };
-  }, [paneId, splitPane]);
+  }, [isVisible, paneId, splitPane]);
 
   const handlePaneClick = useCallback(() => {
     focusPane(paneId);
@@ -211,7 +228,7 @@ export function PaneView({ paneId }: PaneViewProps) {
     <div
       ref={containerRef}
       className={cn(
-        "group relative flex h-full w-full min-h-0 flex-col overflow-hidden transition-all",
+        "group relative flex h-full w-full min-h-0 flex-col overflow-hidden transition-colors",
         paneCount > 1 && "border border-border/40",
         paneCount > 1 && isFocused && "border-primary/50 ring-1 ring-inset ring-primary/40",
       )}
@@ -237,18 +254,21 @@ export function PaneView({ paneId }: PaneViewProps) {
             key={session.id}
             paneId={paneId}
             sessionId={session.id}
+            isVisible={isVisible}
           />
         ) : session.type === "vnc" ? (
           <VncViewClass
             key={session.id}
             paneId={paneId}
             sessionId={session.id}
+            isVisible={isVisible}
           />
         ) : (
           <TerminalViewClass
             key={session.id}
             paneId={paneId}
             sessionId={session.id}
+            isVisible={isVisible}
           />
         )}
       </div>

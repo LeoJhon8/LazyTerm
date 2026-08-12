@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { DEFAULT_APP_COLOR_PALETTE, useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
@@ -29,6 +29,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { AppColorPalette } from "@/store/settings";
+import { windowResizeCoordinator } from "@/services/windowResizeCoordinator";
 
 const CUSTOM_PALETTE_VARIABLES = [
   "--background",
@@ -208,7 +209,7 @@ function App() {
   const openLeftPanelWidth = getActivityPanelWidth("left");
   const openRightPanelWidth = getActivityPanelWidth("right");
   const localizedConnectionError = connectionError
-    ? getConnectionErrorPresentation(connectionError.sessionType, connectionError.technicalDetails)
+    ? getConnectionErrorPresentation(connectionError.sessionType, connectionError.failure)
     : null;
 
   // 列宽/行高：直接同步计算（不再依赖异步 CSS 变量）
@@ -217,6 +218,10 @@ function App() {
   const rw = 0;
   const th = isImmersive ? 0 : (topPanelCollapsed ? 0 : topPanelHeight);
   const bh = isImmersive ? 0 : effectiveBottomRowHeight;
+
+  useLayoutEffect(() => {
+    windowResizeCoordinator.requestLayout();
+  }, [openLeftPanelWidth, openRightPanelWidth]);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -402,7 +407,7 @@ function App() {
         {!isImmersive && <SlotManager />}
         <section
           id="slot-mid-main"
-          className="relative z-0 min-h-0 min-w-0 overflow-hidden transition-all duration-300"
+          className="relative z-0 min-h-0 min-w-0 overflow-hidden"
           style={{
             gridArea: "mid-main",
             marginLeft: openLeftPanelWidth ? `${openLeftPanelWidth}px` : undefined,
@@ -422,7 +427,11 @@ function App() {
                     ? t("远程桌面连接失败")
                     : connectionError?.sessionType === "vnc"
                       ? t("VNC 连接失败")
-                      : t("终端连接失败")}
+                      : connectionError?.sessionType === "telnet"
+                        ? t("Telnet 连接失败")
+                        : connectionError?.sessionType === "serial"
+                          ? t("串口连接失败")
+                          : t("终端连接失败")}
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {connectionError
@@ -446,6 +455,10 @@ function App() {
 
                 <div className="rounded-2xl border border-border/60 bg-black/25 px-4 py-3 text-xs leading-6 text-muted-foreground">
                   <div className="font-medium text-foreground">{t("技术详情")}</div>
+                  <div className="mt-1 flex flex-wrap gap-x-4">
+                    <span>{t("错误代码")}: {connectionError.failure.code}</span>
+                    <span>{t("连接阶段")}: {connectionError.failure.stage}</span>
+                  </div>
                   <div className="mt-1 break-all">{connectionError.technicalDetails}</div>
                 </div>
               </div>

@@ -87,7 +87,6 @@ export function createConnector(
         const normalizedConfig = {
           ...config,
           backend,
-          autoResize: backend === "msrdpax" ? true : false,
         };
         return backend === "msrdpax"
           ? new NativeRdpConnector(normalizedConfig)

@@ -258,6 +258,7 @@ extern "C" {
     pub fn RfbClientSetViewOnly(client: *mut RfbClient, view_only: c_uchar);
     pub fn RfbClientSetServerHost(client: *mut RfbClient, host: *const c_char);
     pub fn RfbClientSetServerPort(client: *mut RfbClient, port: c_int);
+    pub fn RfbClientAdoptConnectedSocket(client: *mut RfbClient, socket_handle: usize);
 
     // 设置回调
     pub fn RfbClientSetMallocFrameBuffer(

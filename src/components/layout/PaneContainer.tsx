@@ -13,16 +13,37 @@ import { useTabsStore } from "@/store/tabs";
  */
 export function PaneContainer() {
   const activeTabId = useTabsStore(state => state.activeTabId);
-  const rootNode = usePanesStore(state => activeTabId ? state.workspaces[activeTabId]?.rootNode : null);
-
-  // 没有面板：显示品牌化欢迎页
-  if (!rootNode) {
-    return <WelcomePage />;
-  }
+  const tabs = useTabsStore(state => state.tabs);
+  const workspaces = usePanesStore(state => state.workspaces);
+  const activeRootNode = activeTabId ? workspaces[activeTabId]?.rootNode : null;
 
   return (
     <div className="relative h-full w-full">
-      <PaneNodeRenderer node={rootNode} />
+      {!activeRootNode && <WelcomePage />}
+      {tabs.map((tab) => {
+        const rootNode = workspaces[tab.id]?.rootNode;
+        if (!rootNode) {
+          return null;
+        }
+
+        const isVisible = tab.id === activeTabId;
+        return (
+          <div
+            key={tab.id}
+            aria-hidden={!isVisible}
+            data-workspace-id={tab.id}
+            data-workspace-visible={isVisible ? "true" : "false"}
+            className={cn(
+              "absolute inset-0 h-full w-full",
+              isVisible
+                ? "visible z-10"
+                : "invisible z-0 pointer-events-none",
+            )}
+          >
+            <PaneNodeRenderer node={rootNode} isVisible={isVisible} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -30,17 +51,17 @@ export function PaneContainer() {
 /**
  * 递归渲染器 — 根据节点类型分发
  */
-function PaneNodeRenderer({ node }: { node: PaneNode }) {
+function PaneNodeRenderer({ node, isVisible }: { node: PaneNode; isVisible: boolean }) {
   if (isLeaf(node)) {
-    return <PaneView paneId={node.id} />;
+    return <PaneView paneId={node.id} isVisible={isVisible} />;
   }
-  return <PaneSplitView split={node} />;
+  return <PaneSplitView split={node} isVisible={isVisible} />;
 }
 
 /**
  * 分裂节点视图 — 两个子节点 + 调整手柄
  */
-function PaneSplitView({ split }: { split: PaneSplit }) {
+function PaneSplitView({ split, isVisible }: { split: PaneSplit; isVisible: boolean }) {
   const isHorizontal = split.direction === "horizontal";
 
   return (
@@ -59,7 +80,7 @@ function PaneSplitView({ split }: { split: PaneSplit }) {
           minHeight: !isHorizontal ? "60px" : undefined,
         }}
       >
-        <PaneNodeRenderer node={split.children[0]} />
+        <PaneNodeRenderer node={split.children[0]} isVisible={isVisible} />
       </div>
 
       {/* 调整手柄 */}
@@ -73,7 +94,7 @@ function PaneSplitView({ split }: { split: PaneSplit }) {
           minHeight: !isHorizontal ? "60px" : undefined,
         }}
       >
-        <PaneNodeRenderer node={split.children[1]} />
+        <PaneNodeRenderer node={split.children[1]} isVisible={isVisible} />
       </div>
     </div>
   );

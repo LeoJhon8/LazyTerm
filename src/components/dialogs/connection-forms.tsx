@@ -35,11 +35,6 @@ import { useSettingsStore } from "@/store/settings";
 import { useSettingsDialogStore } from "@/store/settings-dialog";
 import { resolveRdpBackend } from "@/lib/rdp-backend";
 import { getAvailableShells } from "@/services/shellService";
-import {
-  DEFAULT_RDP_RESOLUTION_VALUE,
-  getRdpResolutionPreset,
-  RDP_RESOLUTION_PRESETS,
-} from "@/lib/rdp-resolution";
 import type { Credential, CredentialType } from "@/types/credential";
 import type {
   SSHConfig,
@@ -462,7 +457,6 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
   const { t } = useI18n();
   const configuredRdpBackend = useSettingsStore((state) => state.rdpBackend);
   const fixedBackend = resolveRdpBackend(configuredRdpBackend);
-  const usesNativeRdp = fixedBackend === "msrdpax";
 
   const [host, setHost] = useState("");
   const [port, setPort] = useState("3389");
@@ -471,11 +465,9 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
   const [domain, setDomain] = useState("");
   const [nickname, setNickname] = useState("");
   const [credentialId, setCredentialId] = useState<string | undefined>();
-  const [resolution, setResolution] = useState(DEFAULT_RDP_RESOLUTION_VALUE);
 
   const handleSubmit = () => {
     if (!host || !username) return;
-    const selectedResolution = getRdpResolutionPreset(resolution);
     onSubmit({
       host,
       port: parseInt(port, 10) || 3389,
@@ -484,9 +476,6 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
       password: credentialId ? undefined : (password || undefined),
       domain: domain || undefined,
       nickname: nickname || undefined,
-      width: usesNativeRdp ? undefined : selectedResolution.width,
-      height: usesNativeRdp ? undefined : selectedResolution.height,
-      autoResize: usesNativeRdp ? true : false,
       backend: fixedBackend,
     });
   };
@@ -525,25 +514,9 @@ export function RdpForm({ onSubmit, submitLabel }: { onSubmit: (config: RDPConfi
           }}
         />
       </FormField>
-      {!usesNativeRdp && (
-        <>
-          <Separator />
-          <FormField label={t("桌面分辨率")}>
-            <Select value={resolution} onValueChange={setResolution}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {RDP_RESOLUTION_PRESETS.map((preset) => (
-                  <SelectItem key={preset.value} value={preset.value}>
-                    {preset.width} × {preset.height}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FormField>
-        </>
-      )}
+      <p className="text-xs text-muted-foreground">
+        {t("远程桌面尺寸将在连接时按当前窗口锁定；调整到期望大小后重连即可更新。")}
+      </p>
       <DialogFooter className="pt-2">
         <Button type="submit" disabled={!host || !username}>{t(submitLabel)}</Button>
       </DialogFooter>

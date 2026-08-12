@@ -12,7 +12,6 @@ export {
   INTERACTIVE_CONTAINER_CLASSNAME,
 } from "./BaseSessionView";
 export { ConnectionStatusOverlay } from "./ConnectionStatusOverlay";
-export { SessionTransitionMask } from "./SessionTransitionMask";
 
 // 图形化视图抽象子类
 export {
