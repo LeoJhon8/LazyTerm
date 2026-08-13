@@ -1,27 +1,33 @@
-# LazyTerm 文档索引
+# LazyTerm 文档
 
-本文档目录按读者拆分为两部分：
+> **简体中文** | [English](./en/README.md)
 
-- `user/`：面向终端用户，说明如何安装、启动、使用功能和排查常见问题。
-- `developer/`：面向维护者，说明项目架构、开发环境、日常工作流和关键设计。
+这里收录 LazyTerm 的用户指南和维护者文档。项目入口、功能摘要与构建命令见仓库根目录的 [README](../README.md)。
 
 ## 用户文档
 
 | 文档 | 内容 |
 | --- | --- |
-| [快速开始](./user/getting-started.md) | 环境要求、安装依赖、启动应用和首次使用 |
-| [功能说明](./user/features.md) | 本地终端、SSH、RDP、VNC、串口、Telnet、SFTP、布局和同步能力 |
-| [快捷键](./user/shortcuts.md) | 常用全局快捷键和终端快捷操作 |
-| [常见问题](./user/troubleshooting.md) | 连接、构建、RDP/VNC、串口和环境问题排查 |
+| [快速开始](./user/getting-started.md) | 获取应用、源码运行、首次使用和数据边界 |
+| [功能说明](./user/features.md) | 协议、工作区、终端、文件传输、AI 和配置同步 |
+| [快捷键](./user/shortcuts.md) | 全局、标签页和终端快捷操作 |
+| [常见问题](./user/troubleshooting.md) | 连接、凭据、SFTP、原生依赖和开发环境排查 |
 
 ## 开发者文档
 
 | 文档 | 内容 |
 | --- | --- |
-| [架构概览](./developer/architecture.md) | 前端、连接器、Tauri IPC、Rust 后端和持久化模型 |
-| [Windows 开发环境](./developer/development-setup-windows.md) | Windows 新机器所需工具链和项目依赖 |
-| [开发工作流](./developer/development-workflow.md) | 日常命令、代码检查、目录约定和变更注意事项 |
-| [依赖许可证审计](./developer/dependency-license-audit.md) | npm、Cargo 和系统链接依赖的许可证兼容性基线 |
-| [仓库公开前检查清单](./developer/public-release-checklist.md) | 许可证、身份、敏感信息、安全设置和首个公开版本检查项 |
-| [RDP 架构](./developer/rdp-architecture.md) | FreeRDP、MsTscAx sidecar 和性能路径 |
-| [视图模式](./developer/view-modes.md) | normal、focus、immersive 三种视图模式的维护说明 |
+| [架构设计](./developer/architecture.md) | 工作区与会话模型、连接编排、Tauri IPC、Rust 后端和持久化边界 |
+| [Windows 开发环境](./developer/development-setup-windows.md) | Windows 工具链、原生依赖、环境变量与初始化脚本 |
+| [开发工作流](./developer/development-workflow.md) | 日常命令、验证规则、协议扩展和双语文档维护 |
+| [RDP 架构](./developer/rdp-architecture.md) | FreeRDP、MsTscAx sidecar、连接状态和性能路径 |
+| [视图模式](./developer/view-modes.md) | `normal`、`focus`、`immersive` 的状态与布局规则 |
+| [依赖许可证审计](./developer/dependency-license-audit.md) | 已执行的 npm、Cargo 和原生依赖许可证基线 |
+| [仓库公开前检查清单](./developer/public-release-checklist.md) | 许可证、敏感信息、社区设置和发布完整性 |
+
+## 维护规则
+
+- `docs/user/` 面向使用者，避免依赖内部实现才能理解的说明。
+- `docs/developer/` 面向维护者，记录架构边界、构建依赖和变更约束。
+- `docs/en/` 与中文目录保持相同结构；新增或修改文档时应同步更新对应英文版和两份索引。
+- 历史审计、发布清单等记录应保留实际执行日期，不应仅因翻译或排版修改而刷新日期。
