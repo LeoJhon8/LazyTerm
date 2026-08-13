@@ -62,8 +62,14 @@ const existingReleaseResponse = await fetch(
   `${giteeApiBase}/releases/tags/${encodeURIComponent(tag)}`,
   { headers: giteeHeaders },
 );
+const existingRelease = existingReleaseResponse.ok
+  ? await existingReleaseResponse.json()
+  : null;
 
-if (existingReleaseResponse.status === 404) {
+if (
+  existingReleaseResponse.status === 404 ||
+  (existingReleaseResponse.ok && existingRelease === null)
+) {
   const createBody = new URLSearchParams({
     tag_name: tag,
     name: githubRelease.name || `LazyTerm ${tag.slice(1)}`,
@@ -86,7 +92,7 @@ if (existingReleaseResponse.status === 404) {
   giteeRelease = await createResponse.json();
   console.log(`Created Gitee release ${tag}.`);
 } else if (existingReleaseResponse.ok) {
-  giteeRelease = await existingReleaseResponse.json();
+  giteeRelease = existingRelease;
   const updateBody = new URLSearchParams({
     tag_name: tag,
     name: githubRelease.name || `LazyTerm ${tag.slice(1)}`,
