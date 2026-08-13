@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import https from "node:https";
 import path from "node:path";
 
 const [tag, assetsDirectory] = process.argv.slice(2);
@@ -38,6 +39,83 @@ async function request(url, options = {}, acceptedStatuses = [200]) {
     );
   }
   return response;
+}
+
+const sleep = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function getGiteeAttachmentNames(releaseId, headers) {
+  const response = await request(
+    `${giteeApiBase}/releases/${releaseId}/attach_files?per_page=100`,
+    { headers },
+  );
+  const attachments = await response.json();
+  return new Set(
+    Array.isArray(attachments)
+      ? attachments.map((attachment) => attachment.name).filter(Boolean)
+      : [],
+  );
+}
+
+function uploadGiteeAsset(releaseId, headers, assetPath) {
+  const fileName = path.basename(assetPath);
+  const escapedFileName = fileName.replace(/["\r\n]/g, "_");
+  const boundary = `----LazyTermRelease${Date.now().toString(16)}`;
+  const prefix = Buffer.from(
+    `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="${escapedFileName}"\r\n` +
+      "Content-Type: application/octet-stream\r\n\r\n",
+  );
+  const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const contentLength =
+    prefix.length + fs.statSync(assetPath).size + suffix.length;
+  const uploadUrl = new URL(
+    `${giteeApiBase}/releases/${releaseId}/attach_files`,
+  );
+
+  return new Promise((resolve, reject) => {
+    const uploadRequest = https.request(
+      uploadUrl,
+      {
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "Content-Length": contentLength,
+        },
+        timeout: 30 * 60 * 1000,
+      },
+      (response) => {
+        const responseChunks = [];
+        response.on("data", (chunk) => responseChunks.push(chunk));
+        response.on("end", () => {
+          const responseBody = Buffer.concat(responseChunks).toString("utf8");
+          if (response.statusCode === 200 || response.statusCode === 201) {
+            resolve();
+            return;
+          }
+          reject(
+            new Error(
+              `POST ${uploadUrl} returned ${response.statusCode}: ${responseBody.slice(0, 500)}`,
+            ),
+          );
+        });
+      },
+    );
+
+    uploadRequest.on("timeout", () => {
+      uploadRequest.destroy(
+        new Error(`Uploading ${fileName} timed out after 30 minutes`),
+      );
+    });
+    uploadRequest.on("error", reject);
+    uploadRequest.write(prefix);
+
+    const assetStream = fs.createReadStream(assetPath);
+    assetStream.on("error", (error) => uploadRequest.destroy(error));
+    assetStream.on("end", () => uploadRequest.end(suffix));
+    assetStream.pipe(uploadRequest, { end: false });
+  });
 }
 
 const githubReleaseResponse = await request(
@@ -119,15 +197,9 @@ if (
   );
 }
 
-const attachmentsResponse = await request(
-  `${giteeApiBase}/releases/${giteeRelease.id}/attach_files?per_page=100`,
-  { headers: giteeHeaders },
-);
-const attachments = await attachmentsResponse.json();
-const existingNames = new Set(
-  Array.isArray(attachments)
-    ? attachments.map((attachment) => attachment.name).filter(Boolean)
-    : [],
+const existingNames = await getGiteeAttachmentNames(
+  giteeRelease.id,
+  giteeHeaders,
 );
 
 const assetPaths = fs
@@ -147,18 +219,47 @@ for (const assetPath of assetPaths) {
     continue;
   }
 
-  const form = new FormData();
-  form.append("file", new Blob([fs.readFileSync(assetPath)]), fileName);
-  await request(
-    `${giteeApiBase}/releases/${giteeRelease.id}/attach_files`,
-    {
-      method: "POST",
-      headers: giteeHeaders,
-      body: form,
-    },
-    [200, 201],
-  );
-  console.log(`Uploaded ${fileName} to Gitee.`);
+  const assetSize = fs.statSync(assetPath).size;
+  console.log(`Uploading ${fileName} (${assetSize} bytes) to Gitee.`);
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await uploadGiteeAsset(giteeRelease.id, giteeHeaders, assetPath);
+      existingNames.add(fileName);
+      console.log(`Uploaded ${fileName} to Gitee.`);
+      break;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `Upload attempt ${attempt}/3 for ${fileName} failed: ${errorMessage}`,
+      );
+
+      try {
+        const refreshedNames = await getGiteeAttachmentNames(
+          giteeRelease.id,
+          giteeHeaders,
+        );
+        if (refreshedNames.has(fileName)) {
+          existingNames.add(fileName);
+          console.log(`Gitee received ${fileName} despite the upload error.`);
+          break;
+        }
+      } catch (refreshError) {
+        const refreshErrorMessage =
+          refreshError instanceof Error
+            ? refreshError.message
+            : String(refreshError);
+        console.warn(
+          `Unable to verify ${fileName} after the upload error: ${refreshErrorMessage}`,
+        );
+      }
+
+      if (attempt === 3) {
+        throw error;
+      }
+      await sleep(attempt * 10_000);
+    }
+  }
 }
 
 console.log(`Gitee mirror is up to date: https://gitee.com/${giteeRepository}/releases/tag/${tag}`);
