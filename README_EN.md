@@ -47,10 +47,10 @@ It is designed for managing multiple hosts, mixing text terminals with remote de
 | Platform | Current build path | RDP backends |
 | --- | --- | --- |
 | Windows x64 | GitHub Actions produces NSIS / MSI artifacts; local builds are supported | FreeRDP, MsTscAx |
-| macOS Apple Silicon | GitHub Actions produces DMG / App artifacts; local builds are supported | FreeRDP |
+| macOS Apple Silicon | GitHub Actions produces a DMG; local builds are supported | FreeRDP |
 | Linux | Build from source after installing Tauri and native-library dependencies | FreeRDP |
 
-Prebuilt artifact availability depends on the current release. See [GitHub Releases](https://github.com/An-egg/LazyTerm/releases).
+Prebuilt artifacts, SHA-256 checksums, and build provenance are published through [GitHub Releases](https://github.com/LeoJhon8/LazyTerm/releases), then mirrored one-way to Gitee. In-app updates try GitHub Releases first and automatically fall back to Gitee when GitHub times out, is unreachable, or has no valid installer. Maintainers should follow the [release process](./docs/en/developer/release-process.md).
 
 ## Quick Start
 
@@ -110,7 +110,7 @@ Build the desktop application:
 npm run tauri:build
 ```
 
-`tauri:build` runs `scripts/update-version.js` first to update the timestamp-based version.
+`tauri:build` runs `scripts/update-version.js` first to synchronize the version from the latest Git commit's UTC timestamp.
 
 ### Compile and Code Checks
 

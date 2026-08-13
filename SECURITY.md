@@ -10,7 +10,7 @@ LazyTerm 会处理终端输入、远程连接和用户凭据。请不要通过�
 
 优先使用 GitHub Private Vulnerability Reporting：
 
-https://github.com/An-egg/LazyTerm/security/advisories/new
+https://github.com/LeoJhon8/LazyTerm/security/advisories/new
 
 如果该入口暂不可用，请先通过项目维护者的 GitHub 主页请求一个私密联系方式，不要在公开消息中附带漏洞细节。
 

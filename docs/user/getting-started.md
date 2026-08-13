@@ -6,7 +6,7 @@
 
 ## 获取应用
 
-预构建产物是否可用取决于当前发布版本，请先查看 [GitHub Releases](https://github.com/An-egg/LazyTerm/releases)。当前仓库包含以下构建路径：
+预构建产物是否可用取决于当前发布版本，请先查看 [GitHub Releases](https://github.com/LeoJhon8/LazyTerm/releases)。当前仓库包含以下构建路径：
 
 | 平台 | 构建目标 |
 | --- | --- |

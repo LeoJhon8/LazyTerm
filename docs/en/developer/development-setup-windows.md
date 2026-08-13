@@ -76,7 +76,7 @@ The current script does not build FreeRDP; prepare it separately for the embedde
 ## Clone and Install
 
 ```powershell
-git clone https://github.com/An-egg/LazyTerm.git lazy-terminal
+git clone https://github.com/LeoJhon8/LazyTerm.git lazy-terminal
 Set-Location .\lazy-terminal
 npm ci
 rustup target add x86_64-pc-windows-msvc

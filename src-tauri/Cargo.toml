@@ -4,7 +4,7 @@ version = "26.81.2912"
 description = "A modern desktop terminal workspace for local and remote sessions"
 authors = ["LazyTerm Contributors"]
 license = "GPL-3.0-or-later"
-repository = "https://github.com/An-egg/LazyTerm"
+repository = "https://github.com/LeoJhon8/LazyTerm"
 edition = "2021"
 rust-version = "1.85"
 

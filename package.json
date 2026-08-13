@@ -6,10 +6,10 @@
   "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/An-egg/LazyTerm.git"
+    "url": "git+https://github.com/LeoJhon8/LazyTerm.git"
   },
   "bugs": {
-    "url": "https://github.com/An-egg/LazyTerm/issues"
+    "url": "https://github.com/LeoJhon8/LazyTerm/issues"
   },
   "type": "module",
   "scripts": {
@@ -21,7 +21,10 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "node scripts/update-version.js && tauri build"
+    "tauri:build": "node scripts/update-version.js && tauri build",
+    "version:sync": "node scripts/update-version.js",
+    "version:set": "node scripts/update-version.js --version",
+    "version:check": "node scripts/update-version.js --check"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

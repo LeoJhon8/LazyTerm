@@ -6,7 +6,7 @@ This guide explains how to obtain or run LazyTerm from source, along with the da
 
 ## Obtaining the Application
 
-Prebuilt availability depends on the current release. Check [GitHub Releases](https://github.com/An-egg/LazyTerm/releases) first. The repository currently contains these build paths:
+Prebuilt availability depends on the current release. Check [GitHub Releases](https://github.com/LeoJhon8/LazyTerm/releases) first. The repository currently contains these build paths:
 
 | Platform | Build target |
 | --- | --- |

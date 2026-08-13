@@ -105,4 +105,4 @@ The assistant does not automatically gain access to local terminals, files, or t
 - `localStorage` is the source of truth for user configuration.
 - A user-selected Git repository can store selected configuration in `lazy-term-config.json` at its root.
 - Sync, commit/push, and pull are explicitly initiated by the user rather than running continuously in the background.
-- The application can check, download, and install updates; availability depends on the configured update source and current release state.
+- The application can check, download, and install updates. It prefers GitHub Releases and automatically falls back to the Gitee mirror when GitHub times out, is unavailable, or has no installer for the current platform.

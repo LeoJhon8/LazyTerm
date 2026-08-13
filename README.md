@@ -47,10 +47,10 @@ LazyTerm 使用 Tauri 2、React 19、TypeScript 和 Rust 构建，把本地 Shel
 | 平台 | 当前构建路径 | RDP 后端 |
 | --- | --- | --- |
 | Windows x64 | GitHub Actions 生成 NSIS / MSI；也可本地构建 | FreeRDP、MsTscAx |
-| macOS Apple Silicon | GitHub Actions 生成 DMG / App；也可本地构建 | FreeRDP |
+| macOS Apple Silicon | GitHub Actions 生成 DMG；也可本地构建 | FreeRDP |
 | Linux | 安装 Tauri 与原生库依赖后从源码构建 | FreeRDP |
 
-预构建产物是否可用取决于当前发布版本，请查看 [GitHub Releases](https://github.com/An-egg/LazyTerm/releases)。
+预构建产物、SHA-256 校验文件和构建来源证明统一发布到 [GitHub Releases](https://github.com/LeoJhon8/LazyTerm/releases)，发布成功后单向同步到 Gitee。应用内更新会优先探测 GitHub Releases；GitHub 超时、不可访问或没有有效安装包时自动回退到 Gitee。维护者发布步骤见[发布流程](./docs/developer/release-process.md)。
 
 ## 快速开始
 
@@ -110,7 +110,7 @@ npm run build:msrdpax-sidecar:release
 npm run tauri:build
 ```
 
-`tauri:build` 会先执行 `scripts/update-version.js` 更新时间戳版本号。
+`tauri:build` 会先执行 `scripts/update-version.js`，根据最近一次 Git 提交的 UTC 时间同步版本号。
 
 ### 编译与代码检查
 

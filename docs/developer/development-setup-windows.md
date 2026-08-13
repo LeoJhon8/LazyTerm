@@ -76,7 +76,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.
 ## 克隆与安装依赖
 
 ```powershell
-git clone https://github.com/An-egg/LazyTerm.git lazy-terminal
+git clone https://github.com/LeoJhon8/LazyTerm.git lazy-terminal
 Set-Location .\lazy-terminal
 npm ci
 rustup target add x86_64-pc-windows-msvc

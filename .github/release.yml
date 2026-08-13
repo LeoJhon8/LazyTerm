@@ -1,0 +1,22 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+  categories:
+    - title: Breaking changes / 破坏性变更
+      labels:
+        - breaking-change
+    - title: Features / 新功能
+      labels:
+        - enhancement
+        - feature
+    - title: Fixes / 修复
+      labels:
+        - bug
+        - fix
+    - title: Documentation / 文档
+      labels:
+        - documentation
+    - title: Other changes / 其他变更
+      labels:
+        - "*"

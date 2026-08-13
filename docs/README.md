@@ -20,6 +20,7 @@
 | [架构设计](./developer/architecture.md) | 工作区与会话模型、连接编排、Tauri IPC、Rust 后端和持久化边界 |
 | [Windows 开发环境](./developer/development-setup-windows.md) | Windows 工具链、原生依赖、环境变量与初始化脚本 |
 | [开发工作流](./developer/development-workflow.md) | 日常命令、验证规则、协议扩展和双语文档维护 |
+| [发布流程](./developer/release-process.md) | 版本同步、GitHub Release 门禁、Gitee 单向镜像、校验和与来源证明 |
 | [RDP 架构](./developer/rdp-architecture.md) | FreeRDP、MsTscAx sidecar、连接状态和性能路径 |
 | [视图模式](./developer/view-modes.md) | `normal`、`focus`、`immersive` 的状态与布局规则 |
 | [依赖许可证审计](./developer/dependency-license-audit.md) | 已执行的 npm、Cargo 和原生依赖许可证基线 |

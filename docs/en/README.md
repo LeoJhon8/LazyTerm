@@ -20,6 +20,7 @@ This directory contains LazyTerm user guides and maintainer documentation. See t
 | [Architecture design](./developer/architecture.md) | Workspace/session models, connection orchestration, Tauri IPC, Rust backend, and persistence |
 | [Windows development setup](./developer/development-setup-windows.md) | Toolchains, native dependencies, environment variables, and setup scripts |
 | [Development workflow](./developer/development-workflow.md) | Daily commands, verification rules, protocol extensions, and bilingual documentation |
+| [Release process](./developer/release-process.md) | Version synchronization, GitHub Release gates, one-way Gitee mirroring, checksums, and provenance |
 | [RDP architecture](./developer/rdp-architecture.md) | FreeRDP, MsTscAx sidecar, connection state, and performance paths |
 | [View modes](./developer/view-modes.md) | State and layout rules for `normal`, `focus`, and `immersive` |
 | [Dependency license audit](./developer/dependency-license-audit.md) | Recorded npm, Cargo, and native-dependency license baseline |

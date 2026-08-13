@@ -1,0 +1,294 @@
+name: Release desktop apps
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag, for example v26.81.2912
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Validate tag and version files
+        id: release
+        shell: bash
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Release tag must use vMajor.Minor.Patch with numeric components." >&2
+            exit 1
+          fi
+
+          version="${BASH_REMATCH[1]}"
+          node scripts/update-version.js --version "$version" --check
+
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  create-draft:
+    name: Create draft release
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Create or reuse draft
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Release $RELEASE_TAG is already published and cannot be overwritten." >&2
+              exit 1
+            fi
+            exit 0
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft \
+            --title "LazyTerm $RELEASE_VERSION" \
+            --notes-file .github/RELEASE_NOTES.md \
+            --generate-notes
+
+  build-windows:
+    name: Build Windows x64
+    needs: [validate, create-draft]
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.x
+
+      - name: Install OpenSSL
+        shell: pwsh
+        run: choco install openssl --no-progress -y
+
+      - name: Build LibVNCClient
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\dev | Out-Null
+          git clone --branch LibVNCServer-0.9.14 --depth 1 https://github.com/LibVNC/libvncserver C:\dev\libvncserver
+          cmake -S C:\dev\libvncserver -B C:\dev\libvncserver\build-msvc -G "Visual Studio 17 2022" -A x64 -DWITH_OPENSSL=ON -DWITH_GNUTLS=OFF -DWITH_SDL=OFF -DWITH_GTK=OFF -DWITH_EXAMPLES=OFF -DWITH_TESTS=OFF -DCMAKE_INSTALL_PREFIX=C:\dev\libvncserver\install
+          cmake --build C:\dev\libvncserver\build-msvc --config Release
+          cmake --install C:\dev\libvncserver\build-msvc --config Release
+
+      - name: Build FreeRDP
+        shell: pwsh
+        run: |
+          git clone --branch 3.29.0 --depth 1 https://github.com/FreeRDP/FreeRDP C:\dev\freerdp
+          cmake -S C:\dev\freerdp -B C:\dev\freerdp\build-msvc -G "Visual Studio 17 2022" -A x64 -DCMAKE_INSTALL_PREFIX=C:\dev\freerdp\install -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF -DBUILD_COMM_TESTS=OFF -DBUILD_BENCHMARK=OFF -DWITH_SAMPLE=OFF -DWITH_SERVER=OFF -DWITH_CLIENT_COMMON=ON -DWITH_CLIENT=OFF -DWITH_CLIENT_SDL=OFF -DWITH_CLIENT_CHANNELS=ON -DWITH_CHANNELS=ON -DWITH_FFMPEG=OFF -DWITH_SWSCALE=OFF -DWITH_CAIRO=OFF -DWITH_JPEG=OFF -DWITH_OPENCL=OFF -DWITH_MANPAGES=OFF -DWITH_AAD=OFF -DWITH_JSON_DISABLED=ON -DWITH_SMARTCARD_EMULATE=OFF -DWITH_FREERDP_DEPRECATED=OFF
+          cmake --build C:\dev\freerdp\build-msvc --config Release
+          cmake --install C:\dev\freerdp\build-msvc --config Release
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Verify release version
+        run: node scripts/update-version.js --version "${{ needs.validate.outputs.version }}" --check
+
+      - name: Build MSRDP sidecar
+        run: npm run build:msrdpax-sidecar:release
+
+      - name: Build Tauri installers
+        uses: tauri-apps/tauri-action@v0
+        with:
+          args: --target x86_64-pc-windows-msvc
+
+      - name: Collect release assets
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          $nsis = @(Get-ChildItem -Path src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis -Filter *.exe -File)
+          $msi = @(Get-ChildItem -Path src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi -Filter *.msi -File)
+          if ($nsis.Count -ne 1 -or $msi.Count -ne 1) {
+            throw "Expected exactly one NSIS installer and one MSI package."
+          }
+
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          Copy-Item -LiteralPath $nsis[0].FullName -Destination "release-assets\LazyTerm_${env:RELEASE_VERSION}_windows_x64-setup.exe"
+          Copy-Item -LiteralPath $msi[0].FullName -Destination "release-assets\LazyTerm_${env:RELEASE_VERSION}_windows_x64.msi"
+
+      - name: Upload Windows assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-x64
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  build-macos:
+    name: Build macOS Apple Silicon
+    needs: [validate, create-draft]
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Install native dependencies
+        run: brew install libvncserver freerdp
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Verify release version
+        run: node scripts/update-version.js --version "${{ needs.validate.outputs.version }}" --check
+
+      - name: Build Tauri disk image
+        uses: tauri-apps/tauri-action@v0
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+        with:
+          args: --target aarch64-apple-darwin
+
+      - name: Collect release asset
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          image_count="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -type f -name '*.dmg' | wc -l | tr -d ' ')"
+          image_path="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          if [[ "$image_count" -ne 1 || -z "$image_path" ]]; then
+            echo "Expected exactly one DMG image." >&2
+            exit 1
+          fi
+
+          mkdir -p release-assets
+          cp "$image_path" "release-assets/LazyTerm_${RELEASE_VERSION}_macos_arm64.dmg"
+
+      - name: Upload macOS asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-arm64
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish complete release
+    needs: [validate, create-draft, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        working-directory: release-assets
+        run: |
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' \
+            | sort \
+            | xargs sha256sum > SHA256SUMS.txt
+
+      - name: Attest release assets
+        uses: actions/attest@v4
+        with:
+          subject-path: release-assets/*
+
+      - name: Upload assets and publish draft
+        shell: bash
+        run: |
+          gh release upload "$RELEASE_TAG" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+          gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --latest
+
+  mirror-gitee:
+    name: Mirror published release to Gitee
+    needs: [validate, publish]
+    uses: ./.github/workflows/mirror-gitee.yml
+    with:
+      tag: ${{ needs.validate.outputs.tag }}
+    secrets: inherit

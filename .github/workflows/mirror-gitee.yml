@@ -1,0 +1,128 @@
+name: Mirror release to Gitee
+
+on:
+  push:
+    branches:
+      - main
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing published GitHub release tag
+        required: true
+        type: string
+    secrets:
+      GITEE_USERNAME:
+        required: true
+      GITEE_TOKEN:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published GitHub release tag, for example v26.81.2912
+        required: true
+        type: string
+
+concurrency:
+  group: mirror-gitee-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  sync-code:
+    name: Mirror main branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY || 'LeoJohn8/LazyTerm' }}
+      GIT_TERMINAL_PROMPT: 0
+    steps:
+      - name: Validate mirror configuration
+        shell: bash
+        run: |
+          if [[ -z "$GITEE_USERNAME" || -z "$GITEE_TOKEN" ]]; then
+            echo "GITEE_USERNAME and GITEE_TOKEN secrets are required." >&2
+            exit 1
+          fi
+          if [[ ! "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "GITEE_REPOSITORY must use owner/repository format." >&2
+            exit 1
+          fi
+
+      - name: Checkout GitHub repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push main to Gitee
+        shell: bash
+        run: |
+          gitee_url="https://gitee.com/${GITEE_REPOSITORY}.git"
+          credential_helper='!f() { echo "username=$GITEE_USERNAME"; echo "password=$GITEE_TOKEN"; }; f'
+          git fetch origin main --tags
+          git -c credential.helper="$credential_helper" push "$gitee_url" refs/remotes/origin/main:refs/heads/main
+
+  sync-release:
+    name: Mirror release tag and assets
+    if: ${{ inputs.tag != '' }}
+    needs: sync-code
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY || 'LeoJohn8/LazyTerm' }}
+      GIT_TERMINAL_PROMPT: 0
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Validate release tag
+        shell: bash
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must use vMajor.Minor.Patch with numeric components." >&2
+            exit 1
+          fi
+
+      - name: Checkout GitHub repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify published GitHub release
+        shell: bash
+        run: |
+          is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+          if [[ "$is_draft" != "false" ]]; then
+            echo "GitHub release $RELEASE_TAG is not published." >&2
+            exit 1
+          fi
+          git rev-parse "refs/tags/$RELEASE_TAG" >/dev/null
+
+      - name: Push release tag to Gitee
+        shell: bash
+        run: |
+          gitee_url="https://gitee.com/${GITEE_REPOSITORY}.git"
+          credential_helper='!f() { echo "username=$GITEE_USERNAME"; echo "password=$GITEE_TOKEN"; }; f'
+          git -c credential.helper="$credential_helper" push "$gitee_url" "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+
+      - name: Download GitHub release assets
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir release-assets
+
+      - name: Create Gitee release and upload missing assets
+        run: node scripts/mirror-release-to-gitee.js "$RELEASE_TAG" release-assets
