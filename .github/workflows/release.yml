@@ -98,7 +98,9 @@ jobs:
   build-windows:
     name: Build Windows x64
     needs: [validate, create-draft]
-    runs-on: windows-latest
+    # LibVNCServer and FreeRDP currently use the Visual Studio 17 2022
+    # generator. Pin the runner because windows-latest now ships VS 2026.
+    runs-on: windows-2022
     permissions:
       contents: read
     steps:
