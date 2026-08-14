@@ -11,6 +11,21 @@ dmg_input="${1:?Usage: verify-macos-dmg.sh <dmg-path> <report-directory> [expect
 report_input="${2:?Usage: verify-macos-dmg.sh <dmg-path> <report-directory> [expected-version]}"
 expected_version="${3:-}"
 
+annotate() {
+  local level="$1"
+  local title="$2"
+  local message="$3"
+
+  if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
+    return
+  fi
+
+  message="${message//'%'/'%25'}"
+  message="${message//$'\r'/'%0D'}"
+  message="${message//$'\n'/'%0A'}"
+  printf '::%s title=%s::%s\n' "$level" "$title" "$message"
+}
+
 if [[ ! -f "$dmg_input" ]]; then
   echo "DMG not found: $dmg_input" >&2
   exit 1
@@ -99,6 +114,9 @@ if ! bash scripts/verify-macos-bundle.sh "$installed_app" \
   echo "Application bundle dependency or code-signature verification failed." >&2
   verification_failed=true
   bundle_status=failed
+  annotate error "Bundle verification" "Dynamic-library or code-signature verification failed."
+else
+  annotate notice "Bundle verification" "All bundled Mach-O dependencies resolve and the code signature is structurally valid."
 fi
 
 set +e
@@ -119,12 +137,20 @@ if [[ "$gatekeeper_status" -ne 0 ]]; then
   echo "Gatekeeper rejected the installed application." >&2
   cat "${report_dir}/gatekeeper-assessment.log" >&2
   verification_failed=true
+  gatekeeper_message="$(tr '\r\n' '  ' < "${report_dir}/gatekeeper-assessment.log" | cut -c1-500)"
+  annotate error "Gatekeeper assessment" "${gatekeeper_message:-Gatekeeper rejected the installed application.}"
+else
+  annotate notice "Gatekeeper assessment" "Gatekeeper accepted the installed application."
 fi
 
 if [[ "$notarization_status" -ne 0 ]]; then
   echo "The DMG does not contain a valid stapled notarization ticket." >&2
   cat "${report_dir}/notarization-ticket.log" >&2
   verification_failed=true
+  notarization_message="$(tr '\r\n' '  ' < "${report_dir}/notarization-ticket.log" | cut -c1-500)"
+  annotate error "Notarization ticket" "${notarization_message:-The DMG has no valid stapled notarization ticket.}"
+else
+  annotate notice "Notarization ticket" "The DMG contains a valid stapled notarization ticket."
 fi
 
 "$app_binary" > "${report_dir}/launch.log" 2>&1 &
@@ -135,19 +161,21 @@ for ((second = 1; second <= 15; second += 1)); do
   if ! kill -0 "$app_pid" 2>/dev/null; then
     set +e
     wait "$app_pid"
-    launch_status=$?
+    process_status=$?
     set -e
     app_pid=""
-    echo "LazyTerm exited during startup after ${second}s with status $launch_status." >&2
+    echo "LazyTerm exited during startup after ${second}s with status $process_status." >&2
     cat "${report_dir}/launch.log" >&2
     verification_failed=true
     launch_status=failed
+    annotate error "Launch check" "LazyTerm exited during startup after ${second}s with status $process_status."
     break
   fi
 done
 
 if [[ -n "$app_pid" ]] && kill -0 "$app_pid" 2>/dev/null; then
   echo "LazyTerm remained running for 15 seconds."
+  annotate notice "Launch check" "LazyTerm remained running for 15 seconds without a dyld or startup crash."
   kill -TERM "$app_pid" 2>/dev/null || true
   wait "$app_pid" 2>/dev/null || true
   app_pid=""
@@ -165,6 +193,7 @@ fi
 } > "${report_dir}/summary.md"
 
 if [[ "$verification_failed" == true ]]; then
+  annotate error "macOS package verdict" "Version $actual_version: bundle=$bundle_status, Gatekeeper=$([[ "$gatekeeper_status" -eq 0 ]] && echo passed || echo failed), notarization=$([[ "$notarization_status" -eq 0 ]] && echo passed || echo failed), launch=$launch_status."
   echo "macOS DMG verification failed. See $report_dir for details." >&2
   exit 1
 fi
