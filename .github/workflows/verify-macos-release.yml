@@ -1,0 +1,102 @@
+name: Verify published macOS package
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag; defaults to the latest release
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/verify-macos-release.yml"
+      - "scripts/verify-macos-dmg.sh"
+      - "scripts/verify-macos-bundle.sh"
+
+concurrency:
+  group: verify-macos-${{ inputs.tag || github.event.release.tag_name || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify-macos-package:
+    name: Mount, install, and launch macOS package
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout verification scripts
+        uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          release_tag="$REQUESTED_TAG"
+          if [[ -z "$release_tag" ]]; then
+            release_tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          fi
+          if [[ ! "$release_tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Release tag must use vMajor.Minor.Patch." >&2
+            exit 1
+          fi
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+
+      - name: Download published macOS disk image
+        id: package
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          mkdir -p release-assets
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir release-assets \
+            --pattern 'LazyTerm_*_macos_arm64.dmg'
+          images=()
+          while IFS= read -r image; do
+            images+=("$image")
+          done < <(find release-assets -maxdepth 1 -type f -name '*.dmg' -print)
+          if [[ "${#images[@]}" -ne 1 ]]; then
+            echo "Expected exactly one macOS DMG, found ${#images[@]}." >&2
+            exit 1
+          fi
+          echo "path=$(cd "$(dirname "${images[0]}")" && pwd)/$(basename "${images[0]}")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify installation and startup
+        shell: bash
+        run: >-
+          bash scripts/verify-macos-dmg.sh
+          "${{ steps.package.outputs.path }}"
+          macos-verification
+          "${{ steps.release.outputs.version }}"
+
+      - name: Add verification summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f macos-verification/summary.md ]]; then
+            cat macos-verification/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-verification-${{ steps.release.outputs.tag || github.sha }}
+          path: macos-verification
+          if-no-files-found: warn
+          retention-days: 14
