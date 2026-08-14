@@ -24,12 +24,13 @@ on:
 
 concurrency:
   group: mirror-gitee-${{ inputs.tag || github.ref_name }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   sync-code:
     name: Mirror main branch
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
@@ -57,19 +58,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Push main to Gitee
+      - name: Push main to Gitee with retries
         shell: bash
         run: |
-          gitee_url="https://gitee.com/${GITEE_REPOSITORY}.git"
-          credential_helper='!f() { echo "username=$GITEE_USERNAME"; echo "password=$GITEE_TOKEN"; }; f'
-          git fetch origin main --tags
-          git -c credential.helper="$credential_helper" push "$gitee_url" refs/remotes/origin/main:refs/heads/main
+          git fetch --no-tags origin main
+          bash scripts/push-ref-to-gitee.sh FETCH_HEAD refs/heads/main
 
   sync-release:
     name: Mirror release tag and assets
     if: ${{ inputs.tag != '' }}
     needs: sync-code
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
       contents: read
     env:
@@ -109,12 +109,9 @@ jobs:
           fi
           git rev-parse "refs/tags/$RELEASE_TAG" >/dev/null
 
-      - name: Push release tag to Gitee
+      - name: Push release tag to Gitee with retries
         shell: bash
-        run: |
-          gitee_url="https://gitee.com/${GITEE_REPOSITORY}.git"
-          credential_helper='!f() { echo "username=$GITEE_USERNAME"; echo "password=$GITEE_TOKEN"; }; f'
-          git -c credential.helper="$credential_helper" push "$gitee_url" "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+        run: bash scripts/push-ref-to-gitee.sh "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG"
 
       - name: Download GitHub release assets
         shell: bash
