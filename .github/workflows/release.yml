@@ -215,12 +215,25 @@ jobs:
       - name: Verify release version
         run: node scripts/update-version.js --version "${{ needs.validate.outputs.version }}" --check
 
-      - name: Build Tauri disk image
-        uses: tauri-apps/tauri-action@v0
+      - name: Build Tauri executable
         env:
           APPLE_SIGNING_IDENTITY: "-"
-        with:
-          args: --target aarch64-apple-darwin
+        run: npm run tauri -- build --target aarch64-apple-darwin --no-bundle
+
+      - name: Bundle native macOS libraries
+        run: bash scripts/bundle-macos-dylibs.sh aarch64-apple-darwin
+
+      - name: Build Tauri disk image
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+        run: >-
+          npm run tauri -- bundle
+          --target aarch64-apple-darwin
+          --bundles app,dmg
+          --config src-tauri/target/aarch64-apple-darwin/release/macos-bundle.conf.json
+
+      - name: Verify macOS application bundle
+        run: bash scripts/verify-macos-bundle.sh src-tauri/target/aarch64-apple-darwin/release/bundle/macos/LazyTerm.app
 
       - name: Collect release asset
         env:
