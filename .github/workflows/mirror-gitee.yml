@@ -1,29 +1,13 @@
-name: Mirror release to Gitee
+name: Mirror code to Gitee
 
 on:
   push:
     branches:
       - main
-  workflow_call:
-    inputs:
-      tag:
-        description: Existing published GitHub release tag
-        required: true
-        type: string
-    secrets:
-      GITEE_USERNAME:
-        required: true
-      GITEE_TOKEN:
-        required: true
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing published GitHub release tag, for example v26.81.2912
-        required: true
-        type: string
 
 concurrency:
-  group: mirror-gitee-${{ inputs.tag || github.ref_name }}
+  group: mirror-gitee-main
   cancel-in-progress: true
 
 jobs:
@@ -34,8 +18,6 @@ jobs:
     permissions:
       contents: read
     env:
-      GH_TOKEN: ${{ github.token }}
-      GITHUB_TOKEN: ${{ github.token }}
       GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
       GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY || 'LeoJohn8/LazyTerm' }}
@@ -63,63 +45,3 @@ jobs:
         run: |
           git fetch --no-tags origin main
           bash scripts/push-ref-to-gitee.sh FETCH_HEAD refs/heads/main
-
-  sync-release:
-    name: Mirror release tag and assets
-    if: ${{ inputs.tag != '' }}
-    needs: sync-code
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    permissions:
-      contents: read
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GITHUB_TOKEN: ${{ github.token }}
-      GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
-      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY || 'LeoJohn8/LazyTerm' }}
-      GIT_TERMINAL_PROMPT: 0
-      RELEASE_TAG: ${{ inputs.tag }}
-    steps:
-      - name: Validate release tag
-        shell: bash
-        run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tag must use vMajor.Minor.Patch with numeric components." >&2
-            exit 1
-          fi
-
-      - name: Checkout GitHub repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Verify published GitHub release
-        shell: bash
-        run: |
-          is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
-          if [[ "$is_draft" != "false" ]]; then
-            echo "GitHub release $RELEASE_TAG is not published." >&2
-            exit 1
-          fi
-          git rev-parse "refs/tags/$RELEASE_TAG" >/dev/null
-
-      - name: Push release tag to Gitee with retries
-        shell: bash
-        run: bash scripts/push-ref-to-gitee.sh "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG"
-
-      - name: Download GitHub release assets
-        shell: bash
-        run: |
-          mkdir -p release-assets
-          gh release download "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --dir release-assets
-
-      - name: Create Gitee release and upload missing assets
-        run: node scripts/mirror-release-to-gitee.js "$RELEASE_TAG" release-assets
