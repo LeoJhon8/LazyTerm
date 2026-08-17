@@ -60,6 +60,7 @@ interface SettingsData {
   defaultShell: string;
   confirmCloseNonDefaultTabs: boolean;
   rdpBackend: ConfigurableRdpBackend;
+  autoUpdateChangedSshHostKeys: boolean;
   terminalAutocomplete: boolean;
   autocompleteSource: ('history' | 'quick')[];  // 自动补全数据源（多选）
   terminalTimelineEnabled: boolean;
@@ -127,6 +128,7 @@ const defaultSettings: SettingsData = {
   defaultShell: "powershell.exe",
   confirmCloseNonDefaultTabs: false,
   rdpBackend: "freerdp",
+  autoUpdateChangedSshHostKeys: false,
   terminalAutocomplete: false,
   autocompleteSource: [],  // 默认不启用任何自动补全数据源
   terminalTimelineEnabled: false,
@@ -186,7 +188,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: "lazy-term-settings",
       storage: createJSONStorage(() => gitAwareStorage),
-      version: 6,
+      version: 7,
       migrate: (persistedState, version) => {
         if (persistedState && typeof persistedState === "object") {
           const data: Partial<SettingsData> & { terminalOpacity?: number } = {
@@ -226,6 +228,10 @@ export const useSettingsStore = create<SettingsState>()(
 
           if (version < 6) {
             delete data.terminalOpacity;
+          }
+
+          if (version < 7) {
+            data.autoUpdateChangedSshHostKeys = false;
           }
 
           return data;

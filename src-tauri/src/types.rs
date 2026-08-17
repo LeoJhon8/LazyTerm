@@ -24,6 +24,8 @@ pub struct SshConnectConfig {
     pub keep_alive: Option<bool>,
     pub keep_alive_interval: Option<u64>,
     pub ready_timeout: Option<u64>,
+    #[serde(default)]
+    pub auto_update_changed_host_keys: bool,
     pub initial_cols: Option<u32>,
     pub initial_rows: Option<u32>,
 }

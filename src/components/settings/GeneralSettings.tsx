@@ -24,6 +24,7 @@ export function GeneralSettings() {
   const {
     defaultShell,
     rdpBackend,
+    autoUpdateChangedSshHostKeys,
     confirmCloseNonDefaultTabs,
     terminalAutocomplete,
     autocompleteSource,
@@ -101,6 +102,29 @@ export function GeneralSettings() {
                   <SelectItem value="msrdpax">MsTscAx</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* SSH 连接安全 */}
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("SSH 连接安全")}</Label>
+          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
+            <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <Label htmlFor="auto-update-changed-ssh-host-keys" className="text-sm cursor-pointer">
+                  {t("主机密钥变更时自动更新")}
+                </Label>
+                <span className="text-xs text-muted-foreground">
+                  {t("检测到服务器主机密钥变化时，自动移除该主机的旧 known_hosts 记录、写入新密钥并继续连接。请仅在确认目标服务器可信时开启。")}
+                </span>
+              </div>
+              <Switch
+                id="auto-update-changed-ssh-host-keys"
+                className="shrink-0"
+                checked={autoUpdateChangedSshHostKeys}
+                onCheckedChange={(checked) => setSettings({ autoUpdateChangedSshHostKeys: !!checked })}
+              />
             </div>
           </div>
         </div>

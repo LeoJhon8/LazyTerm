@@ -2,8 +2,9 @@
 //! 提供共享的 SSH 认证函数，消除 commands.rs 中的重复代码
 
 use russh::client;
-use russh::keys::known_hosts::{check_known_hosts, learn_known_hosts};
+use russh::keys::known_hosts::{check_known_hosts, known_host_keys, learn_known_hosts};
 use russh::keys::{self, PrivateKey, PrivateKeyWithHashAlg, PublicKey};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -46,24 +47,26 @@ fn effective_keepalive_interval(config: &SshConnectConfig) -> Option<Duration> {
 pub struct SshClientHandler {
     host: String,
     port: u16,
+    auto_update_changed_host_keys: bool,
     host_key_error: Arc<Mutex<Option<String>>>,
 }
 
 impl SshClientHandler {
-    pub fn new(host: String, port: u16) -> Self {
+    pub fn new(host: String, port: u16, auto_update_changed_host_keys: bool) -> Self {
         Self {
             host,
             port,
+            auto_update_changed_host_keys,
             host_key_error: Arc::new(Mutex::new(None)),
         }
     }
 
-    /// 验证 known_hosts 文件；首次连接采用 TOFU，已记录密钥发生变化时拒绝连接。
+    /// 验证 known_hosts 文件；首次连接采用 TOFU，密钥变化时按用户设置处理。
     ///
     /// 策略：
     /// 1. 密钥匹配 → 接受
     /// 2. 首次连接（未记录）→ 记录密钥并接受（Trust On First Use）
-    /// 3. 密钥变更 → 拒绝连接，由统一错误体系上报安全错误
+    /// 3. 密钥变更 → 默认拒绝；用户开启自动更新后替换旧记录并接受
     fn verify_known_hosts(&self, server_key: &PublicKey) -> bool {
         use crate::logging;
 
@@ -90,29 +93,96 @@ impl SshClientHandler {
                 true
             }
             Err(keys::Error::KeyChanged { line }) => {
-                let message = format!(
-                    "SSH host key has changed for {}:{} (known_hosts line {})",
-                    self.host, self.port, line
-                );
-                logging::warn("SSH/hostkey", &message);
-                if let Ok(mut error) = self.host_key_error.lock() {
-                    *error = Some(message);
+                if self.auto_update_changed_host_keys {
+                    logging::warn(
+                        "SSH/hostkey",
+                        format!(
+                            "主机 {}:{} 的公钥已变更（旧记录在第 {} 行），按设置自动更新 known_hosts",
+                            self.host, self.port, line
+                        ),
+                    );
+
+                    match self.remove_and_relearn(server_key) {
+                        Ok(removed_count) => {
+                            logging::info(
+                                "SSH/hostkey",
+                                format!(
+                                    "已自动更新主机 {}:{} 的密钥，移除 {} 条旧记录",
+                                    self.host, self.port, removed_count
+                                ),
+                            );
+                            true
+                        }
+                        Err(error) => self.reject_host_key(format!(
+                            "SSH host key has changed for {}:{} (known_hosts line {}), automatic known_hosts update failed: {}",
+                            self.host, self.port, line, error
+                        )),
+                    }
+                } else {
+                    self.reject_host_key(format!(
+                        "SSH host key has changed for {}:{} (known_hosts line {})",
+                        self.host, self.port, line
+                    ))
                 }
-                false
             }
-            Err(e) => {
-                let message = format!(
-                    "SSH known_hosts verification failed for {}:{}: {}",
-                    self.host, self.port, e
-                );
-                logging::warn("SSH/hostkey", &message);
-                if let Ok(mut error) = self.host_key_error.lock() {
-                    *error = Some(message);
-                }
-                false
-            }
+            Err(e) => self.reject_host_key(format!(
+                "SSH known_hosts verification failed for {}:{}: {}",
+                self.host, self.port, e
+            )),
         }
     }
+
+    fn reject_host_key(&self, message: String) -> bool {
+        crate::logging::warn("SSH/hostkey", &message);
+        if let Ok(mut error) = self.host_key_error.lock() {
+            *error = Some(message);
+        }
+        false
+    }
+
+    /// 从 known_hosts 中移除当前主机的旧记录，再写入服务器提供的新密钥。
+    /// 写入新密钥失败时恢复原文件，避免留下半完成状态。
+    fn remove_and_relearn(&self, server_key: &PublicKey) -> Result<usize, String> {
+        let lines_to_remove: HashSet<usize> = known_host_keys(&self.host, self.port)
+            .map_err(|error| format!("读取 known_hosts 条目失败: {error}"))?
+            .into_iter()
+            .map(|(line, _)| line)
+            .collect();
+
+        if lines_to_remove.is_empty() {
+            return Err("未找到需要替换的 known_hosts 记录".to_string());
+        }
+
+        let known_hosts_path =
+            get_known_hosts_path().ok_or_else(|| "无法确定 known_hosts 文件路径".to_string())?;
+        let original_content = std::fs::read_to_string(&known_hosts_path)
+            .map_err(|error| format!("读取 known_hosts 失败: {error}"))?;
+        let filtered_content: String = original_content
+            .split_inclusive('\n')
+            .enumerate()
+            .filter(|(index, _)| !lines_to_remove.contains(&(index + 1)))
+            .map(|(_, line)| line)
+            .collect();
+
+        std::fs::write(&known_hosts_path, &filtered_content)
+            .map_err(|error| format!("移除旧的 known_hosts 记录失败: {error}"))?;
+
+        if let Err(error) = learn_known_hosts(&self.host, self.port, server_key) {
+            return match std::fs::write(&known_hosts_path, &original_content) {
+                Ok(()) => Err(format!("写入新密钥失败，已恢复原记录: {error}")),
+                Err(rollback_error) => Err(format!(
+                    "写入新密钥失败且无法恢复原记录: {error}; rollback failed: {rollback_error}"
+                )),
+            };
+        }
+
+        Ok(lines_to_remove.len())
+    }
+}
+
+/// 获取 known_hosts 文件路径（与 russh keys 内部逻辑一致）。
+fn get_known_hosts_path() -> Option<std::path::PathBuf> {
+    Some(home::home_dir()?.join(".ssh").join("known_hosts"))
 }
 
 impl client::Handler for SshClientHandler {
@@ -477,7 +547,11 @@ pub async fn connect_and_authenticate(
     config: &SshConnectConfig,
 ) -> Result<client::Handle<SshClientHandler>, String> {
     let client_config = build_ssh_client_config(config);
-    let client_handler = SshClientHandler::new(config.host.clone(), config.port);
+    let client_handler = SshClientHandler::new(
+        config.host.clone(),
+        config.port,
+        config.auto_update_changed_host_keys,
+    );
     let host_key_error = client_handler.host_key_error.clone();
 
     let ready_timeout =

@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger";
 import { invokeTauri, invokeTauriBackground, invokeTauriSerialized } from "@/services/tauri";
 import { classifyConnectionFailure } from "@/services/connection/connectionErrors";
 import { ConnectionReadinessBarrier } from "@/services/connection/ConnectionReadinessBarrier";
+import { useSettingsStore } from "@/store/settings";
 
 const SSH_USABLE_CHECKPOINTS = ["identity", "listeners", "backend", "remote"] as const;
 const SSH_PENDING_DATA_LIMIT = 1024 * 1024;
@@ -127,6 +128,7 @@ export class SshConnector implements ITerminalConnector {
       const shouldSendKeepAlive = this.config.port !== 2222;
       const keepAlive = this.config.keepAlive ?? true;
       const keepAliveInterval = Math.max(1, Math.floor(this.config.keepAliveInterval ?? 60));
+      const autoUpdateChangedSshHostKeys = useSettingsStore.getState().autoUpdateChangedSshHostKeys;
 
       this.stateEmitter.emit({ phase: "authenticating", stage: "authentication" });
       const createdSessionId = await invokeTauri<string>("create_ssh_session", {
@@ -142,6 +144,7 @@ export class SshConnector implements ITerminalConnector {
           keep_alive: shouldSendKeepAlive ? keepAlive : undefined,
           keep_alive_interval: shouldSendKeepAlive ? keepAliveInterval : undefined,
           ready_timeout: this.config.readyTimeout,
+          auto_update_changed_host_keys: autoUpdateChangedSshHostKeys,
           initial_cols: initialSize.cols,
           initial_rows: initialSize.rows,
         },

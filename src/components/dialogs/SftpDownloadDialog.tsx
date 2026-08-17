@@ -12,6 +12,7 @@ import { resolveSshCredential } from "@/store/credentials";
 import type { SessionNode } from "@/store/ssh-profiles";
 import type { SSHConfig } from "@/types/terminal";
 import { useNotificationsStore } from "@/store/notifications";
+import { useSettingsStore } from "@/store/settings";
 
 interface Entry { name: string; is_dir: boolean; size: number }
 interface Progress {
@@ -53,6 +54,7 @@ export function SftpDownloadDialog({ open, onOpenChange, targetNode }: Props) {
       host: value.host, port: value.port, username: value.username,
       password: value.password, private_key_path: value.privateKeyPath,
       private_key: value.privateKey, private_key_passphrase: value.privateKeyPassphrase,
+      auto_update_changed_host_keys: useSettingsStore.getState().autoUpdateChangedSshHostKeys,
     };
   };
 

@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "26.81.6366"
+version = "26.81.10630"
 description = "A modern desktop terminal workspace for local and remote sessions"
 authors = ["LazyTerm Contributors"]
 license = "GPL-3.0-or-later"

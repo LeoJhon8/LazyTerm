@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import type { SessionNode } from "@/store/ssh-profiles";
 import type { SSHConfig } from "@/types/terminal";
 import { resolveSshCredential } from "@/store/credentials";
+import { useSettingsStore } from "@/store/settings";
 import { useI18n } from "@/i18n";
 
 interface SftpFileEntry {
@@ -47,6 +48,7 @@ export function RemoteDirSelector({ open, onOpenChange, targetNode, initialPath,
             username: config.username,
             password: config.password,
             private_key_path: config.privateKeyPath,
+            auto_update_changed_host_keys: useSettingsStore.getState().autoUpdateChangedSshHostKeys,
           },
           path
         },
