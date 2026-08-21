@@ -3,9 +3,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
+import { FormField } from "@/components/dialogs/connection-forms";
 import type { VNCConfig } from "@/types/terminal";
 import { useI18n } from "@/i18n";
 
@@ -81,33 +81,26 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="vnc-nickname" className="text-right">{t("名称")}</Label>
-              <Input id="vnc-nickname" value={nickname} onChange={(event) => setNickname(event.target.value)} className="col-span-3" />
-            </div>
+        <form className="grid gap-5" onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
+          <div className="grid gap-4 py-2">
+            <FormField label={t("名称")} htmlFor="vnc-nickname">
+              <Input id="vnc-nickname" value={nickname} onChange={(event) => setNickname(event.target.value)} />
+            </FormField>
 
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="vnc-host" className="text-right">{t("主机地址")}</Label>
-              <Input id="vnc-host" value={host} onChange={(event) => setHost(event.target.value)} className="col-span-3" required />
-            </div>
+            <FormField label={t("主机地址")} htmlFor="vnc-host" required>
+              <Input id="vnc-host" value={host} onChange={(event) => setHost(event.target.value)} required />
+            </FormField>
 
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="vnc-port" className="text-right">{t("端口")}</Label>
-              <Input id="vnc-port" type="number" value={port} onChange={(event) => setPort(event.target.value)} className="col-span-3" required />
-            </div>
+            <FormField label={t("端口")} htmlFor="vnc-port" required>
+              <Input id="vnc-port" type="number" value={port} onChange={(event) => setPort(event.target.value)} required />
+            </FormField>
 
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="vnc-password" className="text-right">{t("密码")}</Label>
-              <Input id="vnc-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="col-span-3" autoComplete="off" />
-            </div>
+            <FormField label={t("密码")} htmlFor="vnc-password">
+              <Input id="vnc-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="off" />
+            </FormField>
 
-            <Separator />
-
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">{t("渲染质量")}</Label>
-              <div className="col-span-3 flex items-center gap-4">
+            <FormField label={t("渲染质量")}>
+              <div className="flex items-center gap-4">
                 <Slider
                   min={10}
                   max={100}
@@ -118,11 +111,10 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
                 />
                 <span className="text-sm w-8 text-right">{quality}%</span>
               </div>
-            </div>
+            </FormField>
 
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="vnc-view-only" className="text-right">{t("仅查看")}</Label>
-              <div className="col-span-3 flex items-center gap-3">
+            <FormField label={t("仅查看")} htmlFor="vnc-view-only">
+              <div className="flex min-h-10 items-center gap-3">
                 <Checkbox
                   id="vnc-view-only"
                   checked={viewOnly}
@@ -132,10 +124,10 @@ export function VncConnectDialog({ open, onOpenChange, onSave, initialConfig, is
                   {t("连接后不发送鼠标与键盘输入")}
                 </Label>
               </div>
-            </div>
+            </FormField>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t border-border/50 pt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("取消")}</Button>
             <Button type="submit">{initialConfig ? t("保存修改") : t("立即创建")}</Button>
           </DialogFooter>

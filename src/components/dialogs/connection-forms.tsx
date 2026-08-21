@@ -53,18 +53,20 @@ export type SubmitLabel = "立即创建" | "连接" | "保存";
 /* ==================== 通用表单字段布局 ==================== */
 export function FormField({
   label,
+  htmlFor,
   required,
   description,
   children,
 }: {
   label: string;
+  htmlFor?: string;
   required?: boolean;
   description?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="grid grid-cols-4 items-start gap-4">
-      <Label className="text-right text-[13px]">
+      <Label htmlFor={htmlFor} className="text-right text-[13px]">
         {label}
         {required && <span className="text-destructive ml-0.5">*</span>}
       </Label>

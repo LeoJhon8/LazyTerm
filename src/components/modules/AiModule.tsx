@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Send,
   Square,
+  SquareTerminal,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,9 +38,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
+import { requestTerminalTextInsertion } from "@/lib/terminal-text-insertion";
 import { useI18n } from "@/i18n";
 import { streamAiCompletion, type AiRequestMessage } from "@/services/aiService";
+import { toast } from "@/components/ui/toast";
 import { useCredentialsStore } from "@/store/credentials";
+import { useTabsStore } from "@/store/tabs";
+import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import {
   createAiEntityId,
   useAiConfigStore,
@@ -84,8 +89,212 @@ function CopyButton({ text, title }: { text: string; title: string }) {
   );
 }
 
-function MarkdownContent({ content }: { content: string }) {
+function isTerminalConnector(connector: SessionConnector | undefined): connector is ITerminalConnector {
+  return connector !== undefined && connector.protocol !== "rdp" && connector.protocol !== "vnc";
+}
+
+function prepareTerminalInsertionText(text: string): string {
+  return text.replace(/(?:\r\n|\r|\n)+$/g, "");
+}
+
+interface PendingTerminalInsertion {
+  sessionId: string;
+  sessionTitle: string;
+  text: string;
+}
+
+function CodeBlock({
+  children,
+  allowTerminalInsertion,
+}: {
+  children: ReactNode;
+  allowTerminalInsertion: boolean;
+}) {
   const { t } = useI18n();
+  const preRef = useRef<HTMLPreElement | null>(null);
+  const pointerSelectionRef = useRef("");
+  const insertedTimeoutRef = useRef<number | null>(null);
+  const [hasSelectedText, setHasSelectedText] = useState(false);
+  const [inserted, setInserted] = useState(false);
+  const [pendingInsertion, setPendingInsertion] = useState<PendingTerminalInsertion | null>(null);
+  const focusSessionId = useTabsStore((state) => state.focusSessionId);
+  const focusSession = useTabsStore((state) => (
+    state.sessions.find((session) => session.id === focusSessionId)
+  ));
+  const codeText = getNodeText(Children.toArray(children)).replace(/\r?\n$/, "");
+  const terminalConnector = isTerminalConnector(focusSession?.connector)
+    ? focusSession.connector
+    : undefined;
+  const canInsert = allowTerminalInsertion && Boolean(terminalConnector?.isConnected);
+
+  useEffect(() => () => {
+    if (insertedTimeoutRef.current !== null) {
+      window.clearTimeout(insertedTimeoutRef.current);
+    }
+  }, []);
+
+  const readCodeSelection = () => {
+    const selection = window.getSelection();
+    const pre = preRef.current;
+    if (
+      !selection
+      || selection.isCollapsed
+      || !selection.anchorNode
+      || !selection.focusNode
+      || !pre?.contains(selection.anchorNode)
+      || !pre.contains(selection.focusNode)
+    ) {
+      return "";
+    }
+    return selection.toString();
+  };
+
+  const markInserted = () => {
+    setInserted(true);
+    if (insertedTimeoutRef.current !== null) {
+      window.clearTimeout(insertedTimeoutRef.current);
+    }
+    insertedTimeoutRef.current = window.setTimeout(() => {
+      setInserted(false);
+      insertedTimeoutRef.current = null;
+    }, 1200);
+  };
+
+  const insertIntoTerminal = (sessionId: string, text: string) => {
+    if (!requestTerminalTextInsertion(sessionId, text, "ai")) {
+      toast.error(t("无法插入到当前终端。"));
+      return;
+    }
+    markInserted();
+  };
+
+  const resolveFocusedTerminal = () => {
+    const state = useTabsStore.getState();
+    const session = state.sessions.find((candidate) => candidate.id === state.focusSessionId);
+    if (!session || !isTerminalConnector(session.connector) || !session.connector.isConnected) {
+      return null;
+    }
+    return session;
+  };
+
+  const handleInsert = () => {
+    const targetSession = resolveFocusedTerminal();
+    if (!allowTerminalInsertion || !targetSession) return;
+
+    const selectedText = readCodeSelection() || pointerSelectionRef.current;
+    pointerSelectionRef.current = "";
+    setHasSelectedText(Boolean(selectedText));
+    const insertionText = prepareTerminalInsertionText(selectedText || codeText);
+    if (!insertionText) return;
+
+    if (/\r|\n/.test(insertionText)) {
+      setPendingInsertion({
+        sessionId: targetSession.id,
+        sessionTitle: targetSession.title,
+        text: insertionText,
+      });
+      return;
+    }
+
+    insertIntoTerminal(targetSession.id, insertionText);
+  };
+
+  const insertTitle = !allowTerminalInsertion
+    ? t("生成完成后可插入")
+    : !focusSession || !terminalConnector
+      ? t("当前没有可插入的终端")
+      : !terminalConnector.isConnected
+        ? t("当前终端未连接")
+        : hasSelectedText
+          ? t("插入选中内容")
+          : t("插入到当前终端");
+
+  return (
+    <>
+      <div className="relative my-2 max-w-full overflow-hidden rounded-lg border border-border/50 bg-black/25">
+        <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">
+          <CopyButton text={codeText} title={t("复制代码")} />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 shrink-0 rounded-md"
+            title={insertTitle}
+            aria-label={insertTitle}
+            disabled={!canInsert}
+            onPointerDown={() => {
+              pointerSelectionRef.current = readCodeSelection();
+            }}
+            onClick={handleInsert}
+          >
+            {inserted
+              ? <Check className="h-3.5 w-3.5" />
+              : <SquareTerminal className="h-3.5 w-3.5" />}
+          </Button>
+        </div>
+        <pre
+          ref={preRef}
+          className="max-w-full whitespace-pre-wrap break-words p-3 pr-16 text-[11px] leading-5 [overflow-wrap:anywhere]"
+          onMouseUp={() => setHasSelectedText(Boolean(readCodeSelection()))}
+          onKeyUp={() => setHasSelectedText(Boolean(readCodeSelection()))}
+        >
+          {children}
+        </pre>
+      </div>
+
+      <AlertDialog
+        open={pendingInsertion !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingInsertion(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("插入多行内容？")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("多行内容可能被目标终端立即处理。")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {pendingInsertion && (
+            <>
+              <div className="text-xs text-muted-foreground">
+                {t("目标终端：{name}", { name: pendingInsertion.sessionTitle })}
+              </div>
+              <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/60 bg-black/25 p-3 font-mono text-xs [overflow-wrap:anywhere]">
+                {pendingInsertion.text}
+              </pre>
+              <p className="text-xs text-muted-foreground">
+                {t("内容会插入到当前光标位置，且不会额外发送回车。")}
+              </p>
+            </>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const insertion = pendingInsertion;
+                setPendingInsertion(null);
+                if (insertion) {
+                  insertIntoTerminal(insertion.sessionId, insertion.text);
+                }
+              }}
+            >
+              {t("确认插入")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function MarkdownContent({
+  content,
+  allowTerminalInsertion,
+}: {
+  content: string;
+  allowTerminalInsertion: boolean;
+}) {
   const components = useMemo<Components>(() => ({
     a: ({ href, children }) => (
       <a
@@ -102,17 +311,11 @@ function MarkdownContent({ content }: { content: string }) {
         {children}
       </a>
     ),
-    pre: ({ children }) => {
-      const text = getNodeText(Children.toArray(children)).replace(/\n$/, "");
-      return (
-        <div className="relative my-2 max-w-full overflow-hidden rounded-lg border border-border/50 bg-black/25">
-          <div className="absolute right-1.5 top-1.5 z-10">
-            <CopyButton text={text} title={t("复制代码")} />
-          </div>
-          <pre className="max-w-full whitespace-pre-wrap break-words p-3 pr-10 text-[11px] leading-5 [overflow-wrap:anywhere]">{children}</pre>
-        </div>
-      );
-    },
+    pre: ({ children }) => (
+      <CodeBlock allowTerminalInsertion={allowTerminalInsertion}>
+        {children}
+      </CodeBlock>
+    ),
     code: ({ className, children }) => (
       <code className={cn(
         className,
@@ -123,7 +326,7 @@ function MarkdownContent({ content }: { content: string }) {
         {children}
       </code>
     ),
-  }), [t]);
+  }), [allowTerminalInsertion]);
 
   return (
     <div className="min-w-0 max-w-full overflow-hidden break-words text-[12px] leading-5 [overflow-wrap:anywhere] [&_blockquote]:my-2 [&_blockquote]:min-w-0 [&_blockquote]:border-l-2 [&_blockquote]:border-primary/50 [&_blockquote]:pl-3 [&_h1]:my-2 [&_h1]:break-words [&_h1]:text-base [&_h1]:font-semibold [&_h2]:my-2 [&_h2]:break-words [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:my-1.5 [&_h3]:break-words [&_h3]:font-semibold [&_li]:my-0.5 [&_li]:break-words [&_ol]:my-2 [&_ol]:min-w-0 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_p]:break-words [&_table]:my-2 [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse [&_td]:break-words [&_td]:border [&_td]:border-border/50 [&_td]:p-1.5 [&_td]:[overflow-wrap:anywhere] [&_th]:break-words [&_th]:border [&_th]:border-border/50 [&_th]:p-1.5 [&_th]:[overflow-wrap:anywhere] [&_ul]:my-2 [&_ul]:min-w-0 [&_ul]:list-disc [&_ul]:pl-5">
@@ -366,7 +569,12 @@ export function AiModule() {
                       : "border-border/45 bg-muted/25 text-foreground",
                   )}>
                     {message.role === "assistant" ? (
-                      message.content ? <MarkdownContent content={message.content} /> : (
+                      message.content ? (
+                        <MarkdownContent
+                          content={message.content}
+                          allowTerminalInsertion={message.status !== "streaming"}
+                        />
+                      ) : (
                         <div className="flex items-center gap-1.5 py-1 text-xs text-muted-foreground">
                           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
                           {message.status === "failed" ? t("请求失败") : t("正在生成...")}

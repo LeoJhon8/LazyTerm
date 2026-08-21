@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FormField } from "@/components/dialogs/connection-forms";
 import {
   Dialog,
   DialogContent,
@@ -90,148 +90,125 @@ export function SerialConnectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-125">
         <DialogHeader>
           <DialogTitle>{isDirect ? t("串口连接") : initialConfig ? t("编辑串口配置") : t("新建串口连接")}</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="nickname" className="text-right text-[13px]">
-              {t("名称")}
-            </Label>
+        <div className="grid gap-4 py-2">
+          <FormField label={t("名称")} htmlFor="serial-nickname">
             <Input
-              id="nickname"
+              id="serial-nickname"
               value={config.nickname || ""}
               onChange={(e) => setConfig({ ...config, nickname: e.target.value })}
-              className="col-span-3 text-[13px]"
             />
-          </div>
+          </FormField>
 
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="port" className="text-right text-[13px]">
-              {t("端口")}
-            </Label>
-            <div className="col-span-3 flex gap-2">
-                <Input
-                  id="port-input"
-                  list="serial-ports-list"
-                  value={config.port}
-                  onChange={(e) => setConfig({...config, port: e.target.value})}
-                  className="w-full text-[13px]"
-                  placeholder={loadingPorts ? t("加载中...") : t("选择或输入串口")}
-                />
-                <datalist id="serial-ports-list">
-                  {availablePorts.map((p) => (
-                    <option key={p} value={p} />
-                  ))}
-                  {config.port && !availablePorts.includes(config.port) && (
-                    <option value={config.port} />
-                  )}
-                </datalist>
-                <Button type="button" variant="outline" size="icon" onClick={(e) => { e.preventDefault(); e.stopPropagation(); loadPorts(); }} title={t("刷新端口列表")} className="shrink-0 h-9 w-9">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-rotate-cw cursor-pointer"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-                </Button>
+          <FormField label={t("端口")} htmlFor="serial-port" required>
+            <div className="flex gap-2">
+              <Input
+                id="serial-port"
+                list="serial-ports-list"
+                value={config.port}
+                onChange={(e) => setConfig({...config, port: e.target.value})}
+                placeholder={loadingPorts ? t("加载中...") : t("选择或输入串口")}
+              />
+              <datalist id="serial-ports-list">
+                {availablePorts.map((p) => (
+                  <option key={p} value={p} />
+                ))}
+                {config.port && !availablePorts.includes(config.port) && (
+                  <option value={config.port} />
+                )}
+              </datalist>
+              <Button type="button" variant="outline" size="icon" onClick={(e) => { e.preventDefault(); e.stopPropagation(); loadPorts(); }} title={t("刷新端口列表")} className="h-10 w-10 shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-rotate-cw cursor-pointer"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+              </Button>
             </div>
-          </div>
+          </FormField>
 
-          <div className="grid grid-cols-4 items-center gap-4">
-             <Label htmlFor="baudRate" className="text-right text-[13px]">
-               {t("波特率")}
-             </Label>
-             <Select
-                value={config.baudRate.toString()}
-                onValueChange={(val) => setConfig({...config, baudRate: parseInt(val, 10)})}
-              >
-                <SelectTrigger className="col-span-3 text-[13px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600].map(r => (
-                    <SelectItem key={r} value={r.toString()} className="text-[13px]">{r}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-          </div>
+          <FormField label={t("波特率")} htmlFor="serial-baud-rate">
+            <Select
+              value={config.baudRate.toString()}
+              onValueChange={(val) => setConfig({...config, baudRate: parseInt(val, 10)})}
+            >
+              <SelectTrigger id="serial-baud-rate">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600].map(r => (
+                  <SelectItem key={r} value={r.toString()}>{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
 
-          <div className="grid grid-cols-4 items-center gap-4">
-             <Label htmlFor="dataBits" className="text-right text-[13px]">
-               {t("数据位")}
-             </Label>
-             <Select
-                value={config.dataBits.toString()}
-                onValueChange={(val) => setConfig({...config, dataBits: parseInt(val, 10)})}
-              >
-                <SelectTrigger className="col-span-3 text-[13px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[5, 6, 7, 8].map(r => (
-                    <SelectItem key={r} value={r.toString()} className="text-[13px]">{r}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-          </div>
+          <FormField label={t("数据位")} htmlFor="serial-data-bits">
+            <Select
+              value={config.dataBits.toString()}
+              onValueChange={(val) => setConfig({...config, dataBits: parseInt(val, 10)})}
+            >
+              <SelectTrigger id="serial-data-bits">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[5, 6, 7, 8].map(r => (
+                  <SelectItem key={r} value={r.toString()}>{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
           
-          <div className="grid grid-cols-4 items-center gap-4">
-             <Label htmlFor="stopBits" className="text-right text-[13px]">
-               {t("停止位")}
-             </Label>
-             <Select
-                value={config.stopBits.toString()}
-                onValueChange={(val) => setConfig({...config, stopBits: parseInt(val, 10)})}
-              >
-                <SelectTrigger className="col-span-3 text-[13px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[1, 2].map(r => (
-                    <SelectItem key={r} value={r.toString()} className="text-[13px]">{r}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-          </div>
+          <FormField label={t("停止位")} htmlFor="serial-stop-bits">
+            <Select
+              value={config.stopBits.toString()}
+              onValueChange={(val) => setConfig({...config, stopBits: parseInt(val, 10)})}
+            >
+              <SelectTrigger id="serial-stop-bits">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[1, 2].map(r => (
+                  <SelectItem key={r} value={r.toString()}>{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
 
-          <div className="grid grid-cols-4 items-center gap-4">
-             <Label htmlFor="parity" className="text-right text-[13px]">
-               {t("校验位")}
-             </Label>
-             <Select
-                value={config.parity}
-                onValueChange={(val: any) => setConfig({...config, parity: val})}
-              >
-                <SelectTrigger className="col-span-3 text-[13px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="None" className="text-[13px]">None</SelectItem>
-                  <SelectItem value="Odd" className="text-[13px]">Odd</SelectItem>
-                  <SelectItem value="Even" className="text-[13px]">Even</SelectItem>
-                </SelectContent>
-              </Select>
-          </div>
+          <FormField label={t("校验位")} htmlFor="serial-parity">
+            <Select
+              value={config.parity}
+              onValueChange={(val: any) => setConfig({...config, parity: val})}
+            >
+              <SelectTrigger id="serial-parity">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="None">None</SelectItem>
+                <SelectItem value="Odd">Odd</SelectItem>
+                <SelectItem value="Even">Even</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormField>
           
-          <div className="grid grid-cols-4 items-center gap-4">
-             <Label htmlFor="flowControl" className="text-right text-[13px]">
-               {t("流控")}
-             </Label>
-             <Select
-                value={config.flowControl}
-                onValueChange={(val: any) => setConfig({...config, flowControl: val})}
-              >
-                <SelectTrigger className="col-span-3 text-[13px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="None" className="text-[13px]">None</SelectItem>
-                  <SelectItem value="Software" className="text-[13px]">Software(XON/XOFF)</SelectItem>
-                  <SelectItem value="Hardware" className="text-[13px]">Hardware(RTS/CTS)</SelectItem>
-                </SelectContent>
-              </Select>
-          </div>
+          <FormField label={t("流控")} htmlFor="serial-flow-control">
+            <Select
+              value={config.flowControl}
+              onValueChange={(val: any) => setConfig({...config, flowControl: val})}
+            >
+              <SelectTrigger id="serial-flow-control">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="None">None</SelectItem>
+                <SelectItem value="Software">Software(XON/XOFF)</SelectItem>
+                <SelectItem value="Hardware">Hardware(RTS/CTS)</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormField>
 
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="border-t border-border/50 pt-4">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             {t("取消")}
           </Button>
           <Button onClick={handleSave} disabled={!config.port}>

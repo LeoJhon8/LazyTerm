@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FormField } from "@/components/dialogs/connection-forms";
 import {
   Dialog,
   DialogContent,
@@ -90,63 +90,44 @@ export function AiCliDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-125">
         <DialogHeader>
           <DialogTitle>
             {initialConfig ? t("编辑 AI CLI") : t("新建 AI CLI 连接")}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid gap-4 py-4">
-          {/* 名称 */}
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="nickname" className="text-right">
-              {t("名称")}
-            </Label>
+        <div className="grid gap-4 py-2">
+          <FormField label={t("名称")} htmlFor="ai-cli-nickname">
             <Input
-              id="nickname"
+              id="ai-cli-nickname"
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
-              className="col-span-3"
             />
-          </div>
+          </FormField>
 
-          {/* 命令 */}
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="command" className="text-right">
-              {t("命令")}
-            </Label>
+          <FormField label={t("命令")} htmlFor="ai-cli-command" required>
             <Input
-              id="command"
+              id="ai-cli-command"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               placeholder={t("请输入命令")}
-              className="col-span-3"
             />
-          </div>
+          </FormField>
 
-          {/* 参数 */}
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="args" className="text-right">
-              {t("参数")}
-            </Label>
+          <FormField label={t("参数")} htmlFor="ai-cli-args">
             <Input
-              id="args"
+              id="ai-cli-args"
               value={args}
               onChange={(e) => setArgs(e.target.value)}
               placeholder={t("请输入参数")}
-              className="col-span-3"
             />
-          </div>
+          </FormField>
 
-          {/* 工作目录 */}
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="cwd" className="text-right">
-              {t("工作目录")}
-            </Label>
-            <div className="col-span-3 flex gap-2">
+          <FormField label={t("工作目录")} htmlFor="ai-cli-cwd">
+            <div className="flex gap-2">
               <Input
-                id="cwd"
+                id="ai-cli-cwd"
                 value={cwd}
                 onChange={(e) => setCwd(e.target.value)}
                 className="flex-1"
@@ -154,17 +135,17 @@ export function AiCliDialog({
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
+                className="h-10 shrink-0"
                 onClick={handleSelectCwd}
               >
                 {t("浏览")}
               </Button>
             </div>
-          </div>
+          </FormField>
         </div>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={onOpenChange}>
+        <DialogFooter className="border-t border-border/50 pt-4">
+          <Button type="button" variant="outline" onClick={onOpenChange}>
             {t("取消")}
           </Button>
           <Button onClick={handleSave} disabled={!command.trim()}>

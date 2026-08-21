@@ -42,6 +42,7 @@ import {
 import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
 import { normalizePasteTextForConnector } from "@/lib/terminal-paste";
+import { onTerminalTextInsertionRequested } from "@/lib/terminal-text-insertion";
 import { TerminalAutocompleteUI } from "./TerminalAutocompleteUI";
 import { AutocompleteTerminalAddon } from "./AutocompleteTerminalAddon";
 import { extractTerminalCommand } from "./terminal-command-line";
@@ -332,6 +333,7 @@ function shouldBlockEraseInDisplayDuringTransition(params: (number | number[])[]
 }
 
 const ALTERNATE_SCREEN_PARAMS = new Set([47, 1047, 1049]);
+const SYNCHRONIZED_OUTPUT_PARAMS = new Set([2026]);
 
 function clampTerminalFontSize(fontSize: number): number {
   return Math.max(6, Math.min(100, fontSize));
@@ -763,6 +765,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         theme: toXtermTheme(colorScheme),
       });
 
+      let synchronizedOutputRefreshFrameId: number | null = null;
+
       term.parser.registerEscHandler({ final: "c" }, () => {
         if (termState.isTransitioning) return true;
         return false;
@@ -798,7 +802,29 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         return false;
       });
 
+      const synchronizedOutputEndDisposable = term.parser.registerCsiHandler(
+        { prefix: "?", final: "l" },
+        (params) => {
+          if (!hasAnyParam(params, SYNCHRONIZED_OUTPUT_PARAMS)) return false;
+
+          const buffer = term.buffer.active;
+          if (buffer.viewportY >= buffer.baseY || synchronizedOutputRefreshFrameId !== null) {
+            return false;
+          }
+
+          // 使用 DEC 2026 的 TUI 会用同步输出包裹界面重绘。xterm 在同步期间会缓存
+          // 滚动触发的刷新请求，因此用户查看历史内容时可能暂时看到未绘制的行。
+          // 等结束序列完成解析后刷新整个 viewport，不改变当前滚动位置。
+          synchronizedOutputRefreshFrameId = window.requestAnimationFrame(() => {
+            synchronizedOutputRefreshFrameId = null;
+            refreshTerminalViewport(term);
+          });
+          return false;
+        },
+      );
+
       const parserDisposables = [
+        synchronizedOutputEndDisposable,
         term.parser.registerOscHandler(4, (data) => shouldBlockIndexedColorChange(data)),
         term.parser.registerOscHandler(10, (data) => shouldBlockNamedColorChange(data)),
         term.parser.registerOscHandler(11, (data) => shouldBlockNamedColorChange(data)),
@@ -1012,6 +1038,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           selectionDisposable.dispose();
           instance.resizeUnsubscribe();
           if (termState.timeoutId) clearTimeout(termState.timeoutId);
+          if (synchronizedOutputRefreshFrameId !== null) {
+            window.cancelAnimationFrame(synchronizedOutputRefreshFrameId);
+          }
           if (webglAddon) webglAddon.dispose();
           if (instance.acAddon) instance.acAddon.dispose();
           searchResultsDisposable.dispose();
@@ -1161,6 +1190,26 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     window.addEventListener("lazy-term-focus", handler);
     return () => window.removeEventListener("lazy-term-focus", handler);
   }, [sessionId, isVisible, activateTerminal]);
+
+  useEffect(() => onTerminalTextInsertionRequested(sessionId, ({ text }) => {
+    const instance = terminalMap.current.get(sessionId);
+    const currentConnector = instance?.connector;
+    if (!instance || !currentConnector?.isConnected) return false;
+
+    try {
+      instance.terminal.paste(
+        normalizePasteTextForConnector(text, currentConnector.protocol),
+      );
+      activateTerminal(sessionId);
+      return true;
+    } catch (error) {
+      logger.error("FE/terminal-view/insertion", "Failed to insert text into terminal", {
+        error,
+        sessionId,
+      });
+      return false;
+    }
+  }), [activateTerminal, sessionId]);
 
   useEffect(() => {
     const handler = () => {

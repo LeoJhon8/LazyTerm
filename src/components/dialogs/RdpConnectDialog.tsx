@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FormField } from "@/components/dialogs/connection-forms";
 import type { RDPConfig } from "@/types/terminal";
 import { useI18n } from "@/i18n";
 import { resolveRdpBackend } from "@/lib/rdp-backend";
@@ -81,44 +81,34 @@ export function RdpConnectDialog({ open, onOpenChange, onSave, initialConfig, is
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-nickname" className="text-right">{t("名称")}</Label>
-              <Input id="rdp-nickname" value={nickname} onChange={(event) => setNickname(event.target.value)} className="col-span-3" />
+        <form className="grid gap-5" onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
+          <div className="grid gap-4 py-2">
+            <FormField label={t("名称")} htmlFor="rdp-nickname">
+              <Input id="rdp-nickname" value={nickname} onChange={(event) => setNickname(event.target.value)} />
+            </FormField>
+            <FormField label={t("主机地址")} htmlFor="rdp-host" required>
+              <Input id="rdp-host" value={host} onChange={(event) => setHost(event.target.value)} required />
+            </FormField>
+            <FormField label={t("端口")} htmlFor="rdp-port" required>
+              <Input id="rdp-port" type="number" value={port} onChange={(event) => setPort(event.target.value)} required />
+            </FormField>
+            <FormField label={t("用户名")} htmlFor="rdp-username" required>
+              <Input id="rdp-username" value={username} onChange={(event) => setUsername(event.target.value)} required />
+            </FormField>
+            <FormField label={t("域")} htmlFor="rdp-domain">
+              <Input id="rdp-domain" value={domain} onChange={(event) => setDomain(event.target.value)} />
+            </FormField>
+            <FormField label={t("密码")} htmlFor="rdp-password">
+              <Input id="rdp-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="off" />
+            </FormField>
+            <div className="grid grid-cols-4 gap-4">
+              <p className="col-start-2 col-span-3 text-xs leading-5 text-muted-foreground">
+                {t("远程桌面尺寸将在连接时按当前窗口锁定；调整到期望大小后重连即可更新。")}
+              </p>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-host" className="text-right">{t("主机地址")}</Label>
-              <Input id="rdp-host" value={host} onChange={(event) => setHost(event.target.value)} className="col-span-3" required />
-            </div>
-
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-port" className="text-right">{t("端口")}</Label>
-              <Input id="rdp-port" type="number" value={port} onChange={(event) => setPort(event.target.value)} className="col-span-3" required />
-            </div>
-
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-username" className="text-right">{t("用户名")}</Label>
-              <Input id="rdp-username" value={username} onChange={(event) => setUsername(event.target.value)} className="col-span-3" required />
-            </div>
-
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-domain" className="text-right">{t("域")}</Label>
-              <Input id="rdp-domain" value={domain} onChange={(event) => setDomain(event.target.value)} className="col-span-3" />
-            </div>
-
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rdp-password" className="text-right">{t("密码")}</Label>
-              <Input id="rdp-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="col-span-3" autoComplete="off" />
-            </div>
-
-            <p className="col-span-4 text-xs text-muted-foreground">
-              {t("远程桌面尺寸将在连接时按当前窗口锁定；调整到期望大小后重连即可更新。")}
-            </p>
-
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t border-border/50 pt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("取消")}</Button>
             <Button type="submit">{initialConfig ? t("保存修改") : t("立即创建")}</Button>
           </DialogFooter>

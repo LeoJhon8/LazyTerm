@@ -4,8 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
+import { FormField } from "@/components/dialogs/connection-forms";
 
 import type { SSHConfig } from "@/types/terminal";
 // 修复命名冲突：使用别名 openFileDialog
@@ -119,69 +118,56 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
           </DialogTitle>
         </DialogHeader>
         
-        <form onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-nickname" className="text-right">{t("名称")}</Label>
+        <form className="grid gap-5" onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
+          <div className="grid gap-4 py-2">
+            <FormField label={t("名称")} htmlFor="ssh-nickname">
               <Input
                 id="ssh-nickname"
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
-                className="col-span-3"
               />
-            </div>
+            </FormField>
             
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-host" className="text-right">{t("主机地址")}</Label>
+            <FormField label={t("主机地址")} htmlFor="ssh-host" required>
               <Input
                 id="ssh-host"
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
-                className="col-span-3"
                 required
               />
-            </div>
+            </FormField>
 
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-port" className="text-right">{t("端口")}</Label>
+            <FormField label={t("端口")} htmlFor="ssh-port" required>
               <Input
                 id="ssh-port"
                 type="number"
                 value={port}
                 onChange={(e) => setPort(e.target.value)}
-                className="col-span-3"
                 required
               />
-            </div>
+            </FormField>
 
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-username" className="text-right">{t("用户名")}</Label>
+            <FormField label={t("用户名")} htmlFor="ssh-username" required>
               <Input
                 id="ssh-username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="col-span-3"
                 required
               />
-            </div>
+            </FormField>
 
-            <Separator />
-
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-password" className="text-right">{t("密码")}</Label>
+            <FormField label={t("密码")} htmlFor="ssh-password">
               <Input
                 id="ssh-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="col-span-3"
                 autoComplete="off"
               />
-            </div>
+            </FormField>
 
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="ssh-key-path" className="text-right">{t("私钥路径")}</Label>
-              <div className="col-span-3 flex items-center">
+            <FormField label={t("私钥路径")} htmlFor="ssh-key-path">
+              <div className="flex items-center gap-2">
                 <Input
                   id="ssh-key-path"
                   value={privateKeyPath}
@@ -191,35 +177,32 @@ export function SshConnectDialog({ open, onOpenChange, onSave, initialConfig, is
                 <Button
                   type="button" // 显式声明 type="button" 防止触发 form submit
                   variant="outline"
-                  size="sm"
-                  className="ml-2"
+                  className="h-10 shrink-0"
                   onClick={handleSelectKey}
                 >
                   {t("浏览")}
                 </Button>
               </div>
-            </div>
+            </FormField>
 
-            <Separator />
-
-            <div className="grid grid-cols-4 items-start gap-4">
-              <Label htmlFor="ssh-startup-command" className="pt-3 text-right">{t("启动命令")}</Label>
-              <div className="col-span-3 space-y-1.5">
-                <Textarea
-                  id="ssh-startup-command"
-                  value={startupCommand}
-                  onChange={(event) => setStartupCommand(event.target.value)}
-                  placeholder={t("输入命令，支持换行")}
-                  rows={6}
-                  className="resize-y font-mono text-xs leading-5"
-                />
-                <p className="text-xs text-muted-foreground">{t("连接成功后自动执行，支持多行命令。")}</p>
-              </div>
-            </div>
+            <FormField
+              label={t("启动命令")}
+              htmlFor="ssh-startup-command"
+              description={t("连接成功后自动执行，支持多行命令。")}
+            >
+              <Textarea
+                id="ssh-startup-command"
+                value={startupCommand}
+                onChange={(event) => setStartupCommand(event.target.value)}
+                placeholder={t("输入命令，支持换行")}
+                rows={6}
+                className="resize-y font-mono text-xs leading-5"
+              />
+            </FormField>
 
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t border-border/50 pt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t("取消")}
             </Button>

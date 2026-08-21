@@ -229,7 +229,7 @@ function SortableTab({
             {...listeners}
             onPointerDownCapture={handleContextMenuPointerDownCapture}
           >
-            <span className="pointer-events-none min-w-0 truncate text-[13px] flex items-center justify-center gap-1.5 leading-none">
+            <span className="pointer-events-none min-w-0 truncate text-[13px] flex items-center justify-center gap-1.5 leading-5">
               {tabIcon}
               {connectionPhase && (
                 <span className={cn(
@@ -802,7 +802,7 @@ export function TabBar() {
                   )}
                   style={{ width: "180px", cursor: "grabbing" }}
                 >
-                  <span className="pointer-events-none max-w-32 flex-1 truncate text-[13px]">
+                  <span className="pointer-events-none max-w-32 flex-1 truncate text-[13px] leading-5">
                     {tabs.find((t) => t.id === activeDragId)?.title || t("标签")}
                   </span>
                   <Button

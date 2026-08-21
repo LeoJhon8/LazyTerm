@@ -95,6 +95,7 @@ The AI module connects to an OpenAI-compatible endpoint:
 
 - Configure an API base URL, model, and credential reference.
 - Stream responses, stop generation, regenerate, and render Markdown.
+- Insert a full response code block or a selection within it into the focused character terminal; multiline insertions require confirmation.
 - Choose whether to include the current topic history as continued context.
 - Store the API key in the credential vault; AI configuration does not persist the key in plaintext.
 
