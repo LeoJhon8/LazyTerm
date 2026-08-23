@@ -2,6 +2,10 @@
 
 > **简体中文** | [English](../en/user/features.md)
 
+## 平台范围
+
+桌面版提供本文所述的完整多协议工作区。Android ARM64 真机版支持 Android 7.0 及以上，当前专注于 SSH：配置管理、多终端标签、历史命令、快捷命令、主题、移动端按键栏、后台保活、自动重连和应用内更新。Android 不提供本地 Shell、AI CLI、Telnet、串口、RDP、VNC、SFTP、桌面分屏/工作区模板、AI 助手或 Git 配置同步。
+
 ## 多协议连接
 
 LazyTerm 把字符终端和图形远程桌面放入同一个标签页与分屏工作区：

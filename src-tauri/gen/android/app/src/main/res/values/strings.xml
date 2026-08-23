@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">"LazyTerm"</string>
+    <string name="main_activity_title">"LazyTerm"</string>
+    <string name="ssh_service_channel_name">SSH 后台连接</string>
+    <string name="ssh_service_channel_description">保持活动的 SSH 会话并显示连接状态</string>
+    <plurals name="ssh_active_sessions">
+        <item quantity="one">正在保持 %d 个 SSH 会话</item>
+        <item quantity="other">正在保持 %d 个 SSH 会话</item>
+    </plurals>
+</resources>

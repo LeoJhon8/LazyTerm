@@ -139,6 +139,7 @@ impl From<russh::keys::Error> for AppError {
 }
 
 // 从 SFTP 错误转换
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl From<russh_sftp::client::error::Error> for AppError {
     fn from(err: russh_sftp::client::error::Error) -> Self {
         Self::Sftp(err.to_string())

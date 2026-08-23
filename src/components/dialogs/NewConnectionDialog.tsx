@@ -32,6 +32,7 @@ import {
   TelnetForm,
   AiCliForm,
 } from "./connection-forms";
+import { IS_ANDROID, isAndroidConnectionType } from "@/lib/platform";
 
 /** 连接类型定义 */
 type ConnectionType = "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
@@ -46,6 +47,10 @@ const CONNECTION_TYPES: Array<ConnectionTypeOption<ConnectionType>> = [
   { type: "serial", icon: <Usb className="h-4 w-4 text-purple-600/80" />, labelKey: "串口" },
 ];
 
+const VISIBLE_CONNECTION_TYPES = IS_ANDROID
+  ? CONNECTION_TYPES.filter((item) => isAndroidConnectionType(item.type))
+  : CONNECTION_TYPES;
+
 interface NewConnectionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -57,12 +62,12 @@ interface NewConnectionDialogProps {
 
 export function NewConnectionDialog({ open, onOpenChange, initialType, onSave }: NewConnectionDialogProps) {
   const { t } = useI18n();
-  const [selectedType, setSelectedType] = useState<ConnectionType>(initialType || "ssh");
+  const [selectedType, setSelectedType] = useState<ConnectionType>(IS_ANDROID ? "ssh" : (initialType || "ssh"));
 
   // 弹窗打开时重置
   useEffect(() => {
     if (open) {
-      setSelectedType(initialType || "ssh");
+      setSelectedType(IS_ANDROID ? "ssh" : (initialType || "ssh"));
     }
   }, [open, initialType]);
 
@@ -73,13 +78,13 @@ export function NewConnectionDialog({ open, onOpenChange, initialType, onSave }:
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-165 p-0 gap-0 overflow-hidden">
+      <DialogContent className="max-h-[calc(100dvh-24px)] overflow-hidden p-0 gap-0 sm:max-w-165">
         <DialogHeader className="px-6 pt-6 pb-4">
           <DialogTitle>{t("新建连接")}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex min-h-[420px]">
-          <ConnectionTypeList options={CONNECTION_TYPES} selectedType={selectedType} onSelect={setSelectedType} />
+        <div className="flex min-h-0 sm:min-h-[420px]">
+          {!IS_ANDROID && <ConnectionTypeList options={VISIBLE_CONNECTION_TYPES} selectedType={selectedType} onSelect={setSelectedType} />}
 
           {/* 右侧：配置表单 */}
           <div className="flex-1 flex flex-col min-w-0">

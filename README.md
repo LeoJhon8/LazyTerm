@@ -4,19 +4,20 @@
 
 <h1 align="center">LazyTerm</h1>
 
-<p align="center">面向本地开发与远程运维的多协议桌面终端工作区</p>
+<p align="center">面向桌面多协议运维与 Android SSH 的现代终端工作区</p>
 
 <p align="center">
   <strong>简体中文</strong> · <a href="./README_EN.md">English</a>
 </p>
 
-LazyTerm 使用 Tauri 2、React 19、TypeScript 和 Rust 构建，把本地 Shell、SSH、AI CLI、RDP、VNC、串口、Telnet 与 SFTP 文件传输整合到一个可分屏、可定制的桌面工作区中。
+LazyTerm 使用 Tauri 2、React 19、TypeScript 和 Rust 构建。桌面版把本地 Shell、SSH、AI CLI、RDP、VNC、串口、Telnet 与 SFTP 文件传输整合到一个可分屏、可定制的工作区；Android 版面向随身 SSH 运维，提供适合触屏的精简界面。
 
 它适合同时管理多台主机、混合使用字符终端与远程桌面，或为不同项目保存可重复打开的连接与布局模板。
 
 ## 核心能力
 
 - **统一多协议工作区**：本地终端、SSH、AI CLI、Telnet、串口、RDP 和 VNC 使用相同的标签页与分屏模型。
+- **Android SSH 真机版**：支持 ARM64 Android 设备，提供 SSH 配置、多终端标签、历史命令、快捷命令、主题、移动端按键栏、后台保活与应用内更新。
 - **递归分屏与工作区模板**：支持任意层级的横向/纵向分屏，并可保存会话组合、比例、焦点和字体覆盖。
 - **两条 RDP 路径**：FreeRDP 在 WebView 内通过 Canvas 渲染；Windows 可选 MsTscAx 原生宿主。
 - **完整 VNC 交互**：支持区域帧、远端光标、剪贴板、文本输入、组合键和远端尺寸调整。
@@ -42,13 +43,25 @@ LazyTerm 使用 Tauri 2、React 19、TypeScript 和 Rust 构建，把本地 Shel
 | VNC | Canvas | LibVNCClient FFI | 支持输入、光标、剪贴板和质量策略 |
 | SFTP | 文件传输弹窗 | russh-sftp | 支持上传、下载、远端浏览、进度和取消 |
 
+### Android 支持范围
+
+Android 正式版支持 Android 7.0（API 24）及以上的 ARM64 真机，应用包名为 `com.lazyterm`。移动端当前专注于 SSH，支持：
+
+- SSH 密码、私钥和交互式认证，以及保存和管理 SSH 配置。
+- 多终端标签、命令历史、快捷命令、主题与终端字体设置。
+- 可隐藏的历史/快捷命令入口，以及 `Esc`、`Tab`、方向键、`Ctrl` 等移动终端按键栏。
+- SSH 后台保活、状态通知、自动重连，以及应用内检查、下载并调用系统安装器更新 APK。
+
+Android 当前不提供本地 Shell、AI CLI、Telnet、串口、RDP、VNC、SFTP、桌面分屏/工作区模板、AI 助手和 Git 配置同步。x86_64 APK 仅用于开发阶段的模拟器调试，不作为正式发布产物。
+
 ## 当前构建平台
 
-| 平台 | 当前构建路径 | RDP 后端 |
+| 平台 | 当前构建路径 | 支持范围 |
 | --- | --- | --- |
-| Windows x64 | GitHub Actions 生成 NSIS / MSI；也可本地构建 | FreeRDP、MsTscAx |
-| macOS Apple Silicon | GitHub Actions 生成 DMG；也可本地构建 | FreeRDP |
-| Linux | 安装 Tauri 与原生库依赖后从源码构建 | FreeRDP |
+| Android ARM64 | GitHub Actions 生成签名 APK | SSH 移动端功能 |
+| Windows x64 | GitHub Actions 生成 NSIS / MSI；也可本地构建 | 完整桌面功能；FreeRDP、MsTscAx |
+| macOS Apple Silicon | GitHub Actions 生成 DMG；也可本地构建 | 完整桌面功能；FreeRDP |
+| Linux | 安装 Tauri 与原生库依赖后从源码构建 | 完整桌面功能；FreeRDP |
 
 预构建产物、SHA-256 校验文件和构建来源证明统一发布到 [GitHub Releases](https://github.com/LeoJhon8/LazyTerm/releases)，发布成功后单向同步到 Gitee。应用内更新会优先探测 GitHub Releases；GitHub 超时、不可访问或没有有效安装包时自动回退到 Gitee。维护者发布步骤见[发布流程](./docs/developer/release-process.md)。
 
@@ -60,6 +73,8 @@ LazyTerm 使用 Tauri 2、React 19、TypeScript 和 Rust 构建，把本地 Shel
 - npm
 - Rust 1.85+ stable toolchain
 - [Tauri 2 对应平台的系统依赖](https://v2.tauri.app/start/prerequisites/)
+
+Android 开发还需要 JDK 17、Android SDK 36、Build Tools 36.1.0、NDK 25.1.8937393，以及对应的 Rust Android 目标。
 
 Windows 开发建议额外准备：
 
@@ -111,6 +126,14 @@ npm run tauri:build
 ```
 
 `tauri:build` 会先执行 `scripts/update-version.js`，根据最近一次 Git 提交的 UTC 时间同步版本号。
+
+Android x86_64 模拟器调试版：
+
+```powershell
+npm run tauri -- android build --target x86_64 --apk --debug
+```
+
+Android ARM64 正式版由发布工作流使用固定签名构建；签名材料不进入 Git 仓库。
 
 ### 编译与代码检查
 

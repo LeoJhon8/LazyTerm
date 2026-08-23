@@ -2,7 +2,10 @@
 //! 提供共享的 SSH 认证函数，消除 commands.rs 中的重复代码
 
 use russh::client;
-use russh::keys::known_hosts::{check_known_hosts, known_host_keys, learn_known_hosts};
+use russh::keys::known_hosts::{
+    check_known_hosts, check_known_hosts_path, known_host_keys, known_host_keys_path,
+    learn_known_hosts, learn_known_hosts_path,
+};
 use russh::keys::{self, PrivateKey, PrivateKeyWithHashAlg, PublicKey};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -48,15 +51,22 @@ pub struct SshClientHandler {
     host: String,
     port: u16,
     auto_update_changed_host_keys: bool,
+    known_hosts_path: Option<std::path::PathBuf>,
     host_key_error: Arc<Mutex<Option<String>>>,
 }
 
 impl SshClientHandler {
-    pub fn new(host: String, port: u16, auto_update_changed_host_keys: bool) -> Self {
+    pub fn new(
+        host: String,
+        port: u16,
+        auto_update_changed_host_keys: bool,
+        known_hosts_path: Option<std::path::PathBuf>,
+    ) -> Self {
         Self {
             host,
             port,
             auto_update_changed_host_keys,
+            known_hosts_path,
             host_key_error: Arc::new(Mutex::new(None)),
         }
     }
@@ -70,7 +80,12 @@ impl SshClientHandler {
     fn verify_known_hosts(&self, server_key: &PublicKey) -> bool {
         use crate::logging;
 
-        match check_known_hosts(&self.host, self.port, server_key) {
+        let check_result = match self.known_hosts_path.as_ref() {
+            Some(path) => check_known_hosts_path(&self.host, self.port, server_key, path),
+            None => check_known_hosts(&self.host, self.port, server_key),
+        };
+
+        match check_result {
             Ok(true) => {
                 logging::info(
                     "SSH/hostkey",
@@ -87,7 +102,11 @@ impl SshClientHandler {
                         self.host, self.port
                     ),
                 );
-                if let Err(e) = learn_known_hosts(&self.host, self.port, server_key) {
+                let learn_result = match self.known_hosts_path.as_ref() {
+                    Some(path) => learn_known_hosts_path(&self.host, self.port, server_key, path),
+                    None => learn_known_hosts(&self.host, self.port, server_key),
+                };
+                if let Err(e) = learn_result {
                     logging::warn("SSH/hostkey", format!("写入 known_hosts 失败: {}", e));
                 }
                 true
@@ -143,7 +162,11 @@ impl SshClientHandler {
     /// 从 known_hosts 中移除当前主机的旧记录，再写入服务器提供的新密钥。
     /// 写入新密钥失败时恢复原文件，避免留下半完成状态。
     fn remove_and_relearn(&self, server_key: &PublicKey) -> Result<usize, String> {
-        let lines_to_remove: HashSet<usize> = known_host_keys(&self.host, self.port)
+        let known_keys_result = match self.known_hosts_path.as_ref() {
+            Some(path) => known_host_keys_path(&self.host, self.port, path),
+            None => known_host_keys(&self.host, self.port),
+        };
+        let lines_to_remove: HashSet<usize> = known_keys_result
             .map_err(|error| format!("读取 known_hosts 条目失败: {error}"))?
             .into_iter()
             .map(|(line, _)| line)
@@ -153,8 +176,11 @@ impl SshClientHandler {
             return Err("未找到需要替换的 known_hosts 记录".to_string());
         }
 
-        let known_hosts_path =
-            get_known_hosts_path().ok_or_else(|| "无法确定 known_hosts 文件路径".to_string())?;
+        let known_hosts_path = self
+            .known_hosts_path
+            .clone()
+            .or_else(get_known_hosts_path)
+            .ok_or_else(|| "无法确定 known_hosts 文件路径".to_string())?;
         let original_content = std::fs::read_to_string(&known_hosts_path)
             .map_err(|error| format!("读取 known_hosts 失败: {error}"))?;
         let filtered_content: String = original_content
@@ -167,7 +193,11 @@ impl SshClientHandler {
         std::fs::write(&known_hosts_path, &filtered_content)
             .map_err(|error| format!("移除旧的 known_hosts 记录失败: {error}"))?;
 
-        if let Err(error) = learn_known_hosts(&self.host, self.port, server_key) {
+        let learn_result = match self.known_hosts_path.as_ref() {
+            Some(path) => learn_known_hosts_path(&self.host, self.port, server_key, path),
+            None => learn_known_hosts(&self.host, self.port, server_key),
+        };
+        if let Err(error) = learn_result {
             return match std::fs::write(&known_hosts_path, &original_content) {
                 Ok(()) => Err(format!("写入新密钥失败，已恢复原记录: {error}")),
                 Err(rollback_error) => Err(format!(
@@ -546,11 +576,20 @@ async fn authenticate_keyboard_interactive_then_password(
 pub async fn connect_and_authenticate(
     config: &SshConnectConfig,
 ) -> Result<client::Handle<SshClientHandler>, String> {
+    connect_and_authenticate_with_known_hosts(config, None).await
+}
+
+/// 建立 SSH 连接并认证，可为移动端指定应用私有的 known_hosts 文件。
+pub async fn connect_and_authenticate_with_known_hosts(
+    config: &SshConnectConfig,
+    known_hosts_path: Option<std::path::PathBuf>,
+) -> Result<client::Handle<SshClientHandler>, String> {
     let client_config = build_ssh_client_config(config);
     let client_handler = SshClientHandler::new(
         config.host.clone(),
         config.port,
         config.auto_update_changed_host_keys,
+        known_hosts_path,
     );
     let host_key_error = client_handler.host_key_error.clone();
 

@@ -24,6 +24,10 @@ dist-ssr
 *.sw?
 src-tauri/target
 
+# Android signing material and local APK copies
+src-tauri/keystore/
+/LazyTerm-Android-*.apk
+
 # .NET sidecar build caches/artifacts
 src-tauri/native/msrdpax-host/bin/
 src-tauri/native/msrdpax-host/obj/

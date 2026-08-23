@@ -59,6 +59,8 @@ import { createPortal, flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { WorkspaceTemplateDialog } from "@/components/modules/WorkspaceTemplateDialog";
+import { IS_ANDROID } from "@/lib/platform";
+import { emitQuickConnect } from "@/lib/quick-connect-event";
 
 interface CloseConfirmationState {
   open: boolean;
@@ -333,6 +335,7 @@ export function TabBar() {
   const tabsContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (IS_ANDROID) return;
     getAvailableShells()
       .then(setShells)
       .catch((err) => logger.error("FE/tab-bar", "Failed to get shells", {err}));
@@ -441,6 +444,11 @@ export function TabBar() {
   }, [tabs, reorderTabs]);
 
   const handleAddTab = () => {
+    if (IS_ANDROID) {
+      emitQuickConnect("ssh");
+      return;
+    }
+
     const shellInfo = shells.find(
       (shell) => shell.path === defaultShell || shell.name.toLowerCase() === defaultShell.toLowerCase()
     );

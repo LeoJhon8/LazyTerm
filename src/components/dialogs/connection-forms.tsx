@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DialogFooter } from "@/components/ui/dialog";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 import { ChevronDown, Eye, EyeOff, KeyRound, Settings } from "lucide-react";
 import { invokeTauri } from "@/services/tauri";
 import { logger } from "@/lib/logger";
@@ -46,6 +47,7 @@ import type {
   LocalConfig,
 } from "@/types/terminal";
 import type { ShellInfo } from "@/types/shell";
+import { IS_ANDROID } from "@/lib/platform";
 
 /** 表单提交按钮的文案 key */
 export type SubmitLabel = "立即创建" | "连接" | "保存";
@@ -65,12 +67,12 @@ export function FormField({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-4 items-start gap-4">
-      <Label htmlFor={htmlFor} className="text-right text-[13px]">
+    <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-4 sm:gap-4">
+      <Label htmlFor={htmlFor} className="text-left text-[13px] sm:text-right">
         {label}
         {required && <span className="text-destructive ml-0.5">*</span>}
       </Label>
-      <div className="col-span-3 space-y-1.5">
+      <div className="space-y-1.5 sm:col-span-3">
         {children}
         {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>
@@ -335,6 +337,7 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
+  const [privateKey, setPrivateKey] = useState("");
   const [nickname, setNickname] = useState("");
   const [startupCommand, setStartupCommand] = useState("");
   const [passwordCredentialId, setPasswordCredentialId] = useState<string | undefined>();
@@ -352,7 +355,13 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
         setPasswordCredentialId(undefined);
         setPrivateKeyCredentialId(undefined);
         setPassword("");
-        setPrivateKeyPath(selected);
+        if (IS_ANDROID) {
+          setPrivateKey(await readTextFile(selected));
+          setPrivateKeyPath(selected);
+        } else {
+          setPrivateKey("");
+          setPrivateKeyPath(selected);
+        }
       }
     } catch (err) {
       logger.error("FE/dialog/connection-forms/ssh", "选择私钥文件失败", { err });
@@ -369,9 +378,10 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
       port: parsedPort,
       username,
       credentialId,
-      authType: credential?.type === "ssh-key" || privateKeyPath ? "privateKey" : "password",
+      authType: credential?.type === "ssh-key" || privateKeyPath || privateKey ? "privateKey" : "password",
       password: credentialId ? undefined : (password || undefined),
-      privateKeyPath: credentialId ? undefined : (privateKeyPath || undefined),
+      privateKeyPath: credentialId || IS_ANDROID ? undefined : (privateKeyPath || undefined),
+      privateKey: credentialId ? undefined : (privateKey || undefined),
       nickname: nickname || undefined,
       startupCommand: startupCommand.trim() ? startupCommand : undefined,
       keepAlive: parsedPort === 2222 ? undefined : true,
@@ -406,12 +416,14 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
             setPasswordCredentialId(undefined);
             setPrivateKeyCredentialId(undefined);
             setPrivateKeyPath("");
+            setPrivateKey("");
           }}
           onCredentialChange={(credential) => {
             setPasswordCredentialId(credential?.id);
             setPrivateKeyCredentialId(undefined);
             setPassword("");
             setPrivateKeyPath("");
+            setPrivateKey("");
             if (credential?.username) setUsername(credential.username);
           }}
         />
@@ -423,6 +435,7 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
           credentialTypes={["ssh-key"]}
           onManualChange={(nextPrivateKeyPath) => {
             setPrivateKeyPath(nextPrivateKeyPath);
+            setPrivateKey("");
             setPrivateKeyCredentialId(undefined);
             setPasswordCredentialId(undefined);
             setPassword("");
@@ -432,6 +445,7 @@ export function SshForm({ onSubmit, submitLabel }: { onSubmit: (config: SSHConfi
             setPasswordCredentialId(undefined);
             setPassword("");
             setPrivateKeyPath(credential?.privateKeyPath ?? "");
+            setPrivateKey("");
             if (credential?.username) setUsername(credential.username);
           }}
           trailing={<Button type="button" variant="outline" size="sm" onClick={handleSelectKey}>{t("浏览")}</Button>}

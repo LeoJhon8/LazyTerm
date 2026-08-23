@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { IS_ANDROID, isAndroidConnectionType } from "@/lib/platform";
 import { useSshProfilesStore, type SessionNode } from "@/store/ssh-profiles";
 import { duplicateConnectionCredential, secureConnectionConfig } from "@/store/credentials";
 import { useI18n } from "@/i18n";
@@ -198,6 +199,8 @@ function DraggableDroppableRow({
             onSelect(node, event);
             if (node.type === 'folder' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
               toggleFolder(node.id);
+            } else if (IS_ANDROID && node.type !== 'folder') {
+              onAction('connect', node);
             }
           }}
           onContextMenu={(event) => onSelect(node, event)}
@@ -231,7 +234,7 @@ function DraggableDroppableRow({
         ) : node.type === 'ssh' ? (
           <>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}><Terminal className="mr-2 h-4 w-4" /> {t("连接会话")}</ContextMenuItem>
-            {!isBulkSelected && (
+            {!IS_ANDROID && !isBulkSelected && (
               <>
                 <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('sftp-upload', node)}><Upload className="mr-2 h-4 w-4" /> {t("上传文件")}</ContextMenuItem>
                 <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('sftp-download', node)}><Download className="mr-2 h-4 w-4" /> {t("下载文件")}</ContextMenuItem>
@@ -393,7 +396,12 @@ export function SessionModule() {
   }, [ensureRoot, syncRootFolderName, locale]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-  const sortedNodes = useMemo(() => getSortedFlattenedNodes(nodes), [nodes]);
+  const sortedNodes = useMemo(() => {
+    const flattened = getSortedFlattenedNodes(nodes);
+    return IS_ANDROID
+      ? flattened.filter((node) => node.type === "folder" || isAndroidConnectionType(node.type))
+      : flattened;
+  }, [nodes]);
   const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
   const deleteTargetNodes = useMemo(() => {
     const targetIdSet = new Set(pendingDeleteNodeIds);

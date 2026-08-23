@@ -69,6 +69,10 @@ interface SettingsData {
   longCommandIdleSeconds: number;
   copyOnSelect: boolean;
   terminalRightClickBehavior: TerminalRightClickBehavior;
+  mobileHistoryVisible: boolean;
+  mobileQuickCommandsVisible: boolean;
+  mobileTerminalKeysVisible: boolean;
+  mobileSshBackgroundServiceEnabled: boolean;
   // 外观自定义
   appBackgroundColor: AppBackgroundColor; // 全局背景色 (终端外)
   appColorPalette: AppColorPalette;
@@ -137,6 +141,10 @@ const defaultSettings: SettingsData = {
   longCommandIdleSeconds: DEFAULT_LONG_COMMAND_IDLE_SECONDS,
   copyOnSelect: false,
   terminalRightClickBehavior: "context-menu",
+  mobileHistoryVisible: true,
+  mobileQuickCommandsVisible: true,
+  mobileTerminalKeysVisible: true,
+  mobileSshBackgroundServiceEnabled: true,
   // 外观自定义默认值
   appBackgroundColor: "system",
   appColorPalette: DEFAULT_APP_COLOR_PALETTE,
@@ -188,7 +196,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: "lazy-term-settings",
       storage: createJSONStorage(() => gitAwareStorage),
-      version: 7,
+      version: 10,
       migrate: (persistedState, version) => {
         if (persistedState && typeof persistedState === "object") {
           const data: Partial<SettingsData> & { terminalOpacity?: number } = {
@@ -232,6 +240,19 @@ export const useSettingsStore = create<SettingsState>()(
 
           if (version < 7) {
             data.autoUpdateChangedSshHostKeys = false;
+          }
+
+          if (version < 8) {
+            data.mobileHistoryVisible = true;
+            data.mobileQuickCommandsVisible = true;
+          }
+
+          if (version < 9) {
+            data.mobileTerminalKeysVisible = true;
+          }
+
+          if (version < 10) {
+            data.mobileSshBackgroundServiceEnabled = true;
           }
 
           return data;

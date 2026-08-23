@@ -61,6 +61,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { IS_ANDROID } from "@/lib/platform";
 import {
   useQuickCommandsStore,
   type QuickCommand,
@@ -397,8 +398,11 @@ export function QuickCommandManagerDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="grid h-[min(680px,calc(100vh-32px))] w-[min(940px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
-          <DialogHeader className="border-b border-border/65 px-6 py-5 pr-14">
+        <DialogContent className={cn(
+          "grid h-[min(680px,calc(100vh-32px))] w-[min(940px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0",
+          IS_ANDROID && "h-[calc(100dvh-16px)] w-[calc(100vw-16px)]",
+        )}>
+          <DialogHeader className={cn("border-b border-border/65 px-6 py-5 pr-14", IS_ANDROID && "px-4 py-4 pr-12")}>
             <div className="flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
                 <ListChecks className="h-4 w-4" />
@@ -412,7 +416,10 @@ export function QuickCommandManagerDialog({
             </div>
           </DialogHeader>
 
-          <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(280px,36%)]">
+          <div className={cn(
+            "grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(280px,36%)]",
+            IS_ANDROID && "grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(240px,45%)]",
+          )}>
             <section className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
               <div className="flex items-center gap-3 border-b border-border/55 px-4 py-3">
                 <div className="relative min-w-0 flex-1">
@@ -531,7 +538,7 @@ export function QuickCommandManagerDialog({
               </ScrollArea>
             </section>
 
-            <aside className="min-h-0 border-l border-border/65 bg-muted/18">
+            <aside className={cn("min-h-0 border-l border-border/65 bg-muted/18", IS_ANDROID && "border-l-0 border-t")}>
               <ScrollArea className="h-full">
                 <CommandEditor
                   key={editorState.mode === "new" ? `new-${editorState.revision}` : editorState.commandId}
@@ -552,7 +559,10 @@ export function QuickCommandManagerDialog({
             </aside>
           </div>
 
-          <DialogFooter className="flex-row items-center justify-between border-t border-border/65 bg-background/55 px-5 py-3 sm:justify-between sm:space-x-0">
+          <DialogFooter className={cn(
+            "flex-row items-center justify-between border-t border-border/65 bg-background/55 px-5 py-3 sm:justify-between sm:space-x-0",
+            IS_ANDROID && "flex-wrap gap-2 px-3 py-2",
+          )}>
             <div className="flex items-center gap-3">
               <span className={cn(
                 "text-xs text-muted-foreground",

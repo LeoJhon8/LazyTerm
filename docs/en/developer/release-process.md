@@ -2,7 +2,7 @@
 
 > [简体中文](../../developer/release-process.md) | **English**
 
-This document defines LazyTerm's desktop release process. GitHub is the single upstream for code, tags, and releases. Gitee is a one-way mirror for networks in mainland China. GitHub Packages is intentionally not used for the desktop application.
+This document defines LazyTerm's desktop and Android release process. GitHub is the single upstream for code, tags, and releases. Gitee is a one-way mirror for networks in mainland China. GitHub Packages is intentionally not used for application distribution.
 
 ## Release Contents
 
@@ -13,6 +13,7 @@ Stable releases use a strict `vMajor.Minor.Patch` tag such as `v26.81.2912` and 
 | `LazyTerm_<version>_windows_x64-setup.exe` | Recommended Windows x64 installer |
 | `LazyTerm_<version>_windows_x64.msi` | Windows x64 managed-deployment package |
 | `LazyTerm_<version>_macos_arm64.dmg` | macOS Apple Silicon disk image |
+| `LazyTerm_<version>_android_arm64.apk` | Android 7.0+ ARM64 installer with application ID `com.lazyterm` |
 | `SHA256SUMS.txt` | SHA-256 checksums for all installers |
 
 GitHub also provides source archives corresponding to the tag. The workflow uses GitHub OIDC to generate build provenance for installers, verifiable with `gh attestation verify`.
@@ -25,6 +26,19 @@ GitHub also provides source archives corresponding to the tag. The workflow uses
 2. Enable release immutability under `Settings > General > Releases`. The workflow creates a draft, uploads every asset, and only then publishes it.
 3. A ruleset protecting `v*` tags is recommended to limit who can create or delete release tags.
 4. Create the `breaking-change`, `enhancement`, `feature`, `bug`, `fix`, `documentation`, and `skip-changelog` labels for automatic release-note categories when practical.
+
+Android releases also require these stable-signing Repository secrets:
+
+| Name | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Base64 content of the Android release keystore |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_ALIAS` | Release key alias |
+| `ANDROID_KEY_PASSWORD` | Release key password |
+
+Keep an offline backup of the release keystore. Losing it prevents future APKs from upgrading existing `com.lazyterm` installations. The keystore and password files are excluded by `.gitignore` and must never be committed.
+
+Android `versionCode` is derived as a monotonically increasing UTC-minute value reconstructed from the three-component timestamp version. It does not use Tauri's default component concatenation, which can make a newer date appear to Android as a downgrade.
 
 ### Gitee
 
@@ -40,7 +54,7 @@ When the mirror remains at `LeoJohn8/LazyTerm`, configure the following in the G
 
 Synchronization is one-way and non-destructive. Every GitHub `main` push updates Gitee `main`; after a release, the current tag and release assets are mirrored as well. The workflow does not use `git push --mirror` and therefore does not delete Gitee-only references. Do not develop directly in the Gitee mirror or modify matching branches or tags there.
 
-The current Windows and macOS artifacts do not have commercial code signing. Until certificates are introduced, release notes must retain the unknown-publisher warning. Signing credentials must only be stored in GitHub Actions secrets.
+The current Windows and macOS artifacts do not have commercial code signing. Until certificates are introduced, release notes must retain the unknown-publisher warning. Android APKs must use the stable release key. All signing credentials must only be stored in GitHub Actions secrets.
 
 ## Prepare a Version
 
@@ -88,7 +102,7 @@ After a valid tag is pushed, `.github/workflows/release.yml`:
 
 1. Validates the tag, manifest versions, and lock-file versions.
 2. Creates or reuses a draft release and generates release notes.
-3. Builds Windows x64 NSIS/MSI and macOS Apple Silicon DMG artifacts in parallel.
+3. Builds Windows x64 NSIS/MSI, macOS Apple Silicon DMG, and Android ARM64 APK artifacts in parallel.
 4. Collects artifacts and generates `SHA256SUMS.txt`.
 5. Generates GitHub artifact attestations for every asset.
 6. Publishes the GitHub Release and marks it Latest only after every preceding step succeeds.
@@ -119,4 +133,4 @@ Get-FileHash .\LazyTerm_*_windows_x64-setup.exe -Algorithm SHA256
 gh attestation verify .\LazyTerm_*_windows_x64-setup.exe --repo LeoJhon8/LazyTerm
 ```
 
-Finally, a maintainer should perform quick manual checks for Windows installation/startup, macOS mounting/startup, GitHub-preferred in-app updates, and Gitee fallback updates.
+Finally, a maintainer should perform quick manual checks for Windows installation/startup, macOS mounting/startup, Android ARM64 installation/SSH/system-installer upgrade, GitHub-preferred in-app updates, and Gitee fallback updates. x86_64 APKs are only for emulator debugging after each development change and are never uploaded to Releases.

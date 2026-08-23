@@ -2,6 +2,10 @@
 
 > [简体中文](../../user/features.md) | **English**
 
+## Platform Scope
+
+The desktop application provides the complete multi-protocol workspace described below. The Android ARM64 application supports Android 7.0 or later and currently focuses on SSH: profile management, multiple terminal tabs, command history, quick commands, themes, a mobile key bar, background continuity, automatic reconnect, and in-app updates. Android does not include local shells, AI CLI, Telnet, serial, RDP, VNC, SFTP, desktop split panes/workspace templates, the AI assistant, or Git configuration sync.
+
 ## Multi-Protocol Connections
 
 LazyTerm places text terminals and graphical remote desktops in the same tabbed, split-pane workspace:

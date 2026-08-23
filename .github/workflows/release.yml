@@ -1,4 +1,4 @@
-name: Release desktop apps
+name: Release apps
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -257,9 +257,88 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  build-android:
+    name: Build Android ARM64
+    needs: [validate, create-draft]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      LAZYTERM_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      LAZYTERM_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      LAZYTERM_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        shell: bash
+        run: sdkmanager "platforms;android-36" "build-tools;36.1.0" "ndk;25.1.8937393"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Verify release version
+        run: node scripts/update-version.js --version "${{ needs.validate.outputs.version }}" --check
+
+      - name: Restore Android release key
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" || -z "$LAZYTERM_ANDROID_KEYSTORE_PASSWORD" || -z "$LAZYTERM_ANDROID_KEY_ALIAS" || -z "$LAZYTERM_ANDROID_KEY_PASSWORD" ]]; then
+            echo "Android signing secrets are not configured." >&2
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/lazyterm-android-release.jks"
+          echo "LAZYTERM_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/lazyterm-android-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed Android APK
+        run: npm run tauri -- android build --target aarch64 --apk --split-per-abi --ci
+
+      - name: Collect and verify Android asset
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          apk_count="$(find src-tauri/gen/android/app/build/outputs/apk -type f -path '*/arm64/release/*' -name '*.apk' | wc -l | tr -d ' ')"
+          apk_path="$(find src-tauri/gen/android/app/build/outputs/apk -type f -path '*/arm64/release/*' -name '*.apk' -print -quit)"
+          if [[ "$apk_count" -ne 1 || -z "$apk_path" ]]; then
+            echo "Expected exactly one Android ARM64 release APK." >&2
+            find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print || true
+            exit 1
+          fi
+          "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --verbose "$apk_path"
+          mkdir -p release-assets
+          cp "$apk_path" "release-assets/LazyTerm_${RELEASE_VERSION}_android_arm64.apk"
+
+      - name: Upload Android asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-android-arm64
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
   publish:
     name: Publish complete release
-    needs: [validate, create-draft, build-windows, build-macos]
+    needs: [validate, create-draft, build-windows, build-macos, build-android]
     runs-on: ubuntu-latest
     permissions:
       contents: write

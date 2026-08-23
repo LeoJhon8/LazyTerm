@@ -36,6 +36,7 @@ import {
   TelnetForm,
   AiCliForm,
 } from "./connection-forms";
+import { IS_ANDROID, isAndroidConnectionType } from "@/lib/platform";
 
 /** 连接类型定义（包含本地终端） */
 type QuickConnectType = "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
@@ -49,6 +50,10 @@ const CONNECTION_TYPES: Array<ConnectionTypeOption<QuickConnectType>> = [
   { type: "telnet", icon: <Terminal className="h-4 w-4 text-emerald-500/80" />, labelKey: "Telnet" },
   { type: "serial", icon: <Usb className="h-4 w-4 text-purple-600/80" />, labelKey: "串口" },
 ];
+
+const VISIBLE_CONNECTION_TYPES = IS_ANDROID
+  ? CONNECTION_TYPES.filter((item) => isAndroidConnectionType(item.type))
+  : CONNECTION_TYPES;
 
 /** Shell 图标 */
 function getShellIcon(type: string) {
@@ -77,13 +82,13 @@ interface QuickConnectDialogProps {
 
 export function QuickConnectDialog({ open, onOpenChange, initialType, onConnect }: QuickConnectDialogProps) {
   const { t } = useI18n();
-  const [selectedType, setSelectedType] = useState<QuickConnectType>(initialType || "local");
+  const [selectedType, setSelectedType] = useState<QuickConnectType>(IS_ANDROID ? "ssh" : (initialType || "local"));
   const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
   const [adminMode, setAdminMode] = useState(false);
 
   // 加载可用 Shell 列表
   useEffect(() => {
-    if (open) {
+    if (open && !IS_ANDROID) {
       getAvailableShells()
         .then(setAvailableShells)
         .catch(err => logger.error("FE/quick-connect", "获取 Shell 列表失败", { err }));
@@ -93,7 +98,7 @@ export function QuickConnectDialog({ open, onOpenChange, initialType, onConnect 
   // 弹窗打开时重置
   useEffect(() => {
     if (open) {
-      setSelectedType(initialType || "local");
+      setSelectedType(IS_ANDROID ? "ssh" : (initialType || "local"));
       setAdminMode(false);
     }
   }, [open, initialType]);
@@ -109,13 +114,13 @@ export function QuickConnectDialog({ open, onOpenChange, initialType, onConnect 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-165 p-0 gap-0 overflow-hidden">
+      <DialogContent className="max-h-[calc(100dvh-24px)] overflow-hidden p-0 gap-0 sm:max-w-165">
         <DialogHeader className="px-6 pt-6 pb-4">
           <DialogTitle>{t("快速连接")}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex min-h-[420px]">
-          <ConnectionTypeList options={CONNECTION_TYPES} selectedType={selectedType} onSelect={setSelectedType} />
+        <div className="flex min-h-0 sm:min-h-[420px]">
+          {!IS_ANDROID && <ConnectionTypeList options={VISIBLE_CONNECTION_TYPES} selectedType={selectedType} onSelect={setSelectedType} />}
 
           {/* 右侧：配置面板 */}
           <div className="flex-1 flex flex-col min-w-0">

@@ -8,6 +8,8 @@ interface SettingsDialogData {
   open: boolean;
   /** 打开时默认激活的 Tab */
   activeTab: SettingsTab;
+  /** 显式指定的入口；Android 未指定时先显示设置目录。 */
+  requestedTab: SettingsTab | null;
 }
 
 interface SettingsDialogActions {
@@ -24,12 +26,13 @@ export type SettingsDialogState = SettingsDialogData & SettingsDialogActions;
 export const useSettingsDialogStore = create<SettingsDialogState>()((set) => ({
   open: false,
   activeTab: "general",
+  requestedTab: null,
 
   openSettings: (tab) =>
-    set({ open: true, activeTab: tab ?? "general" }),
+    set({ open: true, activeTab: tab ?? "general", requestedTab: tab ?? null }),
 
   closeSettings: () =>
-    set({ open: false }),
+    set({ open: false, requestedTab: null }),
 
   setActiveTab: (tab) =>
     set({ activeTab: tab }),

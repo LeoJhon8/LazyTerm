@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "LazyTerm",
-  "version": "26.81.10630",
+  "version": "26.82.5294",
   "identifier": "com.lazy.term",
   "build": {
     "frontendDist": "../dist",
@@ -44,9 +44,7 @@
     ],
     "resources": {
       "../LICENSE": "LICENSE",
-      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
-      "native/msrdpax-host/publish/win-x64/*": "msrdpax-host/",
-      "native/freerdp-runtime/win-x64/*.dll": ""
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
     }
   }
 }

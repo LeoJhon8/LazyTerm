@@ -3,6 +3,8 @@
  * 将硬编码的更新服务器地址抽取为配置项
  */
 
+import { IS_ANDROID } from "@/lib/platform";
+
 /** GitHub Releases API：优先使用公开 Release。 */
 export const GITHUB_RELEASES_API_URL =
   "https://api.github.com/repos/LeoJhon8/LazyTerm/releases/latest";
@@ -23,15 +25,17 @@ export const SYNC_FILE_NAME = "lazy-term-sync.json";
 /** 自动检测当前平台 */
 export const IS_MAC = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("mac");
 export const IS_WINDOWS = typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
-export const IS_UPDATE_SUPPORTED = IS_MAC || IS_WINDOWS;
+export const IS_UPDATE_SUPPORTED = IS_ANDROID || IS_MAC || IS_WINDOWS;
 
 /** Gitee 更新页安装包匹配正则（区分 Windows 和 macOS）。 */
 export const GITEE_INSTALLER_REGEX = IS_MAC
   ? /href="([^"]*LazyTerm[_-]?v?(\d+\.\d+\.\d+)[^"]*\.dmg)"/gi
-  : /href="([^"]*LazyTerm[_-]?v?(\d+\.\d+\.\d+)[^"]*\.exe)"/gi;
+  : IS_ANDROID
+    ? /href="([^"]*LazyTerm[_-]?v?(\d+\.\d+\.\d+)[^"]*\.apk)"/gi
+    : /href="([^"]*LazyTerm[_-]?v?(\d+\.\d+\.\d+)[^"]*\.exe)"/gi;
 
 /** GitHub Release 资产扩展名。 */
-export const INSTALLER_EXTENSION = IS_MAC ? ".dmg" : ".exe";
+export const INSTALLER_EXTENSION = IS_MAC ? ".dmg" : IS_ANDROID ? ".apk" : ".exe";
 
 /** 版本号比较 */
 export function compareVersions(v1: string, v2: string): number {

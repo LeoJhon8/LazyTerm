@@ -3,10 +3,13 @@
 - `LazyTerm_*_windows_x64-setup.exe`：Windows x64，推荐安装程序 / recommended Windows installer
 - `LazyTerm_*_windows_x64.msi`：Windows x64，适合集中部署 / MSI package for managed deployment
 - `LazyTerm_*_macos_arm64.dmg`：macOS Apple Silicon
+- `LazyTerm_*_android_arm64.apk`：Android 7.0+ ARM64 真机 / Android 7.0+ ARM64 devices
 
-当前安装包未使用商业代码签名证书。Windows SmartScreen 或 macOS Gatekeeper 可能显示未知发布者提示，请在安装前核对 `SHA256SUMS.txt`。应用内更新会优先尝试 GitHub Releases；GitHub 不可用时自动回退到 Gitee。
+Android 版当前支持 SSH、配置、历史、快捷命令、主题、多终端标签、后台保活、自动重连和应用内更新；不包含桌面版的其他协议与工作区功能。x86_64 APK 仅供模拟器调试，不作为发布产物。
 
-The current installers are not signed with a commercial code-signing certificate. Windows SmartScreen or macOS Gatekeeper may show an unknown-publisher warning. Verify `SHA256SUMS.txt` before installing. In-app updates try GitHub Releases first and automatically fall back to the Gitee mirror when GitHub is unavailable.
+The Android app currently includes SSH, profiles, history, quick commands, themes, multiple terminal tabs, background continuity, automatic reconnect, and in-app updates. It does not include the desktop-only protocols or workspace features. x86_64 APKs are for emulator debugging only and are not release artifacts.
+
+Windows and macOS installers do not use a commercial code-signing certificate. SmartScreen or Gatekeeper may show an unknown-publisher warning. The Android APK uses LazyTerm's stable release key so upgrades can verify and retain the application identity. Verify `SHA256SUMS.txt` before installing. In-app updates try GitHub Releases first and automatically fall back to the Gitee mirror when GitHub is unavailable.
 
 构建来源证明可使用 GitHub CLI 验证：
 

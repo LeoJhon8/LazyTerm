@@ -185,12 +185,14 @@ pub struct VncSession {
 // ==================== 本地终端类型 ====================
 
 /// 本地终端会话
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub struct LocalTerminalSession {
     pub master: Box<dyn portable_pty::MasterPty + Send>,
     pub writer: Box<dyn std::io::Write + Send>,
     pub integration_script_path: Option<std::path::PathBuf>,
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl Drop for LocalTerminalSession {
     fn drop(&mut self) {
         if let Some(path) = &self.integration_script_path {

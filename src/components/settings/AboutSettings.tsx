@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { IS_UPDATE_SUPPORTED } from "@/config/update-config";
 import { useI18n } from "@/i18n";
 import { notifyUpdateAvailable } from "@/hooks/useUpdateNotification";
+import { IS_ANDROID } from "@/lib/platform";
 import { checkForUpdate, getCurrentAppVersion } from "@/services/updateService";
 
 type UpdateDownloadStatus = {
@@ -33,6 +34,7 @@ export function AboutSettings() {
   const [updateStatus, setUpdateStatus] = useState<string>("");
   const [isChecking, setIsChecking] = useState(false);
   const [latestUpdateUrl, setLatestUpdateUrl] = useState<string | null>(null);
+  const [latestUpdateSha256, setLatestUpdateSha256] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [downloadedUpdateUrl, setDownloadedUpdateUrl] = useState<string | null>(null);
   const [isUpdateConfirmationOpen, setIsUpdateConfirmationOpen] = useState(false);
@@ -107,6 +109,7 @@ export function AboutSettings() {
     setIsChecking(true);
     setUpdateStatus(t("正在检查更新..."));
     setLatestUpdateUrl(null);
+    setLatestUpdateSha256(null);
     setDownloadProgress(null);
 
     try {
@@ -124,6 +127,7 @@ export function AboutSettings() {
             : t("发现新版本：{version}！", { version: result.latestVersion }),
         );
         setLatestUpdateUrl(result.downloadUrl);
+        setLatestUpdateSha256(result.sha256 ?? null);
         notifyUpdateAvailable(result);
         return;
       }
@@ -144,7 +148,10 @@ export function AboutSettings() {
     setUpdateStatus(t("正在下载更新包..."));
 
     try {
-      await invoke("download_update", { url });
+      await invoke("download_update", {
+        url,
+        expectedSha256: latestUpdateSha256,
+      });
       setDownloadedUpdateUrl(url);
       setDownloadProgress(null);
       setUpdateStatus(t("更新包已下载，可随时安装。"));
@@ -165,7 +172,11 @@ export function AboutSettings() {
     }
 
     try {
-      await invoke("install_update");
+      await invoke(IS_ANDROID ? "install_android_update" : "install_update");
+      if (IS_ANDROID) {
+        setUpdateStatus(t("已打开 Android 系统安装界面。"));
+        setIsInstalling(false);
+      }
     } catch (err) {
       setUpdateStatus(t("安装更新失败：{error}", { error: String(err) }));
       setIsInstalling(false);
@@ -246,9 +257,13 @@ export function AboutSettings() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("确认更新 LazyTerm？")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {isUpdateDownloaded
-                ? t("更新需要关闭 LazyTerm，当前所有会话都将断开。是否继续？")
-                : t("LazyTerm 将先下载更新包，下载完成后关闭应用并开始安装。当前所有会话都将断开。是否继续？")}
+              {IS_ANDROID
+                ? (isUpdateDownloaded
+                    ? t("将打开 Android 系统安装界面，安装需要你的确认。是否继续？")
+                    : t("LazyTerm 将先下载更新包，然后打开 Android 系统安装界面。安装需要你的确认。是否继续？"))
+                : (isUpdateDownloaded
+                    ? t("更新需要关闭 LazyTerm，当前所有会话都将断开。是否继续？")
+                    : t("LazyTerm 将先下载更新包，下载完成后关闭应用并开始安装。当前所有会话都将断开。是否继续？"))}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -5,6 +5,7 @@ import { useTabsStore } from "@/store/tabs";
 import { getConnectionErrorPresentation } from "@/services/connectionErrorService";
 import { useI18n } from "@/i18n";
 import { useUpdateNotification } from "@/hooks/useUpdateNotification";
+import { useAndroidSshBackground } from "@/hooks/useAndroidSshBackground";
 import { useViewMode } from "@/hooks/useViewMode";
 import { countValidModules, getValidActivityModules } from "@/components/layout/activity-registry";
 import { AI_MODULE_ID, isAiConfigured, useAiConfigStore } from "@/store/ai";
@@ -30,6 +31,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import type { AppColorPalette } from "@/store/settings";
 import { windowResizeCoordinator } from "@/services/windowResizeCoordinator";
+import { MobileAppShell } from "@/components/layout/MobileAppShell";
+import { IS_ANDROID } from "@/lib/platform";
 
 const CUSTOM_PALETTE_VARIABLES = [
   "--background",
@@ -148,6 +151,7 @@ function applyCustomPalette(root: HTMLElement, palette: AppColorPalette) {
 
 function App() {
   useUpdateNotification();
+  useAndroidSshBackground();
   const initializeCredentialVault = useCredentialsStore((state) => state.initialize);
   const credentialVaultStatus = useCredentialsStore((state) => state.status);
 
@@ -337,13 +341,15 @@ function App() {
   return (
     <div className="app-frame relative h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* 正常/专注模式：固定标题栏；沉浸模式：隐藏 */}
-      {!isImmersive && <CustomTitleBar />}
+      {!IS_ANDROID && !isImmersive && <CustomTitleBar />}
       {/* 沉浸模式：悬浮标题栏 */}
-      {isImmersive && <ImmersiveHoverBar />}
+      {!IS_ANDROID && isImmersive && <ImmersiveHoverBar />}
       <div
         id="lazy-term-root"
         className="app-shell relative min-h-0 flex-1 overflow-hidden bg-background text-foreground"
-        style={{
+        style={IS_ANDROID ? {
+          display: "block",
+        } : {
           display: "grid",
           gridTemplateAreas: `
             "left mid-top    right"
@@ -404,18 +410,24 @@ function App() {
 
         {/* 内容层 — 确保在背景之上 */}
         {/* 沉浸模式下隐藏所有插槽；专注模式下仅保留顶部标签栏 */}
-        {!isImmersive && <SlotManager />}
-        <section
-          id="slot-mid-main"
-          className="relative z-0 min-h-0 min-w-0 overflow-hidden"
-          style={{
-            gridArea: "mid-main",
-            marginLeft: openLeftPanelWidth ? `${openLeftPanelWidth}px` : undefined,
-            marginRight: openRightPanelWidth ? `${openRightPanelWidth}px` : undefined,
-          }}
-        >
-          <PaneContainer />
-        </section>
+        {IS_ANDROID ? (
+          <MobileAppShell />
+        ) : (
+          <>
+            {!isImmersive && <SlotManager />}
+            <section
+              id="slot-mid-main"
+              className="relative z-0 min-h-0 min-w-0 overflow-hidden"
+              style={{
+                gridArea: "mid-main",
+                marginLeft: openLeftPanelWidth ? `${openLeftPanelWidth}px` : undefined,
+                marginRight: openRightPanelWidth ? `${openRightPanelWidth}px` : undefined,
+              }}
+            >
+              <PaneContainer />
+            </section>
+          </>
+        )}
 
         <AlertDialog open={!!connectionError} onOpenChange={(open) => !open && clearConnectionError()}>
           <AlertDialogContent>

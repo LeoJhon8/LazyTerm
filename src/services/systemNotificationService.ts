@@ -30,7 +30,7 @@ function buildNotificationBody(notification: SystemNotificationPayload) {
   return `${body.slice(0, MAX_SYSTEM_NOTIFICATION_BODY_LENGTH - 3)}...`;
 }
 
-async function ensureNotificationPermission() {
+export async function ensureSystemNotificationPermission() {
   if (!isTauri()) {
     return false;
   }
@@ -56,7 +56,7 @@ async function ensureNotificationPermission() {
 }
 
 export function sendSystemNotification(notification: SystemNotificationPayload) {
-  void ensureNotificationPermission().then((permissionGranted) => {
+  void ensureSystemNotificationPermission().then((permissionGranted) => {
     if (!permissionGranted) {
       return;
     }

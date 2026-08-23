@@ -4,19 +4,20 @@
 
 <h1 align="center">LazyTerm</h1>
 
-<p align="center">A multi-protocol desktop terminal workspace for local development and remote operations</p>
+<p align="center">A modern workspace for multi-protocol desktop operations and Android SSH</p>
 
 <p align="center">
   <a href="./README.md">简体中文</a> · <strong>English</strong>
 </p>
 
-LazyTerm is built with Tauri 2, React 19, TypeScript, and Rust. It brings local shells, SSH, AI CLI tools, RDP, VNC, serial, Telnet, and SFTP file transfers into one customizable, split-pane desktop workspace.
+LazyTerm is built with Tauri 2, React 19, TypeScript, and Rust. The desktop application brings local shells, SSH, AI CLI tools, RDP, VNC, serial, Telnet, and SFTP file transfers into one customizable, split-pane workspace. The Android application provides a focused, touch-friendly SSH experience for operations on the go.
 
 It is designed for managing multiple hosts, mixing text terminals with remote desktops, and saving reusable connection and layout templates for different projects.
 
 ## Highlights
 
 - **One workspace for multiple protocols**: local terminals, SSH, AI CLI, Telnet, serial, RDP, and VNC share the same tab and pane model.
+- **Android SSH for physical devices**: supports ARM64 Android devices with SSH profiles, multiple terminal tabs, command history, quick commands, themes, mobile keys, background continuity, and in-app updates.
 - **Recursive split panes and workspace templates**: create arbitrary horizontal or vertical layouts and save their sessions, ratios, focus, and font overrides.
 - **Two RDP paths**: FreeRDP renders into a WebView canvas, while Windows can optionally use the native MsTscAx host.
 - **Full VNC interaction**: region updates, remote cursors, clipboard synchronization, text input, key sequences, and remote desktop resizing.
@@ -42,13 +43,25 @@ It is designed for managing multiple hosts, mixing text terminals with remote de
 | VNC | Canvas | LibVNCClient FFI | Input, cursor, clipboard, and quality-policy support |
 | SFTP | File-transfer dialogs | russh-sftp | Upload, download, remote browsing, progress, and cancellation |
 
+### Android Support Scope
+
+The stable Android application supports ARM64 devices running Android 7.0 (API 24) or later. Its application ID is `com.lazyterm`. The mobile experience currently focuses on SSH and includes:
+
+- Password, private-key, and interactive SSH authentication, plus saved SSH profile management.
+- Multiple terminal tabs, command history, quick commands, themes, and terminal font settings.
+- Optional history/quick-command entries and a mobile terminal key bar for `Esc`, `Tab`, arrows, `Ctrl`, and related keys.
+- SSH background continuity, status notifications, automatic reconnect, and in-app APK update download followed by the Android system installer.
+
+Android does not currently include local shells, AI CLI, Telnet, serial, RDP, VNC, SFTP, desktop split panes/workspace templates, the AI assistant, or Git configuration sync. x86_64 APKs are used only for emulator debugging and are not published as release artifacts.
+
 ## Current Build Targets
 
-| Platform | Current build path | RDP backends |
+| Platform | Current build path | Supported scope |
 | --- | --- | --- |
-| Windows x64 | GitHub Actions produces NSIS / MSI artifacts; local builds are supported | FreeRDP, MsTscAx |
-| macOS Apple Silicon | GitHub Actions produces a DMG; local builds are supported | FreeRDP |
-| Linux | Build from source after installing Tauri and native-library dependencies | FreeRDP |
+| Android ARM64 | GitHub Actions produces a signed APK | Mobile SSH features |
+| Windows x64 | GitHub Actions produces NSIS / MSI artifacts; local builds are supported | Full desktop feature set; FreeRDP and MsTscAx |
+| macOS Apple Silicon | GitHub Actions produces a DMG; local builds are supported | Full desktop feature set; FreeRDP |
+| Linux | Build from source after installing Tauri and native-library dependencies | Full desktop feature set; FreeRDP |
 
 Prebuilt artifacts, SHA-256 checksums, and build provenance are published through [GitHub Releases](https://github.com/LeoJhon8/LazyTerm/releases), then mirrored one-way to Gitee. In-app updates try GitHub Releases first and automatically fall back to Gitee when GitHub times out, is unreachable, or has no valid installer. Maintainers should follow the [release process](./docs/en/developer/release-process.md).
 
@@ -60,6 +73,8 @@ Prebuilt artifacts, SHA-256 checksums, and build provenance are published throug
 - npm
 - Rust 1.85+ stable toolchain
 - [Platform prerequisites for Tauri 2](https://v2.tauri.app/start/prerequisites/)
+
+Android development also requires JDK 17, Android SDK 36, Build Tools 36.1.0, NDK 25.1.8937393, and the corresponding Rust Android target.
 
 For Windows development, you will typically also need:
 
@@ -111,6 +126,14 @@ npm run tauri:build
 ```
 
 `tauri:build` runs `scripts/update-version.js` first to synchronize the version from the latest Git commit's UTC timestamp.
+
+Build the Android x86_64 emulator debug APK:
+
+```powershell
+npm run tauri -- android build --target x86_64 --apk --debug
+```
+
+The Android ARM64 release APK is built by the release workflow with a stable signing key. Signing material is never committed to Git.
 
 ### Compile and Code Checks
 

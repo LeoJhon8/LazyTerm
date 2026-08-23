@@ -2,7 +2,7 @@
 
 > **简体中文** | [English](../../en/developer/release-process.md)
 
-本文定义 LazyTerm 的桌面发行流程。GitHub 是代码、Tag 和 Release 的唯一上游；Gitee 是面向国内网络的单向镜像。GitHub Packages 不用于分发桌面应用。
+本文定义 LazyTerm 的桌面与 Android 发行流程。GitHub 是代码、Tag 和 Release 的唯一上游；Gitee 是面向国内网络的单向镜像。GitHub Packages 不用于分发应用。
 
 ## 发布内容
 
@@ -13,6 +13,7 @@
 | `LazyTerm_<version>_windows_x64-setup.exe` | Windows x64 推荐安装程序 |
 | `LazyTerm_<version>_windows_x64.msi` | Windows x64 集中部署包 |
 | `LazyTerm_<version>_macos_arm64.dmg` | macOS Apple Silicon 磁盘映像 |
+| `LazyTerm_<version>_android_arm64.apk` | Android 7.0+ ARM64 真机安装包，包名 `com.lazyterm` |
 | `SHA256SUMS.txt` | 所有安装包的 SHA-256 校验值 |
 
 GitHub 还会提供与 Tag 对应的源码归档。工作流通过 GitHub OIDC 为安装包生成构建来源证明，可使用 `gh attestation verify` 验证。
@@ -25,6 +26,19 @@ GitHub 还会提供与 Tag 对应的源码归档。工作流通过 GitHub OIDC �
 2. 在 `Settings > General > Releases` 启用 Release immutability。工作流会先创建草稿、上传全部资产，最后公开。
 3. 建议使用 ruleset 保护 `v*` Tag，限制发布 Tag 的创建和删除权限。
 4. 建议创建 `breaking-change`、`enhancement`、`feature`、`bug`、`fix`、`documentation` 和 `skip-changelog` 标签，供自动 Release Notes 分类。
+
+Android 发布还需要把固定发布签名配置为 Repository secrets：
+
+| 名称 | 内容 |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Android 发布密钥库文件的 Base64 内容 |
+| `ANDROID_KEYSTORE_PASSWORD` | 密钥库密码 |
+| `ANDROID_KEY_ALIAS` | 发布密钥别名 |
+| `ANDROID_KEY_PASSWORD` | 发布密钥密码 |
+
+发布密钥库必须离线备份；丢失后将无法为已安装的 `com.lazyterm` 应用提供可覆盖升级的 APK。密钥库和密码文件均由 `.gitignore` 排除，禁止提交到仓库。
+
+Android `versionCode` 由三段时间版本还原出的 UTC 分钟数生成并保持单调递增，不直接使用 Tauri 的默认三段拼接规则；否则跨日期发布可能被 Android 误判为降级。
 
 ### Gitee
 
@@ -40,7 +54,7 @@ Gitee 镜像仓库保持为 `LeoJohn8/LazyTerm` 时，在 GitHub 仓库中配置
 
 同步是单向且非破坏性的：每次 GitHub `main` 推送都会更新 Gitee `main`，发布完成后再同步当前 Tag 和 Release 资产。工作流不使用 `git push --mirror`，不会删除 Gitee 独有引用。Gitee 仓库不应直接开发或修改同名分支与 Tag。
 
-当前 Windows 和 macOS 产物没有商业代码签名。引入证书前，Release Notes 必须保留未知发布者提示；签名凭据只能存放在 GitHub Actions secrets 中。
+当前 Windows 和 macOS 产物没有商业代码签名。引入证书前，Release Notes 必须保留未知发布者提示。Android APK 必须使用固定发布密钥签名，所有签名凭据只能存放在 GitHub Actions secrets 中。
 
 ## 准备版本
 
@@ -88,7 +102,7 @@ git push origin "v$releaseVersion"
 
 1. 校验 Tag 格式、版本文件与锁文件。
 2. 创建或复用草稿 Release，并生成变更记录。
-3. 并行构建 Windows x64 的 NSIS/MSI 与 macOS Apple Silicon 的 DMG。
+3. 并行构建 Windows x64 的 NSIS/MSI、macOS Apple Silicon 的 DMG 与 Android ARM64 真机 APK。
 4. 汇总产物并生成 `SHA256SUMS.txt`。
 5. 为全部资产生成 GitHub artifact attestations。
 6. 所有步骤成功后公开 GitHub Release 并标记为 Latest。
@@ -119,4 +133,4 @@ Get-FileHash .\LazyTerm_*_windows_x64-setup.exe -Algorithm SHA256
 gh attestation verify .\LazyTerm_*_windows_x64-setup.exe --repo LeoJhon8/LazyTerm
 ```
 
-最后由维护者快速人工检查 Windows 安装/启动、macOS 挂载/启动、应用内 GitHub 优先更新和 Gitee 回退更新。
+最后由维护者快速人工检查 Windows 安装/启动、macOS 挂载/启动、Android ARM64 真机安装/SSH/系统安装器升级、应用内 GitHub 优先更新和 Gitee 回退更新。x86_64 APK 只用于每次开发修改后的模拟器调试，不上传到 Release。

@@ -1,10 +1,11 @@
 //! 应用状态模块
 //! 包含全局状态 AppState 的定义
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::protocol::NativeRdpSession;
-use crate::types::{
-    LocalTerminalSession, RdpSession, SshTerminalSession, TelnetSession, VncSession,
-};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::types::LocalTerminalSession;
+use crate::types::{RdpSession, SshTerminalSession, TelnetSession, VncSession};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as TokioMutex;
@@ -14,10 +15,12 @@ use tokio::sync::Mutex as TokioMutex;
 /// 存储所有活跃会话的管理句柄
 #[derive(Default)]
 pub struct AppState {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub local_sessions: Arc<StdMutex<HashMap<String, LocalTerminalSession>>>,
     pub ssh_sessions: Arc<TokioMutex<HashMap<String, SshTerminalSession>>>,
     pub rdp_sessions: Arc<StdMutex<HashMap<String, RdpSession>>>,
     pub vnc_sessions: Arc<StdMutex<HashMap<String, VncSession>>>,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub native_rdp_sessions: Arc<StdMutex<HashMap<String, NativeRdpSession>>>,
     pub telnet_sessions: Arc<TokioMutex<HashMap<String, TelnetSession>>>,
     pub sftp_upload_cancellations: Arc<StdMutex<HashMap<String, bool>>>,

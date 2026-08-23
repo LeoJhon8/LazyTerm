@@ -99,7 +99,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "app"
-version = "26.81.10630"
+version = "26.82.5294"
 dependencies = [
  "base64 0.22.1",
  "cc",
@@ -118,6 +118,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serialport",
+ "sha2 0.10.9",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",

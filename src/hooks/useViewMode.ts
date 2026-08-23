@@ -2,6 +2,7 @@ import { useEffect, useCallback } from "react";
 import { useSettingsStore, type ViewMode } from "@/store/settings";
 import { useTabsStore } from "@/store/tabs";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
+import { IS_ANDROID } from "@/lib/platform";
 
 /**
  * 视图模式快捷键 & 状态管理 hook
@@ -16,6 +17,8 @@ export function useViewMode() {
 
   // 注册全局快捷键
   useEffect(() => {
+    if (IS_ANDROID) return;
+
     const IMMERSIVE_SHORTCUT = "F11";
     const FOCUS_SHORTCUT = "CommandOrControl+Shift+F";
 

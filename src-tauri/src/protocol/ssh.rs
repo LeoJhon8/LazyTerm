@@ -6,6 +6,8 @@ use crate::{AppState, SshConnectConfig, SshControlMsg, SshTerminalSession};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+use tauri::Manager;
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::sync::{mpsc, oneshot};
 
@@ -31,9 +33,21 @@ pub async fn create_ssh_session<R: Runtime>(
 
     let ready_timeout =
         Duration::from_millis(config.ready_timeout.unwrap_or(30_000).clamp(1_000, 120_000));
+
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let known_hosts_path = Some(
+        app.path()
+            .app_data_dir()
+            .map_err(|error| format!("无法确定应用数据目录: {error}"))?
+            .join("ssh")
+            .join("known_hosts"),
+    );
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let known_hosts_path = None;
+
     let readiness_result = tokio::time::timeout(ready_timeout, async {
         // 使用 protocol::ssh_auth 中的 connect_and_authenticate 一站式完成连接和认证
-        let handle = ssh_auth::connect_and_authenticate(&config)
+        let handle = ssh_auth::connect_and_authenticate_with_known_hosts(&config, known_hosts_path)
             .await
             .map_err(|e| {
                 logging::error("SSH/connect", format!("连接或认证失败: {e}"));

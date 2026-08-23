@@ -10,11 +10,14 @@ Prebuilt availability depends on the current release. Check [GitHub Releases](ht
 
 | Platform | Build target |
 | --- | --- |
+| Android | ARM64 APK for physical devices running Android 7.0 (API 24) or later |
 | Windows | x64, NSIS / MSI |
 | macOS | Apple Silicon, DMG / App |
 | Linux | Build from source after installing system dependencies |
 
 If no artifact matches your platform, follow the source instructions below.
+
+The Android application ID is `com.lazyterm`. The ARM64 APK in each release is intended for physical devices. x86_64 APKs are only for emulator debugging and are not published with stable releases.
 
 ## Source Prerequisites
 
@@ -67,6 +70,16 @@ When running only the frontend, terminal, protocol, and system functionality tha
 5. To reuse a pane group across restarts, save the current multi-pane tab as a workspace template.
 6. Configure terminal behavior, appearance, layout, AI, credentials, and data sync in Settings.
 
+### First Use on Android
+
+1. Download `LazyTerm_<version>_android_arm64.apk` from the Release and allow installation from the current source when Android asks.
+2. Create or import an SSH profile, choose password, private-key, or interactive authentication, and connect.
+3. Open sessions, history, and quick commands from the bottom navigation. These mobile entries can be hidden or enabled again in Settings.
+4. Use the mobile terminal key bar for `Esc`, `Tab`, arrow, and `Ctrl` key sequences.
+5. Open Settings > About & Updates to check for updates. LazyTerm downloads and validates the APK before handing it to the Android system installer for confirmation.
+
+Android currently supports SSH, profiles, history, quick commands, themes, multiple terminal tabs, background continuity, and automatic reconnect. It does not include local shells, AI CLI, Telnet, serial, RDP, VNC, SFTP, desktop split panes/workspace templates, the AI assistant, or Git configuration sync.
+
 ## Configuring the AI Assistant
 
 1. Create an `API Key` credential in credential settings.
@@ -90,6 +103,7 @@ Common application data directories:
 | Windows | `%APPDATA%/LazyTerm/` |
 | macOS | `~/Library/Application Support/LazyTerm/` |
 | Linux | `~/.config/LazyTerm/` |
+| Android | Android-managed application data for `com.lazyterm` |
 
 The exact storage-file location can vary between WebView and packaging environments. Before exporting, syncing, or clearing data, confirm the scope in the application's data settings.
 

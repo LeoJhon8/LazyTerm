@@ -3,6 +3,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 import { useSettingsStore, type TerminalRightClickBehavior } from "@/store/settings";
 import {
   MAX_LONG_COMMAND_IDLE_SECONDS,
@@ -17,6 +18,8 @@ import { isWindowsPlatform, resolveRdpBackend, type ConfigurableRdpBackend } fro
 import type { ShellInfo } from "@/types/shell";
 import { getAvailableShells } from "@/services/shellService";
 import { logger } from "@/lib/logger";
+import { IS_ANDROID } from "@/lib/platform";
+import { invokeTauri } from "@/services/tauri";
 
 /** 通用设置：语言 + 终端行为 */
 export function GeneralSettings() {
@@ -34,6 +37,10 @@ export function GeneralSettings() {
     longCommandIdleSeconds,
     copyOnSelect,
     terminalRightClickBehavior,
+    mobileHistoryVisible,
+    mobileQuickCommandsVisible,
+    mobileTerminalKeysVisible,
+    mobileSshBackgroundServiceEnabled,
     setSettings,
   } = useSettingsStore();
   const isWindows = isWindowsPlatform();
@@ -41,6 +48,7 @@ export function GeneralSettings() {
   const [shells, setShells] = useState<ShellInfo[]>([]);
 
   useEffect(() => {
+    if (IS_ANDROID) return;
     getAvailableShells()
       .then(setShells)
       .catch((err) => logger.error("FE/settings/general", "获取可用 Shell 列表失败", { err }));
@@ -69,7 +77,7 @@ export function GeneralSettings() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
+            {!IS_ANDROID && <div className="flex items-center justify-between px-4 py-2.5">
               <Label className="text-sm">{t("默认终端类型")}</Label>
               <Select value={defaultShell} onValueChange={(value) => setSettings({ defaultShell: value })}>
                 <SelectTrigger className="h-8 w-36 bg-background/80 border-0 shadow-none focus:ring-1 focus:ring-primary/30 text-sm">
@@ -83,8 +91,8 @@ export function GeneralSettings() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
+            </div>}
+            {!IS_ANDROID && <div className="flex items-center justify-between px-4 py-2.5">
               <div className="flex flex-col gap-0.5">
                 <Label className="text-sm">{t("RDP 连接方案")}</Label>
                 {!isWindows && <span className="text-xs text-muted-foreground">{t("非 Windows 平台使用 FreeRDP")}</span>}
@@ -102,9 +110,104 @@ export function GeneralSettings() {
                   <SelectItem value="msrdpax">MsTscAx</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
+            </div>}
           </div>
         </div>
+
+        {IS_ANDROID && (
+          <div className="flex flex-col gap-1">
+            <Label className="mb-1 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              {t("手机版功能")}
+            </Label>
+            <div className="divide-y divide-border/30 overflow-hidden rounded-xl border border-border/40 bg-muted/20">
+              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <Label htmlFor="mobile-history-visible" className="cursor-pointer text-sm">
+                    {t("显示历史命令入口")}
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    {t("在底部导航中显示历史命令。")}
+                  </span>
+                </div>
+                <Switch
+                  id="mobile-history-visible"
+                  className="shrink-0"
+                  checked={mobileHistoryVisible}
+                  onCheckedChange={(checked) => setSettings({ mobileHistoryVisible: !!checked })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <Label htmlFor="mobile-quick-commands-visible" className="cursor-pointer text-sm">
+                    {t("显示快捷命令入口")}
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    {t("在底部导航中显示快捷命令。")}
+                  </span>
+                </div>
+                <Switch
+                  id="mobile-quick-commands-visible"
+                  className="shrink-0"
+                  checked={mobileQuickCommandsVisible}
+                  onCheckedChange={(checked) => setSettings({ mobileQuickCommandsVisible: !!checked })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <Label htmlFor="mobile-terminal-keys-visible" className="cursor-pointer text-sm">
+                    {t("显示终端快捷键栏")}
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    {t("显示 Esc、Tab、Ctrl 和方向键工具栏。")}
+                  </span>
+                </div>
+                <Switch
+                  id="mobile-terminal-keys-visible"
+                  className="shrink-0"
+                  checked={mobileTerminalKeysVisible}
+                  onCheckedChange={(checked) => setSettings({ mobileTerminalKeysVisible: !!checked })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <Label htmlFor="mobile-ssh-background-service" className="cursor-pointer text-sm">
+                    {t("后台保持 SSH 连接")}
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    {t("切换应用或锁屏后，通过常驻通知保持 SSH 会话并继续自动重连。")}
+                  </span>
+                </div>
+                <Switch
+                  id="mobile-ssh-background-service"
+                  className="shrink-0"
+                  checked={mobileSshBackgroundServiceEnabled}
+                  onCheckedChange={(checked) => setSettings({ mobileSshBackgroundServiceEnabled: !!checked })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <Label className="text-sm">{t("系统后台权限")}</Label>
+                  <span className="text-xs text-muted-foreground">
+                    {t("如果系统仍会中断连接，请允许 LazyTerm 在后台不受限制地运行。")}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => {
+                    void invokeTauri("open_android_app_settings", undefined, {
+                      scope: "FE/settings/android-background",
+                    }).catch(() => undefined);
+                  }}
+                >
+                  {t("打开")}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* SSH 连接安全 */}
         <div className="flex flex-col gap-1">

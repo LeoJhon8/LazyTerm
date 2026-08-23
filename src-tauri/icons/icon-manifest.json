@@ -1,0 +1,6 @@
+{
+  "default": "LazyTerm-256.png",
+  "bg_color": "#0b111a",
+  "android_fg": "LazyTerm-256.png",
+  "android_fg_scale": 60
+}

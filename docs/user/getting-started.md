@@ -10,11 +10,14 @@
 
 | 平台 | 构建目标 |
 | --- | --- |
+| Android | ARM64 真机 APK，Android 7.0（API 24）及以上 |
 | Windows | x64，NSIS / MSI |
 | macOS | Apple Silicon，DMG / App |
 | Linux | 安装系统依赖后从源码构建 |
 
 如果没有适合当前平台的产物，请按下面步骤从源码运行。
+
+Android 应用包名为 `com.lazyterm`。Android Release 中的 ARM64 APK 用于真机安装；x86_64 APK 仅用于开发者在模拟器中调试，不随正式版本发布。
 
 ## 源码运行要求
 
@@ -67,6 +70,16 @@ npm run dev
 5. 如果要跨启动复用分屏组合，将当前多面板标签页保存为工作区模板。
 6. 在设置中调整终端、外观、布局、AI 助手、凭据和数据同步。
 
+### Android 首次使用
+
+1. 从 Release 下载 `LazyTerm_<version>_android_arm64.apk`，按系统提示允许当前来源安装应用。
+2. 新建或导入 SSH 配置，选择密码、私钥或交互式认证后连接。
+3. 从底部导航打开会话、历史和快捷命令；这些移动入口可以在设置中隐藏或重新开启。
+4. 连接时可使用移动终端按键栏输入 `Esc`、`Tab`、方向键与 `Ctrl` 组合键。
+5. 在“设置 > 关于与更新”检查更新；应用会先下载并校验 APK，再交给 Android 系统安装器确认升级。
+
+Android 当前支持 SSH、配置、历史、快捷命令、主题、多终端标签、后台保活与自动重连。它不提供本地 Shell、AI CLI、Telnet、串口、RDP、VNC、SFTP、桌面分屏/工作区模板、AI 助手或 Git 配置同步。
+
 ## 配置 AI 助手
 
 1. 在凭据设置中创建 `API Key` 类型的凭据。
@@ -90,6 +103,7 @@ npm run dev
 | Windows | `%APPDATA%/LazyTerm/` |
 | macOS | `~/Library/Application Support/LazyTerm/` |
 | Linux | `~/.config/LazyTerm/` |
+| Android | Android 系统管理的 `com.lazyterm` 应用数据目录 |
 
 不同 WebView 或打包环境的实际存储文件位置可能有所差异。导出、同步或清理数据前，应先在应用的数据设置中确认范围。
 

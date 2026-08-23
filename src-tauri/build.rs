@@ -456,8 +456,10 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(libvncclient_available)");
     println!("cargo:rustc-check-cfg=cfg(freerdp_available)");
 
-    probe_vnc(&target_os);
-    probe_freerdp(&target_os);
+    if target_os != "android" && target_os != "ios" {
+        probe_vnc(&target_os);
+        probe_freerdp(&target_os);
+    }
 
     tauri_build::build();
 }

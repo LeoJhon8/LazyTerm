@@ -1,8 +1,8 @@
 {
   "name": "lazy-term",
   "private": true,
-  "version": "26.81.10630",
-  "description": "A modern desktop terminal workspace for local shells, SSH, RDP, VNC, serial, Telnet, and SFTP.",
+  "version": "26.82.5294",
+  "description": "A modern terminal workspace for Android SSH and multi-protocol desktop sessions.",
   "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",
