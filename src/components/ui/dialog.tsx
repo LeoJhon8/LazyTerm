@@ -2,9 +2,26 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
+import { useAndroidDismissibleLayer } from "@/hooks/useAndroidBackHandler";
+import { ANDROID_BACK_PRIORITY } from "@/lib/android-back";
 import { cn } from "@/lib/utils";
 
-const Dialog = DialogPrimitive.Root;
+const Dialog = ({
+  defaultOpen,
+  onOpenChange,
+  open,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) => {
+  const [resolvedOpen, setOpen] = useAndroidDismissibleLayer({
+    defaultOpen,
+    onOpenChange,
+    open,
+    priority: ANDROID_BACK_PRIORITY.dialog,
+  });
+
+  return <DialogPrimitive.Root open={resolvedOpen} onOpenChange={setOpen} {...props} />;
+};
+Dialog.displayName = DialogPrimitive.Root.displayName;
 
 const DialogTrigger = DialogPrimitive.Trigger;
 

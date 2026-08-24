@@ -6,6 +6,11 @@ import {
   type TerminalColorScheme,
 } from "@/config/themes";
 import { DEFAULT_LANGUAGE_SETTING, type AppLanguageSetting } from "@/i18n/config";
+import {
+  DEFAULT_MOBILE_TERMINAL_KEYS,
+  normalizeMobileTerminalKeys,
+  type MobileTerminalKeyItem,
+} from "@/lib/mobile-terminal-keys";
 import type { ConfigurableRdpBackend } from "@/lib/rdp-backend";
 import { gitAwareStorage } from "@/store/git-aware-storage";
 import {
@@ -72,6 +77,7 @@ interface SettingsData {
   mobileHistoryVisible: boolean;
   mobileQuickCommandsVisible: boolean;
   mobileTerminalKeysVisible: boolean;
+  mobileTerminalKeys: MobileTerminalKeyItem[];
   mobileSshBackgroundServiceEnabled: boolean;
   // 外观自定义
   appBackgroundColor: AppBackgroundColor; // 全局背景色 (终端外)
@@ -144,6 +150,7 @@ const defaultSettings: SettingsData = {
   mobileHistoryVisible: true,
   mobileQuickCommandsVisible: true,
   mobileTerminalKeysVisible: true,
+  mobileTerminalKeys: DEFAULT_MOBILE_TERMINAL_KEYS.map((item) => ({ ...item })),
   mobileSshBackgroundServiceEnabled: true,
   // 外观自定义默认值
   appBackgroundColor: "system",
@@ -176,6 +183,9 @@ export const useSettingsStore = create<SettingsState>()(
         ...(newSettings.quickCommandFontSize !== undefined
           ? { quickCommandFontSize: normalizeQuickCommandFontSize(newSettings.quickCommandFontSize) }
           : {}),
+        ...(newSettings.mobileTerminalKeys !== undefined
+          ? { mobileTerminalKeys: normalizeMobileTerminalKeys(newSettings.mobileTerminalKeys) }
+          : {}),
         ...(newSettings.longCommandThresholdMinutes !== undefined
           ? {
               longCommandThresholdMinutes: normalizeLongCommandThresholdMinutes(
@@ -196,11 +206,17 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: "lazy-term-settings",
       storage: createJSONStorage(() => gitAwareStorage),
-      version: 10,
+      version: 12,
       migrate: (persistedState, version) => {
         if (persistedState && typeof persistedState === "object") {
-          const data: Partial<SettingsData> & { terminalOpacity?: number } = {
-            ...(persistedState as Partial<SettingsData> & { terminalOpacity?: number }),
+          const data: Partial<SettingsData> & {
+            terminalOpacity?: number;
+            mobileTerminalKeyIds?: unknown;
+          } = {
+            ...(persistedState as Partial<SettingsData> & {
+              terminalOpacity?: number;
+              mobileTerminalKeyIds?: unknown;
+            }),
           };
 
           if (version < 1 && data.fontFamily === LEGACY_DEFAULT_FONT_FAMILY) {
@@ -254,6 +270,11 @@ export const useSettingsStore = create<SettingsState>()(
           if (version < 10) {
             data.mobileSshBackgroundServiceEnabled = true;
           }
+
+          data.mobileTerminalKeys = normalizeMobileTerminalKeys(
+            version < 12 ? data.mobileTerminalKeyIds : data.mobileTerminalKeys,
+          );
+          delete data.mobileTerminalKeyIds;
 
           return data;
         }

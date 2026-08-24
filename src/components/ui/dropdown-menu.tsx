@@ -2,19 +2,31 @@ import * as React from "react"
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
 import { Check, ChevronRight, Circle } from "lucide-react"
 
+import { useAndroidDismissibleLayer } from "@/hooks/useAndroidBackHandler"
+import { ANDROID_BACK_PRIORITY } from "@/lib/android-back"
 import { cn } from "@/lib/utils"
 
 const NATIVE_RDP_OVERLAY_EVENT = "lazy-native-rdp-overlay"
 
-const DropdownMenu = ({ onOpenChange, ...props }: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Root>) => (
-  <DropdownMenuPrimitive.Root
-    onOpenChange={(open) => {
-      window.dispatchEvent(new CustomEvent<boolean>(NATIVE_RDP_OVERLAY_EVENT, { detail: open }))
-      onOpenChange?.(open)
-    }}
-    {...props}
-  />
-)
+const DropdownMenu = ({
+  defaultOpen,
+  onOpenChange,
+  open,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Root>) => {
+  const [resolvedOpen, setOpen] = useAndroidDismissibleLayer({
+    defaultOpen,
+    open,
+    priority: ANDROID_BACK_PRIORITY.transient,
+    onOpenChange: (nextOpen) => {
+      window.dispatchEvent(new CustomEvent<boolean>(NATIVE_RDP_OVERLAY_EVENT, { detail: nextOpen }))
+      onOpenChange?.(nextOpen)
+    },
+  })
+
+  return <DropdownMenuPrimitive.Root open={resolvedOpen} onOpenChange={setOpen} {...props} />
+}
+DropdownMenu.displayName = DropdownMenuPrimitive.Root.displayName
 
 const DropdownMenuTrigger = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Trigger>,

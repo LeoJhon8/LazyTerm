@@ -3,8 +3,25 @@ import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
 
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button-variants"
+import { useAndroidDismissibleLayer } from "@/hooks/useAndroidBackHandler"
+import { ANDROID_BACK_PRIORITY } from "@/lib/android-back"
 
-const AlertDialog = AlertDialogPrimitive.Root
+const AlertDialog = ({
+  defaultOpen,
+  onOpenChange,
+  open,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Root>) => {
+  const [resolvedOpen, setOpen] = useAndroidDismissibleLayer({
+    defaultOpen,
+    onOpenChange,
+    open,
+    priority: ANDROID_BACK_PRIORITY.dialog,
+  })
+
+  return <AlertDialogPrimitive.Root open={resolvedOpen} onOpenChange={setOpen} {...props} />
+}
+AlertDialog.displayName = AlertDialogPrimitive.Root.displayName
 
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger
 

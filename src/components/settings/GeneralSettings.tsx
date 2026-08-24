@@ -158,7 +158,7 @@ export function GeneralSettings() {
                     {t("显示终端快捷键栏")}
                   </Label>
                   <span className="text-xs text-muted-foreground">
-                    {t("显示 Esc、Tab、Ctrl 和方向键工具栏。")}
+                    {t("显示 Esc、Tab、Ctrl+C 和方向键，可按需自定义。")}
                   </span>
                 </div>
                 <Switch

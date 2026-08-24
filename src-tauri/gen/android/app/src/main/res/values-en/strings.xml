@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">LazyTerm</string>
     <string name="main_activity_title">LazyTerm</string>
+    <string name="back_again_to_desktop">Press back again to go to the desktop</string>
     <string name="ssh_service_channel_name">SSH background connection</string>
     <string name="ssh_service_channel_description">Keeps active SSH sessions running and shows their connection status</string>
     <plurals name="ssh_active_sessions">

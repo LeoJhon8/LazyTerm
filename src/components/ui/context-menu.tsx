@@ -2,19 +2,40 @@ import * as React from "react"
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu"
 import { Check, ChevronRight, Circle } from "lucide-react"
 
+import { useAndroidBackHandler } from "@/hooks/useAndroidBackHandler"
+import { ANDROID_BACK_PRIORITY } from "@/lib/android-back"
 import { cn } from "@/lib/utils"
 
 const NATIVE_RDP_OVERLAY_EVENT = "lazy-native-rdp-overlay"
 
-const ContextMenu = ({ onOpenChange, ...props }: React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Root>) => (
-  <ContextMenuPrimitive.Root
-    onOpenChange={(open) => {
-      window.dispatchEvent(new CustomEvent<boolean>(NATIVE_RDP_OVERLAY_EVENT, { detail: open }))
-      onOpenChange?.(open)
-    }}
-    {...props}
-  />
-)
+const ContextMenu = ({
+  onOpenChange,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Root>) => {
+  const [menuOpen, setMenuOpen] = React.useState(false)
+
+  useAndroidBackHandler(menuOpen, () => {
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      code: "Escape",
+      key: "Escape",
+    }))
+    return true
+  }, ANDROID_BACK_PRIORITY.transient)
+
+  return (
+    <ContextMenuPrimitive.Root
+      onOpenChange={(nextOpen) => {
+        setMenuOpen(nextOpen)
+        window.dispatchEvent(new CustomEvent<boolean>(NATIVE_RDP_OVERLAY_EVENT, { detail: nextOpen }))
+        onOpenChange?.(nextOpen)
+      }}
+      {...props}
+    />
+  )
+}
+ContextMenu.displayName = ContextMenuPrimitive.Root.displayName
 
 const ContextMenuTrigger = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.Trigger>,

@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">"LazyTerm"</string>
     <string name="main_activity_title">"LazyTerm"</string>
+    <string name="back_again_to_desktop">再按一次返回桌面</string>
     <string name="ssh_service_channel_name">SSH 后台连接</string>
     <string name="ssh_service_channel_description">保持活动的 SSH 会话并显示连接状态</string>
     <plurals name="ssh_active_sessions">

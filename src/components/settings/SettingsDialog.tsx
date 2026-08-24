@@ -15,6 +15,8 @@ import { ArrowLeft, Bot, ChevronRight, Globe, Palette, LayoutPanelLeft, KeyRound
 import { useI18n } from "@/i18n";
 import { IS_ANDROID } from "@/lib/platform";
 import { cn } from "@/lib/utils";
+import { useAndroidBackHandler } from "@/hooks/useAndroidBackHandler";
+import { ANDROID_BACK_PRIORITY } from "@/lib/android-back";
 
 /** Tab 配置：value → 图标 + 标签 key */
 const SETTINGS_TABS: Array<{ value: SettingsTab; icon: React.ComponentType<{ className?: string }>; labelKey: string }> = [
@@ -55,6 +57,11 @@ export function SettingsDialog() {
   const { t } = useI18n();
   const { open, activeTab, requestedTab, closeSettings, setActiveTab } = useSettingsDialogStore();
   const [mobilePage, setMobilePage] = useState<SettingsTab | null>(null);
+
+  useAndroidBackHandler(IS_ANDROID && open && mobilePage !== null, () => {
+    setMobilePage(null);
+    return true;
+  }, ANDROID_BACK_PRIORITY.nestedPage);
 
   useEffect(() => {
     if (open && IS_ANDROID) {

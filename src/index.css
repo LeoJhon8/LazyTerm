@@ -19,7 +19,6 @@
   min-height: 0;
   grid-template-rows: auto 44px minmax(0, 1fr) 40px auto;
   overflow: hidden;
-  padding-top: env(safe-area-inset-top, 0px);
   background: color-mix(in srgb, var(--background) 92%, transparent);
 }
 
@@ -67,38 +66,82 @@
 }
 
 .mobile-terminal-keys {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  height: 44px;
   min-width: 0;
-  align-items: stretch;
-  gap: 1px;
-  overflow-x: auto;
   border-top: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
   background: color-mix(in srgb, var(--muted) 78%, transparent);
+}
+
+.mobile-terminal-keys-scroll {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  overflow-x: auto;
   scrollbar-width: none;
 }
 
-.mobile-terminal-keys::-webkit-scrollbar {
+.mobile-terminal-keys-scroll::-webkit-scrollbar {
   display: none;
 }
 
-.mobile-terminal-keys button {
-  min-width: 50px;
+.mobile-terminal-key-button,
+.mobile-terminal-keys-edit {
   border: 0;
   border-right: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
   background: transparent;
   color: var(--foreground);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
   touch-action: manipulation;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
 }
 
-.mobile-terminal-keys button:active:not(:disabled) {
+.mobile-terminal-key-button {
+  min-width: 42px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.mobile-terminal-key-button[data-width="wide"] {
+  min-width: 58px;
+}
+
+.mobile-terminal-key-button[data-active="true"],
+.mobile-terminal-key-button:active:not(:disabled),
+.mobile-terminal-keys-edit:active {
   background: color-mix(in srgb, var(--accent) 65%, transparent);
 }
 
-.mobile-terminal-keys button:disabled {
+.mobile-terminal-key-button[data-repeating="true"] {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--primary) 78%, transparent);
+  color: var(--primary);
+}
+
+.mobile-terminal-key-button:disabled {
   opacity: 0.4;
+}
+
+.mobile-terminal-keys-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 0;
+  border-left: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+  background: color-mix(in srgb, var(--panel-strong) 88%, transparent);
+  color: var(--muted-foreground);
+}
+
+.mobile-terminal-keys-empty {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  padding: 0 12px;
+  color: var(--muted-foreground);
+  font-size: 11px;
 }
 
 .mobile-bottom-nav {

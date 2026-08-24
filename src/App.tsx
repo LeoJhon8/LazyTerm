@@ -32,6 +32,7 @@ import {
 import type { AppColorPalette } from "@/store/settings";
 import { windowResizeCoordinator } from "@/services/windowResizeCoordinator";
 import { MobileAppShell } from "@/components/layout/MobileAppShell";
+import { installAndroidBackDispatcher } from "@/lib/android-back";
 import { IS_ANDROID } from "@/lib/platform";
 
 const CUSTOM_PALETTE_VARIABLES = [
@@ -154,6 +155,11 @@ function App() {
   useAndroidSshBackground();
   const initializeCredentialVault = useCredentialsStore((state) => state.initialize);
   const credentialVaultStatus = useCredentialsStore((state) => state.status);
+
+  useEffect(() => {
+    if (!IS_ANDROID) return;
+    return installAndroidBackDispatcher();
+  }, []);
 
   const { locale, t } = useI18n();
   const { isImmersive, isFocus } = useViewMode();

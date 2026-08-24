@@ -2,9 +2,26 @@ import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
 
+import { useAndroidDismissibleLayer } from "@/hooks/useAndroidBackHandler";
+import { ANDROID_BACK_PRIORITY } from "@/lib/android-back";
 import { cn } from "@/lib/utils";
 
-const Select = SelectPrimitive.Root;
+const Select = ({
+  defaultOpen,
+  onOpenChange,
+  open,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof SelectPrimitive.Root>) => {
+  const [resolvedOpen, setOpen] = useAndroidDismissibleLayer({
+    defaultOpen,
+    onOpenChange,
+    open,
+    priority: ANDROID_BACK_PRIORITY.transient,
+  });
+
+  return <SelectPrimitive.Root open={resolvedOpen} onOpenChange={setOpen} {...props} />;
+};
+Select.displayName = SelectPrimitive.Root.displayName;
 
 const SelectGroup = SelectPrimitive.Group;
 

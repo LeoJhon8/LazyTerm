@@ -13,9 +13,13 @@ import { HistoryModule } from "@/components/modules/HistoryModule";
 import { QuickCommandManagerDialog } from "@/components/modules/QuickCommandManagerDialog";
 import { SessionModule } from "@/components/modules/SessionModule";
 import { TabBar } from "@/components/modules/TabBar";
+import { MobileTerminalKeyBar } from "@/components/terminal/MobileTerminalKeyBar";
+import { MobileTerminalKeyBarEditorDialog } from "@/components/terminal/MobileTerminalKeyBarEditorDialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/i18n";
+import { useAndroidBackHandler } from "@/hooks/useAndroidBackHandler";
+import { ANDROID_BACK_PRIORITY } from "@/lib/android-back";
 import { emitTerminalCommandSubmitted } from "@/lib/terminal-command-events";
 import { cn } from "@/lib/utils";
 import { useQuickCommandsStore } from "@/store/quick-commands";
@@ -34,6 +38,7 @@ export function MobileAppShell() {
   const { t } = useI18n();
   const [activePanel, setActivePanel] = useState<MobilePanel>(null);
   const [commandManagerOpen, setCommandManagerOpen] = useState(false);
+  const [terminalKeyEditorOpen, setTerminalKeyEditorOpen] = useState(false);
   const commands = useQuickCommandsStore((state) => state.commands);
   const mobileHistoryVisible = useSettingsStore((state) => state.mobileHistoryVisible);
   const mobileQuickCommandsVisible = useSettingsStore((state) => state.mobileQuickCommandsVisible);
@@ -45,6 +50,11 @@ export function MobileAppShell() {
   const openSettings = useSettingsDialogStore((state) => state.openSettings);
   const connector = focusSession?.connector;
   const canWrite = !!connector?.isConnected && isTerminalConnector(connector);
+
+  useAndroidBackHandler(activePanel !== null, () => {
+    setActivePanel(null);
+    return true;
+  }, ANDROID_BACK_PRIORITY.panel);
 
   useEffect(() => {
     setActivePanel((current) => {
@@ -160,22 +170,11 @@ export function MobileAppShell() {
       </main>
 
       {mobileTerminalKeysVisible && (
-        <div className="mobile-terminal-keys" aria-label={t("发送常用按键")}>
-          {[
-            ["Esc", "\u001b"],
-            ["Tab", "\t"],
-            ["Ctrl+C", "\u0003"],
-            ["Ctrl+D", "\u0004"],
-            ["←", "\u001b[D"],
-            ["↑", "\u001b[A"],
-            ["↓", "\u001b[B"],
-            ["→", "\u001b[C"],
-          ].map(([label, data]) => (
-            <button key={label} type="button" disabled={!canWrite} onClick={() => writeToTerminal(data)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <MobileTerminalKeyBar
+          disabled={!canWrite}
+          onEdit={() => setTerminalKeyEditorOpen(true)}
+          onSend={writeToTerminal}
+        />
       )}
 
       <nav className="mobile-bottom-nav">
@@ -199,6 +198,10 @@ export function MobileAppShell() {
       </nav>
 
       <QuickCommandManagerDialog open={commandManagerOpen} onOpenChange={setCommandManagerOpen} />
+      <MobileTerminalKeyBarEditorDialog
+        open={terminalKeyEditorOpen}
+        onOpenChange={setTerminalKeyEditorOpen}
+      />
     </div>
   );
 }
