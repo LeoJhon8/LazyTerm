@@ -152,6 +152,7 @@ export function SshBackgroundModeDialog({
   const { locale, t } = useI18n();
   const sessions = useTabsStore((state) => state.sessions);
   const updateSession = useTabsStore((state) => state.updateSession);
+  const reconnectSession = useTabsStore((state) => state.reconnectSession);
   const [tmuxCheck, setTmuxCheck] = useState<TmuxCheckState>({ status: "idle" });
   const [tmuxSelected, setTmuxSelected] = useState(false);
   const [tmuxChoice, setTmuxChoice] = useState(NEW_TMUX_SESSION);
@@ -164,6 +165,7 @@ export function SshBackgroundModeDialog({
   const connector = session?.type === "ssh" && session.connector?.protocol === "ssh"
     ? session.connector
     : null;
+  const useTmux = tmuxCheck.status === "available" && tmuxSelected;
 
   useEffect(() => {
     const sequence = ++checkSequence.current;
@@ -199,7 +201,6 @@ export function SshBackgroundModeDialog({
   }
 
   const enableForSession = () => {
-    const useTmux = tmuxCheck.status === "available" && tmuxSelected;
     let tmuxSessionName = session.sshTmuxSessionName ?? `lazyterm_${session.id}`;
     if (useTmux) {
       tmuxSessionName = tmuxChoice === NEW_TMUX_SESSION
@@ -214,15 +215,21 @@ export function SshBackgroundModeDialog({
     }
 
     setSelectionError(null);
-    connector.setTmuxSessionName?.(tmuxSessionName);
-    connector.setTmuxPersistenceEnabled?.(useTmux);
-    connector.setBackgroundMode?.(true);
     updateSession(session.id, {
       sshBackgroundModeEnabled: true,
       sshTmuxPersistenceEnabled: useTmux,
       sshTmuxSessionName: tmuxSessionName,
     });
     onOpenChange(false);
+
+    if (useTmux) {
+      reconnectSession(session.id);
+      return;
+    }
+
+    connector.setTmuxSessionName?.(tmuxSessionName);
+    connector.setTmuxPersistenceEnabled?.(false);
+    connector.setBackgroundMode?.(true);
   };
 
   return (
@@ -264,8 +271,8 @@ export function SshBackgroundModeDialog({
                       <span className="block font-medium">{t("使用 tmux 创建或恢复可恢复会话")}</span>
                       <span className="block text-xs text-muted-foreground">
                         {tmuxCheck.version
-                          ? t("检测到 {version}。选择将在当前会话下次连接或重连时生效。", { version: tmuxCheck.version })
-                          : t("检测到 tmux。选择将在当前会话下次连接或重连时生效。")}
+                          ? t("检测到 {version}。选择 tmux 后，确认时会立即重连并进入所选会话。", { version: tmuxCheck.version })
+                          : t("检测到 tmux。选择后，确认时会立即重连并进入所选会话。")}
                       </span>
                     </span>
                   </label>
@@ -382,7 +389,9 @@ export function SshBackgroundModeDialog({
             disabled={tmuxCheck.status === "checking"}
             onClick={enableForSession}
           >
-            {t("了解风险并为当前会话开启")}
+            {useTmux
+              ? t("立即重连并进入 tmux 会话")
+              : t("了解风险并为当前会话开启")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
