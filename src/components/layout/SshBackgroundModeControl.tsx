@@ -15,7 +15,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { ContextMenuItem } from "@/components/ui/context-menu";
 import { useI18n } from "@/i18n";
-import { IS_DESKTOP } from "@/lib/platform";
+import { IS_SSH_BACKGROUND_MODE_SUPPORTED } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { useTabsStore, type TerminalSession } from "@/store/tabs";
 import { useNotificationsStore } from "@/store/notifications";
@@ -91,7 +91,7 @@ export function SshBackgroundModeMenuItem({
   const tmuxActive = session?.sshTmuxPersistenceActive === true;
   const connected = connector?.isConnected === true;
 
-  if (!IS_DESKTOP || !session || !connector) {
+  if (!IS_SSH_BACKGROUND_MODE_SUPPORTED || !session || !connector) {
     return null;
   }
 
@@ -196,7 +196,7 @@ export function SshBackgroundModeDialog({
     });
   }, [connector, open, sessionId]);
 
-  if (!IS_DESKTOP || !session || !connector) {
+  if (!IS_SSH_BACKGROUND_MODE_SUPPORTED || !session || !connector) {
     return null;
   }
 
@@ -239,7 +239,7 @@ export function SshBackgroundModeDialog({
           <AlertDialogTitle>{t("开启当前 SSH 会话的后台模式？")}</AlertDialogTitle>
           <AlertDialogDescription className="space-y-3 text-left leading-6">
             <span className="block">
-              {t("开启后，LazyTerm 会在窗口保持打开期间持续维护当前 SSH 会话。")}
+              {t("开启后，LazyTerm 会持续维护当前 SSH 会话，直到你关闭该会话或退出应用。")}
             </span>
             <span className="block font-medium text-foreground/90">
               {t("请注意以下限制和风险：")}
@@ -375,10 +375,10 @@ export function SshBackgroundModeDialog({
                 </span>
               )}
               {tmuxCheck.status === "unavailable" && (
-                <span>{t("当前服务器未检测到 tmux，只能使用窗口内后台保持。")}</span>
+                <span>{t("当前服务器未检测到 tmux，只能保持当前 SSH 连接。")}</span>
               )}
               {tmuxCheck.status === "failed" && (
-                <span>{t("无法完成 tmux 检测，只能使用窗口内后台保持。")}</span>
+                <span>{t("无法完成 tmux 检测，只能保持当前 SSH 连接。")}</span>
               )}
             </span>
           </AlertDialogDescription>
@@ -431,7 +431,7 @@ export function SshEndTmuxSessionDialog({
     }
   }, [open, sessionId]);
 
-  if (!IS_DESKTOP || !session || !connector) {
+  if (!IS_SSH_BACKGROUND_MODE_SUPPORTED || !session || !connector) {
     return null;
   }
 

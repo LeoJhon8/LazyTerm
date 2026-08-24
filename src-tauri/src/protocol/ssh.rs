@@ -668,7 +668,7 @@ pub async fn kill_ssh_tmux_session(
     Ok(())
 }
 
-/// 动态启停桌面端 SSH 后台保活。
+/// 动态启停 SSH 后台保活。
 #[tauri::command]
 pub async fn set_ssh_background_mode(
     state: State<'_, AppState>,

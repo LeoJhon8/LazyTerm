@@ -11,7 +11,7 @@ import { invokeTauri, invokeTauriSerialized } from "@/services/tauri";
 import { classifyConnectionFailure } from "@/services/connection/connectionErrors";
 import { ConnectionReadinessBarrier } from "@/services/connection/ConnectionReadinessBarrier";
 import { useSettingsStore } from "@/store/settings";
-import { IS_DESKTOP } from "@/lib/platform";
+import { IS_SSH_BACKGROUND_MODE_SUPPORTED } from "@/lib/platform";
 
 const SSH_USABLE_CHECKPOINTS = ["identity", "listeners", "backend", "remote"] as const;
 const SSH_PENDING_DATA_LIMIT = 1024 * 1024;
@@ -108,8 +108,8 @@ export class SshConnector implements ITerminalConnector {
   constructor(options: SshConnectorOptions) {
     this.config = options.config;
     this.fontConfig = options.fontConfig;
-    this.backgroundModeEnabled = IS_DESKTOP && !!options.backgroundModeEnabled;
-    this.tmuxPersistenceEnabled = IS_DESKTOP && !!options.tmuxPersistenceEnabled;
+    this.backgroundModeEnabled = IS_SSH_BACKGROUND_MODE_SUPPORTED && !!options.backgroundModeEnabled;
+    this.tmuxPersistenceEnabled = IS_SSH_BACKGROUND_MODE_SUPPORTED && !!options.tmuxPersistenceEnabled;
     this.logicalSessionKey = options.logicalSessionKey ?? this.requestedSessionId;
     this.tmuxSessionName = options.tmuxSessionName ?? `lazyterm_${this.requestedSessionId.replaceAll("-", "")}`;
     this.readinessCycle = this.readiness.begin(["identity"]);
@@ -420,13 +420,13 @@ export class SshConnector implements ITerminalConnector {
   }
 
   setBackgroundMode(enabled: boolean): void {
-    const nextEnabled = IS_DESKTOP && enabled;
+    const nextEnabled = IS_SSH_BACKGROUND_MODE_SUPPORTED && enabled;
     this.backgroundModeEnabled = nextEnabled;
     this.syncBackgroundMode();
   }
 
   setTmuxPersistenceEnabled(enabled: boolean): void {
-    this.tmuxPersistenceEnabled = IS_DESKTOP && enabled;
+    this.tmuxPersistenceEnabled = IS_SSH_BACKGROUND_MODE_SUPPORTED && enabled;
   }
 
   setTmuxSessionName(name: string): void {
@@ -437,7 +437,7 @@ export class SshConnector implements ITerminalConnector {
   }
 
   async checkTmuxCapability(): Promise<SshTmuxCapability> {
-    if (!IS_DESKTOP || !this.isConnected || !this.sessionId) {
+    if (!IS_SSH_BACKGROUND_MODE_SUPPORTED || !this.isConnected || !this.sessionId) {
       throw new Error("SSH 会话尚未连接");
     }
 
@@ -453,7 +453,7 @@ export class SshConnector implements ITerminalConnector {
   }
 
   async killTmuxSession(): Promise<void> {
-    if (!IS_DESKTOP || !this.isConnected || !this.sessionId || !this.tmuxPersistenceActive) {
+    if (!IS_SSH_BACKGROUND_MODE_SUPPORTED || !this.isConnected || !this.sessionId || !this.tmuxPersistenceActive) {
       throw new Error("当前 SSH 连接未附着可恢复 tmux 会话");
     }
 
