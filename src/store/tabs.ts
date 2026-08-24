@@ -66,6 +66,14 @@ export interface TerminalSession {
   host?: string;
   config?: SessionConfig;
   connectionStatus: SessionConnectionStatus;
+  /** 当前 SSH 会话是否启用窗口内后台保活。 */
+  sshBackgroundModeEnabled?: boolean;
+  /** 下一次连接时是否由 tmux 承载，以便断开后恢复。 */
+  sshTmuxPersistenceEnabled?: boolean;
+  /** 当前 SSH 连接是否确实已附着 LazyTerm tmux 会话。 */
+  sshTmuxPersistenceActive?: boolean;
+  /** 同一标签重连时复用的远端 tmux 会话名。 */
+  sshTmuxSessionName?: string;
 }
 
 // SessionConnectionError 类型从 connectionErrorService 导入
@@ -159,8 +167,16 @@ export const useTabsStore = create<TabsState>()(
                   technicalDetails: undefined,
                 }
               : event;
+            const sshTmuxPersistenceActive = session.type === "ssh"
+              ? event.phase === "connected"
+                ? session.connector?.isTmuxPersistenceActive?.() === true
+                : ["disconnected", "failed", "closing"].includes(event.phase)
+                  ? false
+                  : session.sshTmuxPersistenceActive
+              : undefined;
             return {
               ...session,
+              ...(session.type === "ssh" ? { sshTmuxPersistenceActive } : {}),
               connectionStatus: {
                 ...session.connectionStatus,
                 ...visibleEvent,
@@ -287,6 +303,7 @@ export const useTabsStore = create<TabsState>()(
           sessions: state.sessions.map((session) => session.id === sessionId ? {
             ...session,
             connector: newConnector,
+            ...(session.type === "ssh" ? { sshTmuxPersistenceActive: false } : {}),
             connectionStatus: {
               ...session.connectionStatus,
               phase: "reconnecting",
@@ -335,6 +352,12 @@ export const useTabsStore = create<TabsState>()(
             ...sessionData,
             id,
             connector,
+            ...(sessionData.type === "ssh" ? {
+              sshBackgroundModeEnabled: sessionData.sshBackgroundModeEnabled ?? false,
+              sshTmuxPersistenceEnabled: sessionData.sshTmuxPersistenceEnabled ?? false,
+              sshTmuxPersistenceActive: false,
+              sshTmuxSessionName: sessionData.sshTmuxSessionName ?? `lazyterm_${id}`,
+            } : {}),
             connectionStatus: {
               phase: "idle",
               stage: "idle",

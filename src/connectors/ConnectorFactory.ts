@@ -21,6 +21,9 @@ import { resolveRdpCredential, resolveSshCredential, resolveVncCredential } from
 
 export interface SessionCreationData {
   type: "local" | "ssh" | "rdp" | "vnc" | "serial" | "telnet" | "ai-cli";
+  sshBackgroundModeEnabled?: boolean;
+  sshTmuxPersistenceEnabled?: boolean;
+  sshTmuxSessionName?: string;
   cwd?: string;
   title?: string;
   host?: string;
@@ -74,6 +77,10 @@ export function createConnector(
         return new SshConnector({
           config,
           fontConfig: getCurrentFontConfig(),
+          backgroundModeEnabled: sessionData.sshBackgroundModeEnabled,
+          tmuxPersistenceEnabled: sessionData.sshTmuxPersistenceEnabled,
+          logicalSessionKey: sessionId,
+          tmuxSessionName: sessionData.sshTmuxSessionName ?? `lazyterm_${sessionId}`,
         });
       }
     case "rdp":

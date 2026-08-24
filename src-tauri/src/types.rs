@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{mpsc as std_mpsc, Arc, Mutex as StdMutex};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 
 // 前向声明，避免循环依赖
 // NativeRdpSession 在 native_rdp 模块中定义，这里只存储在 AppState 中
@@ -14,6 +14,8 @@ use tokio::sync::{mpsc, watch};
 /// SSH 连接配置
 #[derive(Debug, Clone, Deserialize)]
 pub struct SshConnectConfig {
+    #[serde(default)]
+    pub client_session_key: Option<String>,
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -28,19 +30,46 @@ pub struct SshConnectConfig {
     pub auto_update_changed_host_keys: bool,
     pub initial_cols: Option<u32>,
     pub initial_rows: Option<u32>,
+    #[serde(default)]
+    pub background_mode: bool,
+    #[serde(default)]
+    pub tmux_persistence: bool,
+    pub tmux_session_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshTmuxCapability {
+    pub available: bool,
+    pub version: Option<String>,
+    pub sessions: Vec<SshTmuxSessionInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshTmuxSessionInfo {
+    pub name: String,
+    pub created_at: u64,
+    pub last_activity_at: u64,
+    pub attached_clients: u32,
+    pub windows: u32,
 }
 
 /// SSH 控制消息
 pub enum SshControlMsg {
     SendData(Vec<u8>),
     Resize(u32, u32),
-    Close,
+    Close(oneshot::Sender<()>),
 }
 
 /// SSH 终端会话
 pub struct SshTerminalSession {
     pub control_tx: mpsc::UnboundedSender<SshControlMsg>,
-    pub handle: russh::client::Handle<crate::protocol::ssh_auth::SshClientHandler>,
+    pub background_mode_tx: watch::Sender<bool>,
+    pub handle: Arc<russh::client::Handle<crate::protocol::ssh_auth::SshClientHandler>>,
+    pub client_session_key: String,
+    pub tmux_session_key: Option<String>,
+    pub tmux_session_name: Option<String>,
 }
 
 // ==================== RDP 相关类型 ====================

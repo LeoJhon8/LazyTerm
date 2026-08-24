@@ -12,9 +12,11 @@ import { cn } from "@/lib/utils";
 import { getDropZone, dropZoneToDirection, type DropZone } from "@/lib/pane-utils";
 import { logger } from "@/lib/logger";
 import {
+  TAB_DRAG_CANCEL_EVENT,
   TAB_DRAG_START_EVENT,
   TAB_DRAG_MOVE_EVENT,
   TAB_DRAG_END_EVENT,
+  tabDragState,
 } from "@/lib/tab-drag-state";
 import { useI18n } from "@/i18n";
 import { connectionQualityScheduler } from "@/services/connection/ConnectionQualityScheduler";
@@ -88,47 +90,56 @@ export function PaneView({ paneId, isVisible }: PaneViewProps) {
       return;
     }
 
+    const getDropZoneAt = (x: number, y: number): DropZone | null => {
+      const container = containerRef.current;
+      if (!container) {
+        return null;
+      }
+
+      const rect = container.getBoundingClientRect();
+      const isInside = rect.width > 0
+        && rect.height > 0
+        && x >= rect.left
+        && x <= rect.right
+        && y >= rect.top
+        && y <= rect.bottom;
+      if (!isInside) {
+        return null;
+      }
+
+      const relativeX = (x - rect.left) / rect.width;
+      const relativeY = (y - rect.top) / rect.height;
+      return getDropZone(relativeX, relativeY);
+    };
+
     const handleDragStart = () => {
       setIsTabDragging(true);
     };
 
     const handleDragMove = (event: Event) => {
       const detail = (event as CustomEvent).detail;
-      if (!detail || !containerRef.current) {
+      if (!detail) {
         return;
       }
 
-      const rect = containerRef.current.getBoundingClientRect();
       const { x, y } = detail;
-      const isInside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-
-      if (!isInside) {
-        setDropZone(null);
-        return;
-      }
-
-      const relativeX = (x - rect.left) / rect.width;
-      const relativeY = (y - rect.top) / rect.height;
-      setDropZone(getDropZone(relativeX, relativeY));
+      setIsTabDragging(true);
+      setDropZone(getDropZoneAt(x, y));
     };
 
     const handleDragEnd = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       setIsTabDragging(false);
 
-      if (!detail || !containerRef.current) {
+      if (!detail) {
         setDropZone(null);
         return;
       }
 
-      const rect = containerRef.current.getBoundingClientRect();
       const { x, y, sessionId: draggedTabId } = detail;
-      const isInside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+      const zone = getDropZoneAt(x, y);
 
-      if (draggedTabId && isInside) {
-        const relativeX = (x - rect.left) / rect.width;
-        const relativeY = (y - rect.top) / rect.height;
-        const zone = getDropZone(relativeX, relativeY);
+      if (draggedTabId && zone) {
         const direction = dropZoneToDirection(zone);
 
         logger.info("FE/PaneView", "Tab dropped on pane", { paneId, draggedTabId, zone, direction });
@@ -146,23 +157,44 @@ export function PaneView({ paneId, isVisible }: PaneViewProps) {
         const sessionToMove = droppingLeaf?.sessionId;
 
         if (sessionToMove) {
-          splitPane(paneId, direction, sessionToMove, zone);
-          usePanesStore.getState().cleanupWorkspace(draggedTabId);
-          useTabsStore.getState().removeTab(draggedTabId);
+          const newPaneId = splitPane(paneId, direction, sessionToMove, zone);
+          if (newPaneId) {
+            usePanesStore.getState().cleanupWorkspace(draggedTabId);
+            useTabsStore.getState().removeTab(draggedTabId);
+          } else {
+            logger.warn("FE/PaneView", "Tab drop did not create a pane", {
+              paneId,
+              draggedTabId,
+              zone,
+              direction,
+            });
+          }
         }
       }
 
       setDropZone(null);
     };
 
+    const handleDragCancel = () => {
+      setIsTabDragging(false);
+      setDropZone(null);
+    };
+
     window.addEventListener(TAB_DRAG_START_EVENT, handleDragStart);
     window.addEventListener(TAB_DRAG_MOVE_EVENT, handleDragMove);
     window.addEventListener(TAB_DRAG_END_EVENT, handleDragEnd);
+    window.addEventListener(TAB_DRAG_CANCEL_EVENT, handleDragCancel);
+
+    if (tabDragState.isDragging) {
+      setIsTabDragging(true);
+      setDropZone(getDropZoneAt(tabDragState.pointerX, tabDragState.pointerY));
+    }
 
     return () => {
       window.removeEventListener(TAB_DRAG_START_EVENT, handleDragStart);
       window.removeEventListener(TAB_DRAG_MOVE_EVENT, handleDragMove);
       window.removeEventListener(TAB_DRAG_END_EVENT, handleDragEnd);
+      window.removeEventListener(TAB_DRAG_CANCEL_EVENT, handleDragCancel);
     };
   }, [isVisible, paneId, splitPane]);
 

@@ -98,6 +98,26 @@ export interface ISessionConnector {
   close(): void;
   onConnectionState(handler: (event: ConnectionStateEvent) => void): () => void;
   applyQualityPolicy?(policy: ConnectionQualityPolicy): void;
+  setBackgroundMode?(enabled: boolean): void;
+  setTmuxPersistenceEnabled?(enabled: boolean): void;
+  setTmuxSessionName?(name: string): void;
+  checkTmuxCapability?(): Promise<SshTmuxCapability>;
+  isTmuxPersistenceActive?(): boolean;
+  killTmuxSession?(): Promise<void>;
+}
+
+export interface SshTmuxCapability {
+  available: boolean;
+  version?: string;
+  sessions: SshTmuxSessionInfo[];
+}
+
+export interface SshTmuxSessionInfo {
+  name: string;
+  createdAt: number;
+  lastActivityAt: number;
+  attachedClients: number;
+  windows: number;
 }
 
 // 终端连接器接口定义

@@ -1,11 +1,17 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { ConnectionStateEvent, ITerminalConnector, SSHConfig } from "@/types/terminal";
+import type {
+  ConnectionStateEvent,
+  ITerminalConnector,
+  SSHConfig,
+  SshTmuxCapability,
+} from "@/types/terminal";
 import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { logger } from "@/lib/logger";
-import { invokeTauri, invokeTauriBackground, invokeTauriSerialized } from "@/services/tauri";
+import { invokeTauri, invokeTauriSerialized } from "@/services/tauri";
 import { classifyConnectionFailure } from "@/services/connection/connectionErrors";
 import { ConnectionReadinessBarrier } from "@/services/connection/ConnectionReadinessBarrier";
 import { useSettingsStore } from "@/store/settings";
+import { IS_DESKTOP } from "@/lib/platform";
 
 const SSH_USABLE_CHECKPOINTS = ["identity", "listeners", "backend", "remote"] as const;
 const SSH_PENDING_DATA_LIMIT = 1024 * 1024;
@@ -66,6 +72,10 @@ function estimateInitialPtySize(fontConfig?: PtyFontConfig): { cols: number; row
 export interface SshConnectorOptions {
   config: SSHConfig;
   fontConfig?: PtyFontConfig;
+  backgroundModeEnabled?: boolean;
+  tmuxPersistenceEnabled?: boolean;
+  logicalSessionKey?: string;
+  tmuxSessionName?: string;
 }
 
 export class SshConnector implements ITerminalConnector {
@@ -87,10 +97,21 @@ export class SshConnector implements ITerminalConnector {
   private dataHandler: ((data: string) => void) | null = null;
   private pendingData = "";
   private lastResize: { sessionId: string; cols: number; rows: number } | null = null;
+  private backgroundModeEnabled: boolean;
+  private tmuxPersistenceEnabled: boolean;
+  private tmuxPersistenceActive = false;
+  private readonly logicalSessionKey: string;
+  private tmuxSessionName: string;
+  private appliedBackgroundModeEnabled: boolean | null = null;
+  private backgroundModeUpdatePending: Promise<void> | null = null;
 
   constructor(options: SshConnectorOptions) {
     this.config = options.config;
     this.fontConfig = options.fontConfig;
+    this.backgroundModeEnabled = IS_DESKTOP && !!options.backgroundModeEnabled;
+    this.tmuxPersistenceEnabled = IS_DESKTOP && !!options.tmuxPersistenceEnabled;
+    this.logicalSessionKey = options.logicalSessionKey ?? this.requestedSessionId;
+    this.tmuxSessionName = options.tmuxSessionName ?? `lazyterm_${this.requestedSessionId.replaceAll("-", "")}`;
     this.readinessCycle = this.readiness.begin(["identity"]);
   }
 
@@ -129,11 +150,14 @@ export class SshConnector implements ITerminalConnector {
       const keepAlive = this.config.keepAlive ?? true;
       const keepAliveInterval = Math.max(1, Math.floor(this.config.keepAliveInterval ?? 60));
       const autoUpdateChangedSshHostKeys = useSettingsStore.getState().autoUpdateChangedSshHostKeys;
+      const requestedBackgroundMode = this.backgroundModeEnabled;
+      const requestedTmuxPersistence = requestedBackgroundMode && this.tmuxPersistenceEnabled;
 
       this.stateEmitter.emit({ phase: "authenticating", stage: "authentication" });
-      const createdSessionId = await invokeTauri<string>("create_ssh_session", {
+      const createdSessionId = await invokeTauriSerialized<string>(`ssh-tab:${this.logicalSessionKey}:lifecycle`, "create_ssh_session", {
         sessionId: this.requestedSessionId,
         config: {
+          client_session_key: this.logicalSessionKey,
           host: this.config.host,
           port: this.config.port,
           username: this.config.username,
@@ -147,6 +171,9 @@ export class SshConnector implements ITerminalConnector {
           auto_update_changed_host_keys: autoUpdateChangedSshHostKeys,
           initial_cols: initialSize.cols,
           initial_rows: initialSize.rows,
+          background_mode: requestedBackgroundMode,
+          tmux_persistence: requestedTmuxPersistence,
+          tmux_session_name: this.tmuxSessionName,
         },
       }, {
         scope: "FE/connector/ssh/open",
@@ -155,10 +182,13 @@ export class SshConnector implements ITerminalConnector {
       });
 
       if (this.closedBeforeConnect || this.disconnected) {
-        invokeTauriBackground("close_ssh_session", { sessionId: createdSessionId }, { scope: "FE/connector/ssh/close" });
+        void this.closeBackendSession(createdSessionId);
         throw new Error("SSH connection was closed before initialization completed");
       }
       this.sessionId = createdSessionId;
+      this.tmuxPersistenceActive = requestedTmuxPersistence;
+      this.appliedBackgroundModeEnabled = requestedBackgroundMode;
+      this.syncBackgroundMode();
       this.lastResize = null;
       this.readiness.mark(this.readinessCycle, "backend");
       this.readiness.mark(this.readinessCycle, "remote");
@@ -174,6 +204,8 @@ export class SshConnector implements ITerminalConnector {
     } catch (error) {
       this.readiness.fail(this.readinessCycle, error);
       this.sessionId = null;
+      this.tmuxPersistenceActive = false;
+      this.appliedBackgroundModeEnabled = null;
       this.cleanupListeners();
       logger.error("FE/connector/ssh/open", "连接失败", error);
       if (!this.closedBeforeConnect && !this.disconnected) {
@@ -193,20 +225,25 @@ export class SshConnector implements ITerminalConnector {
     this.closedBeforeConnect = true;
     this.readiness.fail(this.readinessCycle, new Error("SSH connection closed"));
 
-    try {
-      invokeTauriBackground(
-        "close_ssh_session",
-        { sessionId: this.sessionId ?? this.requestedSessionId },
-        { scope: "FE/connector/ssh/close" },
-      );
-    } catch (error) {
+    const sessionId = this.sessionId ?? this.requestedSessionId;
+    void this.closeBackendSession(sessionId);
+    this.cleanupListeners();
+    this.pendingData = "";
+    this.lastResize = null;
+    this.sessionId = null;
+    this.tmuxPersistenceActive = false;
+    this.appliedBackgroundModeEnabled = null;
+  }
+
+  private closeBackendSession(sessionId: string): Promise<void> {
+    return invokeTauriSerialized<void>(
+      `ssh-tab:${this.logicalSessionKey}:lifecycle`,
+      "close_ssh_session",
+      { sessionId },
+      { scope: "FE/connector/ssh/close" },
+    ).catch((error) => {
       logger.error("FE/connector/ssh/close", "关闭连接时出错", error);
-    } finally {
-      this.cleanupListeners();
-      this.pendingData = "";
-      this.lastResize = null;
-      this.sessionId = null;
-    }
+    });
   }
 
   async onData(handler: (data: string) => void): Promise<() => void> {
@@ -245,6 +282,8 @@ export class SshConnector implements ITerminalConnector {
     this.readiness.fail(this.readinessCycle, reason);
     logger.info("FE/connector/ssh/disconnect", `Handling disconnection: ${reason}`);
     this.sessionId = null;
+    this.tmuxPersistenceActive = false;
+    this.appliedBackgroundModeEnabled = null;
     const failure = classifyConnectionFailure(this.protocol, reason, {
       stage: "steady",
       fallbackCode: "REMOTE_CLOSED",
@@ -378,6 +417,85 @@ export class SshConnector implements ITerminalConnector {
 
   getConfig(): SSHConfig {
     return this.config;
+  }
+
+  setBackgroundMode(enabled: boolean): void {
+    const nextEnabled = IS_DESKTOP && enabled;
+    this.backgroundModeEnabled = nextEnabled;
+    this.syncBackgroundMode();
+  }
+
+  setTmuxPersistenceEnabled(enabled: boolean): void {
+    this.tmuxPersistenceEnabled = IS_DESKTOP && enabled;
+  }
+
+  setTmuxSessionName(name: string): void {
+    if (this.tmuxPersistenceActive) {
+      return;
+    }
+    this.tmuxSessionName = name;
+  }
+
+  async checkTmuxCapability(): Promise<SshTmuxCapability> {
+    if (!IS_DESKTOP || !this.isConnected || !this.sessionId) {
+      throw new Error("SSH 会话尚未连接");
+    }
+
+    return invokeTauri<SshTmuxCapability>("check_ssh_tmux_capability", {
+      sessionId: this.sessionId,
+    }, {
+      scope: "FE/connector/ssh/tmux-capability",
+    });
+  }
+
+  isTmuxPersistenceActive(): boolean {
+    return this.tmuxPersistenceActive;
+  }
+
+  async killTmuxSession(): Promise<void> {
+    if (!IS_DESKTOP || !this.isConnected || !this.sessionId || !this.tmuxPersistenceActive) {
+      throw new Error("当前 SSH 连接未附着可恢复 tmux 会话");
+    }
+
+    await invokeTauri<void>("kill_ssh_tmux_session", {
+      sessionId: this.sessionId,
+    }, {
+      scope: "FE/connector/ssh/tmux-kill",
+    });
+    this.tmuxPersistenceActive = false;
+  }
+
+  private syncBackgroundMode(): void {
+    const sessionId = this.sessionId;
+    if (
+      !sessionId
+      || this.backgroundModeUpdatePending
+      || this.appliedBackgroundModeEnabled === this.backgroundModeEnabled
+    ) {
+      return;
+    }
+
+    const requestedEnabled = this.backgroundModeEnabled;
+    const request = invokeTauriSerialized(`ssh:${sessionId}:background-mode`, "set_ssh_background_mode", {
+      sessionId,
+      enabled: requestedEnabled,
+    }, {
+      scope: "FE/connector/ssh/background-mode",
+    }).then(() => {
+      if (this.sessionId === sessionId) {
+        this.appliedBackgroundModeEnabled = requestedEnabled;
+      }
+    }).catch((error) => {
+      logger.error("FE/connector/ssh/background-mode", "更新 SSH 后台模式失败", error);
+    }).finally(() => {
+      if (this.backgroundModeUpdatePending === request) {
+        this.backgroundModeUpdatePending = null;
+      }
+      if (this.sessionId === sessionId) {
+        this.syncBackgroundMode();
+      }
+    });
+    this.backgroundModeUpdatePending = request;
   }
 
   private cleanupListeners(): void {

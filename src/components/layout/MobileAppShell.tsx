@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FolderOpen,
   History,
@@ -36,6 +36,7 @@ function isTerminalConnector(connector: SessionConnector | undefined): connector
 
 export function MobileAppShell() {
   const { t } = useI18n();
+  const shellRef = useRef<HTMLDivElement>(null);
   const [activePanel, setActivePanel] = useState<MobilePanel>(null);
   const [commandManagerOpen, setCommandManagerOpen] = useState(false);
   const [terminalKeyEditorOpen, setTerminalKeyEditorOpen] = useState(false);
@@ -44,6 +45,7 @@ export function MobileAppShell() {
   const mobileQuickCommandsVisible = useSettingsStore((state) => state.mobileQuickCommandsVisible);
   const mobileTerminalKeysVisible = useSettingsStore((state) => state.mobileTerminalKeysVisible);
   const focusSessionId = useTabsStore((state) => state.focusSessionId);
+  const previousFocusSessionIdRef = useRef(focusSessionId);
   const focusSession = useTabsStore((state) => (
     state.sessions.find((session) => session.id === state.focusSessionId)
   ));
@@ -51,10 +53,65 @@ export function MobileAppShell() {
   const connector = focusSession?.connector;
   const canWrite = !!connector?.isConnected && isTerminalConnector(connector);
 
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+
+    const visualViewport = window.visualViewport;
+    let updateFrame: number | null = null;
+
+    const applyViewportHeight = () => {
+      updateFrame = null;
+      const viewportHeight = Math.min(
+        window.innerHeight,
+        visualViewport?.height ?? window.innerHeight,
+      );
+      shell.style.setProperty(
+        "--mobile-app-viewport-height",
+        `${Math.max(1, Math.round(viewportHeight))}px`,
+      );
+    };
+
+    const scheduleViewportHeightUpdate = () => {
+      if (updateFrame !== null) return;
+      updateFrame = window.requestAnimationFrame(applyViewportHeight);
+    };
+
+    applyViewportHeight();
+    window.addEventListener("resize", scheduleViewportHeightUpdate);
+    visualViewport?.addEventListener("resize", scheduleViewportHeightUpdate);
+    visualViewport?.addEventListener("scroll", scheduleViewportHeightUpdate);
+
+    return () => {
+      if (updateFrame !== null) window.cancelAnimationFrame(updateFrame);
+      window.removeEventListener("resize", scheduleViewportHeightUpdate);
+      visualViewport?.removeEventListener("resize", scheduleViewportHeightUpdate);
+      visualViewport?.removeEventListener("scroll", scheduleViewportHeightUpdate);
+      shell.style.removeProperty("--mobile-app-viewport-height");
+    };
+  }, []);
+
   useAndroidBackHandler(activePanel !== null, () => {
     setActivePanel(null);
     return true;
   }, ANDROID_BACK_PRIORITY.panel);
+
+  useEffect(() => {
+    const previousFocusSessionId = previousFocusSessionIdRef.current;
+    previousFocusSessionIdRef.current = focusSessionId;
+    if (
+      activePanel !== "sessions"
+      || !focusSessionId
+      || focusSessionId === previousFocusSessionId
+    ) {
+      return;
+    }
+
+    setActivePanel(null);
+    window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("lazy-term-focus"));
+    });
+  }, [activePanel, focusSessionId]);
 
   useEffect(() => {
     setActivePanel((current) => {
@@ -95,6 +152,7 @@ export function MobileAppShell() {
 
   return (
     <div
+      ref={shellRef}
       className={cn(
         "mobile-app-shell android-app",
         !mobileTerminalKeysVisible && "mobile-terminal-keys-hidden",
@@ -118,7 +176,7 @@ export function MobileAppShell() {
       </header>
 
       <div className="mobile-tabbar">
-        <TabBar />
+        <TabBar onTabActivate={() => setActivePanel(null)} />
       </div>
 
       <main className="mobile-terminal-stage">

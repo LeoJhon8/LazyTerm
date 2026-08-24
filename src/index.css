@@ -15,7 +15,7 @@
 /* Android 专用壳层：桌面布局保持原样。 */
 .mobile-app-shell {
   display: grid;
-  height: 100dvh;
+  height: var(--mobile-app-viewport-height, 100dvh);
   min-height: 0;
   grid-template-rows: auto 44px minmax(0, 1fr) 40px auto;
   overflow: hidden;

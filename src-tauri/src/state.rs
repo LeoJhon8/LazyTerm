@@ -6,7 +6,7 @@ use crate::protocol::NativeRdpSession;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::types::LocalTerminalSession;
 use crate::types::{RdpSession, SshTerminalSession, TelnetSession, VncSession};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -18,6 +18,8 @@ pub struct AppState {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub local_sessions: Arc<StdMutex<HashMap<String, LocalTerminalSession>>>,
     pub ssh_sessions: Arc<TokioMutex<HashMap<String, SshTerminalSession>>>,
+    pub ssh_client_session_keys: Arc<TokioMutex<HashSet<String>>>,
+    pub ssh_tmux_session_keys: Arc<TokioMutex<HashSet<String>>>,
     pub rdp_sessions: Arc<StdMutex<HashMap<String, RdpSession>>>,
     pub vnc_sessions: Arc<StdMutex<HashMap<String, VncSession>>>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]

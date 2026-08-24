@@ -28,10 +28,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { X, Plus, Columns, Pencil, XCircle, ArrowLeftToLine, ArrowRightToLine, Copy, Server, Terminal, AppWindow, ScreenShare, Usb, LayoutTemplate } from "lucide-react";
+import { X, Plus, Columns, Pencil, XCircle, ArrowLeftToLine, ArrowRightToLine, Copy, Server, Terminal, AppWindow, ScreenShare, Usb, LayoutTemplate, Radio } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
 import { getAllLeaves } from "@/lib/pane-utils";
-import { useEffect, useRef, useState, useCallback, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
+import { useEffect, useRef, useState, useCallback, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -54,11 +54,24 @@ import { CSS } from "@dnd-kit/utilities";
 import type { ShellInfo } from "@/types/shell";
 import type { SessionConnectionPhase } from "@/types/terminal";
 import { getAvailableShells } from "@/services/shellService";
-import { startTabDrag, endTabDrag } from "@/lib/tab-drag-state";
+import {
+  TAB_DRAG_CANCEL_EVENT,
+  type TabDragCancelReason,
+  cancelTabDrag,
+  endTabDrag,
+  startTabDrag,
+  tabDragState,
+  updateTabDragPosition,
+} from "@/lib/tab-drag-state";
 import { createPortal, flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { WorkspaceTemplateDialog } from "@/components/modules/WorkspaceTemplateDialog";
+import {
+  SshBackgroundModeDialog,
+  SshBackgroundModeMenuItem,
+  SshEndTmuxSessionDialog,
+} from "@/components/layout/SshBackgroundModeControl";
 import { IS_ANDROID } from "@/lib/platform";
 import { emitQuickConnect } from "@/lib/quick-connect-event";
 
@@ -72,6 +85,10 @@ interface RenameState {
   open: boolean;
   sessionId: string | null;
   value: string;
+}
+
+interface TabBarProps {
+  onTabActivate?: () => void;
 }
 
 
@@ -120,6 +137,10 @@ function SortableTab({
   canDuplicate,
   isSplit,
   sessionType,
+  sessionId,
+  backgroundModeEnabled,
+  tmuxPersistenceEnabled,
+  tmuxPersistenceActive,
   connectionPhase,
   onSwitch,
   onClose,
@@ -129,6 +150,8 @@ function SortableTab({
   onCloseOthers,
   onCloseLeft,
   onCloseRight,
+  onRequestSshBackgroundEnable,
+  onRequestSshEndTmux,
 }: {
   id: string;
   title: string;
@@ -137,6 +160,10 @@ function SortableTab({
   canCloseRight: boolean;
   canDuplicate: boolean;
   sessionType?: TerminalSession["type"];
+  sessionId?: string;
+  backgroundModeEnabled?: boolean;
+  tmuxPersistenceEnabled?: boolean;
+  tmuxPersistenceActive?: boolean;
   connectionPhase?: SessionConnectionPhase;
   onSwitch: (id: string) => void;
   onClose: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
@@ -146,6 +173,8 @@ function SortableTab({
   onCloseOthers: (id: string) => void;
   onCloseLeft: (id: string) => void;
   onCloseRight: (id: string) => void;
+  onRequestSshBackgroundEnable: (sessionId: string) => void;
+  onRequestSshEndTmux: (sessionId: string) => void;
   isSplit?: boolean;
 }) {
   const { t } = useI18n();
@@ -167,11 +196,11 @@ function SortableTab({
     }
   };
 
-  const handleClosePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+  const handleClosePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.stopPropagation();
   };
 
-  const handleContextMenuPointerDownCapture = (event: PointerEvent<HTMLDivElement>) => {
+  const handleContextMenuPointerDownCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 2) {
       return;
     }
@@ -199,6 +228,15 @@ function SortableTab({
   };
 
   const tabIcon = getTabIcon(sessionType, isSplit);
+  const tmuxPending = backgroundModeEnabled && tmuxPersistenceEnabled && !tmuxPersistenceActive;
+  const backgroundStatus = tmuxPersistenceActive
+    ? t("tmux 可恢复会话已连接")
+    : tmuxPending
+      ? t("tmux 可恢复模式将在重连后生效")
+      : backgroundModeEnabled
+        ? t("后台模式已开启")
+        : null;
+  const tabTooltip = backgroundStatus ? `${title}\n${backgroundStatus}` : title;
 
   return (
     <div
@@ -223,7 +261,8 @@ function SortableTab({
                 ? "tab-item-active"
                 : ""
             } ${isDragging ? "bg-background/90 shadow-lg ring-1 ring-border/70" : ""}`}
-            title={title}
+            title={tabTooltip}
+            aria-label={tabTooltip}
             aria-current={active ? "page" : undefined}
             onClick={() => onSwitch(id)}
             onKeyUp={handleKeyUp}
@@ -243,6 +282,25 @@ function SortableTab({
                 )} />
               )}
               <span className="min-w-0 truncate">{title}</span>
+              {backgroundModeEnabled && (
+                <Radio
+                  className="h-3 w-3 shrink-0 text-emerald-500"
+                  aria-hidden="true"
+                />
+              )}
+              {(tmuxPersistenceActive || tmuxPending) && (
+                <span
+                  className={cn(
+                    "shrink-0 rounded border px-1 text-[8px] font-semibold uppercase leading-3",
+                    tmuxPersistenceActive
+                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-500"
+                      : "border-amber-500/50 bg-amber-500/10 text-amber-500",
+                  )}
+                  aria-hidden="true"
+                >
+                  tmux
+                </span>
+              )}
             </span>
 
             <Button
@@ -260,6 +318,13 @@ function SortableTab({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="min-w-40 text-xs">
+          {sessionId ? (
+            <SshBackgroundModeMenuItem
+              sessionId={sessionId}
+              onRequestEnable={onRequestSshBackgroundEnable}
+              onRequestEndTmux={onRequestSshEndTmux}
+            />
+          ) : null}
           <ContextMenuItem className="py-1 text-xs" disabled={!canDuplicate} onClick={() => onDuplicate(id)}>
             <Copy className="mr-2 h-3.5 w-3.5" />
             {t("复制会话")}
@@ -293,7 +358,7 @@ function SortableTab({
   );
 }
 
-export function TabBar() {
+export function TabBar({ onTabActivate }: TabBarProps = {}) {
   const { locale, t } = useI18n();
   const {
     tabs,
@@ -327,6 +392,8 @@ export function TabBar() {
   });
   const [workspaceTemplateDialogOpen, setWorkspaceTemplateDialogOpen] = useState(false);
   const [templateWorkspaceId, setTemplateWorkspaceId] = useState<string | null>(null);
+  const [sshBackgroundSessionId, setSshBackgroundSessionId] = useState<string | null>(null);
+  const [sshEndTmuxSessionId, setSshEndTmuxSessionId] = useState<string | null>(null);
   
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [isTabsOverflowing, setIsTabsOverflowing] = useState(false);
@@ -391,6 +458,67 @@ export function TabBar() {
     };
   }, [tabs, isTabsOverflowing]);
 
+  useEffect(() => {
+    let pointerUpFallbackTimer: number | null = null;
+
+    const handleTabDragCancelled = (event: Event) => {
+      setActiveDragId(null);
+      const detail = (event as CustomEvent<{
+        input?: "pointer" | "keyboard";
+        reason?: TabDragCancelReason;
+      }>).detail;
+      const shouldCancelPointerSensor = detail?.input === "pointer"
+        && (detail.reason === "pointer-lost"
+          || detail.reason === "pointerup-fallback"
+          || detail.reason === "window-blur");
+      if (shouldCancelPointerSensor) {
+        // 自定义兜底先发现异常时，同时终止 dnd-kit 内部的 PointerSensor。
+        document.dispatchEvent(new Event("pointercancel", {
+          bubbles: true,
+          cancelable: true,
+        }));
+      }
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (!tabDragState.isDragging || tabDragState.input !== "pointer") {
+        return;
+      }
+
+      updateTabDragPosition(event.clientX, event.clientY);
+      if (pointerUpFallbackTimer !== null) {
+        window.clearTimeout(pointerUpFallbackTimer);
+      }
+      // 正常情况下 onDragEnd 会在本轮事件中先清理状态；计时器只处理漏收结束事件。
+      pointerUpFallbackTimer = window.setTimeout(() => {
+        pointerUpFallbackTimer = null;
+        if (tabDragState.isDragging) {
+          cancelTabDrag("pointerup-fallback");
+        }
+      }, 0);
+    };
+
+    const handleWindowBlur = () => {
+      if (tabDragState.isDragging) {
+        cancelTabDrag("window-blur");
+      }
+    };
+
+    window.addEventListener(TAB_DRAG_CANCEL_EVENT, handleTabDragCancelled);
+    window.addEventListener("pointerup", handlePointerUp, true);
+    window.addEventListener("blur", handleWindowBlur);
+
+    return () => {
+      window.removeEventListener(TAB_DRAG_CANCEL_EVENT, handleTabDragCancelled);
+      window.removeEventListener("pointerup", handlePointerUp, true);
+      window.removeEventListener("blur", handleWindowBlur);
+      if (pointerUpFallbackTimer !== null) {
+        window.clearTimeout(pointerUpFallbackTimer);
+      }
+      cancelTabDrag("unmount");
+    };
+  }, []);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -404,20 +532,31 @@ export function TabBar() {
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const draggedId = String(event.active.id);
+    const { activeTabId, tabs, setActiveTabId } = useTabsStore.getState();
+    let switchedActiveTab = false;
+
+    // 拖拽当前标签时先同步切换目标工作区，确保目标 PaneView 能收到完整拖拽生命周期。
+    if (draggedId === activeTabId && tabs.length > 1) {
+      const currentIndex = tabs.findIndex((tab) => tab.id === draggedId);
+      const nextTabId = currentIndex > 0
+        ? tabs[currentIndex - 1]?.id
+        : tabs[currentIndex + 1]?.id;
+      if (nextTabId) {
+        flushSync(() => {
+          setActiveTabId(nextTabId);
+        });
+        switchedActiveTab = true;
+      }
+    }
+
+    const initialPointer = event.activatorEvent instanceof window.PointerEvent
+      ? { x: event.activatorEvent.clientX, y: event.activatorEvent.clientY }
+      : undefined;
     // 通知 PaneView：有标签页开始拖拽
-    startTabDrag(draggedId);
+    startTabDrag(draggedId, initialPointer);
     setActiveDragId(draggedId);
 
-    // 用户需求：如果拖拽的是当前激活的 Tab，自动将视图切换到相邻的 Tab，方便将被拖拽的 Tab 放到别的分屏里
-    const { activeTabId, tabs, setActiveTabId } = useTabsStore.getState();
-    if (draggedId === activeTabId && tabs.length > 1) {
-      const currentIndex = tabs.findIndex((t) => t.id === draggedId);
-      if (currentIndex > 0) {
-        setActiveTabId(tabs[currentIndex - 1].id);
-      } else {
-        setActiveTabId(tabs[currentIndex + 1].id);
-      }
-      
+    if (switchedActiveTab) {
       requestAnimationFrame(() => {
         window.dispatchEvent(new Event("lazy-term-focus"));
       });
@@ -425,9 +564,14 @@ export function TabBar() {
   }, []);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const shouldCommitDrag = tabDragState.isDragging;
     // 通知 PaneView：拖拽结束
     endTabDrag();
     setActiveDragId(null);
+
+    if (!shouldCommitDrag) {
+      return;
+    }
 
     const { active, over } = event;
     // 如果拖拽在排序区域内结束 → 重排列
@@ -442,6 +586,11 @@ export function TabBar() {
     // 如果 over === null，拖拽到了排序区域外
     // PaneView 会通过 TAB_DRAG_END_EVENT 自行处理
   }, [tabs, reorderTabs]);
+
+  const handleDragCancel = useCallback(() => {
+    cancelTabDrag("dnd");
+    setActiveDragId(null);
+  }, []);
 
   const handleAddTab = () => {
     if (IS_ANDROID) {
@@ -495,6 +644,7 @@ export function TabBar() {
   };
 
   const handleTabSwitch = (id: string) => {
+    onTabActivate?.();
     setActiveTabId(id);
     syncFocusSession(id);
     
@@ -670,6 +820,18 @@ export function TabBar() {
     );
   };
 
+  const handleSshBackgroundDialogChange = useCallback((open: boolean) => {
+    if (!open) {
+      setSshBackgroundSessionId(null);
+    }
+  }, []);
+
+  const handleSshEndTmuxDialogChange = useCallback((open: boolean) => {
+    if (!open) {
+      setSshEndTmuxSessionId(null);
+    }
+  }, []);
+
   const handleRenameSubmit = () => {
     const nextTitle = renameState.value.trim();
     if (!renameState.sessionId || !nextTitle) {
@@ -736,6 +898,7 @@ export function TabBar() {
           collisionDetection={closestCenter}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
         >
           <SortableContext
             items={tabs.map((tab) => tab.id)}
@@ -757,6 +920,15 @@ export function TabBar() {
                 const tabSessions = leaves
                   .map((leaf) => sessions.find((session) => session.id === leaf.sessionId))
                   .filter((session): session is TerminalSession => Boolean(session));
+                const backgroundModeEnabled = tabSessions.some((session) =>
+                  session.type === "ssh" && session.sshBackgroundModeEnabled === true
+                );
+                const tmuxPersistenceEnabled = tabSessions.some((session) =>
+                  session.type === "ssh" && session.sshTmuxPersistenceEnabled === true
+                );
+                const tmuxPersistenceActive = tabSessions.some((session) =>
+                  session.type === "ssh" && session.sshTmuxPersistenceActive === true
+                );
                 const connectionPhase = tabSessions.find((session) => session.connectionStatus.phase === "failed")?.connectionStatus.phase
                   ?? tabSessions.find((session) => session.connectionStatus.phase === "disconnected")?.connectionStatus.phase
                   ?? tabSessions.find((session) => ["connecting", "authenticating", "reconnecting"].includes(session.connectionStatus.phase))?.connectionStatus.phase
@@ -779,6 +951,10 @@ export function TabBar() {
                     canCloseRight={tabs[tabs.length - 1]?.id !== tab.id}
                     canDuplicate={canDuplicate}
                     sessionType={singleSession?.type}
+                    sessionId={singleSession?.id}
+                    backgroundModeEnabled={backgroundModeEnabled}
+                    tmuxPersistenceEnabled={tmuxPersistenceEnabled}
+                    tmuxPersistenceActive={tmuxPersistenceActive}
                     connectionPhase={connectionPhase}
                     onSwitch={handleTabSwitch}
                     onClose={handleCloseTab}
@@ -788,6 +964,8 @@ export function TabBar() {
                     onCloseOthers={handleCloseOthers}
                     onCloseLeft={handleCloseLeft}
                     onCloseRight={handleCloseRight}
+                    onRequestSshBackgroundEnable={setSshBackgroundSessionId}
+                    onRequestSshEndTmux={setSshEndTmuxSessionId}
                   />
                 );
               })}
@@ -833,6 +1011,18 @@ export function TabBar() {
           {addTabButton}
         </div>
       ) : null}
+
+      <SshBackgroundModeDialog
+        sessionId={sshBackgroundSessionId}
+        open={sshBackgroundSessionId !== null}
+        onOpenChange={handleSshBackgroundDialogChange}
+      />
+
+      <SshEndTmuxSessionDialog
+        sessionId={sshEndTmuxSessionId}
+        open={sshEndTmuxSessionId !== null}
+        onOpenChange={handleSshEndTmuxDialogChange}
+      />
       
       <AlertDialog open={closeConfirmation.open} onOpenChange={handleCloseDialogChange}>
         <AlertDialogContent>

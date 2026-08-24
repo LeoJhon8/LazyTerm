@@ -18,7 +18,7 @@ mod android_ssh_background;
 #[cfg(target_os = "android")]
 mod android_updater;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -39,10 +39,10 @@ pub use crate::types::{
     RdpControlMsg, RdpKeyboardEventPayload, RdpPointerEventPayload, RdpSession,
     SftpDownloadCancelGuard, SftpDownloadProgress, SftpFileEntry, SftpUploadCancelGuard,
     SftpUploadItem, SftpUploadProgress, ShellInfo, SshConnectConfig, SshControlMsg,
-    SshTerminalSession, TelnetConnectConfig, TelnetSession, VncClipboardPastePayload,
-    VncConnectConfig, VncControlMsg, VncControlOutcome, VncCursorEventPayload,
-    VncKeySequencePayload, VncKeyboardEventPayload, VncPointerEventPayload, VncSession,
-    VncTextInputPayload,
+    SshTerminalSession, SshTmuxCapability, SshTmuxSessionInfo, TelnetConnectConfig, TelnetSession,
+    VncClipboardPastePayload, VncConnectConfig, VncControlMsg, VncControlOutcome,
+    VncCursorEventPayload, VncKeySequencePayload, VncKeyboardEventPayload, VncPointerEventPayload,
+    VncSession, VncTextInputPayload,
 };
 
 // --- 程序入口 ---
@@ -74,6 +74,8 @@ pub fn run() {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         local_sessions: Arc::new(StdMutex::new(HashMap::new())),
         ssh_sessions: Arc::new(TokioMutex::new(HashMap::new())),
+        ssh_client_session_keys: Arc::new(TokioMutex::new(HashSet::new())),
+        ssh_tmux_session_keys: Arc::new(TokioMutex::new(HashSet::new())),
         rdp_sessions: Arc::new(StdMutex::new(HashMap::new())),
         vnc_sessions: Arc::new(StdMutex::new(HashMap::new())),
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -148,6 +150,9 @@ pub fn run() {
         protocol::release_rdp_inputs,
         protocol::resize_terminal,
         protocol::resize_ssh_session,
+        protocol::check_ssh_tmux_capability,
+        protocol::kill_ssh_tmux_session,
+        protocol::set_ssh_background_mode,
         protocol::request_rdp_refresh,
         protocol::set_rdp_quality_policy,
         protocol::close_terminal,
