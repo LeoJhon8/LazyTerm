@@ -9,6 +9,7 @@ import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon, type ISearchOptions } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -846,6 +847,11 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         }));
       });
 
+      const webLinksAddon = new WebLinksAddon((_event, url) => {
+        requestTerminalLinkOpen(sessionId, url);
+      });
+      term.loadAddon(webLinksAddon);
+
       let acAddon: AutocompleteTerminalAddon | null = null;
       if (useSettingsStore.getState().terminalAutocomplete) {
         acAddon = new AutocompleteTerminalAddon(
@@ -903,10 +909,114 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         }
       };
 
+      const replayedMouseEvents = new WeakSet<MouseEvent>();
+      let pendingTmuxMouseDown: {
+        target: Element;
+        init: MouseEventInit;
+        clientX: number;
+        clientY: number;
+      } | null = null;
+      const toMouseEventInit = (event: MouseEvent, shiftKey = event.shiftKey): MouseEventInit => ({
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        detail: event.detail,
+        screenX: event.screenX,
+        screenY: event.screenY,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        shiftKey,
+        metaKey: event.metaKey,
+        button: event.button,
+        buttons: event.buttons,
+        relatedTarget: event.relatedTarget,
+      });
+      const dispatchReplayedMouseEvent = (
+        target: Element,
+        type: "mousedown" | "mouseup",
+        init: MouseEventInit,
+      ) => {
+        const replayedEvent = new MouseEvent(type, init);
+        replayedMouseEvents.add(replayedEvent);
+        target.dispatchEvent(replayedEvent);
+      };
+      const handleTmuxMouseDown = (event: MouseEvent) => {
+        if (
+          event.button !== 0
+          || event.shiftKey
+          || replayedMouseEvents.has(event)
+          || term.modes.mouseTrackingMode === "none"
+        ) {
+          return;
+        }
+
+        const currentSession = useTabsStore.getState().sessions.find(
+          (candidate) => candidate.id === sessionId,
+        );
+        if (currentSession?.type !== "ssh" || !currentSession.sshTmuxPersistenceActive) {
+          return;
+        }
+
+        const target = event.target;
+        if (!(target instanceof Element)) {
+          return;
+        }
+
+        // tmux mouse 模式会让 xterm 把左键事件直接发送给远端。先暂存单击：
+        // 拖动/双击走 xterm 本地选择，单击仍转发给远端并保留链接激活。
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (event.detail > 1) {
+          dispatchReplayedMouseEvent(target, "mousedown", toMouseEventInit(event, true));
+          return;
+        }
+
+        pendingTmuxMouseDown = {
+          target,
+          init: toMouseEventInit(event),
+          clientX: event.clientX,
+          clientY: event.clientY,
+        };
+      };
+      const handleTmuxMouseMove = (event: MouseEvent) => {
+        const pending = pendingTmuxMouseDown;
+        if (
+          !pending
+          || Math.abs(event.clientX - pending.clientX) < 3
+            && Math.abs(event.clientY - pending.clientY) < 3
+        ) {
+          return;
+        }
+
+        pendingTmuxMouseDown = null;
+        dispatchReplayedMouseEvent(pending.target, "mousedown", {
+          ...pending.init,
+          shiftKey: true,
+        });
+      };
+      const handleTmuxMouseUp = (event: MouseEvent) => {
+        if (replayedMouseEvents.has(event) || !pendingTmuxMouseDown) {
+          return;
+        }
+
+        const pending = pendingTmuxMouseDown;
+        pendingTmuxMouseDown = null;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        dispatchReplayedMouseEvent(pending.target, "mousedown", pending.init);
+        dispatchReplayedMouseEvent(pending.target, "mouseup", toMouseEventInit(event));
+      };
+
       containerEl.addEventListener("wheel", handleWheel, {
         passive: false,
         capture: true,
       });
+      containerEl.addEventListener("mousedown", handleTmuxMouseDown, { capture: true });
+      document.addEventListener("mousemove", handleTmuxMouseMove, { capture: true });
+      document.addEventListener("mouseup", handleTmuxMouseUp, { capture: true });
 
       const inputDisposable = term.onData((data) => {
         connector.write(data);
@@ -1032,6 +1142,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           unsubscribeCommandSubmitted();
           connector?.close();
           containerEl.removeEventListener("wheel", handleWheel, { capture: true });
+          containerEl.removeEventListener("mousedown", handleTmuxMouseDown, { capture: true });
+          document.removeEventListener("mousemove", handleTmuxMouseMove, { capture: true });
+          document.removeEventListener("mouseup", handleTmuxMouseUp, { capture: true });
           inputDisposable.dispose();
           parserDisposables.forEach((disposable) => disposable.dispose());
           keyDisposable.dispose();

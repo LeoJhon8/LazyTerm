@@ -16,6 +16,11 @@ import { IS_SSH_BACKGROUND_MODE_SUPPORTED } from "@/lib/platform";
 const SSH_USABLE_CHECKPOINTS = ["identity", "listeners", "backend", "remote"] as const;
 const SSH_PENDING_DATA_LIMIT = 1024 * 1024;
 
+interface SshSessionOpenResult {
+  sessionId: string;
+  tmuxSessionRestored: boolean;
+}
+
 /**
  * 估算初始 PTY 大小所需的字体配置
  */
@@ -154,7 +159,7 @@ export class SshConnector implements ITerminalConnector {
       const requestedTmuxPersistence = requestedBackgroundMode && this.tmuxPersistenceEnabled;
 
       this.stateEmitter.emit({ phase: "authenticating", stage: "authentication" });
-      const createdSessionId = await invokeTauriSerialized<string>(`ssh-tab:${this.logicalSessionKey}:lifecycle`, "create_ssh_session", {
+      const openResult = await invokeTauriSerialized<SshSessionOpenResult>(`ssh-tab:${this.logicalSessionKey}:lifecycle`, "create_ssh_session", {
         sessionId: this.requestedSessionId,
         config: {
           client_session_key: this.logicalSessionKey,
@@ -180,6 +185,7 @@ export class SshConnector implements ITerminalConnector {
         logStart: true,
         logSuccess: true,
       });
+      const createdSessionId = openResult.sessionId;
 
       if (this.closedBeforeConnect || this.disconnected) {
         void this.closeBackendSession(createdSessionId);
@@ -200,7 +206,14 @@ export class SshConnector implements ITerminalConnector {
         stage: this.readiness.has(this.readinessCycle, ["first-data"]) ? "steady" : "first-data",
         health: "healthy",
       });
-      this.sendStartupCommandOnce();
+      if (openResult.tmuxSessionRestored) {
+        logger.info(
+          "FE/connector/ssh/startup-command",
+          `恢复已有 tmux 会话 ${this.tmuxSessionName}，跳过 SSH 启动命令`,
+        );
+      } else {
+        this.sendStartupCommandOnce();
+      }
     } catch (error) {
       this.readiness.fail(this.readinessCycle, error);
       this.sessionId = null;
@@ -284,10 +297,13 @@ export class SshConnector implements ITerminalConnector {
     this.sessionId = null;
     this.tmuxPersistenceActive = false;
     this.appliedBackgroundModeEnabled = null;
-    const failure = classifyConnectionFailure(this.protocol, reason, {
+    const classifiedFailure = classifyConnectionFailure(this.protocol, reason, {
       stage: "steady",
       fallbackCode: "REMOTE_CLOSED",
     });
+    const failure = reason.startsWith("tmux-command-exit-status:")
+      ? { ...classifiedFailure, retryable: false }
+      : classifiedFailure;
     this.stateEmitter.emit({
       phase: "disconnected",
       stage: "steady",

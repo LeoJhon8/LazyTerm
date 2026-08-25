@@ -39,10 +39,10 @@ pub use crate::types::{
     RdpControlMsg, RdpKeyboardEventPayload, RdpPointerEventPayload, RdpSession,
     SftpDownloadCancelGuard, SftpDownloadProgress, SftpFileEntry, SftpUploadCancelGuard,
     SftpUploadItem, SftpUploadProgress, ShellInfo, SshConnectConfig, SshControlMsg,
-    SshTerminalSession, SshTmuxCapability, SshTmuxSessionInfo, TelnetConnectConfig, TelnetSession,
-    VncClipboardPastePayload, VncConnectConfig, VncControlMsg, VncControlOutcome,
-    VncCursorEventPayload, VncKeySequencePayload, VncKeyboardEventPayload, VncPointerEventPayload,
-    VncSession, VncTextInputPayload,
+    SshSessionOpenResult, SshTerminalSession, SshTmuxCapability, SshTmuxSessionInfo,
+    TelnetConnectConfig, TelnetSession, VncClipboardPastePayload, VncConnectConfig, VncControlMsg,
+    VncControlOutcome, VncCursorEventPayload, VncKeySequencePayload, VncKeyboardEventPayload,
+    VncPointerEventPayload, VncSession, VncTextInputPayload,
 };
 
 // --- 程序入口 ---

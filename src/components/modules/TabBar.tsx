@@ -141,6 +141,7 @@ function SortableTab({
   backgroundModeEnabled,
   tmuxPersistenceEnabled,
   tmuxPersistenceActive,
+  tmuxSessionName,
   connectionPhase,
   onSwitch,
   onClose,
@@ -164,6 +165,7 @@ function SortableTab({
   backgroundModeEnabled?: boolean;
   tmuxPersistenceEnabled?: boolean;
   tmuxPersistenceActive?: boolean;
+  tmuxSessionName?: string;
   connectionPhase?: SessionConnectionPhase;
   onSwitch: (id: string) => void;
   onClose: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
@@ -236,7 +238,8 @@ function SortableTab({
       : backgroundModeEnabled
         ? t("后台模式已开启")
         : null;
-  const tabTooltip = backgroundStatus ? `${title}\n${backgroundStatus}` : title;
+  const tmuxSessionStatus = tmuxSessionName ? `tmux: ${tmuxSessionName}` : null;
+  const tabTooltip = [title, backgroundStatus, tmuxSessionStatus].filter(Boolean).join("\n");
 
   return (
     <div
@@ -291,14 +294,14 @@ function SortableTab({
               {(tmuxPersistenceActive || tmuxPending) && (
                 <span
                   className={cn(
-                    "shrink-0 rounded border px-1 text-[8px] font-semibold uppercase leading-3",
+                    "max-w-28 shrink-0 truncate rounded border px-1 font-mono text-[8px] font-semibold leading-3",
                     tmuxPersistenceActive
                       ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-500"
                       : "border-amber-500/50 bg-amber-500/10 text-amber-500",
                   )}
                   aria-hidden="true"
                 >
-                  tmux
+                  {tmuxSessionName ? `tmux:${tmuxSessionName}` : "tmux"}
                 </span>
               )}
             </span>
@@ -929,6 +932,10 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
                 const tmuxPersistenceActive = tabSessions.some((session) =>
                   session.type === "ssh" && session.sshTmuxPersistenceActive === true
                 );
+                const tmuxSessionName = tabSessions.find((session) =>
+                  session.type === "ssh"
+                  && (session.sshTmuxPersistenceActive === true || session.sshTmuxPersistenceEnabled === true)
+                )?.sshTmuxSessionName;
                 const connectionPhase = tabSessions.find((session) => session.connectionStatus.phase === "failed")?.connectionStatus.phase
                   ?? tabSessions.find((session) => session.connectionStatus.phase === "disconnected")?.connectionStatus.phase
                   ?? tabSessions.find((session) => ["connecting", "authenticating", "reconnecting"].includes(session.connectionStatus.phase))?.connectionStatus.phase
@@ -955,6 +962,7 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
                     backgroundModeEnabled={backgroundModeEnabled}
                     tmuxPersistenceEnabled={tmuxPersistenceEnabled}
                     tmuxPersistenceActive={tmuxPersistenceActive}
+                    tmuxSessionName={tmuxSessionName}
                     connectionPhase={connectionPhase}
                     onSwitch={handleTabSwitch}
                     onClose={handleCloseTab}
@@ -1023,7 +1031,7 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
         open={sshEndTmuxSessionId !== null}
         onOpenChange={handleSshEndTmuxDialogChange}
       />
-      
+
       <AlertDialog open={closeConfirmation.open} onOpenChange={handleCloseDialogChange}>
         <AlertDialogContent>
           <AlertDialogHeader>

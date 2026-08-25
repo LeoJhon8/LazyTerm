@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { History, LoaderCircle, Plus, Radio, Trash2 } from "lucide-react";
+import { History, LoaderCircle, Plus, Radio, Server, Trash2 } from "lucide-react";
 import type { MouseEvent } from "react";
 
 import {
@@ -13,7 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ContextMenuItem } from "@/components/ui/context-menu";
+import { ContextMenuItem, ContextMenuLabel } from "@/components/ui/context-menu";
 import { useI18n } from "@/i18n";
 import { IS_SSH_BACKGROUND_MODE_SUPPORTED } from "@/lib/platform";
 import { cn } from "@/lib/utils";
@@ -125,14 +125,23 @@ export function SshBackgroundModeMenuItem({
         {label}
       </ContextMenuItem>
       {tmuxActive && (
-        <ContextMenuItem
-          className="py-1 text-xs text-destructive focus:text-destructive"
-          disabled={!connected}
-          onSelect={() => onRequestEndTmux(session.id)}
-        >
-          <Trash2 className="mr-2 h-3.5 w-3.5" />
-          {t("结束远端后台会话…")}
-        </ContextMenuItem>
+        <>
+          <ContextMenuLabel className="flex max-w-72 items-center gap-2 py-1 text-xs font-normal text-muted-foreground">
+            <Server className="h-3.5 w-3.5 shrink-0" />
+            <span className="shrink-0">tmux</span>
+            <span className="truncate font-mono text-foreground" title={session.sshTmuxSessionName}>
+              {session.sshTmuxSessionName}
+            </span>
+          </ContextMenuLabel>
+          <ContextMenuItem
+            className="py-1 text-xs text-destructive focus:text-destructive"
+            disabled={!connected}
+            onSelect={() => onRequestEndTmux(session.id)}
+          >
+            <Trash2 className="mr-2 h-3.5 w-3.5" />
+            {t("结束远端后台会话…")}
+          </ContextMenuItem>
+        </>
       )}
     </>
   );
@@ -312,12 +321,14 @@ export function SshBackgroundModeDialog({
                               sessions,
                               tmuxSession.name,
                             );
+                            const hasAttachedClients = tmuxSession.attachedClients > 0;
+                            const unavailable = usedByAnotherTab || hasAttachedClients;
                             return (
                               <label
                                 key={tmuxSession.name}
                                 className={cn(
                                   "flex items-start gap-2 rounded-md border border-border/70 bg-background/60 p-2.5",
-                                  usedByAnotherTab
+                                  unavailable
                                     ? "cursor-not-allowed opacity-55"
                                     : "cursor-pointer hover:bg-accent/40",
                                 )}
@@ -327,7 +338,7 @@ export function SshBackgroundModeDialog({
                                   name={`tmux-session-${session.id}`}
                                   className="mt-1 accent-primary"
                                   checked={tmuxChoice === tmuxSession.name}
-                                  disabled={usedByAnotherTab}
+                                  disabled={unavailable}
                                   onChange={() => {
                                     setTmuxChoice(tmuxSession.name);
                                     setSelectionError(null);
@@ -353,6 +364,11 @@ export function SshBackgroundModeDialog({
                                       {t("此会话已被另一个 LazyTerm 标签页使用")}
                                     </span>
                                   )}
+                                  {!usedByAnotherTab && hasAttachedClients && (
+                                    <span className="block text-xs text-amber-600 dark:text-amber-400">
+                                      {t("此会话已有客户端附着，暂不可恢复")}
+                                    </span>
+                                  )}
                                 </span>
                               </label>
                             );
@@ -360,9 +376,9 @@ export function SshBackgroundModeDialog({
                         </span>
                       )}
 
-                      {tmuxCheck.sessions.some((tmuxSession) => tmuxSession.attachedClients > 0) && (
-                        <span className="block text-xs text-amber-600 dark:text-amber-400">
-                          {t("恢复已有会话时，其他附着客户端会与当前标签页共享终端画面和输入。")}
+                      {tmuxChoice !== NEW_TMUX_SESSION && (
+                        <span className="block text-xs text-muted-foreground">
+                          {t("恢复已有 tmux 会话时不会再次执行 SSH 启动命令。")}
                         </span>
                       )}
                       {selectionError && (
@@ -484,6 +500,9 @@ export function SshEndTmuxSessionDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>{t("结束远端后台会话？")}</AlertDialogTitle>
           <AlertDialogDescription className="space-y-3 text-left leading-6">
+            <span className="block font-mono text-xs text-foreground">
+              {t("tmux 会话：{name}", { name: session.sshTmuxSessionName ?? "—" })}
+            </span>
             <span className="block">
               {t("这会终止该 tmux 会话及其中正在运行的所有命令和程序，其他附着客户端也会断开。此操作无法撤销。")}
             </span>

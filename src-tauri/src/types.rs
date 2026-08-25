@@ -55,6 +55,13 @@ pub struct SshTmuxSessionInfo {
     pub windows: u32,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshSessionOpenResult {
+    pub session_id: String,
+    pub tmux_session_restored: bool,
+}
+
 /// SSH 控制消息
 pub enum SshControlMsg {
     SendData(Vec<u8>),

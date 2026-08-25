@@ -3,8 +3,8 @@
 use crate::logging;
 use crate::protocol::ssh_auth;
 use crate::{
-    AppState, SshConnectConfig, SshControlMsg, SshTerminalSession, SshTmuxCapability,
-    SshTmuxSessionInfo,
+    AppState, SshConnectConfig, SshControlMsg, SshSessionOpenResult, SshTerminalSession,
+    SshTmuxCapability, SshTmuxSessionInfo,
 };
 use russh::ChannelMsg;
 use std::collections::HashSet;
@@ -138,6 +138,16 @@ fn tmux_session_reservation_key(config: &SshConnectConfig, tmux_session_name: &s
     )
 }
 
+fn tmux_attach_command(tmux_session_name: &str) -> String {
+    format!(
+        "if ! tmux has-session -t {tmux_session_name} 2>/dev/null; then \
+         tmux new-session -d -s {tmux_session_name} || exit $?; \
+         fi; \
+         tmux set-option -t {tmux_session_name} mouse on || exit $?; \
+         exec tmux attach-session -t {tmux_session_name}"
+    )
+}
+
 async fn release_ssh_reservations(
     client_session_keys: &Arc<tokio::sync::Mutex<HashSet<String>>>,
     tmux_session_keys: &Arc<tokio::sync::Mutex<HashSet<String>>>,
@@ -157,7 +167,7 @@ pub async fn create_ssh_session<R: Runtime>(
     state: State<'_, AppState>,
     session_id: String,
     config: SshConnectConfig,
-) -> Result<String, String> {
+) -> Result<SshSessionOpenResult, String> {
     logging::info(
         "SSH/connect",
         format!(
@@ -236,11 +246,20 @@ pub async fn create_ssh_session<R: Runtime>(
         logging::info("SSH/connect", "认证通过，初始化会话通道");
 
         let tmux_session_name = requested_tmux_session_name.clone();
-        if tmux_session_name.is_some() {
+        let mut tmux_session_restored = false;
+        if let Some(tmux_session_name) = tmux_session_name.as_deref() {
             let capability = probe_tmux(&handle).await?;
             if !capability.available {
                 return Err("远端未安装 tmux，无法创建可恢复 SSH 会话".to_string());
             }
+            let existing_session = capability
+                .sessions
+                .iter()
+                .find(|session| session.name == tmux_session_name);
+            if existing_session.is_some_and(|session| session.attached_clients > 0) {
+                return Err("该远端 tmux 会话已有客户端附着，请稍后重试".to_string());
+            }
+            tmux_session_restored = existing_session.is_some();
         }
 
         let channel = handle
@@ -272,12 +291,14 @@ pub async fn create_ssh_session<R: Runtime>(
         let _ = channel.set_env(false, "COLORTERM", "truecolor").await;
         if let Some(tmux_session_name) = tmux_session_name.as_deref() {
             channel
-                .exec(true, format!("tmux new-session -A -s {tmux_session_name}"))
+                .exec(true, tmux_attach_command(tmux_session_name))
                 .await
                 .map_err(|e| e.to_string())?;
             logging::info(
                 "SSH/channel",
-                format!("session {session_id} tmux persistence active: {tmux_session_name}"),
+                format!(
+                    "session {session_id} tmux persistence active with mouse history scrolling: {tmux_session_name}"
+                ),
             );
         } else {
             channel
@@ -287,10 +308,10 @@ pub async fn create_ssh_session<R: Runtime>(
             logging::info("SSH/channel", format!("session {session_id} shell ok"));
         }
 
-        Ok::<_, String>((handle, channel, tmux_session_name))
+        Ok::<_, String>((handle, channel, tmux_session_name, tmux_session_restored))
     })
     .await;
-    let (handle, channel, tmux_session_name) = match readiness_result {
+    let (handle, channel, tmux_session_name, tmux_session_restored) = match readiness_result {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => {
             release_ssh_reservations(
@@ -378,9 +399,11 @@ pub async fn create_ssh_session<R: Runtime>(
     let reader_sessions = Arc::clone(&state.ssh_sessions);
     let reader_client_session_keys = Arc::clone(&state.ssh_client_session_keys);
     let reader_tmux_session_keys = Arc::clone(&state.ssh_tmux_session_keys);
+    let reader_uses_tmux = requested_tmux_session_name.is_some();
     tokio::spawn(async move {
         let event_name = format!("terminal-data-{reader_session_id}");
         let close_event_name = format!("terminal-close-{reader_session_id}");
+        let mut remote_exit_status = None;
 
         let close_reason = loop {
             match channel_reader.wait().await {
@@ -414,6 +437,7 @@ pub async fn create_ssh_session<R: Runtime>(
                     break "close";
                 }
                 Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
+                    remote_exit_status = Some(exit_status);
                     logging::warn(
                         "SSH/channel",
                         format!("session {reader_session_id} received exit-status={exit_status}"),
@@ -448,8 +472,16 @@ pub async fn create_ssh_session<R: Runtime>(
             }
         };
 
+        let close_reason = if reader_uses_tmux {
+            remote_exit_status
+                .map(|exit_status| format!("tmux-command-exit-status:{exit_status}"))
+                .unwrap_or_else(|| close_reason.to_string())
+        } else {
+            close_reason.to_string()
+        };
+
         if !reader_close_emitted.swap(true, Ordering::Relaxed) {
-            let _ = reader_app.emit(&close_event_name, close_reason);
+            let _ = reader_app.emit(&close_event_name, &close_reason);
         }
         let removed_session = reader_sessions.lock().await.remove(&reader_session_id);
         if let Some(session) = removed_session {
@@ -561,7 +593,10 @@ pub async fn create_ssh_session<R: Runtime>(
         }
     });
 
-    Ok(session_id)
+    Ok(SshSessionOpenResult {
+        session_id,
+        tmux_session_restored,
+    })
 }
 
 /// 向 SSH 会话写入数据
