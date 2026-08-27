@@ -945,8 +945,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       };
       const handleTmuxMouseDown = (event: MouseEvent) => {
         if (
-          event.button !== 0
-          || event.shiftKey
+          event.button !== 0 && event.button !== 2
           || replayedMouseEvents.has(event)
           || term.modes.mouseTrackingMode === "none"
         ) {
@@ -957,6 +956,16 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           (candidate) => candidate.id === sessionId,
         );
         if (currentSession?.type !== "ssh" || !currentSession.sshTmuxPersistenceActive) {
+          return;
+        }
+
+        if (event.button === 2) {
+          // 右键粘贴/菜单由 LazyTerm 的 contextmenu 处理，不能先把 mousedown 发给 tmux。
+          event.stopImmediatePropagation();
+          return;
+        }
+
+        if (event.shiftKey) {
           return;
         }
 

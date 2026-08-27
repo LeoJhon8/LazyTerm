@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ContextMenuItem, ContextMenuLabel } from "@/components/ui/context-menu";
+import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n";
 import { IS_SSH_BACKGROUND_MODE_SUPPORTED } from "@/lib/platform";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,10 @@ import { getErrorMessage } from "@/lib/errorUtils";
 import type { SshTmuxSessionInfo } from "@/types/terminal";
 
 const NEW_TMUX_SESSION = "__new_tmux_session__";
+const TMUX_SESSION_PREFIX = "lazyterm_";
+const TMUX_SESSION_NAME_MAX_LENGTH = 128;
+const TMUX_SESSION_LABEL_MAX_LENGTH = TMUX_SESSION_NAME_MAX_LENGTH - TMUX_SESSION_PREFIX.length;
+const TMUX_SESSION_LABEL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 type TmuxCheckState =
   | { status: "idle" | "checking" }
@@ -56,8 +61,8 @@ function isTmuxSessionUsedByAnotherTab(
   );
 }
 
-function createTmuxSessionName(sessionId: string): string {
-  return `lazyterm_${sessionId}_${Date.now().toString(36)}`;
+function createTmuxSessionName(label: string): string {
+  return `${TMUX_SESSION_PREFIX}${label.trim()}`;
 }
 
 function formatTmuxTimestamp(timestamp: number, locale: string): string {
@@ -165,6 +170,7 @@ export function SshBackgroundModeDialog({
   const [tmuxCheck, setTmuxCheck] = useState<TmuxCheckState>({ status: "idle" });
   const [tmuxSelected, setTmuxSelected] = useState(false);
   const [tmuxChoice, setTmuxChoice] = useState(NEW_TMUX_SESSION);
+  const [newTmuxSessionLabel, setNewTmuxSessionLabel] = useState("");
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const checkSequence = useRef(0);
 
@@ -181,6 +187,7 @@ export function SshBackgroundModeDialog({
     setTmuxCheck({ status: open ? "checking" : "idle" });
     setTmuxSelected(false);
     setTmuxChoice(NEW_TMUX_SESSION);
+    setNewTmuxSessionLabel("");
     setSelectionError(null);
 
     if (!open || !connector?.isConnected) {
@@ -212,9 +219,27 @@ export function SshBackgroundModeDialog({
   const enableForSession = () => {
     let tmuxSessionName = session.sshTmuxSessionName ?? `lazyterm_${session.id}`;
     if (useTmux) {
-      tmuxSessionName = tmuxChoice === NEW_TMUX_SESSION
-        ? createTmuxSessionName(session.id)
-        : tmuxChoice;
+      if (tmuxChoice === NEW_TMUX_SESSION) {
+        const normalizedLabel = newTmuxSessionLabel.trim();
+        if (
+          !normalizedLabel
+          || normalizedLabel.length > TMUX_SESSION_LABEL_MAX_LENGTH
+          || !TMUX_SESSION_LABEL_PATTERN.test(normalizedLabel)
+        ) {
+          setSelectionError(t("请输入 tmux 会话名称，仅支持英文字母、数字、连字符和下划线（最多 {count} 个字符）。", {
+            count: TMUX_SESSION_LABEL_MAX_LENGTH,
+          }));
+          return;
+        }
+
+        tmuxSessionName = createTmuxSessionName(normalizedLabel);
+        if (tmuxCheck.sessions.some((candidate) => candidate.name === tmuxSessionName)) {
+          setSelectionError(t("同名 tmux 会话已存在，请选择恢复已有会话或更换名称。"));
+          return;
+        }
+      } else {
+        tmuxSessionName = tmuxChoice;
+      }
       const latestSessions = useTabsStore.getState().sessions;
       const latestCurrentSession = latestSessions.find((candidate) => candidate.id === session.id) ?? session;
       if (isTmuxSessionUsedByAnotherTab(latestCurrentSession, latestSessions, tmuxSessionName)) {
@@ -305,10 +330,40 @@ export function SshBackgroundModeDialog({
                           }}
                         />
                         <Plus className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                        <span>
+                        <span className="min-w-0 flex-1">
                           <span className="block font-medium">{t("创建新的 tmux 会话")}</span>
                           <span className="block text-xs text-muted-foreground">
                             {t("创建一个与其他标签页相互独立的后台会话。")}
+                          </span>
+                          <span className="mt-2 block space-y-1.5">
+                            <span className="block text-xs font-medium text-foreground">
+                              {t("tmux 会话名称")}
+                            </span>
+                            <span className="flex items-center rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
+                              <span className="shrink-0 border-r border-border px-2.5 font-mono text-xs text-muted-foreground">
+                                {TMUX_SESSION_PREFIX}
+                              </span>
+                              <Input
+                                value={newTmuxSessionLabel}
+                                maxLength={TMUX_SESSION_LABEL_MAX_LENGTH}
+                                placeholder="codex-project"
+                                autoCapitalize="none"
+                                autoCorrect="off"
+                                spellCheck={false}
+                                className="h-8 min-w-0 rounded-none border-0 bg-transparent px-2 font-mono text-xs shadow-none focus-visible:ring-0"
+                                onFocus={() => setTmuxChoice(NEW_TMUX_SESSION)}
+                                onChange={(event) => {
+                                  setNewTmuxSessionLabel(event.target.value);
+                                  setTmuxChoice(NEW_TMUX_SESSION);
+                                  setSelectionError(null);
+                                }}
+                              />
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {t("仅支持英文字母、数字、连字符和下划线，最多 {count} 个字符。", {
+                                count: TMUX_SESSION_LABEL_MAX_LENGTH,
+                              })}
+                            </span>
                           </span>
                         </span>
                       </label>
