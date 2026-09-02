@@ -15,11 +15,89 @@ use std::time::Duration;
 use tauri::Manager;
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::sync::{mpsc, oneshot};
+use uuid::Uuid;
 
 const TMUX_CHECK_COMMAND: &str =
     "if command -v tmux >/dev/null 2>&1; then tmux -V 2>/dev/null || printf 'tmux'; exit 0; else exit 127; fi";
 const TMUX_LIST_COMMAND: &str = "tmux list-sessions -F '#{session_name}|#{session_created}|#{session_activity}|#{session_attached}|#{session_windows}' 2>/dev/null || true";
+const SHELL_PROBE_COMMAND: &str = "printf '\\n__LAZYTERM_SHELL__:%s\\n' \"$SHELL\"";
 const PROBE_OUTPUT_LIMIT: usize = 32 * 1024;
+const BASH_SHELL_INTEGRATION: &str = r#"if [[ $- == *i* && -z ${LAZYTERM_SHELL_INTEGRATION_ACTIVE:-} ]]; then
+    LAZYTERM_SHELL_INTEGRATION_ACTIVE=1
+    export LAZYTERM_SHELL_INTEGRATION_ACTIVE
+
+    __lazyterm_prompt_begin() {
+        local __lazyterm_exit_code=$?
+        __lazyterm_last_exit_code=$__lazyterm_exit_code
+        printf '\033]633;D;%s\007' "$__lazyterm_exit_code"
+        return "$__lazyterm_exit_code"
+    }
+
+    __lazyterm_prompt_ready() {
+        local __lazyterm_exit_code=${__lazyterm_last_exit_code:-0}
+        if [[ ${PS1:-} != "${__lazyterm_wrapped_ps1:-}" ]]; then
+            __lazyterm_wrapped_ps1='\[\033]633;A\007\]'"${PS1:-}"'\[\033]633;B\007\]'
+            PS1=$__lazyterm_wrapped_ps1
+        fi
+        return "$__lazyterm_exit_code"
+    }
+
+    case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+        "declare -a"*)
+            PROMPT_COMMAND=(
+                __lazyterm_prompt_begin
+                "${PROMPT_COMMAND[@]}"
+                __lazyterm_prompt_ready
+            )
+            ;;
+        *)
+            PROMPT_COMMAND="__lazyterm_prompt_begin${PROMPT_COMMAND:+;$PROMPT_COMMAND};__lazyterm_prompt_ready"
+            ;;
+    esac
+
+    PS0=$'\033]633;C\007'"${PS0:-}"
+fi
+"#;
+const ZSH_SHELL_INTEGRATION: &str = r#"if [[ -o interactive && -z ${LAZYTERM_SHELL_INTEGRATION_ACTIVE:-} ]]; then
+    typeset -gx LAZYTERM_SHELL_INTEGRATION_ACTIVE=1
+
+    __lazyterm_osc633_preexec() {
+        print -n -- $'\033]633;C\007'
+    }
+
+    __lazyterm_osc633_precmd() {
+        local __lazyterm_exit_code=$?
+        print -n -- $'\033]633;D;'"$__lazyterm_exit_code"$'\007'
+    }
+
+    typeset -ga preexec_functions precmd_functions
+    preexec_functions=(__lazyterm_osc633_preexec ${preexec_functions:#__lazyterm_osc633_preexec})
+    precmd_functions=(__lazyterm_osc633_precmd ${precmd_functions:#__lazyterm_osc633_precmd})
+    PROMPT=$'%{\033]633;A\007%}'"${PROMPT:-}"$'%{\033]633;B\007%}'
+fi
+"#;
+const FISH_SHELL_INTEGRATION: &str = r#"if status is-interactive; and not set -q LAZYTERM_SHELL_INTEGRATION_ACTIVE
+    set -gx LAZYTERM_SHELL_INTEGRATION_ACTIVE 1
+
+    function __lazyterm_osc633_preexec --on-event fish_preexec
+        printf '\033]633;C\007'
+    end
+
+    function __lazyterm_osc633_postexec --on-event fish_postexec
+        set -l __lazyterm_exit_code $status
+        printf '\033]633;D;%s\007' $__lazyterm_exit_code
+    end
+end
+"#;
+
+fn shell_integration_script(kind: &str) -> Option<&'static str> {
+    match kind {
+        "bash" => Some(BASH_SHELL_INTEGRATION),
+        "zsh" => Some(ZSH_SHELL_INTEGRATION),
+        "fish" => Some(FISH_SHELL_INTEGRATION),
+        _ => None,
+    }
+}
 
 async fn execute_probe_command(
     handle: &russh::client::Handle<ssh_auth::SshClientHandler>,
@@ -60,7 +138,154 @@ async fn execute_probe_command(
         ))
     })
     .await
-    .map_err(|_| "检测远端 tmux 超时".to_string())?
+    .map_err(|_| "SSH 检测命令超时".to_string())?
+}
+
+async fn detect_shell_integration_kind(
+    handle: &russh::client::Handle<ssh_auth::SshClientHandler>,
+) -> Option<String> {
+    let (_, output) = match tokio::time::timeout(
+        Duration::from_secs(2),
+        execute_probe_command(handle, SHELL_PROBE_COMMAND),
+    )
+    .await
+    {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => {
+            logging::warn(
+                "SSH/shell-integration",
+                format!("无法检测远端 Shell，跳过 Shell Integration: {error}"),
+            );
+            return None;
+        }
+        Err(_) => {
+            logging::warn(
+                "SSH/shell-integration",
+                "检测远端 Shell 超时，跳过 Shell Integration",
+            );
+            return None;
+        }
+    };
+
+    let shell = output.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("__LAZYTERM_SHELL__:")
+            .map(str::trim)
+    })?;
+    let shell_name = shell
+        .rsplit(|character| character == '/' || character == '\\')
+        .next()
+        .unwrap_or(shell)
+        .trim_start_matches('-')
+        .to_ascii_lowercase();
+    let integration_kind = match shell_name.as_str() {
+        "bash" => Some("bash"),
+        "zsh" => Some("zsh"),
+        "fish" => Some("fish"),
+        _ => None,
+    };
+
+    if integration_kind.is_none() {
+        logging::info(
+            "SSH/shell-integration",
+            format!("远端 Shell {shell:?} 暂不支持自动 Shell Integration"),
+        );
+    }
+    integration_kind.map(str::to_string)
+}
+
+async fn prepare_shell_integration_script(
+    handle: &russh::client::Handle<ssh_auth::SshClientHandler>,
+    kind: &str,
+) -> Result<String, String> {
+    let script = shell_integration_script(kind)
+        .ok_or_else(|| format!("不支持为 {kind} 准备 Shell Integration"))?;
+    let remote_path = format!(
+        "/tmp/.lazyterm-shell-integration-{}",
+        Uuid::new_v4().simple(),
+    );
+    let mut channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|error| format!("打开 Shell Integration 临时文件通道失败: {error}"))?;
+    channel
+        .exec(true, format!("umask 077; command cat > '{remote_path}'"))
+        .await
+        .map_err(|error| format!("创建 Shell Integration 临时文件失败: {error}"))?;
+    channel
+        .data_bytes(script.as_bytes().to_vec())
+        .await
+        .map_err(|error| format!("写入 Shell Integration 临时文件失败: {error}"))?;
+    channel
+        .eof()
+        .await
+        .map_err(|error| format!("结束 Shell Integration 临时文件写入失败: {error}"))?;
+
+    let exit_status = tokio::time::timeout(Duration::from_secs(2), async {
+        let mut exit_status = None;
+        while let Some(message) = channel.wait().await {
+            match message {
+                ChannelMsg::ExitStatus { exit_status: status } => exit_status = Some(status),
+                ChannelMsg::Eof | ChannelMsg::Close => break,
+                _ => {}
+            }
+        }
+        exit_status
+    })
+    .await
+    .map_err(|_| "创建 Shell Integration 临时文件超时".to_string())?;
+    if exit_status != Some(0) {
+        return Err(format!(
+            "创建 Shell Integration 临时文件失败，退出状态: {exit_status:?}",
+        ));
+    }
+
+    Ok(remote_path)
+}
+
+async fn inject_shell_integration(
+    handle: &russh::client::Handle<ssh_auth::SshClientHandler>,
+    channel: &russh::Channel<russh::client::Msg>,
+    kind: &str,
+) {
+    let remote_path = match tokio::time::timeout(
+        Duration::from_secs(3),
+        prepare_shell_integration_script(handle, kind),
+    )
+    .await
+    {
+        Ok(Ok(path)) => path,
+        Ok(Err(error)) => {
+            logging::warn(
+                "SSH/shell-integration",
+                format!("无法准备远端 Shell Integration，当前会话不启用可靠命令通知: {error}"),
+            );
+            return;
+        }
+        Err(_) => {
+            logging::warn(
+                "SSH/shell-integration",
+                "准备远端 Shell Integration 超时，当前会话不启用可靠命令通知",
+            );
+            return;
+        }
+    };
+    let source_command = if kind == "fish" {
+        format!(" source '{remote_path}'; command rm -f -- '{remote_path}'\r")
+    } else {
+        format!(" . '{remote_path}'; command rm -f -- '{remote_path}'\r")
+    };
+
+    match channel.data_bytes(source_command.into_bytes()).await {
+        Ok(()) => logging::info(
+            "SSH/shell-integration",
+            format!("已为当前 SSH 会话注入 {kind} Shell Integration"),
+        ),
+        Err(error) => logging::warn(
+            "SSH/shell-integration",
+            format!("注入远端 Shell Integration 失败，当前会话不启用可靠命令通知: {error}"),
+        ),
+    }
 }
 
 async fn probe_tmux(
@@ -261,7 +486,6 @@ pub async fn create_ssh_session<R: Runtime>(
             }
             tmux_session_restored = existing_session.is_some();
         }
-
         let channel = handle
             .channel_open_session()
             .await
@@ -337,6 +561,14 @@ pub async fn create_ssh_session<R: Runtime>(
             ));
         }
     };
+    let shell_integration_kind = if tmux_session_name.is_none() {
+        detect_shell_integration_kind(&handle).await
+    } else {
+        None
+    };
+    if let Some(kind) = shell_integration_kind.as_deref() {
+        inject_shell_integration(&handle, &channel, kind).await;
+    }
     let handle = Arc::new(handle);
 
     let (control_tx, mut control_rx) = mpsc::unbounded_channel::<SshControlMsg>();

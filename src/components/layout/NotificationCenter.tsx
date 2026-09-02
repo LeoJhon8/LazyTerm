@@ -21,6 +21,9 @@ import {
   useNotificationsStore,
 } from "@/store/notifications";
 import { useSettingsDialogStore } from "@/store/settings-dialog";
+import { getAllLeaves } from "@/lib/pane-utils";
+import { usePanesStore } from "@/store/panes";
+import { useTabsStore } from "@/store/tabs";
 import { cn } from "@/lib/utils";
 
 const typeConfig: Record<NotificationType, { icon: typeof Info; className: string }> = {
@@ -93,6 +96,27 @@ function NotificationRow({ item, onClose }: { item: NotificationItem; onClose: (
     if (item.target?.type === "settings") {
       openSettings(item.target.tab);
       onClose();
+      return;
+    }
+
+    if (item.target?.type === "session") {
+      const targetSessionId = item.target.sessionId;
+      const panesState = usePanesStore.getState();
+      const targetWorkspace = Object.entries(panesState.workspaces).find(([, workspace]) =>
+        getAllLeaves(workspace.rootNode).some((leaf) => leaf.sessionId === targetSessionId)
+      );
+      const targetPane = targetWorkspace
+        ? getAllLeaves(targetWorkspace[1].rootNode).find((leaf) => leaf.sessionId === targetSessionId)
+        : undefined;
+
+      if (targetWorkspace && targetPane) {
+        useTabsStore.getState().setActiveTabId(targetWorkspace[0]);
+        panesState.focusPane(targetPane.id);
+        onClose();
+        window.requestAnimationFrame(() => {
+          window.dispatchEvent(new Event("lazy-term-focus"));
+        });
+      }
     }
   };
 

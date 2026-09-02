@@ -6,11 +6,8 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useSettingsStore, type TerminalRightClickBehavior } from "@/store/settings";
 import {
-  MAX_LONG_COMMAND_IDLE_SECONDS,
   MAX_LONG_COMMAND_THRESHOLD_MINUTES,
-  MIN_LONG_COMMAND_IDLE_SECONDS,
   MIN_LONG_COMMAND_THRESHOLD_MINUTES,
-  normalizeLongCommandIdleSeconds,
   normalizeLongCommandThresholdMinutes,
 } from "@/store/settings-values";
 import { APP_LANGUAGE_OPTIONS, useI18n } from "@/i18n";
@@ -32,9 +29,8 @@ export function GeneralSettings() {
     terminalAutocomplete,
     autocompleteSource,
     terminalTimelineEnabled,
-    longCommandNotificationEnabled,
+    sshReliableNotificationEnabled,
     longCommandThresholdMinutes,
-    longCommandIdleSeconds,
     copyOnSelect,
     terminalRightClickBehavior,
     mobileHistoryVisible,
@@ -310,82 +306,59 @@ export function GeneralSettings() {
             </div>
             <div className="flex items-center justify-between gap-4 px-4 py-2.5">
               <div className="flex min-w-0 flex-col gap-0.5">
-                <Label htmlFor="long-command-notification" className="text-sm cursor-pointer">
-                  {t("长命令完成通知")}
+                <Label htmlFor="ssh-reliable-notification" className="text-sm cursor-pointer">
+                  {t("SSH 可靠通知")}
                 </Label>
                 <span className="text-xs text-muted-foreground">
-                  {t("命令运行超过设定时间后，在完成时发送通知中心消息")}
+                  {t("仅在收到明确完成事件时通知：普通命令使用当前 SSH 会话的临时 Shell Integration，TUI 使用 OSC 9。")}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {t("自动支持 Bash、Zsh 和 Fish；连接时写入并立即删除远端临时脚本，不修改 Shell 配置文件。")}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {t("Codex 需启用 tui.notifications，并将 tui.notification_method 设置为 osc9。")}
+                </span>
+                <span className="text-xs text-amber-600 dark:text-amber-400">
+                  {t("LazyTerm 后台模式（tmux）暂不支持 SSH 可靠通知。")}
                 </span>
               </div>
               <Switch
-                id="long-command-notification"
-                checked={longCommandNotificationEnabled}
-                onCheckedChange={(checked) => setSettings({ longCommandNotificationEnabled: !!checked })}
+                id="ssh-reliable-notification"
+                checked={sshReliableNotificationEnabled}
+                onCheckedChange={(checked) => setSettings({ sshReliableNotificationEnabled: !!checked })}
               />
             </div>
-            {longCommandNotificationEnabled && (
-              <>
-                <div className="flex items-center justify-between gap-4 px-4 py-2.5">
-                  <div className="flex flex-col gap-0.5">
-                    <Label htmlFor="long-command-threshold" className="text-sm">
-                      {t("长命令判定时间")}
-                    </Label>
-                    <span className="text-xs text-muted-foreground">
-                      {t("默认 3 分钟，可设置 1 到 120 分钟")}
-                    </span>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Input
-                      id="long-command-threshold"
-                      type="number"
-                      min={MIN_LONG_COMMAND_THRESHOLD_MINUTES}
-                      max={MAX_LONG_COMMAND_THRESHOLD_MINUTES}
-                      step={1}
-                      value={longCommandThresholdMinutes}
-                      onChange={(event) => {
-                        if (event.target.value === "") return;
-                        setSettings({
-                          longCommandThresholdMinutes: normalizeLongCommandThresholdMinutes(
-                            event.target.valueAsNumber
-                          ),
-                        });
-                      }}
-                      className="h-8 w-20 rounded-md bg-background/80 px-2 text-right"
-                    />
-                    <span className="text-sm text-muted-foreground">{t("分钟")}</span>
-                  </div>
+            {sshReliableNotificationEnabled && (
+              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                <div className="flex flex-col gap-0.5">
+                  <Label htmlFor="long-command-threshold" className="text-sm">
+                    {t("长命令判定时间")}
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    {t("普通 Shell 命令达到此时长才通知；TUI 主动通知不受此限制。")}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between gap-4 px-4 py-2.5">
-                  <div className="flex flex-col gap-0.5">
-                    <Label htmlFor="long-command-idle-seconds" className="text-sm">
-                      {t("输出静默判定时间")}
-                    </Label>
-                    <span className="text-xs text-muted-foreground">
-                      {t("默认 15 秒，可设置 5 到 300 秒")}
-                    </span>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Input
-                      id="long-command-idle-seconds"
-                      type="number"
-                      min={MIN_LONG_COMMAND_IDLE_SECONDS}
-                      max={MAX_LONG_COMMAND_IDLE_SECONDS}
-                      step={1}
-                      value={longCommandIdleSeconds}
-                      onChange={(event) => {
-                        if (event.target.value === "") return;
-                        setSettings({
-                          longCommandIdleSeconds: normalizeLongCommandIdleSeconds(
-                            event.target.valueAsNumber
-                          ),
-                        });
-                      }}
-                      className="h-8 w-20 rounded-md bg-background/80 px-2 text-right"
-                    />
-                    <span className="text-sm text-muted-foreground">{t("秒")}</span>
-                  </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Input
+                    id="long-command-threshold"
+                    type="number"
+                    min={MIN_LONG_COMMAND_THRESHOLD_MINUTES}
+                    max={MAX_LONG_COMMAND_THRESHOLD_MINUTES}
+                    step={1}
+                    value={longCommandThresholdMinutes}
+                    onChange={(event) => {
+                      if (event.target.value === "") return;
+                      setSettings({
+                        longCommandThresholdMinutes: normalizeLongCommandThresholdMinutes(
+                          event.target.valueAsNumber
+                        ),
+                      });
+                    }}
+                    className="h-8 w-20 rounded-md bg-background/80 px-2 text-right"
+                  />
+                  <span className="text-sm text-muted-foreground">{t("分钟")}</span>
                 </div>
-              </>
+              </div>
             )}
             <div className="flex items-center justify-between px-4 py-2.5">
               <div className="flex flex-col gap-0.5">

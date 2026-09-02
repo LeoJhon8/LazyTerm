@@ -4,10 +4,15 @@ import { sendSystemNotification } from "@/services/systemNotificationService";
 
 export type NotificationType = "info" | "success" | "warning" | "error";
 export type NotificationSource = "sftp" | "terminal" | "system" | "ai";
-export type NotificationTarget = {
-  type: "settings";
-  tab: SettingsTab;
-};
+export type NotificationTarget =
+  | {
+      type: "settings";
+      tab: SettingsTab;
+    }
+  | {
+      type: "session";
+      sessionId: string;
+    };
 
 export interface NotificationItem {
   id: string;

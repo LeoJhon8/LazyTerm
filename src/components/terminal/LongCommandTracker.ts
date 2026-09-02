@@ -1,24 +1,20 @@
 import { getCurrentLocale, tCurrent } from "@/i18n";
 import { useNotificationsStore } from "@/store/notifications";
 import { useSettingsStore } from "@/store/settings";
-import {
-  normalizeLongCommandIdleSeconds,
-  normalizeLongCommandThresholdMinutes,
-} from "@/store/settings-values";
+import { normalizeLongCommandThresholdMinutes } from "@/store/settings-values";
+import { useTabsStore } from "@/store/tabs";
 
-interface PendingCommand {
-  command: string;
+interface RunningCommand {
+  command?: string;
   startedAt: number;
-  markedLong: boolean;
-  lastOutputAt: number | null;
-}
-
-interface LongCommandTrackerOptions {
-  getSessionTitle: () => string;
+  suppressCompletionNotification: boolean;
 }
 
 function normalizeCommandLabel(command: string) {
   const normalized = command.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return undefined;
+  }
   return normalized.length > 240 ? `${normalized.slice(0, 237)}...` : normalized;
 }
 
@@ -42,96 +38,87 @@ function formatDuration(durationMs: number) {
   return isChinese ? `${seconds} 秒` : `${seconds}s`;
 }
 
+/**
+ * Tracks only explicit OSC 633 command lifecycle markers:
+ * C = command execution started, D = command execution finished.
+ */
 export class LongCommandTracker {
-  private readonly getSessionTitle: () => string;
-  private pending: PendingCommand | null = null;
-  private longThresholdTimer: number | null = null;
-  private idleCompletionTimer: number | null = null;
+  private readonly sessionId: string;
+  private submittedCommand?: string;
+  private runningCommand?: RunningCommand;
   private disposed = false;
-  private readonly unsubscribeSettings: () => void;
 
-  constructor({ getSessionTitle }: LongCommandTrackerOptions) {
-    this.getSessionTitle = getSessionTitle;
-    this.unsubscribeSettings = useSettingsStore.subscribe((state, previousState) => {
-      if (
-        state.longCommandNotificationEnabled !== previousState.longCommandNotificationEnabled
-        || state.longCommandThresholdMinutes !== previousState.longCommandThresholdMinutes
-        || state.longCommandIdleSeconds !== previousState.longCommandIdleSeconds
-      ) {
-        this.scheduleLongThresholdCheck();
-        this.scheduleIdleCompletionCheck();
-      }
-    });
+  constructor(sessionId: string) {
+    this.sessionId = sessionId;
   }
 
-  record(command: string, submittedAt = Date.now()) {
-    const normalizedCommand = normalizeCommandLabel(command);
+  record(command: string) {
+    if (this.disposed) {
+      return;
+    }
+    this.submittedCommand = normalizeCommandLabel(command);
+  }
+
+  handleShellIntegration(data: string) {
     if (this.disposed) {
       return;
     }
 
-    const trackedCommand = normalizedCommand || this.pending?.command;
-    if (this.pending) {
-      this.pending = null;
-      this.clearLongThresholdTimer();
-      this.clearIdleCompletionTimer();
+    const markerType = data.split(";", 1)[0];
+    if (markerType === "C") {
+      this.startCommand();
+    } else if (markerType === "D") {
+      this.completeCommand();
     }
-
-    if (!trackedCommand) {
-      return;
-    }
-
-    this.pending = {
-      command: trackedCommand,
-      startedAt: submittedAt,
-      markedLong: false,
-      lastOutputAt: null,
-    };
-    this.clearIdleCompletionTimer();
-    this.scheduleLongThresholdCheck();
   }
 
-  handleTerminalWriteParsed() {
-    if (this.disposed || !this.pending) {
-      return;
-    }
-
-    this.pending.lastOutputAt = Date.now();
-    if (this.pending.markedLong) {
-      this.scheduleIdleCompletionCheck();
+  handleTuiNotification() {
+    if (this.runningCommand) {
+      this.runningCommand.suppressCompletionNotification = true;
     }
   }
 
   dispose() {
-    if (this.disposed) {
-      return;
-    }
-
     this.disposed = true;
-    this.unsubscribeSettings();
-    this.clearLongThresholdTimer();
-    this.clearIdleCompletionTimer();
-    this.pending = null;
+    this.submittedCommand = undefined;
+    this.runningCommand = undefined;
   }
 
-  private completePending(completedAt: number) {
-    const pending = this.pending;
-    if (!pending) {
+  private startCommand() {
+    const session = this.getEligibleSession();
+    if (!session) {
+      this.submittedCommand = undefined;
+      this.runningCommand = undefined;
       return;
     }
 
-    this.pending = null;
-    this.clearLongThresholdTimer();
-    this.clearIdleCompletionTimer();
+    this.runningCommand = {
+      command: this.submittedCommand,
+      startedAt: Date.now(),
+      suppressCompletionNotification: false,
+    };
+    this.submittedCommand = undefined;
+  }
 
+  private completeCommand() {
+    const runningCommand = this.runningCommand;
+    this.runningCommand = undefined;
+    if (!runningCommand || runningCommand.suppressCompletionNotification) {
+      return;
+    }
+
+    const session = this.getEligibleSession();
     const settings = useSettingsStore.getState();
-    const durationMs = Math.max(0, completedAt - pending.startedAt);
-    const thresholdMs =
-      normalizeLongCommandThresholdMinutes(settings.longCommandThresholdMinutes) * 60_000;
-    if (
-      !settings.longCommandNotificationEnabled
-      || durationMs < thresholdMs
-    ) {
+    if (!session || !settings.sshReliableNotificationEnabled) {
+      return;
+    }
+
+    const completedAt = Date.now();
+    const durationMs = Math.max(0, completedAt - runningCommand.startedAt);
+    const thresholdMs = normalizeLongCommandThresholdMinutes(
+      settings.longCommandThresholdMinutes,
+    ) * 60_000;
+    if (durationMs < thresholdMs) {
       return;
     }
 
@@ -139,89 +126,21 @@ export class LongCommandTracker {
       type: "success",
       source: "terminal",
       title: tCurrent("长命令已完成"),
-      message: pending.command,
+      message: runningCommand.command,
       details: [
         tCurrent("耗时：{duration}", { duration: formatDuration(durationMs) }),
-        tCurrent("会话：{session}", { session: this.getSessionTitle() }),
+        tCurrent("来自会话：{session}", { session: session.title }),
       ],
+      target: { type: "session", sessionId: this.sessionId },
     });
   }
 
-  private scheduleLongThresholdCheck() {
-    this.clearLongThresholdTimer();
-    const pending = this.pending;
-    const settings = useSettingsStore.getState();
-    if (!pending || !settings.longCommandNotificationEnabled) {
-      return;
-    }
-
-    const thresholdMs =
-      normalizeLongCommandThresholdMinutes(settings.longCommandThresholdMinutes) * 60_000;
-    const remainingMs = thresholdMs - (Date.now() - pending.startedAt);
-    if (remainingMs <= 0) {
-      if (!pending.markedLong) {
-        pending.markedLong = true;
-        this.scheduleIdleCompletionCheck();
-      }
-      return;
-    }
-
-    if (pending.markedLong) {
-      pending.markedLong = false;
-      this.clearIdleCompletionTimer();
-    }
-
-    this.longThresholdTimer = window.setTimeout(() => {
-      this.longThresholdTimer = null;
-      if (this.pending === pending) {
-        this.scheduleLongThresholdCheck();
-      }
-    }, remainingMs);
-  }
-
-  private scheduleIdleCompletionCheck() {
-    this.clearIdleCompletionTimer();
-    const pending = this.pending;
-    const settings = useSettingsStore.getState();
-    const thresholdMs =
-      normalizeLongCommandThresholdMinutes(settings.longCommandThresholdMinutes) * 60_000;
-    if (
-      !pending
-      || !pending.markedLong
-      || pending.lastOutputAt === null
-      || pending.lastOutputAt - pending.startedAt < thresholdMs
-      || !settings.longCommandNotificationEnabled
-    ) {
-      return;
-    }
-
-    const completedAt = pending.lastOutputAt;
-    const idleMs = normalizeLongCommandIdleSeconds(settings.longCommandIdleSeconds) * 1000;
-    const remainingMs = idleMs - (Date.now() - completedAt);
-    if (remainingMs <= 0) {
-      this.completePending(completedAt);
-      return;
-    }
-
-    this.idleCompletionTimer = window.setTimeout(() => {
-      this.idleCompletionTimer = null;
-      if (this.pending === pending) {
-        this.completePending(completedAt);
-      }
-    }, remainingMs);
-  }
-
-  private clearLongThresholdTimer() {
-    if (this.longThresholdTimer !== null) {
-      window.clearTimeout(this.longThresholdTimer);
-      this.longThresholdTimer = null;
-    }
-  }
-
-  private clearIdleCompletionTimer() {
-    if (this.idleCompletionTimer !== null) {
-      window.clearTimeout(this.idleCompletionTimer);
-      this.idleCompletionTimer = null;
-    }
+  private getEligibleSession() {
+    const session = useTabsStore.getState().sessions.find(
+      (candidate) => candidate.id === this.sessionId,
+    );
+    return session?.type === "ssh" && session.sshTmuxPersistenceActive !== true
+      ? session
+      : undefined;
   }
 }

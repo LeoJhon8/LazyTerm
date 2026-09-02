@@ -55,6 +55,7 @@ import { CommandTimelineController } from "./CommandTimelineController";
 import { LongCommandTracker } from "./LongCommandTracker";
 import { useI18n } from "@/i18n";
 import type { AppColorPalette } from "@/store/settings";
+import { handleSshOsc9Notification } from "@/services/terminalNotificationService";
 import { onTerminalCommandSubmitted } from "@/lib/terminal-command-events";
 import {
   TerminalSearchBar,
@@ -892,9 +893,16 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         },
       );
 
+      const longCommandTracker = new LongCommandTracker(sessionId);
       const parserDisposables = [
         synchronizedOutputEndDisposable,
         term.parser.registerOscHandler(4, (data) => shouldBlockIndexedColorChange(data)),
+        term.parser.registerOscHandler(9, (data) => {
+          if (handleSshOsc9Notification(sessionId, data)) {
+            longCommandTracker.handleTuiNotification();
+          }
+          return true;
+        }),
         term.parser.registerOscHandler(10, (data) => shouldBlockNamedColorChange(data)),
         term.parser.registerOscHandler(11, (data) => shouldBlockNamedColorChange(data)),
         term.parser.registerOscHandler(12, (data) => shouldBlockNamedColorChange(data)),
@@ -950,17 +958,12 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       term.open(containerEl);
       const output = new OrderedTerminalOutput(term);
       const timeline = new CommandTimelineController(term);
-      const longCommandTracker = new LongCommandTracker({
-        getSessionTitle: () =>
-          useTabsStore.getState().sessions.find((session) => session.id === sessionId)?.title
-          ?? sessionId,
-      });
       parserDisposables.push(
         term.parser.registerOscHandler(633, (data) => {
           timeline.handleShellIntegration(data);
+          longCommandTracker.handleShellIntegration(data);
           return true;
-        }),
-        term.onWriteParsed(() => longCommandTracker.handleTerminalWriteParsed())
+        })
       );
       timeline.setAppearance({
         fontFamily: nextFontFamily,
@@ -1119,9 +1122,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       };
       const unsubscribeCommandSubmitted = onTerminalCommandSubmitted(
         sessionId,
-        ({ command, submittedAt }) => longCommandTracker.record(command, submittedAt)
+        ({ command }) => longCommandTracker.record(command),
       );
-
       const keyDisposable = term.onKey(({ domEvent }) => {
         if (domEvent.key === "Enter") {
           const buffer = term.buffer.active;

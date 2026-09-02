@@ -14,10 +14,8 @@ import {
 import type { ConfigurableRdpBackend } from "@/lib/rdp-backend";
 import { gitAwareStorage } from "@/store/git-aware-storage";
 import {
-  DEFAULT_LONG_COMMAND_IDLE_SECONDS,
   DEFAULT_LONG_COMMAND_THRESHOLD_MINUTES,
   DEFAULT_QUICK_COMMAND_FONT_SIZE,
-  normalizeLongCommandIdleSeconds,
   normalizeLongCommandThresholdMinutes,
   normalizeQuickCommandFontSize,
 } from "@/store/settings-values";
@@ -69,9 +67,8 @@ interface SettingsData {
   terminalAutocomplete: boolean;
   autocompleteSource: ('history' | 'quick')[];  // 自动补全数据源（多选）
   terminalTimelineEnabled: boolean;
-  longCommandNotificationEnabled: boolean;
+  sshReliableNotificationEnabled: boolean;
   longCommandThresholdMinutes: number;
-  longCommandIdleSeconds: number;
   copyOnSelect: boolean;
   terminalRightClickBehavior: TerminalRightClickBehavior;
   mobileHistoryVisible: boolean;
@@ -142,9 +139,8 @@ const defaultSettings: SettingsData = {
   terminalAutocomplete: false,
   autocompleteSource: [],  // 默认不启用任何自动补全数据源
   terminalTimelineEnabled: false,
-  longCommandNotificationEnabled: true,
+  sshReliableNotificationEnabled: true,
   longCommandThresholdMinutes: DEFAULT_LONG_COMMAND_THRESHOLD_MINUTES,
-  longCommandIdleSeconds: DEFAULT_LONG_COMMAND_IDLE_SECONDS,
   copyOnSelect: false,
   terminalRightClickBehavior: "context-menu",
   mobileHistoryVisible: true,
@@ -193,29 +189,30 @@ export const useSettingsStore = create<SettingsState>()(
               ),
             }
           : {}),
-        ...(newSettings.longCommandIdleSeconds !== undefined
-          ? {
-              longCommandIdleSeconds: normalizeLongCommandIdleSeconds(
-                newSettings.longCommandIdleSeconds
-              ),
-            }
-          : {}),
       })),
       resetSettings: () => set(defaultSettings),
     }),
     {
       name: "lazy-term-settings",
       storage: createJSONStorage(() => gitAwareStorage),
-      version: 12,
+      version: 14,
       migrate: (persistedState, version) => {
         if (persistedState && typeof persistedState === "object") {
           const data: Partial<SettingsData> & {
             terminalOpacity?: number;
             mobileTerminalKeyIds?: unknown;
+            sshTuiNotificationEnabled?: boolean;
+            longCommandNotificationEnabled?: boolean;
+            longCommandThresholdMinutes?: number;
+            longCommandIdleSeconds?: number;
           } = {
             ...(persistedState as Partial<SettingsData> & {
               terminalOpacity?: number;
               mobileTerminalKeyIds?: unknown;
+              sshTuiNotificationEnabled?: boolean;
+              longCommandNotificationEnabled?: boolean;
+              longCommandThresholdMinutes?: number;
+              longCommandIdleSeconds?: number;
             }),
           };
 
@@ -241,15 +238,6 @@ export const useSettingsStore = create<SettingsState>()(
             data.terminalRightClickBehavior = "quick-copy-paste";
           }
 
-          if (version < 4) {
-            data.longCommandNotificationEnabled = true;
-            data.longCommandThresholdMinutes = DEFAULT_LONG_COMMAND_THRESHOLD_MINUTES;
-          }
-
-          if (version < 5) {
-            data.longCommandIdleSeconds = DEFAULT_LONG_COMMAND_IDLE_SECONDS;
-          }
-
           if (version < 6) {
             delete data.terminalOpacity;
           }
@@ -269,6 +257,19 @@ export const useSettingsStore = create<SettingsState>()(
 
           if (version < 10) {
             data.mobileSshBackgroundServiceEnabled = true;
+          }
+
+          if (version < 14) {
+            data.sshReliableNotificationEnabled =
+              data.sshTuiNotificationEnabled
+              ?? data.longCommandNotificationEnabled
+              ?? true;
+            data.longCommandThresholdMinutes = normalizeLongCommandThresholdMinutes(
+              data.longCommandThresholdMinutes ?? DEFAULT_LONG_COMMAND_THRESHOLD_MINUTES,
+            );
+            delete data.sshTuiNotificationEnabled;
+            delete data.longCommandNotificationEnabled;
+            delete data.longCommandIdleSeconds;
           }
 
           data.mobileTerminalKeys = normalizeMobileTerminalKeys(
