@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "26.82.7820"
+version = "26.90.3099"
 description = "A modern terminal workspace for Android SSH and multi-protocol desktop sessions"
 authors = ["LazyTerm Contributors"]
 license = "GPL-3.0-or-later"

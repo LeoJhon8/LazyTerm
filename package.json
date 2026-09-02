@@ -1,7 +1,7 @@
 {
   "name": "lazy-term",
   "private": true,
-  "version": "26.82.7820",
+  "version": "26.90.3099",
   "description": "A modern terminal workspace for Android SSH and multi-protocol desktop sessions.",
   "license": "GPL-3.0-or-later",
   "repository": {
