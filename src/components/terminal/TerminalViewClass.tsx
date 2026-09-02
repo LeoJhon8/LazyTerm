@@ -116,6 +116,14 @@ function requestTerminalLinkOpen(sessionId: string, value: string) {
   ));
 }
 
+function isXtermMouseReport(data: string) {
+  // xterm currently emits application mouse input using either SGR or the
+  // legacy DEFAULT encoding. Mouse reports must not be treated as keyboard
+  // input, otherwise browsing tmux history immediately jumps to the bottom.
+  return /^(?:\x1b\[<\d+;\d+;\d+[Mm])+$/.test(data)
+    || data.startsWith("\x1b[M") && Array.from(data.slice(3)).length === 3;
+}
+
 function getTerminalSearchOpenEventName(sessionId: string) {
   return `lazy-term-search-open-${sessionId}`;
 }
@@ -188,6 +196,7 @@ interface TerminalInstance {
   timeline: CommandTimelineController;
   longCommandTracker: LongCommandTracker;
   connector?: ITerminalConnector;
+  writeInput: (connector: ITerminalConnector, data: string) => void;
   inputDisposable?: { dispose(): void };
   parserDisposables?: Array<{ dispose(): void }>;
   dataUnsubscribe?: () => void;
@@ -709,7 +718,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           });
         };
         existingInstance.inputDisposable = existingInstance.terminal.onData((data) => {
-          connector.write(data);
+          existingInstance.writeInput(connector, data);
         });
 
         if (tempBuffer) {
@@ -758,6 +767,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         cursorBlink: true,
         cursorStyle: nextTerminalCursorStyle,
         scrollback: 10000,
+        // xterm 也会把鼠标报告视作用户输入；回到底部由 writeInput 仅对实际输入处理。
+        scrollOnUserInput: false,
         allowProposedApi: true,
         allowTransparency: true,
         linkHandler: {
@@ -765,6 +776,63 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         },
         theme: toXtermTheme(colorScheme),
       });
+
+      let tmuxHistoryBrowsing = false;
+      let tmuxInputRecoveryPending = false;
+      const queuedTmuxInputs: Array<{ connector: ITerminalConnector; data: string }> = [];
+      const isActiveTmuxConnector = (candidate: ITerminalConnector) =>
+        candidate.protocol === "ssh" && candidate.isTmuxPersistenceActive?.() === true;
+      const writeInput = (inputConnector: ITerminalConnector, data: string) => {
+        if (
+          isActiveTmuxConnector(inputConnector)
+          && term.modes.mouseTrackingMode !== "none"
+          && isXtermMouseReport(data)
+        ) {
+          inputConnector.write(data);
+          return;
+        }
+
+        const buffer = term.buffer.active;
+        if (buffer.viewportY < buffer.baseY) {
+          term.scrollToBottom();
+        }
+
+        if (tmuxInputRecoveryPending) {
+          queuedTmuxInputs.push({ connector: inputConnector, data });
+          return;
+        }
+
+        if (
+          !tmuxHistoryBrowsing
+          || !isActiveTmuxConnector(inputConnector)
+          || !inputConnector.exitTmuxCopyMode
+        ) {
+          if (!isActiveTmuxConnector(inputConnector)) {
+            tmuxHistoryBrowsing = false;
+          }
+          inputConnector.write(data);
+          return;
+        }
+
+        tmuxHistoryBrowsing = false;
+        tmuxInputRecoveryPending = true;
+        void inputConnector.exitTmuxCopyMode()
+          .catch((error) => {
+            logger.warn(
+              "FE/terminal-view/tmux-copy-mode",
+              "Failed to exit tmux copy mode before input; writing to the PTY anyway",
+              { error },
+            );
+          })
+          .finally(() => {
+            tmuxInputRecoveryPending = false;
+            inputConnector.write(data);
+            const queuedInputs = queuedTmuxInputs.splice(0);
+            for (const queuedInput of queuedInputs) {
+              queuedInput.connector.write(queuedInput.data);
+            }
+          });
+      };
 
       let synchronizedOutputRefreshFrameId: number | null = null;
 
@@ -857,8 +925,9 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         acAddon = new AutocompleteTerminalAddon(
            sessionId,
            (text) => {
-              if (currentTermInstance?.connector) {
-                 currentTermInstance.connector.write(text);
+              const currentConnector = currentTermInstance?.connector;
+              if (currentTermInstance && currentConnector) {
+                 currentTermInstance.writeInput(currentConnector, text);
               }
            }
         );
@@ -906,6 +975,17 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         if (e.ctrlKey) {
           e.preventDefault();
           e.stopPropagation();
+          return;
+        }
+
+        const currentConnector = terminalMap.current.get(sessionId)?.connector;
+        if (
+          e.deltaY < 0
+          && currentConnector
+          && isActiveTmuxConnector(currentConnector)
+          && term.modes.mouseTrackingMode !== "none"
+        ) {
+          tmuxHistoryBrowsing = true;
         }
       };
 
@@ -1028,7 +1108,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       document.addEventListener("mouseup", handleTmuxMouseUp, { capture: true });
 
       const inputDisposable = term.onData((data) => {
-        connector.write(data);
+        writeInput(connector, data);
       });
 
       const dataUnsubscribe = () => {
@@ -1138,6 +1218,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         timeline,
         longCommandTracker,
         connector,
+        writeInput,
         inputDisposable,
         parserDisposables,
         dataUnsubscribe,
@@ -1253,7 +1334,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         sessionId,
         (text) => {
           if (instance.connector) {
-            instance.connector.write(text);
+            instance.writeInput(instance.connector, text);
           }
         }
       );

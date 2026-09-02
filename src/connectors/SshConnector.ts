@@ -468,6 +468,19 @@ export class SshConnector implements ITerminalConnector {
     return this.tmuxPersistenceActive;
   }
 
+  async exitTmuxCopyMode(): Promise<void> {
+    if (!this.isConnected || !this.sessionId || !this.tmuxPersistenceActive) {
+      return;
+    }
+
+    const sessionId = this.sessionId;
+    await invokeTauriSerialized(`ssh:${sessionId}:tmux-copy-mode-exit`, "exit_ssh_tmux_copy_mode", {
+      sessionId,
+    }, {
+      scope: "FE/connector/ssh/tmux-copy-mode-exit",
+    });
+  }
+
   async killTmuxSession(): Promise<void> {
     if (!IS_SSH_BACKGROUND_MODE_SUPPORTED || !this.isConnected || !this.sessionId || !this.tmuxPersistenceActive) {
       throw new Error("当前 SSH 连接未附着可恢复 tmux 会话");

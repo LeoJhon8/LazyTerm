@@ -664,6 +664,41 @@ pub async fn check_ssh_tmux_capability(
     Ok(capability)
 }
 
+/// 退出当前 tmux pane 的浏览模式。用户输入仍由原 PTY 通道发送，避免重复注入。
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[tauri::command]
+pub async fn exit_ssh_tmux_copy_mode(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let (handle, tmux_session_name) = {
+        let sessions = state.ssh_sessions.lock().await;
+        let session = sessions
+            .get(&session_id)
+            .ok_or_else(|| "SSH会话不存在".to_string())?;
+        let tmux_session_name = session
+            .tmux_session_name
+            .clone()
+            .ok_or_else(|| "当前 SSH 连接未附着 LazyTerm tmux 会话".to_string())?;
+        if !is_valid_lazyterm_tmux_session_name(&tmux_session_name) {
+            return Err("当前 SSH 连接的 tmux 会话名称无效".to_string());
+        }
+        (Arc::clone(&session.handle), tmux_session_name)
+    };
+
+    let command = format!("tmux send-keys -t {tmux_session_name} -X cancel 2>/dev/null || true");
+    let (exit_status, output) = execute_probe_command(&handle, &command).await?;
+    if matches!(exit_status, Some(status) if status != 0) {
+        return Err(if output.is_empty() {
+            "退出远端 tmux 浏览模式失败".to_string()
+        } else {
+            format!("退出远端 tmux 浏览模式失败: {output}")
+        });
+    }
+
+    Ok(())
+}
+
 /// 结束当前 LazyTerm SSH 连接所附着的远端 tmux 会话。
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tauri::command]

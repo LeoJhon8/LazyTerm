@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { X, Plus, Columns, Pencil, XCircle, ArrowLeftToLine, ArrowRightToLine, Copy, Server, Terminal, AppWindow, ScreenShare, Usb, LayoutTemplate, Radio } from "lucide-react";
+import { X, Plus, Columns, Pencil, XCircle, ArrowLeftToLine, ArrowRightToLine, Copy, Server, Terminal, AppWindow, ScreenShare, Usb, LayoutTemplate, Radio, Upload, Download } from "lucide-react";
 import { useSettingsStore } from "@/store/settings";
 import { getAllLeaves } from "@/lib/pane-utils";
 import { useEffect, useRef, useState, useCallback, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent } from "react";
@@ -74,6 +74,9 @@ import {
 } from "@/components/layout/SshBackgroundModeControl";
 import { IS_ANDROID } from "@/lib/platform";
 import { emitQuickConnect } from "@/lib/quick-connect-event";
+import { SftpUploadDialog } from "@/components/dialogs/SftpUploadDialog";
+import { SftpDownloadDialog } from "@/components/dialogs/SftpDownloadDialog";
+import type { SessionNode } from "@/store/ssh-profiles";
 
 interface CloseConfirmationState {
   open: boolean;
@@ -85,6 +88,11 @@ interface RenameState {
   open: boolean;
   sessionId: string | null;
   value: string;
+}
+
+interface SftpDialogState {
+  type: "upload" | "download";
+  targetNode: SessionNode;
 }
 
 interface TabBarProps {
@@ -151,6 +159,8 @@ function SortableTab({
   onCloseOthers,
   onCloseLeft,
   onCloseRight,
+  onSftpUpload,
+  onSftpDownload,
   onRequestSshBackgroundEnable,
   onRequestSshEndTmux,
 }: {
@@ -175,6 +185,8 @@ function SortableTab({
   onCloseOthers: (id: string) => void;
   onCloseLeft: (id: string) => void;
   onCloseRight: (id: string) => void;
+  onSftpUpload: (sessionId: string) => void;
+  onSftpDownload: (sessionId: string) => void;
   onRequestSshBackgroundEnable: (sessionId: string) => void;
   onRequestSshEndTmux: (sessionId: string) => void;
   isSplit?: boolean;
@@ -321,6 +333,19 @@ function SortableTab({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="min-w-40 text-xs">
+          {sessionType === "ssh" && sessionId ? (
+            <>
+              <ContextMenuItem className="py-1 text-xs" onSelect={() => onSftpUpload(sessionId)}>
+                <Upload className="mr-2 h-3.5 w-3.5" />
+                {t("上传文件")}
+              </ContextMenuItem>
+              <ContextMenuItem className="py-1 text-xs" onSelect={() => onSftpDownload(sessionId)}>
+                <Download className="mr-2 h-3.5 w-3.5" />
+                {t("下载文件")}
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          ) : null}
           {sessionId ? (
             <SshBackgroundModeMenuItem
               sessionId={sessionId}
@@ -397,6 +422,7 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
   const [templateWorkspaceId, setTemplateWorkspaceId] = useState<string | null>(null);
   const [sshBackgroundSessionId, setSshBackgroundSessionId] = useState<string | null>(null);
   const [sshEndTmuxSessionId, setSshEndTmuxSessionId] = useState<string | null>(null);
+  const [sftpDialog, setSftpDialog] = useState<SftpDialogState | null>(null);
   
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [isTabsOverflowing, setIsTabsOverflowing] = useState(false);
@@ -835,6 +861,32 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
     }
   }, []);
 
+  const openSftpDialog = useCallback((type: SftpDialogState["type"], sessionId: string) => {
+    const session = useTabsStore.getState().sessions.find((candidate) => candidate.id === sessionId);
+    const sshConfig = session?.type === "ssh" ? session.config?.sshConfig : undefined;
+    if (!session || !sshConfig) {
+      return;
+    }
+
+    setSftpDialog({
+      type,
+      targetNode: {
+        id: session.id,
+        type: "ssh",
+        name: session.title,
+        parentId: null,
+        config: sshConfig,
+        order: 0,
+      },
+    });
+  }, []);
+
+  const handleSftpDialogChange = useCallback((open: boolean) => {
+    if (!open) {
+      setSftpDialog(null);
+    }
+  }, []);
+
   const handleRenameSubmit = () => {
     const nextTitle = renameState.value.trim();
     if (!renameState.sessionId || !nextTitle) {
@@ -972,6 +1024,8 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
                     onCloseOthers={handleCloseOthers}
                     onCloseLeft={handleCloseLeft}
                     onCloseRight={handleCloseRight}
+                    onSftpUpload={(sessionId) => openSftpDialog("upload", sessionId)}
+                    onSftpDownload={(sessionId) => openSftpDialog("download", sessionId)}
                     onRequestSshBackgroundEnable={setSshBackgroundSessionId}
                     onRequestSshEndTmux={setSshEndTmuxSessionId}
                   />
@@ -1030,6 +1084,18 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
         sessionId={sshEndTmuxSessionId}
         open={sshEndTmuxSessionId !== null}
         onOpenChange={handleSshEndTmuxDialogChange}
+      />
+
+      <SftpUploadDialog
+        open={sftpDialog?.type === "upload"}
+        onOpenChange={handleSftpDialogChange}
+        targetNode={sftpDialog?.targetNode ?? null}
+      />
+
+      <SftpDownloadDialog
+        open={sftpDialog?.type === "download"}
+        onOpenChange={handleSftpDialogChange}
+        targetNode={sftpDialog?.targetNode ?? null}
       />
 
       <AlertDialog open={closeConfirmation.open} onOpenChange={handleCloseDialogChange}>

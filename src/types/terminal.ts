@@ -103,6 +103,7 @@ export interface ISessionConnector {
   setTmuxSessionName?(name: string): void;
   checkTmuxCapability?(): Promise<SshTmuxCapability>;
   isTmuxPersistenceActive?(): boolean;
+  exitTmuxCopyMode?(): Promise<void>;
   killTmuxSession?(): Promise<void>;
 }
 

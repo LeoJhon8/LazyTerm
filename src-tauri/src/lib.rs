@@ -151,6 +151,7 @@ pub fn run() {
         protocol::resize_terminal,
         protocol::resize_ssh_session,
         protocol::check_ssh_tmux_capability,
+        protocol::exit_ssh_tmux_copy_mode,
         protocol::kill_ssh_tmux_session,
         protocol::set_ssh_background_mode,
         protocol::request_rdp_refresh,
