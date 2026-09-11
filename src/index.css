@@ -884,8 +884,27 @@
     display: flex;
     height: 100%;
     min-height: 0;
+    min-width: 0;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  /*
+   * Radix ScrollArea uses a display: table wrapper to measure content. Markdown
+   * can give that wrapper an intrinsic width, so it keeps the previous sidebar
+   * width while the panel is being resized. Let the AI conversation wrapper
+   * follow the viewport instead so messages reflow on every width change.
+   */
+  .ai-conversation-scroll,
+  .ai-conversation-scroll [data-radix-scroll-area-viewport] {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .ai-conversation-scroll [data-radix-scroll-area-viewport] > div {
+    display: block !important;
+    width: 100%;
+    min-width: 0 !important;
   }
 
   .module-header {

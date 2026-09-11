@@ -64,6 +64,7 @@ interface SettingsData {
   confirmCloseNonDefaultTabs: boolean;
   rdpBackend: ConfigurableRdpBackend;
   autoUpdateChangedSshHostKeys: boolean;
+  sshTmuxDetachOtherClients: boolean;
   terminalAutocomplete: boolean;
   autocompleteSource: ('history' | 'quick')[];  // 自动补全数据源（多选）
   terminalTimelineEnabled: boolean;
@@ -136,6 +137,7 @@ const defaultSettings: SettingsData = {
   confirmCloseNonDefaultTabs: false,
   rdpBackend: "freerdp",
   autoUpdateChangedSshHostKeys: false,
+  sshTmuxDetachOtherClients: false,
   terminalAutocomplete: false,
   autocompleteSource: [],  // 默认不启用任何自动补全数据源
   terminalTimelineEnabled: false,

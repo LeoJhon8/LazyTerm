@@ -116,7 +116,7 @@ export class SshConnector implements ITerminalConnector {
     this.backgroundModeEnabled = IS_SSH_BACKGROUND_MODE_SUPPORTED && !!options.backgroundModeEnabled;
     this.tmuxPersistenceEnabled = IS_SSH_BACKGROUND_MODE_SUPPORTED && !!options.tmuxPersistenceEnabled;
     this.logicalSessionKey = options.logicalSessionKey ?? this.requestedSessionId;
-    this.tmuxSessionName = options.tmuxSessionName ?? `lazyterm_${this.requestedSessionId.replaceAll("-", "")}`;
+    this.tmuxSessionName = options.tmuxSessionName ?? this.requestedSessionId;
     this.readinessCycle = this.readiness.begin(["identity"]);
   }
 
@@ -155,6 +155,7 @@ export class SshConnector implements ITerminalConnector {
       const keepAlive = this.config.keepAlive ?? true;
       const keepAliveInterval = Math.max(1, Math.floor(this.config.keepAliveInterval ?? 60));
       const autoUpdateChangedSshHostKeys = useSettingsStore.getState().autoUpdateChangedSshHostKeys;
+      const sshTmuxDetachOtherClients = useSettingsStore.getState().sshTmuxDetachOtherClients;
       const requestedBackgroundMode = this.backgroundModeEnabled;
       const requestedTmuxPersistence = requestedBackgroundMode && this.tmuxPersistenceEnabled;
 
@@ -179,6 +180,7 @@ export class SshConnector implements ITerminalConnector {
           background_mode: requestedBackgroundMode,
           tmux_persistence: requestedTmuxPersistence,
           tmux_session_name: this.tmuxSessionName,
+          tmux_detach_other_clients: sshTmuxDetachOtherClients,
         },
       }, {
         scope: "FE/connector/ssh/open",

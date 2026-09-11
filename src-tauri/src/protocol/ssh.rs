@@ -307,7 +307,7 @@ async fn probe_tmux(
         .filter_map(|line| {
             let mut fields = line.split('|');
             let name = fields.next()?.trim();
-            if !is_valid_lazyterm_tmux_session_name(name) {
+            if !is_valid_tmux_session_name(name) {
                 return None;
             }
             Some(SshTmuxSessionInfo {
@@ -328,10 +328,9 @@ async fn probe_tmux(
     })
 }
 
-fn is_valid_lazyterm_tmux_session_name(session_name: &str) -> bool {
-    session_name.len() > "lazyterm_".len()
+fn is_valid_tmux_session_name(session_name: &str) -> bool {
+    !session_name.is_empty()
         && session_name.len() <= 128
-        && session_name.starts_with("lazyterm_")
         && session_name
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
@@ -346,7 +345,7 @@ fn validated_tmux_session_name(config: &SshConnectConfig) -> Result<Option<Strin
         .tmux_session_name
         .as_deref()
         .ok_or_else(|| "可恢复 SSH 会话缺少 tmux 会话名称".to_string())?;
-    if !is_valid_lazyterm_tmux_session_name(session_name) {
+    if !is_valid_tmux_session_name(session_name) {
         return Err("tmux 会话名称无效".to_string());
     }
 
@@ -363,13 +362,28 @@ fn tmux_session_reservation_key(config: &SshConnectConfig, tmux_session_name: &s
     )
 }
 
-fn tmux_attach_command(tmux_session_name: &str) -> String {
+// 调用方先校验名称。通过完整名称解析 ID，兼容不支持 =name 目标语法的 tmux。
+fn tmux_session_id_lookup_command(tmux_session_name: &str) -> String {
     format!(
-        "if ! tmux has-session -t {tmux_session_name} 2>/dev/null; then \
+        "tmux list-sessions -F '#{{session_name}}|#{{session_id}}' 2>/dev/null | \
+         while IFS='|' read -r name id; do \
+         if [ \"$name\" = '{tmux_session_name}' ]; then printf '%s' \"$id\"; break; fi; \
+         done"
+    )
+}
+
+fn tmux_attach_command(tmux_session_name: &str, detach_other_clients: bool) -> String {
+    let detach_flag = if detach_other_clients { " -d" } else { "" };
+    let lookup_command = tmux_session_id_lookup_command(tmux_session_name);
+    format!(
+        "tmux_session_id=$({lookup_command}); \
+         if [ -z \"$tmux_session_id\" ]; then \
          tmux new-session -d -s {tmux_session_name} || exit $?; \
+         tmux_session_id=$({lookup_command}); \
          fi; \
-         tmux set-option -t {tmux_session_name} mouse on || exit $?; \
-         exec tmux attach-session -t {tmux_session_name}"
+         [ -n \"$tmux_session_id\" ] || exit 1; \
+         tmux set-option -t \"$tmux_session_id:\" mouse on || exit $?; \
+         exec tmux attach-session{detach_flag} -t \"$tmux_session_id\""
     )
 }
 
@@ -481,7 +495,9 @@ pub async fn create_ssh_session<R: Runtime>(
                 .sessions
                 .iter()
                 .find(|session| session.name == tmux_session_name);
-            if existing_session.is_some_and(|session| session.attached_clients > 0) {
+            if !config.tmux_detach_other_clients
+                && existing_session.is_some_and(|session| session.attached_clients > 0)
+            {
                 return Err("该远端 tmux 会话已有客户端附着，请稍后重试".to_string());
             }
             tmux_session_restored = existing_session.is_some();
@@ -515,7 +531,10 @@ pub async fn create_ssh_session<R: Runtime>(
         let _ = channel.set_env(false, "COLORTERM", "truecolor").await;
         if let Some(tmux_session_name) = tmux_session_name.as_deref() {
             channel
-                .exec(true, tmux_attach_command(tmux_session_name))
+                .exec(
+                    true,
+                    tmux_attach_command(tmux_session_name, config.tmux_detach_other_clients),
+                )
                 .await
                 .map_err(|e| e.to_string())?;
             logging::info(
@@ -911,14 +930,19 @@ pub async fn exit_ssh_tmux_copy_mode(
         let tmux_session_name = session
             .tmux_session_name
             .clone()
-            .ok_or_else(|| "当前 SSH 连接未附着 LazyTerm tmux 会话".to_string())?;
-        if !is_valid_lazyterm_tmux_session_name(&tmux_session_name) {
+            .ok_or_else(|| "当前 SSH 连接未附着 tmux 会话".to_string())?;
+        if !is_valid_tmux_session_name(&tmux_session_name) {
             return Err("当前 SSH 连接的 tmux 会话名称无效".to_string());
         }
         (Arc::clone(&session.handle), tmux_session_name)
     };
 
-    let command = format!("tmux send-keys -t {tmux_session_name} -X cancel 2>/dev/null || true");
+    let lookup_command = tmux_session_id_lookup_command(&tmux_session_name);
+    let command = format!(
+        "tmux_session_id=$({lookup_command}); \
+         [ -n \"$tmux_session_id\" ] || exit 0; \
+         tmux send-keys -t \"$tmux_session_id:\" -X cancel 2>/dev/null || true"
+    );
     let (exit_status, output) = execute_probe_command(&handle, &command).await?;
     if matches!(exit_status, Some(status) if status != 0) {
         return Err(if output.is_empty() {
@@ -946,13 +970,21 @@ pub async fn kill_ssh_tmux_session(
         let tmux_session_name = session
             .tmux_session_name
             .clone()
-            .ok_or_else(|| "当前 SSH 连接未附着 LazyTerm tmux 会话".to_string())?;
+            .ok_or_else(|| "当前 SSH 连接未附着 tmux 会话".to_string())?;
+        if !is_valid_tmux_session_name(&tmux_session_name) {
+            return Err("当前 SSH 连接的 tmux 会话名称无效".to_string());
+        }
         (Arc::clone(&session.handle), tmux_session_name)
     };
 
+    let lookup_command = tmux_session_id_lookup_command(&tmux_session_name);
     let (exit_status, output) = execute_probe_command(
         &handle,
-        &format!("tmux kill-session -t {tmux_session_name}"),
+        &format!(
+            "tmux_session_id=$({lookup_command}); \
+             [ -n \"$tmux_session_id\" ] || exit 1; \
+             tmux kill-session -t \"$tmux_session_id\""
+        ),
     )
     .await?;
     if exit_status != Some(0) {

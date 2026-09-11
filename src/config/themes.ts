@@ -586,10 +586,14 @@ export function getResolvedTerminalTheme(
 }
 
 export function toXtermTheme(scheme: TerminalColorScheme) {
+  const background = /^#[\da-f]{6}$/i.test(scheme.background)
+    ? scheme.background
+    : DEFAULT_TERMINAL_BACKGROUND_COLOR;
+
   return {
-    // Xterm falls back to its default black background for the CSS keyword
-    // "transparent". An explicit alpha channel keeps the renderer transparent.
-    background: "rgba(0, 0, 0, 0)",
+    // 保留实际底色的 RGB，仅将 alpha 设为 0，让背景层继续透出。
+    // OSC 11 查询忽略 alpha；固定透明黑会让 AI CLI 误判底色，绘制黑色背景块。
+    background: `${background}00`,
     foreground: scheme.foreground,
     cursor: scheme.cursor,
     cursorAccent: scheme.cursorAccent,

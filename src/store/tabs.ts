@@ -70,7 +70,7 @@ export interface TerminalSession {
   sshBackgroundModeEnabled?: boolean;
   /** 下一次连接时是否由 tmux 承载，以便断开后恢复。 */
   sshTmuxPersistenceEnabled?: boolean;
-  /** 当前 SSH 连接是否确实已附着 LazyTerm tmux 会话。 */
+  /** 当前 SSH 连接是否确实已附着 tmux 会话。 */
   sshTmuxPersistenceActive?: boolean;
   /** 同一标签重连时复用的远端 tmux 会话名。 */
   sshTmuxSessionName?: string;
@@ -356,7 +356,7 @@ export const useTabsStore = create<TabsState>()(
               sshBackgroundModeEnabled: sessionData.sshBackgroundModeEnabled ?? false,
               sshTmuxPersistenceEnabled: sessionData.sshTmuxPersistenceEnabled ?? false,
               sshTmuxPersistenceActive: false,
-              sshTmuxSessionName: sessionData.sshTmuxSessionName ?? `lazyterm_${id}`,
+              sshTmuxSessionName: sessionData.sshTmuxSessionName ?? id,
             } : {}),
             connectionStatus: {
               phase: "idle",

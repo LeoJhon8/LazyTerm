@@ -20,14 +20,13 @@ import { IS_SSH_BACKGROUND_MODE_SUPPORTED } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { useTabsStore, type TerminalSession } from "@/store/tabs";
 import { useNotificationsStore } from "@/store/notifications";
+import { useSettingsStore } from "@/store/settings";
 import { getErrorMessage } from "@/lib/errorUtils";
 import type { SshTmuxSessionInfo } from "@/types/terminal";
 
-const NEW_TMUX_SESSION = "__new_tmux_session__";
-const TMUX_SESSION_PREFIX = "lazyterm_";
+const NEW_TMUX_SESSION = null;
 const TMUX_SESSION_NAME_MAX_LENGTH = 128;
-const TMUX_SESSION_LABEL_MAX_LENGTH = TMUX_SESSION_NAME_MAX_LENGTH - TMUX_SESSION_PREFIX.length;
-const TMUX_SESSION_LABEL_PATTERN = /^[A-Za-z0-9_-]+$/;
+const TMUX_SESSION_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 type TmuxCheckState =
   | { status: "idle" | "checking" }
@@ -59,10 +58,6 @@ function isTmuxSessionUsedByAnotherTab(
       || candidate.sshTmuxPersistenceActive === true
     )
   );
-}
-
-function createTmuxSessionName(label: string): string {
-  return `${TMUX_SESSION_PREFIX}${label.trim()}`;
 }
 
 function formatTmuxTimestamp(timestamp: number, locale: string): string {
@@ -164,13 +159,14 @@ export function SshBackgroundModeDialog({
   onOpenChange,
 }: SshBackgroundModeDialogProps) {
   const { locale, t } = useI18n();
+  const detachOtherClients = useSettingsStore((state) => state.sshTmuxDetachOtherClients);
   const sessions = useTabsStore((state) => state.sessions);
   const updateSession = useTabsStore((state) => state.updateSession);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
   const [tmuxCheck, setTmuxCheck] = useState<TmuxCheckState>({ status: "idle" });
   const [tmuxSelected, setTmuxSelected] = useState(false);
-  const [tmuxChoice, setTmuxChoice] = useState(NEW_TMUX_SESSION);
-  const [newTmuxSessionLabel, setNewTmuxSessionLabel] = useState("");
+  const [tmuxChoice, setTmuxChoice] = useState<string | null>(NEW_TMUX_SESSION);
+  const [newTmuxSessionName, setNewTmuxSessionName] = useState("");
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const checkSequence = useRef(0);
 
@@ -187,7 +183,7 @@ export function SshBackgroundModeDialog({
     setTmuxCheck({ status: open ? "checking" : "idle" });
     setTmuxSelected(false);
     setTmuxChoice(NEW_TMUX_SESSION);
-    setNewTmuxSessionLabel("");
+    setNewTmuxSessionName("");
     setSelectionError(null);
 
     if (!open || !connector?.isConnected) {
@@ -217,22 +213,22 @@ export function SshBackgroundModeDialog({
   }
 
   const enableForSession = () => {
-    let tmuxSessionName = session.sshTmuxSessionName ?? `lazyterm_${session.id}`;
+    let tmuxSessionName = session.sshTmuxSessionName ?? session.id;
     if (useTmux) {
       if (tmuxChoice === NEW_TMUX_SESSION) {
-        const normalizedLabel = newTmuxSessionLabel.trim();
+        const normalizedName = newTmuxSessionName.trim();
         if (
-          !normalizedLabel
-          || normalizedLabel.length > TMUX_SESSION_LABEL_MAX_LENGTH
-          || !TMUX_SESSION_LABEL_PATTERN.test(normalizedLabel)
+          !normalizedName
+          || normalizedName.length > TMUX_SESSION_NAME_MAX_LENGTH
+          || !TMUX_SESSION_NAME_PATTERN.test(normalizedName)
         ) {
           setSelectionError(t("请输入 tmux 会话名称，仅支持英文字母、数字、连字符和下划线（最多 {count} 个字符）。", {
-            count: TMUX_SESSION_LABEL_MAX_LENGTH,
+            count: TMUX_SESSION_NAME_MAX_LENGTH,
           }));
           return;
         }
 
-        tmuxSessionName = createTmuxSessionName(normalizedLabel);
+        tmuxSessionName = normalizedName;
         if (tmuxCheck.sessions.some((candidate) => candidate.name === tmuxSessionName)) {
           setSelectionError(t("同名 tmux 会话已存在，请选择恢复已有会话或更换名称。"));
           return;
@@ -316,7 +312,7 @@ export function SshBackgroundModeDialog({
                       <span className="block text-xs text-muted-foreground">
                         {tmuxCheck.sessions.length > 0
                           ? t("发现 {count} 个可恢复会话，请选择要恢复的会话或创建新会话。", { count: tmuxCheck.sessions.length })
-                          : t("未发现已有 LazyTerm 会话，将创建一个新会话。")}
+                          : t("未发现已有 tmux 会话，将创建一个新会话。")}
                       </span>
                       <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border/70 bg-background/60 p-2.5 hover:bg-accent/40">
                         <input
@@ -340,12 +336,9 @@ export function SshBackgroundModeDialog({
                               {t("tmux 会话名称")}
                             </span>
                             <span className="flex items-center rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
-                              <span className="shrink-0 border-r border-border px-2.5 font-mono text-xs text-muted-foreground">
-                                {TMUX_SESSION_PREFIX}
-                              </span>
                               <Input
-                                value={newTmuxSessionLabel}
-                                maxLength={TMUX_SESSION_LABEL_MAX_LENGTH}
+                                value={newTmuxSessionName}
+                                maxLength={TMUX_SESSION_NAME_MAX_LENGTH}
                                 placeholder="codex-project"
                                 autoCapitalize="none"
                                 autoCorrect="off"
@@ -353,7 +346,7 @@ export function SshBackgroundModeDialog({
                                 className="h-8 min-w-0 rounded-none border-0 bg-transparent px-2 font-mono text-xs shadow-none focus-visible:ring-0"
                                 onFocus={() => setTmuxChoice(NEW_TMUX_SESSION)}
                                 onChange={(event) => {
-                                  setNewTmuxSessionLabel(event.target.value);
+                                  setNewTmuxSessionName(event.target.value);
                                   setTmuxChoice(NEW_TMUX_SESSION);
                                   setSelectionError(null);
                                 }}
@@ -361,7 +354,7 @@ export function SshBackgroundModeDialog({
                             </span>
                             <span className="block text-xs text-muted-foreground">
                               {t("仅支持英文字母、数字、连字符和下划线，最多 {count} 个字符。", {
-                                count: TMUX_SESSION_LABEL_MAX_LENGTH,
+                                count: TMUX_SESSION_NAME_MAX_LENGTH,
                               })}
                             </span>
                           </span>
@@ -377,7 +370,8 @@ export function SshBackgroundModeDialog({
                               tmuxSession.name,
                             );
                             const hasAttachedClients = tmuxSession.attachedClients > 0;
-                            const unavailable = usedByAnotherTab || hasAttachedClients;
+                            const attachedClientsBlocked = hasAttachedClients && !detachOtherClients;
+                            const unavailable = usedByAnotherTab || attachedClientsBlocked;
                             return (
                               <label
                                 key={tmuxSession.name}
@@ -419,7 +413,7 @@ export function SshBackgroundModeDialog({
                                       {t("此会话已被另一个 LazyTerm 标签页使用")}
                                     </span>
                                   )}
-                                  {!usedByAnotherTab && hasAttachedClients && (
+                                  {!usedByAnotherTab && attachedClientsBlocked && (
                                     <span className="block text-xs text-amber-600 dark:text-amber-400">
                                       {t("此会话已有客户端附着，暂不可恢复")}
                                     </span>

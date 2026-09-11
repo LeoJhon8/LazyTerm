@@ -136,9 +136,17 @@ function getTabIcon(type: TerminalSession["type"] | undefined, isSplit?: boolean
   }
 }
 
+function getSessionTabTitle(session: TerminalSession | undefined, fallback: string): string {
+  if (session?.type === "ssh" && (session.sshTmuxPersistenceActive || session.sshTmuxPersistenceEnabled)) {
+    return session.sshTmuxSessionName || fallback;
+  }
+  return fallback;
+}
+
 function SortableTab({
   id,
   title,
+  displayTitle,
   active,
   canCloseLeft,
   canCloseRight,
@@ -166,6 +174,7 @@ function SortableTab({
 }: {
   id: string;
   title: string;
+  displayTitle: string;
   active: boolean;
   canCloseLeft: boolean;
   canCloseRight: boolean;
@@ -296,25 +305,12 @@ function SortableTab({
                         connectionPhase === "closing" || connectionPhase === "idle" ? "bg-muted-foreground/50" : "bg-sky-400 animate-pulse",
                 )} />
               )}
-              <span className="min-w-0 truncate">{title}</span>
+              <span className="min-w-0 truncate">{displayTitle}</span>
               {backgroundModeEnabled && (
                 <Radio
                   className="h-3 w-3 shrink-0 text-emerald-500"
                   aria-hidden="true"
                 />
-              )}
-              {(tmuxPersistenceActive || tmuxPending) && (
-                <span
-                  className={cn(
-                    "max-w-28 shrink-0 truncate rounded border px-1 font-mono text-[8px] font-semibold leading-3",
-                    tmuxPersistenceActive
-                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-500"
-                      : "border-amber-500/50 bg-amber-500/10 text-amber-500",
-                  )}
-                  aria-hidden="true"
-                >
-                  {tmuxSessionName ? `tmux:${tmuxSessionName}` : "tmux"}
-                </span>
               )}
             </span>
 
@@ -945,6 +941,19 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
     </Button>
   );
 
+  const tabTitles = new Map(tabs.map((tab) => {
+    const rootNode = workspaces[tab.id]?.rootNode;
+    const leaves = rootNode ? getAllLeaves(rootNode) : [];
+    const leafSessions = leaves.map((leaf) => sessions.find((session) => session.id === leaf.sessionId));
+    const title = leaves.length > 1
+      ? leafSessions.map((session) => session?.title || t("新标签")).join(" | ")
+      : tab.title;
+    const displayTitle = leaves.length > 1
+      ? leafSessions.map((session) => getSessionTabTitle(session, session?.title || t("新标签"))).join(" | ")
+      : getSessionTabTitle(leafSessions[0], tab.title);
+    return [tab.id, { title, displayTitle }];
+  }));
+
   return (
     <div className="tabbar-surface">
       <div className="min-w-0 flex-1 overflow-hidden">
@@ -993,17 +1002,14 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
                   ?? tabSessions.find((session) => ["connecting", "authenticating", "reconnecting"].includes(session.connectionStatus.phase))?.connectionStatus.phase
                   ?? tabSessions[0]?.connectionStatus.phase;
 
-                let displayTitle = tab.title;
-                if (isSplit) {
-                  const titles = leaves.map(l => sessions.find(s => s.id === l.sessionId)?.title || t("新标签"));
-                  displayTitle = titles.join(" | ");
-                }
+                const { title, displayTitle } = tabTitles.get(tab.id)!;
 
                 return (
                   <SortableTab
                     key={tab.id}
                     id={tab.id}
-                    title={displayTitle}
+                    title={title}
+                    displayTitle={displayTitle}
                     isSplit={isSplit}
                     active={activeTabId === tab.id}
                     canCloseLeft={tabs[0]?.id !== tab.id}
@@ -1051,7 +1057,7 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
                   style={{ width: "180px", cursor: "grabbing" }}
                 >
                   <span className="pointer-events-none max-w-32 flex-1 truncate text-[13px] leading-5">
-                    {tabs.find((t) => t.id === activeDragId)?.title || t("标签")}
+                    {tabTitles.get(activeDragId)?.displayTitle || t("标签")}
                   </span>
                   <Button
                     variant="ghost"

@@ -80,7 +80,7 @@ export function createConnector(
           backgroundModeEnabled: sessionData.sshBackgroundModeEnabled,
           tmuxPersistenceEnabled: sessionData.sshTmuxPersistenceEnabled,
           logicalSessionKey: sessionId,
-          tmuxSessionName: sessionData.sshTmuxSessionName ?? `lazyterm_${sessionId}`,
+          tmuxSessionName: sessionData.sshTmuxSessionName ?? sessionId,
         });
       }
     case "rdp":

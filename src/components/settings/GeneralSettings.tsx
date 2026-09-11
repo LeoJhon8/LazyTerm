@@ -15,7 +15,7 @@ import { isWindowsPlatform, resolveRdpBackend, type ConfigurableRdpBackend } fro
 import type { ShellInfo } from "@/types/shell";
 import { getAvailableShells } from "@/services/shellService";
 import { logger } from "@/lib/logger";
-import { IS_ANDROID } from "@/lib/platform";
+import { IS_ANDROID, IS_SSH_BACKGROUND_MODE_SUPPORTED } from "@/lib/platform";
 import { invokeTauri } from "@/services/tauri";
 
 /** 通用设置：语言 + 终端行为 */
@@ -25,6 +25,7 @@ export function GeneralSettings() {
     defaultShell,
     rdpBackend,
     autoUpdateChangedSshHostKeys,
+    sshTmuxDetachOtherClients,
     confirmCloseNonDefaultTabs,
     terminalAutocomplete,
     autocompleteSource,
@@ -227,6 +228,32 @@ export function GeneralSettings() {
             </div>
           </div>
         </div>
+
+        {IS_SSH_BACKGROUND_MODE_SUPPORTED && (
+          <div className="flex flex-col gap-1">
+            <Label className="mb-1 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              {t("SSH 后台模式")}
+            </Label>
+            <div className="divide-y divide-border/30 overflow-hidden rounded-xl border border-border/40 bg-muted/20">
+              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <Label htmlFor="ssh-tmux-detach-other-clients" className="cursor-pointer text-sm">
+                    {t("接管已附着的 tmux 会话")}
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    {t("恢复已有 tmux 会话时，自动断开其他已附着客户端并继续连接；不会终止会话中运行的命令和程序。")}
+                  </span>
+                </div>
+                <Switch
+                  id="ssh-tmux-detach-other-clients"
+                  className="shrink-0"
+                  checked={sshTmuxDetachOtherClients}
+                  onCheckedChange={(checked) => setSettings({ sshTmuxDetachOtherClients: !!checked })}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 终端行为 */}
         <div className="flex flex-col gap-1">

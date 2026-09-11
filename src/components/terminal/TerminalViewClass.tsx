@@ -688,28 +688,34 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         existingInstance.termState.lastSentRows = undefined;
         existingInstance.termState.lastRemoteResizeAt = undefined;
 
-        existingInstance.termState.isTransitioning = true;
+        const isTmuxConnection = connector.protocol === "ssh"
+          && connector.isTmuxPersistenceActive?.() === true;
+        // tmux 附着后会立即重绘整个界面，不能拦截清屏、光标定位或备用屏幕切换。
+        existingInstance.termState.isTransitioning = !isTmuxConnection;
         if (existingInstance.termState.timeoutId) {
           clearTimeout(existingInstance.termState.timeoutId);
+          existingInstance.termState.timeoutId = undefined;
         }
-        existingInstance.termState.timeoutId = window.setTimeout(() => {
-          existingInstance.termState.isTransitioning = false;
-        }, 2000);
+        if (!isTmuxConnection) {
+          existingInstance.termState.timeoutId = window.setTimeout(() => {
+            existingInstance.termState.isTransitioning = false;
+          }, 2000);
 
-        existingInstance.output.write(
-          connector.protocol === "serial"
-            ? [
-                "\r\n",
-                `\x1b[33m${t("串口正在重新连接...")}\x1b[0m`,
-                "\r\n\r\n",
-              ].join("")
-            : [
-                "\r\n",
-                `\x1b[33m${t("SSH 已断开，已切换到本地终端。")}\x1b[0m`,
-                `\r\n\x1b[90m${t("之前的 SSH 输出已保留。")}\x1b[0m`,
-                "\r\n\r\n",
-              ].join("")
-        );
+          existingInstance.output.write(
+            connector.protocol === "serial"
+              ? [
+                  "\r\n",
+                  `\x1b[33m${t("串口正在重新连接...")}\x1b[0m`,
+                  "\r\n\r\n",
+                ].join("")
+              : [
+                  "\r\n",
+                  `\x1b[33m${t("SSH 已断开，已切换到本地终端。")}\x1b[0m`,
+                  `\r\n\x1b[90m${t("之前的 SSH 输出已保留。")}\x1b[0m`,
+                  "\r\n\r\n",
+                ].join("")
+          );
+        }
 
         currentTermInstance = existingInstance;
         existingInstance.dataUnsubscribe = () => {

@@ -18,7 +18,7 @@ function defineMessages<const T extends MessageMap>(messages: T) {
 const zhMessages = defineMessages({
   "跟随系统": "跟随系统",
   "简体中文": "简体中文",
-  "英语": "英语",
+  "English": "English",
   "界面语言": "界面语言",
   "系统等宽字体": "系统等宽字体",
   "取消": "取消",
@@ -313,6 +313,9 @@ const zhMessages = defineMessages({
   "SSH 连接安全": "SSH 连接安全",
   "主机密钥变更时自动更新": "主机密钥变更时自动更新",
   "检测到服务器主机密钥变化时，自动移除该主机的旧 known_hosts 记录、写入新密钥并继续连接。请仅在确认目标服务器可信时开启。": "检测到服务器主机密钥变化时，自动移除该主机的旧 known_hosts 记录、写入新密钥并继续连接。请仅在确认目标服务器可信时开启。",
+  "SSH 后台模式": "SSH 后台模式",
+  "接管已附着的 tmux 会话": "接管已附着的 tmux 会话",
+  "恢复已有 tmux 会话时，自动断开其他已附着客户端并继续连接；不会终止会话中运行的命令和程序。": "恢复已有 tmux 会话时，自动断开其他已附着客户端并继续连接；不会终止会话中运行的命令和程序。",
   "外观设置": "外观设置",
   "布局管理": "布局管理",
   "凭据管理": "凭据管理",
@@ -433,7 +436,7 @@ const zhMessages = defineMessages({
   "检测到 {version}。选择 tmux 后，确认时会立即重连并进入所选会话。": ({ version }) => `检测到 ${version}。选择 tmux 后，确认时会立即重连并进入所选会话。`,
   "检测到 tmux。选择后，确认时会立即重连并进入所选会话。": "检测到 tmux。选择后，确认时会立即重连并进入所选会话。",
   "发现 {count} 个可恢复会话，请选择要恢复的会话或创建新会话。": ({ count }) => `发现 ${count} 个可恢复会话，请选择要恢复的会话或创建新会话。`,
-  "未发现已有 LazyTerm 会话，将创建一个新会话。": "未发现已有 LazyTerm 会话，将创建一个新会话。",
+  "未发现已有 tmux 会话，将创建一个新会话。": "未发现已有 tmux 会话，将创建一个新会话。",
   "创建新的 tmux 会话": "创建新的 tmux 会话",
   "创建一个与其他标签页相互独立的后台会话。": "创建一个与其他标签页相互独立的后台会话。",
   "tmux 会话名称": "tmux 会话名称",
@@ -740,8 +743,8 @@ type TranslationKey = keyof typeof zhMessages;
 
 const enMessages = defineMessages({
   "跟随系统": "Follow system",
-  "简体中文": "Simplified Chinese",
-  "英语": "English",
+  "简体中文": "简体中文",
+  "English": "English",
   "界面语言": "Interface language",
   "系统等宽字体": "System monospace",
   "取消": "Cancel",
@@ -1038,6 +1041,9 @@ const enMessages = defineMessages({
   "SSH 连接安全": "SSH connection security",
   "主机密钥变更时自动更新": "Automatically update changed host keys",
   "检测到服务器主机密钥变化时，自动移除该主机的旧 known_hosts 记录、写入新密钥并继续连接。请仅在确认目标服务器可信时开启。": "When a server host key changes, remove the old known_hosts entry, save the new key, and continue connecting. Enable this only for trusted servers.",
+  "SSH 后台模式": "SSH background mode",
+  "接管已附着的 tmux 会话": "Take over attached tmux sessions",
+  "恢复已有 tmux 会话时，自动断开其他已附着客户端并继续连接；不会终止会话中运行的命令和程序。": "When restoring an existing tmux session, disconnect other attached clients and continue connecting. Commands and programs running in the session are not terminated.",
   "外观设置": "Appearance",
   "布局管理": "Layout",
   "凭据管理": "Credentials",
@@ -1158,7 +1164,7 @@ const enMessages = defineMessages({
   "检测到 {version}。选择 tmux 后，确认时会立即重连并进入所选会话。": ({ version }) => `${version} detected. After selecting tmux, confirming will immediately reconnect and enter the selected session.`,
   "检测到 tmux。选择后，确认时会立即重连并进入所选会话。": "tmux detected. Confirming your selection will immediately reconnect and enter the selected session.",
   "发现 {count} 个可恢复会话，请选择要恢复的会话或创建新会话。": ({ count }) => `${count} recoverable session(s) found. Select one to recover or create a new session.`,
-  "未发现已有 LazyTerm 会话，将创建一个新会话。": "No existing LazyTerm sessions were found. A new session will be created.",
+  "未发现已有 tmux 会话，将创建一个新会话。": "No existing tmux sessions were found. A new session will be created.",
   "创建新的 tmux 会话": "Create a new tmux session",
   "创建一个与其他标签页相互独立的后台会话。": "Create a background session independent from other tabs.",
   "tmux 会话名称": "tmux session name",
@@ -1523,7 +1529,7 @@ export const APP_LANGUAGE_OPTIONS: Array<{
 }> = [
   { value: "system", labelKey: "跟随系统" },
   { value: "zh-CN", labelKey: "简体中文" },
-  { value: "en-US", labelKey: "英语" },
+  { value: "en-US", labelKey: "English" },
 ];
 
 const MODULE_NAME_KEYS = {

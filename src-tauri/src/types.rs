@@ -35,6 +35,8 @@ pub struct SshConnectConfig {
     #[serde(default)]
     pub tmux_persistence: bool,
     pub tmux_session_name: Option<String>,
+    #[serde(default)]
+    pub tmux_detach_other_clients: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

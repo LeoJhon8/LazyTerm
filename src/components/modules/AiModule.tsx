@@ -537,8 +537,8 @@ export function AiModule() {
         )}
       </div>
 
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-3 px-3 py-3">
+      <ScrollArea className="ai-conversation-scroll min-h-0 min-w-0 w-full flex-1">
+        <div className="min-w-0 w-full space-y-3 px-3 py-3">
           {messages.length === 0 && (
             <div className="flex min-h-48 flex-col items-center justify-center px-4 text-center text-muted-foreground">
               <Bot className="mb-3 h-7 w-7 opacity-50" />
