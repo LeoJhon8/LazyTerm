@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -268,7 +269,9 @@ export function DataSettings() {
             </div>
             {gitRepoPath && (
               <div className="px-4 py-2">
-                <div className="text-sm truncate text-muted-foreground" title={gitRepoPath}>{gitRepoPath}</div>
+                <HoverTooltip content={gitRepoPath}>
+                  <div className="text-sm truncate text-muted-foreground">{gitRepoPath}</div>
+                </HoverTooltip>
               </div>
             )}
             <div className="flex items-center justify-between px-4 py-2.5">

@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,7 @@ function getAppCustomColor(palette: typeof DEFAULT_APP_COLOR_PALETTE): string {
 export function AppearanceSettings() {
   const { locale, t } = useI18n();
   const appBackgroundColor = useSettingsStore((s) => s.appBackgroundColor);
+  const moodButtonVisible = useSettingsStore((s) => s.moodButtonVisible);
   const appColorPalette = useSettingsStore((s) => s.appColorPalette ?? DEFAULT_APP_COLOR_PALETTE);
   const fontSize = useSettingsStore((s) => s.fontSize);
   const fontFamily = useSettingsStore((s) => s.fontFamily);
@@ -228,6 +230,21 @@ export function AppearanceSettings() {
         <div className="flex flex-col gap-6 pb-10 px-1">
 
           {/* 整体配色方案 */}
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-muted/20 px-3 py-3">
+            <div className="min-w-0 space-y-1">
+              <Label htmlFor="mood-button-visible" className="cursor-pointer text-sm">{t("显示心情换色按钮")}</Label>
+              <p id="mood-button-description" className="text-xs text-muted-foreground">
+                {t("在 LazyTerm 旁显示骰子按钮，点击随机切换心情并生成对应的应用和终端底色；悬停查看当前心情。关闭后保留配色，图片背景可能遮挡底色。")}
+              </p>
+            </div>
+            <Switch
+              id="mood-button-visible"
+              aria-describedby="mood-button-description"
+              checked={moodButtonVisible}
+              onCheckedChange={(checked) => setSettings({ moodButtonVisible: checked })}
+            />
+          </div>
+
           <div className="flex flex-col gap-1">
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("整体配色方案")}</Label>
             <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden px-3 py-3">
@@ -570,9 +587,11 @@ export function AppearanceSettings() {
                       }}
                     />
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-1 truncate" title={backgroundImagePath}>
-                    {backgroundImagePath}
-                  </p>
+                  <HoverTooltip content={backgroundImagePath}>
+                    <p className="text-[10px] text-muted-foreground mt-1 truncate">
+                      {backgroundImagePath}
+                    </p>
+                  </HoverTooltip>
                 </div>
               )}
               <div className="flex items-center justify-between px-4 py-2.5">

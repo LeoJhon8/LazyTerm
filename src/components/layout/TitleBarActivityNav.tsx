@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { MoreHorizontal } from "lucide-react";
 import { getModuleDisplayName, useI18n } from "@/i18n";
 import {
@@ -74,38 +75,39 @@ export function TitleBarActivityNav() {
   return (
     <nav className="window-titlebar__activity" aria-label="活动入口">
       {visibleEntries.map((entry) => (
-        <Button
-          key={`${entry.side}-${entry.id}`}
-          type="button"
-          variant="ghost"
-          size="icon"
-          className={cn(
-            "window-titlebar__activity-button",
-            entry.active && "window-titlebar__activity-button--active",
-          )}
-          disabled={entry.disabled}
-          title={entry.label}
-          aria-label={entry.label}
-          aria-pressed={entry.active}
-          onClick={() => handleEntryClick(entry)}
-        >
-          {entry.icon}
-        </Button>
+        <HoverTooltip key={`${entry.side}-${entry.id}`} content={entry.label}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "window-titlebar__activity-button",
+              entry.active && "window-titlebar__activity-button--active",
+            )}
+            disabled={entry.disabled}
+            aria-label={entry.label}
+            aria-pressed={entry.active}
+            onClick={() => handleEntryClick(entry)}
+          >
+            {entry.icon}
+          </Button>
+        </HoverTooltip>
       ))}
 
       {overflowEntries.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="window-titlebar__activity-button"
-              title="更多"
-              aria-label="更多活动入口"
-            >
-              <MoreHorizontal className="h-5 w-5" />
-            </Button>
+            <HoverTooltip content="更多">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="window-titlebar__activity-button"
+                aria-label="更多活动入口"
+              >
+                <MoreHorizontal className="h-5 w-5" />
+              </Button>
+            </HoverTooltip>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="bottom" className="min-w-44">
             {overflowEntries.map((entry) => (

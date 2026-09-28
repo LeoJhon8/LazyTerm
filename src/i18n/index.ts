@@ -16,6 +16,18 @@ function defineMessages<const T extends MessageMap>(messages: T) {
 }
 
 const zhMessages = defineMessages({
+  "开心": "开心",
+  "平静": "平静",
+  "活力": "活力",
+  "浪漫": "浪漫",
+  "忧郁": "忧郁",
+  "自然": "自然",
+  "神秘": "神秘",
+  "慵懒": "慵懒",
+  "当前心情：{mood} · 点击切换": "当前心情：{mood} · 点击切换",
+  "显示心情换色按钮": "显示心情换色按钮",
+  "换个心情": "换个心情",
+  "在 LazyTerm 旁显示骰子按钮，点击随机切换心情并生成对应的应用和终端底色；悬停查看当前心情。关闭后保留配色，图片背景可能遮挡底色。": "在 LazyTerm 旁显示骰子按钮，点击随机切换心情并生成对应的应用和终端底色；悬停查看当前心情。关闭后保留配色，图片背景可能遮挡底色。",
   "跟随系统": "跟随系统",
   "简体中文": "简体中文",
   "English": "English",
@@ -742,6 +754,18 @@ const zhMessages = defineMessages({
 type TranslationKey = keyof typeof zhMessages;
 
 const enMessages = defineMessages({
+  "开心": "Happy",
+  "平静": "Calm",
+  "活力": "Energetic",
+  "浪漫": "Romantic",
+  "忧郁": "Melancholy",
+  "自然": "Natural",
+  "神秘": "Mysterious",
+  "慵懒": "Relaxed",
+  "当前心情：{mood} · 点击切换": "Current mood: {mood} · Click to shuffle",
+  "显示心情换色按钮": "Show mood color button",
+  "换个心情": "Shuffle mood colors",
+  "在 LazyTerm 旁显示骰子按钮，点击随机切换心情并生成对应的应用和终端底色；悬停查看当前心情。关闭后保留配色，图片背景可能遮挡底色。": "Show a dice button next to LazyTerm to shuffle moods and generate matching app and terminal background colors. Hover to see the current mood. Hiding the button keeps the colors. Background images may cover them.",
   "跟随系统": "Follow system",
   "简体中文": "简体中文",
   "English": "English",

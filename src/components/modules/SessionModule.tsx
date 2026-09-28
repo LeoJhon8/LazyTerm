@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useState, useMemo, useEffect, useRef, type MouseEvent } from "react";
 import { 
   DndContext, closestCenter, pointerWithin, PointerSensor, useSensor, useSensors, DragOverlay,
@@ -142,17 +143,18 @@ function NodeRowContent({
             }
           </div>
         )}
-        <span
-          title={node.name}
-          className={cn(
-            "truncate flex-1 select-none",
-            node.isRoot ? "font-semibold text-foreground" : "font-medium text-muted-foreground group-hover:text-foreground",
-            isSelected && !node.isRoot && "text-accent-foreground",
-            isUploading && "text-amber-950 dark:text-cyan-50"
-          )}
-        >
-          {node.name}
-        </span>
+        <HoverTooltip content={node.name}>
+          <span
+            className={cn(
+              "truncate flex-1 select-none",
+              node.isRoot ? "font-semibold text-foreground" : "font-medium text-muted-foreground group-hover:text-foreground",
+              isSelected && !node.isRoot && "text-accent-foreground",
+              isUploading && "text-amber-950 dark:text-cyan-50"
+            )}
+          >
+            {node.name}
+          </span>
+        </HoverTooltip>
       </div>
     </div>
   );

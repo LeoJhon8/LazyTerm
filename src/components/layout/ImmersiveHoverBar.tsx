@@ -1,4 +1,6 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MoodButton } from "@/components/layout/MoodButton";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AnimatePresence, motion } from "framer-motion";
 import { Copy, Maximize2, Minus, Settings, Square, X } from "lucide-react";
@@ -233,6 +235,7 @@ export function ImmersiveHoverBar() {
             {/* 左侧：品牌 + 会话信息 */}
             <div className="flex min-w-0 items-center gap-2">
               <span className="shrink-0 text-xs font-semibold text-foreground/80">LazyTerm</span>
+              <MoodButton />
               {focusSession && (
                 <>
                   <span className="shrink-0 text-muted-foreground/40">·</span>
@@ -256,15 +259,16 @@ export function ImmersiveHoverBar() {
 
             {/* 右侧：退出沉浸 + 设置 + 窗口控制 */}
             <div className="flex shrink-0 items-center gap-0.5">
-              <button
-                type="button"
-                className="rounded-sm p-1.5 text-muted-foreground/70 transition-colors hover:bg-accent/60 hover:text-foreground"
-                onClick={() => setViewMode("normal")}
-                aria-label={t("退出沉浸模式")}
-                title={t("退出沉浸模式")}
-              >
-                <Maximize2 className="h-3.5 w-3.5" />
-              </button>
+              <HoverTooltip content={t("退出沉浸模式")}>
+                <button
+                  type="button"
+                  className="rounded-sm p-1.5 text-muted-foreground/70 transition-colors hover:bg-accent/60 hover:text-foreground"
+                  onClick={() => setViewMode("normal")}
+                  aria-label={t("退出沉浸模式")}
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                </button>
+              </HoverTooltip>
               <button
                 type="button"
                 className="rounded-sm p-1.5 text-muted-foreground/70 transition-colors hover:bg-accent/60 hover:text-foreground"

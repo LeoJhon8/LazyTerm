@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 /**
  * 连接配置表单组件 — 供 NewConnectionDialog 和 QuickConnectDialog 共享
  * 包含本地终端、SSH、RDP、VNC、Serial、Telnet、AI CLI 七种类型的表单
@@ -104,18 +105,19 @@ function PasswordInput({
         autoComplete="off"
         className="password-input-native-reveal-hidden pr-10"
       />
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => setVisible((current) => !current)}
-        title={label}
-        aria-label={label}
-      >
-        <Icon className="h-4 w-4" />
-      </Button>
+      <HoverTooltip content={label}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => setVisible((current) => !current)}
+          aria-label={label}
+        >
+          <Icon className="h-4 w-4" />
+        </Button>
+      </HoverTooltip>
     </div>
   );
 }
@@ -177,9 +179,11 @@ function CredentialDropdownInput({
       {trailing}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" title="选择凭据" aria-label="选择凭据">
-            <ChevronDown className="h-4 w-4" />
-          </Button>
+          <HoverTooltip content="选择凭据">
+            <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" aria-label="选择凭据">
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </HoverTooltip>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuItem onClick={() => onCredentialChange(null)}>
@@ -674,9 +678,11 @@ export function SerialForm({ onSubmit, submitLabel }: { onSubmit: (config: Seria
             {availablePorts.map((p) => <option key={p} value={p} />)}
             {config.port && !availablePorts.includes(config.port) && <option value={config.port} />}
           </datalist>
-          <Button type="button" variant="outline" size="icon" onClick={(e) => { e.preventDefault(); e.stopPropagation(); loadPorts(); }} title={t("刷新端口列表")} className="shrink-0 h-9 w-9">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
-          </Button>
+          <HoverTooltip content={t("刷新端口列表")}>
+            <Button type="button" variant="outline" size="icon" onClick={(e) => { e.preventDefault(); e.stopPropagation(); loadPorts(); }} aria-label={t("刷新端口列表")} className="shrink-0 h-9 w-9">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
+            </Button>
+          </HoverTooltip>
         </div>
       </FormField>
       <FormField label={t("名称")} description="留空时使用串口名称">

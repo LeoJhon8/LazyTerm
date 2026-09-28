@@ -225,7 +225,9 @@ async fn prepare_shell_integration_script(
         let mut exit_status = None;
         while let Some(message) = channel.wait().await {
             match message {
-                ChannelMsg::ExitStatus { exit_status: status } => exit_status = Some(status),
+                ChannelMsg::ExitStatus {
+                    exit_status: status,
+                } => exit_status = Some(status),
                 ChannelMsg::Eof | ChannelMsg::Close => break,
                 _ => {}
             }
@@ -247,7 +249,7 @@ async fn inject_shell_integration(
     handle: &russh::client::Handle<ssh_auth::SshClientHandler>,
     channel: &russh::Channel<russh::client::Msg>,
     kind: &str,
-) {
+) -> Option<ShellIntegrationEchoFilter> {
     let remote_path = match tokio::time::timeout(
         Duration::from_secs(3),
         prepare_shell_integration_script(handle, kind),
@@ -260,14 +262,14 @@ async fn inject_shell_integration(
                 "SSH/shell-integration",
                 format!("无法准备远端 Shell Integration，当前会话不启用可靠命令通知: {error}"),
             );
-            return;
+            return None;
         }
         Err(_) => {
             logging::warn(
                 "SSH/shell-integration",
                 "准备远端 Shell Integration 超时，当前会话不启用可靠命令通知",
             );
-            return;
+            return None;
         }
     };
     let source_command = if kind == "fish" {
@@ -275,16 +277,174 @@ async fn inject_shell_integration(
     } else {
         format!(" . '{remote_path}'; command rm -f -- '{remote_path}'\r")
     };
+    // The printable command and its executed OSC marker differ, so terminal echo
+    // cannot be mistaken for the acknowledgement (even across SSH packets).
+    let token = Uuid::new_v4().simple().to_string();
+    let prefix = format!(" command printf '\\033]633;LazyTermInit;{token}\\007';");
+    let marker = format!("\x1b]633;LazyTermInit;{token}\x07");
+    let command = format!("{prefix}{source_command}");
 
-    match channel.data_bytes(source_command.into_bytes()).await {
-        Ok(()) => logging::info(
-            "SSH/shell-integration",
-            format!("已为当前 SSH 会话注入 {kind} Shell Integration"),
-        ),
-        Err(error) => logging::warn(
-            "SSH/shell-integration",
-            format!("注入远端 Shell Integration 失败，当前会话不启用可靠命令通知: {error}"),
-        ),
+    match channel.data_bytes(command.as_bytes().to_vec()).await {
+        Ok(()) => {
+            logging::info(
+                "SSH/shell-integration",
+                format!("已为当前 SSH 会话注入 {kind} Shell Integration"),
+            );
+            Some(ShellIntegrationEchoFilter {
+                command: command.trim_end_matches('\r').as_bytes().to_vec(),
+                marker: marker.into_bytes(),
+                pending: Vec::new(),
+            })
+        }
+        Err(error) => {
+            logging::warn(
+                "SSH/shell-integration",
+                format!("注入远端 Shell Integration 失败，当前会话不启用可靠命令通知: {error}"),
+            );
+            None
+        }
+    }
+}
+
+#[derive(Default)]
+struct SshOutputDecoder {
+    pending: Vec<u8>,
+}
+
+impl SshOutputDecoder {
+    fn push(&mut self, data: &[u8]) -> String {
+        self.pending.extend_from_slice(data);
+        let mut output = String::new();
+        let mut consumed = 0;
+        while consumed < self.pending.len() {
+            match std::str::from_utf8(&self.pending[consumed..]) {
+                Ok(text) => {
+                    output.push_str(text);
+                    consumed = self.pending.len();
+                }
+                Err(error) => {
+                    let valid_end = consumed + error.valid_up_to();
+                    output.push_str(&String::from_utf8_lossy(&self.pending[consumed..valid_end]));
+                    consumed = valid_end;
+                    match error.error_len() {
+                        Some(len) => {
+                            output.push('\u{fffd}');
+                            consumed += len;
+                        }
+                        // SSH packet boundaries can split a UTF-8 character. Keep
+                        // its trailing bytes (at most three) for the next packet.
+                        None => break,
+                    }
+                }
+            }
+        }
+        self.pending.drain(..consumed);
+        output
+    }
+
+    fn finish(&mut self) -> String {
+        String::from_utf8_lossy(&std::mem::take(&mut self.pending)).into_owned()
+    }
+}
+
+struct ShellIntegrationEchoFilter {
+    command: Vec<u8>,
+    marker: Vec<u8>,
+    pending: Vec<u8>,
+}
+
+impl ShellIntegrationEchoFilter {
+    // Ignore display-only escape sequences and soft-wrap line breaks when
+    // locating the echo, retaining offsets into the original terminal bytes.
+    fn echo_ranges(&self, end: usize) -> Vec<std::ops::Range<usize>> {
+        let mut visible = Vec::new();
+        let mut offsets = Vec::new();
+        let mut index = 0;
+        while index < end {
+            let byte = self.pending[index];
+            if byte == 0x1b && index + 1 < end {
+                match self.pending[index + 1] {
+                    b'[' => {
+                        index += 2;
+                        while index < end {
+                            let byte = self.pending[index];
+                            index += 1;
+                            if (0x40..=0x7e).contains(&byte) {
+                                break;
+                            }
+                        }
+                        continue;
+                    }
+                    b']' => {
+                        index += 2;
+                        while index < end {
+                            if self.pending[index] == 0x07 {
+                                index += 1;
+                                break;
+                            }
+                            if self.pending[index] == 0x1b
+                                && index + 1 < end
+                                && self.pending[index + 1] == b'\\'
+                            {
+                                index += 2;
+                                break;
+                            }
+                            index += 1;
+                        }
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+            if byte >= 0x20 && byte != 0x7f {
+                visible.push(byte);
+                offsets.push(index);
+            }
+            index += 1;
+        }
+        visible
+            .windows(self.command.len())
+            .enumerate()
+            .filter(|(_, window)| *window == self.command)
+            .map(|(index, _)| {
+                let mut echo_end = offsets[index + self.command.len() - 1] + 1;
+                if self.pending.get(echo_end) == Some(&b'\r') {
+                    echo_end += 1;
+                }
+                if self.pending.get(echo_end) == Some(&b'\n') {
+                    echo_end += 1;
+                }
+                offsets[index]..echo_end
+            })
+            .collect()
+    }
+
+    fn push(&mut self, data: &[u8]) -> Option<Vec<u8>> {
+        self.pending.extend_from_slice(data);
+        if let Some(end) = self
+            .pending
+            .windows(self.marker.len())
+            .position(|window| window == self.marker)
+        {
+            let mut output = Vec::new();
+            let mut preserved_from = 0;
+            for range in self.echo_ranges(end) {
+                output.extend_from_slice(&self.pending[preserved_from..range.start]);
+                // Replace the initial prompt when the shell renders its next
+                // prompt, without clearing the login banner or scrollback.
+                output.extend_from_slice(b"\r\x1b[2K");
+                preserved_from = range.end;
+            }
+            // Preserve startup output between the echo and acknowledgement, as
+            // well as all output if the shell did not echo the full command.
+            output.extend_from_slice(&self.pending[preserved_from..end]);
+            output.extend_from_slice(&self.pending[end + self.marker.len()..]);
+            return Some(output);
+        }
+        if self.pending.len() >= PROBE_OUTPUT_LIMIT {
+            return Some(std::mem::take(&mut self.pending));
+        }
+        None
     }
 }
 
@@ -585,9 +745,11 @@ pub async fn create_ssh_session<R: Runtime>(
     } else {
         None
     };
-    if let Some(kind) = shell_integration_kind.as_deref() {
-        inject_shell_integration(&handle, &channel, kind).await;
-    }
+    let mut integration_echo_filter = if let Some(kind) = shell_integration_kind.as_deref() {
+        inject_shell_integration(&handle, &channel, kind).await
+    } else {
+        None
+    };
     let handle = Arc::new(handle);
 
     let (control_tx, mut control_rx) = mpsc::unbounded_channel::<SshControlMsg>();
@@ -655,23 +817,47 @@ pub async fn create_ssh_session<R: Runtime>(
         let event_name = format!("terminal-data-{reader_session_id}");
         let close_event_name = format!("terminal-close-{reader_session_id}");
         let mut remote_exit_status = None;
+        let mut output_decoder = SshOutputDecoder::default();
+        let echo_deadline = tokio::time::Instant::now() + Duration::from_secs(3);
 
         let close_reason = loop {
-            match channel_reader.wait().await {
-                Some(russh::ChannelMsg::Data { data }) => {
-                    let _ =
-                        reader_app.emit(&event_name, String::from_utf8_lossy(&data).to_string());
+            let message = tokio::select! {
+                message = channel_reader.wait() => message,
+                _ = tokio::time::sleep_until(echo_deadline), if integration_echo_filter.is_some() => {
+                    if let Some(filter) = integration_echo_filter.take() {
+                        let text = output_decoder.push(&filter.pending);
+                        if !text.is_empty() {
+                            let _ = reader_app.emit(&event_name, text);
+                        }
+                    }
+                    continue;
                 }
-                Some(russh::ChannelMsg::ExtendedData { data, ext }) => {
-                    logging::warn(
-                        "SSH/channel",
-                        format!(
-                            "session {reader_session_id} received extended data: ext={ext} bytes={}",
-                            data.len()
-                        ),
-                    );
-                    let _ =
-                        reader_app.emit(&event_name, String::from_utf8_lossy(&data).to_string());
+            };
+            if let Some(russh::ChannelMsg::ExtendedData { data, ext }) = &message {
+                logging::warn(
+                    "SSH/channel",
+                    format!(
+                        "session {reader_session_id} received extended data: ext={ext} bytes={}",
+                        data.len()
+                    ),
+                );
+            }
+            match message {
+                Some(russh::ChannelMsg::Data { data })
+                | Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
+                    let output = if let Some(filter) = integration_echo_filter.as_mut() {
+                        let Some(output) = filter.push(&data) else {
+                            continue;
+                        };
+                        integration_echo_filter = None;
+                        std::borrow::Cow::Owned(output)
+                    } else {
+                        std::borrow::Cow::Borrowed(data.as_ref())
+                    };
+                    let text = output_decoder.push(&output);
+                    if !text.is_empty() {
+                        let _ = reader_app.emit(&event_name, text);
+                    }
                 }
                 Some(russh::ChannelMsg::Eof) => {
                     logging::warn(
@@ -722,6 +908,16 @@ pub async fn create_ssh_session<R: Runtime>(
                 }
             }
         };
+
+        let mut remaining_output = if let Some(filter) = integration_echo_filter.take() {
+            output_decoder.push(&filter.pending)
+        } else {
+            String::new()
+        };
+        remaining_output.push_str(&output_decoder.finish());
+        if !remaining_output.is_empty() {
+            let _ = reader_app.emit(&event_name, remaining_output);
+        }
 
         let close_reason = if reader_uses_tmux {
             remote_exit_status

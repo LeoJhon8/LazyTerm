@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import {
   useEffect,
   useMemo,
@@ -117,16 +118,17 @@ function SortableManagerRow({
         onCheckedChange={onSelect}
         aria-label={t("选择 {name}", { name: command.label })}
       />
-      <button
-        type="button"
-        className="flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-muted-foreground/60 outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
-        title={t("拖动排序")}
-        aria-label={t("拖动排序")}
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
+      <HoverTooltip content={t("拖动排序")}>
+        <button
+          type="button"
+          className="flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-muted-foreground/60 outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+          aria-label={t("拖动排序")}
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </HoverTooltip>
       <button
         type="button"
         className="min-w-0 flex-1 rounded-lg px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -139,37 +141,40 @@ function SortableManagerRow({
           {command.command.replace(/\r?\n/g, " · ")}
         </code>
       </button>
-      <time
-        dateTime={new Date(command.createdAt).toISOString()}
-        className="hidden w-24 shrink-0 items-center gap-1 text-[10px] text-muted-foreground/75 min-[820px]:flex"
-        title={`${t("创建时间")}：${createdAtLabel}`}
-      >
-        <Clock3 className="h-3 w-3" />
-        <span className="truncate">{createdAtLabel}</span>
-      </time>
+      <HoverTooltip content={`${t("创建时间")}：${createdAtLabel}`}>
+        <time
+          dateTime={new Date(command.createdAt).toISOString()}
+          className="hidden w-24 shrink-0 items-center gap-1 text-[10px] text-muted-foreground/75 min-[820px]:flex"
+        >
+          <Clock3 className="h-3 w-3" />
+          <span className="truncate">{createdAtLabel}</span>
+        </time>
+      </HoverTooltip>
       <div className="flex shrink-0 items-center gap-0.5 opacity-60 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 rounded-lg"
-          onClick={onEdit}
-          title={t("编辑")}
-          aria-label={t("编辑")}
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 rounded-lg hover:bg-destructive/12 hover:text-destructive"
-          onClick={onDelete}
-          title={t("删除")}
-          aria-label={t("删除")}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+        <HoverTooltip content={t("编辑")}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-lg"
+            onClick={onEdit}
+            aria-label={t("编辑")}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        </HoverTooltip>
+        <HoverTooltip content={t("删除")}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-lg hover:bg-destructive/12 hover:text-destructive"
+            onClick={onDelete}
+            aria-label={t("删除")}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </HoverTooltip>
       </div>
     </div>
   );
@@ -453,44 +458,48 @@ export function QuickCommandManagerDialog({
                   {t("{count} 条命令", { count: filteredCommands.length })}
                 </span>
                 <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant={sortState?.key === "name" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-7 rounded-lg px-2 text-[11px]"
-                    disabled={commands.length < 2}
-                    aria-pressed={sortState?.key === "name"}
-                    title={t("按名称排序")}
-                    onClick={() => handleQuickSort("name")}
-                  >
-                    {t("名称")}
-                    {sortState?.key === "name" ? (
-                      sortState.direction === "asc"
-                        ? <ArrowUp className="h-3 w-3" />
-                        : <ArrowDown className="h-3 w-3" />
-                    ) : (
-                      <ArrowUpDown className="h-3 w-3" />
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={sortState?.key === "createdAt" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-7 rounded-lg px-2 text-[11px]"
-                    disabled={commands.length < 2}
-                    aria-pressed={sortState?.key === "createdAt"}
-                    title={t("按创建时间排序")}
-                    onClick={() => handleQuickSort("createdAt")}
-                  >
-                    {t("创建时间")}
-                    {sortState?.key === "createdAt" ? (
-                      sortState.direction === "asc"
-                        ? <ArrowUp className="h-3 w-3" />
-                        : <ArrowDown className="h-3 w-3" />
-                    ) : (
-                      <ArrowUpDown className="h-3 w-3" />
-                    )}
-                  </Button>
+                  <HoverTooltip content={t("按名称排序")}>
+                    <Button
+                      type="button"
+                      variant={sortState?.key === "name" ? "secondary" : "ghost"}
+                      size="sm"
+                      className="h-7 rounded-lg px-2 text-[11px]"
+                      disabled={commands.length < 2}
+                      aria-pressed={sortState?.key === "name"}
+                      aria-label={t("按名称排序")}
+                      onClick={() => handleQuickSort("name")}
+                    >
+                      {t("名称")}
+                      {sortState?.key === "name" ? (
+                        sortState.direction === "asc"
+                          ? <ArrowUp className="h-3 w-3" />
+                          : <ArrowDown className="h-3 w-3" />
+                      ) : (
+                        <ArrowUpDown className="h-3 w-3" />
+                      )}
+                    </Button>
+                  </HoverTooltip>
+                  <HoverTooltip content={t("按创建时间排序")}>
+                    <Button
+                      type="button"
+                      variant={sortState?.key === "createdAt" ? "secondary" : "ghost"}
+                      size="sm"
+                      className="h-7 rounded-lg px-2 text-[11px]"
+                      disabled={commands.length < 2}
+                      aria-pressed={sortState?.key === "createdAt"}
+                      aria-label={t("按创建时间排序")}
+                      onClick={() => handleQuickSort("createdAt")}
+                    >
+                      {t("创建时间")}
+                      {sortState?.key === "createdAt" ? (
+                        sortState.direction === "asc"
+                          ? <ArrowUp className="h-3 w-3" />
+                          : <ArrowDown className="h-3 w-3" />
+                      ) : (
+                        <ArrowUpDown className="h-3 w-3" />
+                      )}
+                    </Button>
+                  </HoverTooltip>
                 </div>
               </div>
 

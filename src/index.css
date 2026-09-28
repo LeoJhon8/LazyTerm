@@ -412,6 +412,10 @@
     -webkit-app-region: drag;
   }
 
+  .mood-button {
+    -webkit-app-region: no-drag;
+  }
+
   .window-titlebar__brand {
     display: flex;
     min-width: 0;

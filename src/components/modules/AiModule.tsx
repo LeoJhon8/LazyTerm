@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import {
   Children,
   isValidElement,
@@ -75,17 +76,18 @@ function CopyButton({ text, title }: { text: string; title: string }) {
   };
 
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      className="h-6 w-6 shrink-0 rounded-md"
-      title={title}
-      aria-label={title}
-      onClick={() => void handleCopy()}
-    >
-      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-    </Button>
+    <HoverTooltip content={title}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 shrink-0 rounded-md"
+        aria-label={title}
+        onClick={() => void handleCopy()}
+      >
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      </Button>
+    </HoverTooltip>
   );
 }
 
@@ -214,23 +216,24 @@ function CodeBlock({
       <div className="relative my-2 max-w-full overflow-hidden rounded-lg border border-border/50 bg-black/25">
         <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">
           <CopyButton text={codeText} title={t("复制代码")} />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 shrink-0 rounded-md"
-            title={insertTitle}
-            aria-label={insertTitle}
-            disabled={!canInsert}
-            onPointerDown={() => {
-              pointerSelectionRef.current = readCodeSelection();
-            }}
-            onClick={handleInsert}
-          >
-            {inserted
-              ? <Check className="h-3.5 w-3.5" />
-              : <SquareTerminal className="h-3.5 w-3.5" />}
-          </Button>
+          <HoverTooltip content={insertTitle}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0 rounded-md"
+              aria-label={insertTitle}
+              disabled={!canInsert}
+              onPointerDown={() => {
+                pointerSelectionRef.current = readCodeSelection();
+              }}
+              onClick={handleInsert}
+            >
+              {inserted
+                ? <Check className="h-3.5 w-3.5" />
+                : <SquareTerminal className="h-3.5 w-3.5" />}
+            </Button>
+          </HoverTooltip>
         </div>
         <pre
           ref={preRef}
@@ -524,16 +527,17 @@ export function AiModule() {
           </div>
         </div>
         {messages.length > 0 && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            title={t("清空对话")}
-            aria-label={t("清空对话")}
-            onClick={() => setClearConfirmOpen(true)}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          <HoverTooltip content={t("清空对话")}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t("清空对话")}
+              onClick={() => setClearConfirmOpen(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </HoverTooltip>
         )}
       </div>
 
@@ -633,18 +637,20 @@ export function AiModule() {
             disabled={requestState === "generating"}
           />
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={handleRegenerate}
-              disabled={!canRegenerate || requestState === "generating"}
-              title={t("重新生成最后一个回答")}
-            >
-              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-              {t("重新生成")}
-            </Button>
+            <HoverTooltip content={t("重新生成最后一个回答")}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={handleRegenerate}
+                disabled={!canRegenerate || requestState === "generating"}
+                aria-label={t("重新生成最后一个回答")}
+              >
+                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                {t("重新生成")}
+              </Button>
+            </HoverTooltip>
             {requestState === "generating" ? (
               <Button type="button" size="sm" className="h-7 px-2.5 text-xs" onClick={handleStop}>
                 <Square className="mr-1.5 h-3 w-3 fill-current" />

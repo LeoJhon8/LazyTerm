@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import {
   DndContext,
@@ -70,28 +71,30 @@ function SortableKeyChip({
       style={style}
       className="flex h-10 items-center overflow-hidden rounded-xl border border-border/75 bg-background/70 shadow-sm"
     >
-      <button
-        type="button"
-        className="flex h-full w-8 touch-none items-center justify-center text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        title={t("拖动排序")}
-        aria-label={t("拖动 {key} 调整顺序", { key: definition.label })}
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </button>
+      <HoverTooltip content={t("拖动排序")}>
+        <button
+          type="button"
+          className="flex h-full w-8 touch-none items-center justify-center text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          aria-label={t("拖动 {key} 调整顺序", { key: definition.label })}
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+      </HoverTooltip>
       <span className="min-w-11 px-1.5 text-center font-mono text-xs font-medium">
         {definition.label}
       </span>
-      <button
-        type="button"
-        className="flex h-full w-8 items-center justify-center text-muted-foreground outline-none hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        onClick={onRemove}
-        title={t("移除 {key}", { key: definition.label })}
-        aria-label={t("移除 {key}", { key: definition.label })}
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
+      <HoverTooltip content={t("移除 {key}", { key: definition.label })}>
+        <button
+          type="button"
+          className="flex h-full w-8 items-center justify-center text-muted-foreground outline-none hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          onClick={onRemove}
+          aria-label={t("移除 {key}", { key: definition.label })}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </HoverTooltip>
     </div>
   );
 }

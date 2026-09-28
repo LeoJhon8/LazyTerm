@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { LoaderCircle, Monitor, RefreshCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -110,9 +111,11 @@ export function ConnectionStatusOverlay({
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
                   {detail.label}
                 </span>
-                <span className="truncate text-sm font-medium text-foreground/90" title={detail.value}>
-                  {detail.value || "-"}
-                </span>
+                <HoverTooltip content={detail.value}>
+                  <span className="truncate text-sm font-medium text-foreground/90">
+                    {detail.value || "-"}
+                  </span>
+                </HoverTooltip>
               </div>
             ))}
           </div>

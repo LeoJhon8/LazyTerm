@@ -461,5 +461,9 @@ fn main() {
         probe_freerdp(&target_os);
     }
 
-    tauri_build::build();
+    if let Err(error) = tauri_build::try_build(tauri_build::Attributes::default()) {
+        // Cargo/Tauri can hide build-script stdout. Keep the complete error
+        // chain visible in the failure diagnostics instead of only exit code 1.
+        panic!("Tauri build setup failed: {error:#}");
+    }
 }

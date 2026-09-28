@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { MoodId } from "@/lib/mood-colors";
 import { persist, createJSONStorage } from "zustand/middleware";
 import {
   DEFAULT_TERMINAL_BACKGROUND_COLOR,
@@ -79,6 +80,8 @@ interface SettingsData {
   mobileSshBackgroundServiceEnabled: boolean;
   // 外观自定义
   appBackgroundColor: AppBackgroundColor; // 全局背景色 (终端外)
+  moodButtonVisible: boolean;
+  currentMood: MoodId | null;
   appColorPalette: AppColorPalette;
   terminalColorScheme: string;                  // 终端配色方案名称（预设名或 custom-xxx）
   customThemes: TerminalColorScheme[];          // 用户自定义终端配色方案列表
@@ -152,6 +155,8 @@ const defaultSettings: SettingsData = {
   mobileSshBackgroundServiceEnabled: true,
   // 外观自定义默认值
   appBackgroundColor: "system",
+  moodButtonVisible: false,
+  currentMood: null,
   appColorPalette: DEFAULT_APP_COLOR_PALETTE,
   terminalColorScheme: "system-auto",
   customThemes: [],
@@ -178,6 +183,13 @@ export const useSettingsStore = create<SettingsState>()(
       setSettings: (newSettings) => set((state) => ({
         ...state,
         ...newSettings,
+        ...(newSettings.currentMood === undefined
+          && (newSettings.appBackgroundColor !== undefined
+            || newSettings.appColorPalette !== undefined
+            || newSettings.terminalBackgroundMode !== undefined
+            || newSettings.terminalBackgroundColor !== undefined)
+          ? { currentMood: null }
+          : {}),
         ...(newSettings.quickCommandFontSize !== undefined
           ? { quickCommandFontSize: normalizeQuickCommandFontSize(newSettings.quickCommandFontSize) }
           : {}),

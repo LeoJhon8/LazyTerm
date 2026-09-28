@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useMemo, useState } from "react";
 import { useHistoryStore } from "@/store/history";
 import { useTabsStore } from "@/store/tabs";
@@ -62,15 +63,17 @@ export function HistoryModule() {
           </div>
         </div>
         {commands.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="history-header-action-button hover:text-destructive"
-            onClick={() => setClearConfirmOpen(true)}
-            title={t("清空所有历史")}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          <HoverTooltip content={t("清空所有历史")}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="history-header-action-button hover:text-destructive"
+              onClick={() => setClearConfirmOpen(true)}
+              aria-label={t("清空所有历史")}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </HoverTooltip>
         )}
       </div>
 
@@ -94,47 +97,51 @@ export function HistoryModule() {
         <ScrollArea className="h-full w-full overflow-x-hidden">
           <div className="px-0 py-1">
             {filteredCommands.length > 0 && filteredCommands.map((cmd) => (
-                <div
-                  key={cmd.id}
-                  className="group relative flex h-7 w-full items-center gap-1 overflow-hidden rounded-md border-y border-transparent bg-transparent px-3 py-0.5 transition-colors hover:bg-accent/50"
-                  onClick={() => sendCommand(cmd.command)}
-                  title={t("点击执行: {command}", { command: cmd.command })}
-                >
-                  {/* 命令文本：w-0 flex-1 配合 truncate 确保不撑开容器 */}
-                  <div className="w-0 flex-1">
-                    <code className="block truncate font-mono text-[10px] leading-none text-foreground/75 group-hover:text-foreground">
-                      {cmd.command}
-                    </code>
-                  </div>
+                <HoverTooltip key={cmd.id} content={t("点击执行: {command}", { command: cmd.command })}>
+                  <div
+                    className="group relative flex h-7 w-full items-center gap-1 overflow-hidden rounded-md border-y border-transparent bg-transparent px-3 py-0.5 transition-colors hover:bg-accent/50"
+                    onClick={() => sendCommand(cmd.command)}
+                  >
+                    {/* 命令文本：w-0 flex-1 配合 truncate 确保不撑开容器 */}
+                    <div className="w-0 flex-1">
+                      <code className="block truncate font-mono text-[10px] leading-none text-foreground/75 group-hover:text-foreground">
+                        {cmd.command}
+                      </code>
+                    </div>
 
-                  {/* 操作按钮：hover时显示 */}
-                  <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-5 w-5 rounded-sm p-0 hover:bg-accent/80 hover:text-foreground"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSendToAllState({ open: true, command: cmd.command });
-                      }}
-                      title={t("发送到全部")}
-                    >
-                      <Send className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-5 w-5 rounded-sm p-0 hover:bg-destructive/20 hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation(); // 阻止触发整行的 sendCommand
-                        removeCommand(cmd.id);
-                      }}
-                      title={t("删除此条")}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
+                    {/* 操作按钮：hover时显示 */}
+                    <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <HoverTooltip content={t("发送到全部")}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 w-5 rounded-sm p-0 hover:bg-accent/80 hover:text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSendToAllState({ open: true, command: cmd.command });
+                          }}
+                          aria-label={t("发送到全部")}
+                        >
+                          <Send className="h-3 w-3" />
+                        </Button>
+                      </HoverTooltip>
+                      <HoverTooltip content={t("删除此条")}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 w-5 rounded-sm p-0 hover:bg-destructive/20 hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation(); // 阻止触发整行的 sendCommand
+                            removeCommand(cmd.id);
+                          }}
+                          aria-label={t("删除此条")}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </HoverTooltip>
+                    </div>
                   </div>
-                </div>
+                </HoverTooltip>
               ))}
           </div>
         </ScrollArea>

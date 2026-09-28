@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import {
   useEffect,
   useRef,
@@ -161,41 +162,44 @@ export function TerminalSearchBar({
         <Regex />
       </SearchOptionButton>
 
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-7 w-7 shrink-0 rounded-lg p-0"
-        onMouseDown={keepInputFocused}
-        onClick={onPrevious}
-        disabled={!query}
-        aria-label={t("上一个匹配项")}
-        title={t("上一个匹配项")}
-      >
-        <ChevronUp />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-7 w-7 shrink-0 rounded-lg p-0"
-        onMouseDown={keepInputFocused}
-        onClick={onNext}
-        disabled={!query}
-        aria-label={t("下一个匹配项")}
-        title={t("下一个匹配项")}
-      >
-        <ChevronDown />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-7 w-7 shrink-0 rounded-lg p-0"
-        onMouseDown={keepInputFocused}
-        onClick={onClose}
-        aria-label={t("关闭搜索")}
-        title={t("关闭搜索")}
-      >
-        <X />
-      </Button>
+      <HoverTooltip content={t("上一个匹配项")}>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-7 w-7 shrink-0 rounded-lg p-0"
+          onMouseDown={keepInputFocused}
+          onClick={onPrevious}
+          disabled={!query}
+          aria-label={t("上一个匹配项")}
+        >
+          <ChevronUp />
+        </Button>
+      </HoverTooltip>
+      <HoverTooltip content={t("下一个匹配项")}>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-7 w-7 shrink-0 rounded-lg p-0"
+          onMouseDown={keepInputFocused}
+          onClick={onNext}
+          disabled={!query}
+          aria-label={t("下一个匹配项")}
+        >
+          <ChevronDown />
+        </Button>
+      </HoverTooltip>
+      <HoverTooltip content={t("关闭搜索")}>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-7 w-7 shrink-0 rounded-lg p-0"
+          onMouseDown={keepInputFocused}
+          onClick={onClose}
+          aria-label={t("关闭搜索")}
+        >
+          <X />
+        </Button>
+      </HoverTooltip>
     </div>
   );
 }
@@ -214,20 +218,21 @@ function SearchOptionButton({
   onClick: () => void;
 }) {
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      className={cn(
-        "h-7 w-7 shrink-0 rounded-lg p-0",
-        active && "bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary"
-      )}
-      aria-pressed={active}
-      aria-label={label}
-      title={label}
-      onMouseDown={onMouseDown}
-      onClick={onClick}
-    >
-      {children}
-    </Button>
+    <HoverTooltip content={label}>
+      <Button
+        type="button"
+        variant="ghost"
+        className={cn(
+          "h-7 w-7 shrink-0 rounded-lg p-0",
+          active && "bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary"
+        )}
+        aria-pressed={active}
+        aria-label={label}
+        onMouseDown={onMouseDown}
+        onClick={onClick}
+      >
+        {children}
+      </Button>
+    </HoverTooltip>
   );
 }

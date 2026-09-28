@@ -962,6 +962,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       }
 
       term.open(containerEl);
+      // 缓存终端会在组件重挂载时移动到新容器，鼠标监听必须跟随终端元素。
+      const terminalElement = term.element!;
       const output = new OrderedTerminalOutput(term);
       const timeline = new CommandTimelineController(term);
       parserDisposables.push(
@@ -999,7 +1001,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       };
 
       const replayedMouseEvents = new WeakSet<MouseEvent>();
-      let pendingTmuxMouseDown: {
+      let localSshSelectionActive = false;
+      let pendingSshMouseDown: {
         target: Element;
         init: MouseEventInit;
         clientX: number;
@@ -1024,15 +1027,15 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         relatedTarget: event.relatedTarget,
       });
       const dispatchReplayedMouseEvent = (
-        target: Element,
-        type: "mousedown" | "mouseup",
+        target: Element | Document,
+        type: "mousedown" | "mousemove" | "mouseup",
         init: MouseEventInit,
       ) => {
         const replayedEvent = new MouseEvent(type, init);
         replayedMouseEvents.add(replayedEvent);
         target.dispatchEvent(replayedEvent);
       };
-      const handleTmuxMouseDown = (event: MouseEvent) => {
+      const handleSshMouseDown = (event: MouseEvent) => {
         if (
           event.button !== 0 && event.button !== 2
           || replayedMouseEvents.has(event)
@@ -1044,13 +1047,13 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         const currentSession = useTabsStore.getState().sessions.find(
           (candidate) => candidate.id === sessionId,
         );
-        if (currentSession?.type !== "ssh" || !currentSession.sshTmuxPersistenceActive) {
+        if (currentSession?.type !== "ssh") {
           return;
         }
 
         if (event.button === 2) {
           // 右键粘贴/菜单由 LazyTerm 的 contextmenu 处理，不能先把 mousedown 发给 tmux。
-          event.stopImmediatePropagation();
+          if (currentSession.sshTmuxPersistenceActive) event.stopImmediatePropagation();
           return;
         }
 
@@ -1063,58 +1066,131 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
           return;
         }
 
-        // tmux mouse 模式会让 xterm 把左键事件直接发送给远端。先暂存单击：
+        // 远端 TUI 的鼠标模式也可能由手动启动的 tmux 或 Codex CLI 开启，
+        // 不能只依据 LazyTerm 的 tmux 持久化标记。先暂存单击：
         // 拖动/双击走 xterm 本地选择，单击仍转发给远端并保留链接激活。
         event.preventDefault();
         event.stopImmediatePropagation();
         if (event.detail > 1) {
-          dispatchReplayedMouseEvent(target, "mousedown", toMouseEventInit(event, true));
+          pendingSshMouseDown = null;
+          localSshSelectionActive = true;
+          selectionGestureActive = true;
+          dispatchReplayedMouseEvent(terminalElement, "mousedown", toMouseEventInit(event, true));
           return;
         }
 
-        pendingTmuxMouseDown = {
+        pendingSshMouseDown = {
           target,
           init: toMouseEventInit(event),
           clientX: event.clientX,
           clientY: event.clientY,
         };
       };
-      const handleTmuxMouseMove = (event: MouseEvent) => {
-        const pending = pendingTmuxMouseDown;
-        if (
-          !pending
-          || Math.abs(event.clientX - pending.clientX) < 3
-            && Math.abs(event.clientY - pending.clientY) < 3
-        ) {
-          return;
+      const handleSshMouseMove = (event: MouseEvent) => {
+        if (replayedMouseEvents.has(event)) return;
+        const pending = pendingSshMouseDown;
+        if (!localSshSelectionActive) {
+          if (
+            !pending
+            || Math.abs(event.clientX - pending.clientX) < 3
+              && Math.abs(event.clientY - pending.clientY) < 3
+          ) {
+            return;
+          }
+
+          pendingSshMouseDown = null;
+          localSshSelectionActive = true;
+          selectionGestureActive = true;
+          // TUI output may replace the original hit target before dragging starts.
+          dispatchReplayedMouseEvent(terminalElement, "mousedown", {
+            ...pending.init,
+            shiftKey: true,
+          });
         }
 
-        pendingTmuxMouseDown = null;
-        dispatchReplayedMouseEvent(pending.target, "mousedown", {
-          ...pending.init,
-          shiftKey: true,
-        });
+        // xterm installs selection move/up listeners on document. Deliver the
+        // entire local gesture there, without letting the original events reach
+        // remote mouse handlers or be stopped by an intermediate UI element.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        dispatchReplayedMouseEvent(document, "mousemove", toMouseEventInit(event, true));
       };
-      const handleTmuxMouseUp = (event: MouseEvent) => {
-        if (replayedMouseEvents.has(event) || !pendingTmuxMouseDown) {
+      const handleSshMouseUp = (event: MouseEvent) => {
+        if (event.button !== 0 || replayedMouseEvents.has(event)) {
           return;
         }
 
-        const pending = pendingTmuxMouseDown;
-        pendingTmuxMouseDown = null;
+        if (localSshSelectionActive) {
+          localSshSelectionActive = false;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          dispatchReplayedMouseEvent(document, "mouseup", toMouseEventInit(event, true));
+          // This gesture owns mouseup and suppresses its original propagation.
+          // Complete copying here, after xterm has finalized the local selection,
+          // rather than relying on a separate listener or a later timer.
+          finishSelectionGesture();
+          return;
+        }
+        if (!pendingSshMouseDown) return;
+
+        const pending = pendingSshMouseDown;
+        pendingSshMouseDown = null;
         event.preventDefault();
         event.stopImmediatePropagation();
         dispatchReplayedMouseEvent(pending.target, "mousedown", pending.init);
         dispatchReplayedMouseEvent(pending.target, "mouseup", toMouseEventInit(event));
       };
 
-      containerEl.addEventListener("wheel", handleWheel, {
+      let selectionGestureActive = false;
+      let selectionCopyDisposed = false;
+      let selectionCopyTimeoutId: number | undefined;
+      const copySelectedText = (manualSelection = false) => {
+        const searchActive = terminalMap.current.get(sessionId)?.searchActive ?? false;
+        if (
+          selectionCopyDisposed
+          || !useSettingsStore.getState().copyOnSelect
+          || searchActive && !manualSelection
+          || !term.hasSelection()
+        ) return;
+
+        void writeText(term.getSelection()).catch((error) => {
+          logger.error("FE/terminal-view/selection", "Failed to write to clipboard", { error });
+        });
+      };
+      const handleSelectionMouseDown = (event: MouseEvent) => {
+        if (event.button === 0 && !replayedMouseEvents.has(event)) {
+          selectionGestureActive = true;
+        }
+      };
+      const finishSelectionGesture = () => {
+        window.clearTimeout(selectionCopyTimeoutId);
+        selectionCopyTimeoutId = undefined;
+        selectionGestureActive = false;
+        copySelectedText(true);
+      };
+      const handleSelectionMouseUp = (event: MouseEvent) => {
+        if (event.button !== 0 || !selectionGestureActive || replayedMouseEvents.has(event)) return;
+
+        // Wait for xterm and tmux event replay to finish updating the selection.
+        // Capture the release even outside the terminal or when propagation stops.
+        window.clearTimeout(selectionCopyTimeoutId);
+        selectionCopyTimeoutId = window.setTimeout(finishSelectionGesture, 0);
+      };
+      const selectionDisposable = term.onSelectionChange(() => {
+        // Mouse selection is copied once on release, including reselecting the
+        // same range. Programmatic search selections must not overwrite the clipboard.
+        if (!selectionGestureActive) copySelectedText();
+      });
+
+      terminalElement.addEventListener("mousedown", handleSelectionMouseDown, { capture: true });
+      document.addEventListener("mouseup", handleSelectionMouseUp, { capture: true });
+      terminalElement.addEventListener("wheel", handleWheel, {
         passive: false,
         capture: true,
       });
-      containerEl.addEventListener("mousedown", handleTmuxMouseDown, { capture: true });
-      document.addEventListener("mousemove", handleTmuxMouseMove, { capture: true });
-      document.addEventListener("mouseup", handleTmuxMouseUp, { capture: true });
+      terminalElement.addEventListener("mousedown", handleSshMouseDown, { capture: true });
+      document.addEventListener("mousemove", handleSshMouseMove, { capture: true });
+      document.addEventListener("mouseup", handleSshMouseUp, { capture: true });
 
       const inputDisposable = term.onData((data) => {
         writeInput(connector, data);
@@ -1204,17 +1280,6 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         return true;
       });
 
-      const selectionDisposable = term.onSelectionChange(async () => {
-        const searchActive = terminalMap.current.get(sessionId)?.searchActive ?? false;
-        if (useSettingsStore.getState().copyOnSelect && !searchActive && term.hasSelection()) {
-          try {
-            await writeText(term.getSelection());
-          } catch (e) {
-            logger.error("FE/terminal-view/selection", "Failed to write to clipboard", { e });
-          }
-        }
-      });
-
       const instance: TerminalInstance = {
         terminal: term,
         output,
@@ -1236,13 +1301,17 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         visible: isVisible,
 
         dispose: () => {
+          selectionCopyDisposed = true;
+          window.clearTimeout(selectionCopyTimeoutId);
+          terminalElement.removeEventListener("mousedown", handleSelectionMouseDown, { capture: true });
+          document.removeEventListener("mouseup", handleSelectionMouseUp, { capture: true });
           dataUnsubscribe();
           unsubscribeCommandSubmitted();
           connector?.close();
-          containerEl.removeEventListener("wheel", handleWheel, { capture: true });
-          containerEl.removeEventListener("mousedown", handleTmuxMouseDown, { capture: true });
-          document.removeEventListener("mousemove", handleTmuxMouseMove, { capture: true });
-          document.removeEventListener("mouseup", handleTmuxMouseUp, { capture: true });
+          terminalElement.removeEventListener("wheel", handleWheel, { capture: true });
+          terminalElement.removeEventListener("mousedown", handleSshMouseDown, { capture: true });
+          document.removeEventListener("mousemove", handleSshMouseMove, { capture: true });
+          document.removeEventListener("mouseup", handleSshMouseUp, { capture: true });
           inputDisposable.dispose();
           parserDisposables.forEach((disposable) => disposable.dispose());
           keyDisposable.dispose();

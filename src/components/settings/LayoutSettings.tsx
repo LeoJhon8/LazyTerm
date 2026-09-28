@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useCallback } from "react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -105,15 +106,19 @@ export function LayoutSettings() {
             <div className="flex items-center px-4 py-2 bg-muted/30">
               <span className="flex-1 text-xs text-muted-foreground">{t("模块")}</span>
               <div className="flex items-center gap-1">
-                <span className="w-7 flex items-center justify-center" title={t("左侧栏")}>
-                  <PanelLeft className="h-3.5 w-3.5 text-muted-foreground" />
-                </span>
+                <HoverTooltip content={t("左侧栏")}>
+                  <span className="w-7 flex items-center justify-center">
+                    <PanelLeft className="h-3.5 w-3.5 text-muted-foreground" />
+                  </span>
+                </HoverTooltip>
                 <span className="w-7 flex items-center justify-center text-[10px] text-muted-foreground">
                   —
                 </span>
-                <span className="w-7 flex items-center justify-center" title={t("右侧栏")}>
-                  <PanelRight className="h-3.5 w-3.5 text-muted-foreground" />
-                </span>
+                <HoverTooltip content={t("右侧栏")}>
+                  <span className="w-7 flex items-center justify-center">
+                    <PanelRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  </span>
+                </HoverTooltip>
               </div>
             </div>
 
@@ -140,17 +145,9 @@ export function LayoutSettings() {
                         { side: "right" as SlotSide, icon: <PanelRight className="h-3.5 w-3.5" /> },
                       ] as const
                     ).map(({ side, icon }) => (
-                      <button
+                      <HoverTooltip
                         key={side}
-                        type="button"
-                        className={cn(
-                          "w-7 h-6 flex items-center justify-center rounded-md transition-all text-muted-foreground",
-                          currentSide === side
-                            ? "bg-primary text-primary-foreground shadow-sm"
-                            : "hover:bg-background/60 hover:text-foreground"
-                        )}
-                        onClick={() => assignModule(mod.id, side)}
-                        title={
+                        content={
                           side === "left"
                             ? t("分配到左侧栏")
                             : side === "right"
@@ -158,8 +155,26 @@ export function LayoutSettings() {
                               : t("不展示")
                         }
                       >
-                        {icon}
-                      </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "w-7 h-6 flex items-center justify-center rounded-md transition-all text-muted-foreground",
+                            currentSide === side
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "hover:bg-background/60 hover:text-foreground"
+                          )}
+                          onClick={() => assignModule(mod.id, side)}
+                          aria-label={
+                            side === "left"
+                              ? t("分配到左侧栏")
+                              : side === "right"
+                                ? t("分配到右侧栏")
+                                : t("不展示")
+                          }
+                        >
+                          {icon}
+                        </button>
+                      </HoverTooltip>
                     ))}
                   </div>
                 </div>

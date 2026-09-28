@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import {
   useCallback,
   useEffect,
@@ -170,15 +171,16 @@ export function MobileTerminalKeyBar({
           <span className="mobile-terminal-keys-empty">{t("点击编辑添加按键")}</span>
         )}
       </div>
-      <button
-        type="button"
-        className="mobile-terminal-keys-edit"
-        onClick={onEdit}
-        aria-label={t("编辑终端快捷栏")}
-        title={t("编辑终端快捷栏")}
-      >
-        <PencilLine className="h-4 w-4" />
-      </button>
+      <HoverTooltip content={t("编辑终端快捷栏")}>
+        <button
+          type="button"
+          className="mobile-terminal-keys-edit"
+          onClick={onEdit}
+          aria-label={t("编辑终端快捷栏")}
+        >
+          <PencilLine className="h-4 w-4" />
+        </button>
+      </HoverTooltip>
     </div>
   );
 }

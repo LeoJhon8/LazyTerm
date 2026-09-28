@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useEffect, useRef, useState } from "react";
 import { History, LoaderCircle, Plus, Radio, Server, Trash2 } from "lucide-react";
 import type { MouseEvent } from "react";
@@ -129,9 +130,11 @@ export function SshBackgroundModeMenuItem({
           <ContextMenuLabel className="flex max-w-72 items-center gap-2 py-1 text-xs font-normal text-muted-foreground">
             <Server className="h-3.5 w-3.5 shrink-0" />
             <span className="shrink-0">tmux</span>
-            <span className="truncate font-mono text-foreground" title={session.sshTmuxSessionName}>
-              {session.sshTmuxSessionName}
-            </span>
+            <HoverTooltip content={session.sshTmuxSessionName}>
+              <span className="truncate font-mono text-foreground">
+                {session.sshTmuxSessionName}
+              </span>
+            </HoverTooltip>
           </ContextMenuLabel>
           <ContextMenuItem
             className="py-1 text-xs text-destructive focus:text-destructive"

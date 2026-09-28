@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useState, useMemo, useRef, type CSSProperties, type WheelEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { ListChecks, Plus, Trash2, Pencil, Send } from "lucide-react";
@@ -82,22 +83,26 @@ function SortableQuickCommand({
     >
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="command-card rounded-none px-3 shadow-none"
-            onClick={onClick}
-            title={t("命令：{command}", {
+          <HoverTooltip content={t("命令：{command}", {
               command: `${cmd.command.split("\n")[0].substring(0, 30)}${cmd.command.length > 30 ? "..." : ""}`,
-            })}
-            disabled={isDragging}
-            {...attributes}
-            {...listeners}
-          >
-            <span className="command-card-main">
-              <span className="command-card-label">{cmd.label}</span>
-            </span>
-          </Button>
+            })}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="command-card rounded-none px-3 shadow-none"
+              onClick={onClick}
+              aria-label={t("命令：{command}", {
+                command: `${cmd.command.split("\n")[0].substring(0, 30)}${cmd.command.length > 30 ? "..." : ""}`,
+              })}
+              disabled={isDragging}
+              {...attributes}
+              {...listeners}
+            >
+              <span className="command-card-main">
+                <span className="command-card-label">{cmd.label}</span>
+              </span>
+            </Button>
+          </HoverTooltip>
         </ContextMenuTrigger>
         <ContextMenuContent className="min-w-28 text-xs">
           <ContextMenuItem className="py-1 text-xs" onClick={onEdit}>
@@ -257,18 +262,19 @@ export function QuickCmdBar() {
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div className="quickcmd-surface" data-mode={quickCommandDisplayMode} style={quickCommandStyle}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="quickcmd-leading-icon rounded-none p-0"
-              aria-label={t("管理快捷命令")}
-              title={t("管理快捷命令")}
-              onClick={() => setManagerOpen(true)}
-              onContextMenu={(event) => event.stopPropagation()}
-            >
-              <ListChecks className="h-3.5 w-3.5" />
-            </Button>
+            <HoverTooltip content={t("管理快捷命令")}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="quickcmd-leading-icon rounded-none p-0"
+                aria-label={t("管理快捷命令")}
+                onClick={() => setManagerOpen(true)}
+                onContextMenu={(event) => event.stopPropagation()}
+              >
+                <ListChecks className="h-3.5 w-3.5" />
+              </Button>
+            </HoverTooltip>
 
           <DndContext
             sensors={sensors}
@@ -310,17 +316,18 @@ export function QuickCmdBar() {
           {/* 添加命令按钮 */}
           <Dialog open={configOpen} onOpenChange={handleConfigOpenChange}>
             <DialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="quickcmd-add-button h-full rounded-none p-0"
-                aria-label={t("添加快捷命令")}
-                title={t("添加快捷命令")}
-                onClick={() => setEditingCmd(null)}
-                onContextMenu={(event) => event.stopPropagation()}
-              >
-                <Plus className="h-3 w-3" />
-              </Button>
+              <HoverTooltip content={t("添加快捷命令")}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="quickcmd-add-button h-full rounded-none p-0"
+                  aria-label={t("添加快捷命令")}
+                  onClick={() => setEditingCmd(null)}
+                  onContextMenu={(event) => event.stopPropagation()}
+                >
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </HoverTooltip>
             </DialogTrigger>
 
             <DialogContent className="sm:max-w-150">

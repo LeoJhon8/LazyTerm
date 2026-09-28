@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -172,7 +173,9 @@ function UploadSelectionArea({
             {roots.map((root) => (
               <div key={root.path} className="flex min-w-0 items-center gap-2 px-2.5 py-1.5">
                 <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-xs" title={root.path}>{root.name}</span>
+                <HoverTooltip content={root.path}>
+                  <span className="min-w-0 flex-1 truncate text-xs">{root.name}</span>
+                </HoverTooltip>
                 <span className="shrink-0 text-[11px] text-muted-foreground">{formatBytes(root.size)}</span>
                 {!disabled && (
                   <Button

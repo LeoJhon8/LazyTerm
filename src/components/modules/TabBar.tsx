@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useTabsStore, type TerminalSession } from "@/store/tabs";
 import { usePanesStore } from "@/store/panes";
 import { logger } from "@/lib/logger";
@@ -278,55 +279,56 @@ function SortableTab({
         modal={false}
       >
         <ContextMenuTrigger asChild>
-          <div
-            ref={contextMenuTriggerRef}
-            className={`tab-item group relative cursor-pointer select-none ${
-              active
-                ? "tab-item-active"
-                : ""
-            } ${isDragging ? "bg-background/90 shadow-lg ring-1 ring-border/70" : ""}`}
-            title={tabTooltip}
-            aria-label={tabTooltip}
-            aria-current={active ? "page" : undefined}
-            onClick={() => onSwitch(id)}
-            onKeyUp={handleKeyUp}
-            {...attributes}
-            {...listeners}
-            onPointerDownCapture={handleContextMenuPointerDownCapture}
-          >
-            <span className="pointer-events-none min-w-0 truncate text-[13px] flex items-center justify-center gap-1.5 leading-5">
-              {tabIcon}
-              {connectionPhase && (
-                <span className={cn(
-                  "h-1.5 w-1.5 shrink-0 rounded-full",
-                  connectionPhase === "connected" ? "bg-emerald-400" :
-                    connectionPhase === "failed" ? "bg-red-400" :
-                      connectionPhase === "disconnected" ? "bg-amber-400" :
-                        connectionPhase === "closing" || connectionPhase === "idle" ? "bg-muted-foreground/50" : "bg-sky-400 animate-pulse",
-                )} />
-              )}
-              <span className="min-w-0 truncate">{displayTitle}</span>
-              {backgroundModeEnabled && (
-                <Radio
-                  className="h-3 w-3 shrink-0 text-emerald-500"
-                  aria-hidden="true"
-                />
-              )}
-            </span>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`tab-close h-4! w-4! min-w-0! p-0! text-muted-foreground transition-all hover:bg-background/40 hover:text-foreground ${
-                active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-              }`}
-              onPointerDown={handleClosePointerDown}
-              onClick={(event) => onClose(event, id)}
-              aria-label={t("关闭 {title}", { title })}
+          <HoverTooltip content={tabTooltip}>
+            <div
+              ref={contextMenuTriggerRef}
+              className={`tab-item group relative cursor-pointer select-none ${
+                active
+                  ? "tab-item-active"
+                  : ""
+              } ${isDragging ? "bg-background/90 shadow-lg ring-1 ring-border/70" : ""}`}
+              aria-label={tabTooltip}
+              aria-current={active ? "page" : undefined}
+              onClick={() => onSwitch(id)}
+              onKeyUp={handleKeyUp}
+              {...attributes}
+              {...listeners}
+              onPointerDownCapture={handleContextMenuPointerDownCapture}
             >
-              <X className="h-2 w-2" />
-            </Button>
-          </div>
+              <span className="pointer-events-none min-w-0 truncate text-[13px] flex items-center justify-center gap-1.5 leading-5">
+                {tabIcon}
+                {connectionPhase && (
+                  <span className={cn(
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    connectionPhase === "connected" ? "bg-emerald-400" :
+                      connectionPhase === "failed" ? "bg-red-400" :
+                        connectionPhase === "disconnected" ? "bg-amber-400" :
+                          connectionPhase === "closing" || connectionPhase === "idle" ? "bg-muted-foreground/50" : "bg-sky-400 animate-pulse",
+                  )} />
+                )}
+                <span className="min-w-0 truncate">{displayTitle}</span>
+                {backgroundModeEnabled && (
+                  <Radio
+                    className="h-3 w-3 shrink-0 text-emerald-500"
+                    aria-hidden="true"
+                  />
+                )}
+              </span>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`tab-close h-4! w-4! min-w-0! p-0! text-muted-foreground transition-all hover:bg-background/40 hover:text-foreground ${
+                  active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                }`}
+                onPointerDown={handleClosePointerDown}
+                onClick={(event) => onClose(event, id)}
+                aria-label={t("关闭 {title}", { title })}
+              >
+                <X className="h-2 w-2" />
+              </Button>
+            </div>
+          </HoverTooltip>
         </ContextMenuTrigger>
         <ContextMenuContent className="min-w-40 text-xs">
           {sessionType === "ssh" && sessionId ? (
@@ -396,7 +398,7 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
     addSession,
     removeSession,
   } = useTabsStore();
-  
+
   const {
     workspaces,
     cleanupWorkspace,
@@ -419,7 +421,7 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
   const [sshBackgroundSessionId, setSshBackgroundSessionId] = useState<string | null>(null);
   const [sshEndTmuxSessionId, setSshEndTmuxSessionId] = useState<string | null>(null);
   const [sftpDialog, setSftpDialog] = useState<SftpDialogState | null>(null);
-  
+
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [isTabsOverflowing, setIsTabsOverflowing] = useState(false);
   const pendingCloseActionRef = useRef<(() => void) | null>(null);
@@ -482,6 +484,33 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
       observer.disconnect();
     };
   }, [tabs, isTabsOverflowing]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const container = tabsContainerRef.current;
+      if (!container || !activeTabId || tabDragState.isDragging) {
+        return;
+      }
+
+      const activeTab = container.querySelector<HTMLElement>('[aria-current="page"]');
+      if (!activeTab) {
+        return;
+      }
+
+      // 只滚动标签栏，保留终端焦点和其他容器的滚动位置。
+      const containerRect = container.getBoundingClientRect();
+      const tabRect = activeTab.getBoundingClientRect();
+      const visibleLeft = containerRect.left + container.clientLeft;
+      const visibleRight = visibleLeft + container.clientWidth;
+      if (tabRect.left < visibleLeft) {
+        container.scrollLeft += tabRect.left - visibleLeft;
+      } else if (tabRect.right > visibleRight) {
+        container.scrollLeft += Math.min(tabRect.right - visibleRight, tabRect.left - visibleLeft);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTabId, isTabsOverflowing]);
 
   useEffect(() => {
     let pointerUpFallbackTimer: number | null = null;
@@ -638,7 +667,7 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
 
     // 创建新会话 - pane 的创建和关联由生命周期回调自动处理
     logger.debug("FE/TabBar", "Creating new workspace and session", { title });
-    
+
     // 1. 创建工作区 Tab
     const tabId = addTab({ title });
     setActiveTabId(tabId);
@@ -672,12 +701,12 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
     onTabActivate?.();
     setActiveTabId(id);
     syncFocusSession(id);
-    
+
     requestAnimationFrame(() => {
       window.dispatchEvent(new Event("lazy-term-focus"));
     });
   };
-  
+
   const requestCloseConfirmation = (targetIds: string[], onConfirm: () => void) => {
     if (targetIds.length === 0) {
       return;

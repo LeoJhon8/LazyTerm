@@ -5,6 +5,7 @@ import { useSettingsDialogStore } from "@/store/settings-dialog";
 import { useI18n } from "@/i18n";
 import { NotificationCenter } from "@/components/layout/NotificationCenter";
 import { TitleBarActivityNav } from "@/components/layout/TitleBarActivityNav";
+import { MoodButton } from "@/components/layout/MoodButton";
 import logo32 from "../../../src-tauri/icons/LazyTerm-32.png";
 import logo128 from "../../../src-tauri/icons/LazyTerm-128.png";
 import logo256 from "../../../src-tauri/icons/LazyTerm-256.png";
@@ -83,6 +84,7 @@ export function CustomTitleBar() {
           <div className="window-titlebar__titles">
             <span className="window-titlebar__app-name">LazyTerm</span>
           </div>
+          <MoodButton />
         </div>
 
         <TitleBarActivityNav />

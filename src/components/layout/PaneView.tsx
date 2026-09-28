@@ -1,3 +1,4 @@
+import { HoverTooltip } from "@/components/ui/tooltip";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Maximize2 } from "lucide-react";
 
@@ -395,21 +396,25 @@ function PaneControlButtons({
   return (
     <div className={cn("flex items-center gap-1 pr-2", compact ? "" : "pt-1")}>
       {showMaximize && (
-        <button
-          className="rounded-sm p-0.5 text-muted-foreground/70 transition-colors hover:bg-accent/80 hover:text-foreground"
-          onClick={onMaximize}
-          title={t("最大化面板")}
-        >
-          <Maximize2 className="h-3 w-3" />
-        </button>
+        <HoverTooltip content={t("最大化面板")}>
+          <button
+            className="rounded-sm p-0.5 text-muted-foreground/70 transition-colors hover:bg-accent/80 hover:text-foreground"
+            onClick={onMaximize}
+            aria-label={t("最大化面板")}
+          >
+            <Maximize2 className="h-3 w-3" />
+          </button>
+        </HoverTooltip>
       )}
-      <button
-        className="rounded-sm p-0.5 text-muted-foreground/70 transition-colors hover:bg-destructive/20 hover:text-destructive"
-        onClick={onClose}
-        title={t("关闭面板")}
-      >
-        <X className="h-3 w-3" />
-      </button>
+      <HoverTooltip content={t("关闭面板")}>
+        <button
+          className="rounded-sm p-0.5 text-muted-foreground/70 transition-colors hover:bg-destructive/20 hover:text-destructive"
+          onClick={onClose}
+          aria-label={t("关闭面板")}
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </HoverTooltip>
     </div>
   );
 }

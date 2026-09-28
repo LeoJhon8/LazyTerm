@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { MoodButton } from "@/components/layout/MoodButton";
 import {
   FolderOpen,
   History,
@@ -160,7 +161,10 @@ export function MobileAppShell() {
     >
       <header className="mobile-app-header">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold tracking-wide">LazyTerm</div>
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-semibold tracking-wide">LazyTerm</span>
+            <MoodButton />
+          </div>
           <div className="truncate text-[10px] text-muted-foreground">SSH</div>
         </div>
         <Button
