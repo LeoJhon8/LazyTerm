@@ -4,8 +4,3 @@ name = "lazy-terminal"
 
 [setup]
 script = ""
-
-[[actions]]
-name = "运行"
-icon = "run"
-command = "npm run tauri:dev"

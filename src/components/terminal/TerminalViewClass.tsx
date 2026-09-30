@@ -681,6 +681,10 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         existingInstance.dataUnsubscribe?.();
         existingInstance.inputDisposable?.dispose();
         existingInstance.connector?.close();
+        // 复用终端保留历史，但旧连接的鼠标上报模式不能带入新 PTY。
+        // 通过输出队列确保重置位于旧输出之后、新连接（含 tmux）的初始化之前。
+        // CAN 先取消断线时可能未接收完整的转义序列；仅重置鼠标模式，不清屏。
+        existingInstance.output.write("\x18\x1b[?9;1000;1002;1003;1006;1016l");
         existingInstance.connector = connector;
         existingInstance.visible = isVisible;
         existingInstance.termState.lastSentConnector = undefined;
