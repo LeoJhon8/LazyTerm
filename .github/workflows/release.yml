@@ -125,9 +125,21 @@ jobs:
         with:
           dotnet-version: 8.x
 
-      - name: Install OpenSSL
+      - name: Configure preinstalled OpenSSL
         shell: pwsh
-        run: choco install openssl --no-progress -y
+        run: |
+          $opensslRoot = Join-Path $env:ProgramFiles 'OpenSSL'
+          $opensslLib = Join-Path $opensslRoot 'lib\VC\x64\MD'
+          foreach ($file in @('include\openssl\ssl.h', 'lib\VC\x64\MD\libssl.lib', 'lib\VC\x64\MD\libcrypto.lib', 'bin\openssl.exe', 'bin\libssl-3-x64.dll', 'bin\libcrypto-3-x64.dll')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $opensslRoot $file) -PathType Leaf)) {
+              throw "The runner's preinstalled OpenSSL development files are incomplete: $file"
+            }
+          }
+          & "$opensslRoot\bin\openssl.exe" version
+          if ($LASTEXITCODE -ne 0) { throw 'The preinstalled OpenSSL executable failed.' }
+          "OPENSSL_ROOT_DIR=$opensslRoot" >> $env:GITHUB_ENV
+          "OPENSSL_LIB_DIR=$opensslLib" >> $env:GITHUB_ENV
+          "$opensslRoot\bin" >> $env:GITHUB_PATH
 
       - name: Build LibVNCClient
         shell: pwsh
