@@ -80,8 +80,7 @@ function CopyButton({ text, title }: { text: string; title: string }) {
       <Button
         type="button"
         variant="ghost"
-        size="icon"
-        className="h-6 w-6 shrink-0 rounded-md"
+        size="icon-xs"
         aria-label={title}
         onClick={() => void handleCopy()}
       >
@@ -213,15 +212,14 @@ function CodeBlock({
 
   return (
     <>
-      <div className="relative my-2 max-w-full overflow-hidden rounded-lg border border-border/50 bg-black/25">
-        <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">
+      <div className="relative my-2 max-w-full overflow-hidden rounded-lg border border-border/50 bg-background/70">
+        <div className="flex items-center justify-end gap-0.5 border-b border-border/40 bg-muted/30 px-1.5 py-1">
           <CopyButton text={codeText} title={t("复制代码")} />
           <HoverTooltip content={insertTitle}>
             <Button
               type="button"
               variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0 rounded-md"
+              size="icon-xs"
               aria-label={insertTitle}
               disabled={!canInsert}
               onPointerDown={() => {
@@ -237,7 +235,7 @@ function CodeBlock({
         </div>
         <pre
           ref={preRef}
-          className="max-w-full whitespace-pre-wrap break-words p-3 pr-16 text-[11px] leading-5 [overflow-wrap:anywhere]"
+          className="max-w-full whitespace-pre-wrap break-words p-3 text-xs leading-5 [overflow-wrap:anywhere]"
           onMouseUp={() => setHasSelectedText(Boolean(readCodeSelection()))}
           onKeyUp={() => setHasSelectedText(Boolean(readCodeSelection()))}
         >
@@ -263,7 +261,7 @@ function CodeBlock({
               <div className="text-xs text-muted-foreground">
                 {t("目标终端：{name}", { name: pendingInsertion.sessionTitle })}
               </div>
-              <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/60 bg-black/25 p-3 font-mono text-xs [overflow-wrap:anywhere]">
+              <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/60 bg-background/70 p-3 font-mono text-xs [overflow-wrap:anywhere]">
                 {pendingInsertion.text}
               </pre>
               <p className="text-xs text-muted-foreground">
@@ -323,7 +321,7 @@ function MarkdownContent({
       <code className={cn(
         className,
         className
-          ? "whitespace-pre-wrap break-words font-mono text-[11px] [overflow-wrap:anywhere]"
+          ? "whitespace-pre-wrap break-words font-mono text-xs [overflow-wrap:anywhere]"
           : "whitespace-pre-wrap break-all rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]",
       )}>
         {children}
@@ -531,7 +529,7 @@ export function AiModule() {
             <Button
               type="button"
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               aria-label={t("清空对话")}
               onClick={() => setClearConfirmOpen(true)}
             >
@@ -541,11 +539,11 @@ export function AiModule() {
         )}
       </div>
 
-      <ScrollArea className="ai-conversation-scroll min-h-0 min-w-0 w-full flex-1">
-        <div className="min-w-0 w-full space-y-3 px-3 py-3">
+      <ScrollArea showScrollHints className="ai-conversation-scroll min-h-0 min-w-0 w-full flex-1">
+        <div className="min-w-0 w-full space-y-4 px-3 py-1.5">
           {messages.length === 0 && (
             <div className="flex min-h-48 flex-col items-center justify-center px-4 text-center text-muted-foreground">
-              <Bot className="mb-3 h-7 w-7 opacity-50" />
+              <Bot className="mb-3 h-9 w-9 rounded-lg bg-primary/10 p-2 text-primary" />
               <p className="text-sm font-medium text-foreground/80">{t("有什么想问的？")}</p>
               <p className="mt-1 text-xs leading-5">
                 {t("可以用于通用问答、搜索式查询、解释命令或整理内容。")}
@@ -567,10 +565,10 @@ export function AiModule() {
                 )}
                 <div className={cn("group flex", message.role === "user" ? "justify-end" : "justify-start")}>
                   <div className={cn(
-                    "min-w-0 max-w-[92%] rounded-xl border px-3 py-2",
+                    "min-w-0 max-w-[92%] rounded-xl border px-3 py-2.5",
                     message.role === "user"
                       ? "border-primary/25 bg-primary/12 text-foreground"
-                      : "border-border/45 bg-muted/25 text-foreground",
+                      : "border-border/50 bg-background/45 text-foreground",
                   )}>
                     {message.role === "assistant" ? (
                       message.content ? (
@@ -622,7 +620,7 @@ export function AiModule() {
           {t("关联当前话题")}
         </label>
 
-        <div className="rounded-xl border border-border/55 bg-background/60 focus-within:border-primary/45">
+        <div className="rounded-xl border border-border/60 bg-background/70 transition-colors focus-within:border-primary/70 focus-within:ring-2 focus-within:ring-ring">
           <Textarea
             value={input}
             onChange={(event) => setInput(event.target.value)}
@@ -636,7 +634,7 @@ export function AiModule() {
             className="min-h-20 resize-none border-0 bg-transparent px-3 py-2 text-xs shadow-none focus-visible:ring-0"
             disabled={requestState === "generating"}
           />
-          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-2 pb-2">
             <HoverTooltip content={t("重新生成最后一个回答")}>
               <Button
                 type="button"
@@ -647,13 +645,13 @@ export function AiModule() {
                 disabled={!canRegenerate || requestState === "generating"}
                 aria-label={t("重新生成最后一个回答")}
               >
-                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                <RefreshCw className="h-3.5 w-3.5" />
                 {t("重新生成")}
               </Button>
             </HoverTooltip>
             {requestState === "generating" ? (
               <Button type="button" size="sm" className="h-7 px-2.5 text-xs" onClick={handleStop}>
-                <Square className="mr-1.5 h-3 w-3 fill-current" />
+                <Square className="h-3 w-3 fill-current" />
                 {t("停止")}
               </Button>
             ) : (
@@ -664,7 +662,7 @@ export function AiModule() {
                 onClick={handleSend}
                 disabled={!input.trim()}
               >
-                <Send className="mr-1.5 h-3.5 w-3.5" />
+                <Send className="h-3.5 w-3.5" />
                 {t("发送")}
               </Button>
             )}
@@ -673,7 +671,7 @@ export function AiModule() {
 
         {(requestState === "failed" || requestState === "cancelled") && (
           <p className={cn(
-            "mt-1.5 px-1 text-[10px]",
+            "mt-2 break-words px-1 text-xs leading-5",
             requestState === "failed" ? "text-destructive" : "text-muted-foreground",
           )}>
             {requestState === "failed" ? requestError : t("生成已停止，已生成的内容已保留。")}
@@ -690,7 +688,7 @@ export function AiModule() {
           <AlertDialogFooter>
             <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive"
+              variant="destructive"
               onClick={() => {
                 abortControllerRef.current?.abort();
                 clearConversation();

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ScrollEdgeHints } from "@/components/ui/scroll-edge-hints";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { IS_ANDROID, isAndroidConnectionType } from "@/lib/platform";
@@ -101,45 +102,46 @@ function NodeRowContent({
     <div
       style={{ paddingLeft: `${isOverlay ? 8 : depth * 14 + 6}px` }}
       className={cn(
-        "flex items-center gap-2 py-2 px-2 rounded-lg text-sm transition-all relative border-y border-transparent",
-        !isOverlay && "group hover:bg-accent/50",
-        isSelected && !isOverlay && "bg-accent text-accent-foreground ring-1 ring-accent-foreground/15",
+        "session-row flex items-center gap-2 py-2 px-2 rounded-lg text-sm leading-5 relative border-y border-transparent",
+        !isOverlay && "group",
+        !isOverlay && !isSelected && "hover:bg-accent/50",
+        isSelected && !isOverlay && "session-row-selected",
         isOverlay && "bg-background border shadow-xl opacity-90 w-60 z-50 pointer-events-none",
         isUploading && !isOverlay && "border-slate-300/80 bg-amber-100/80 text-amber-950 ring-1 ring-amber-300/80 dark:border-cyan-400/40 dark:bg-cyan-500/16 dark:text-cyan-50 dark:ring-cyan-400/45",
         
         // 放置指示器
         isOver && !isDragging && dropPos === 'before' && [
-          "before:content-[''] before:absolute before:-top-px before:left-0 before:right-0 before:h-0.5 before:bg-sky-500 before:z-100 bg-sky-500/8"
+          "before:content-[''] before:absolute before:-top-px before:left-0 before:right-0 before:h-0.5 before:bg-primary before:z-100 bg-primary/8"
         ],
         isOver && !isDragging && dropPos === 'after' && [
-          "after:content-[''] after:absolute after:-bottom-px after:left-0 after:right-0 after:h-0.5 after:bg-amber-500 after:z-100 bg-amber-500/8"
+          "after:content-[''] after:absolute after:-bottom-px after:left-0 after:right-0 after:h-0.5 after:bg-primary after:z-100 bg-primary/8"
         ],
-        isOver && !isDragging && dropPos === 'inside' && "bg-emerald-500/15 ring-1 ring-emerald-500/40 ring-inset"
+        isOver && !isDragging && dropPos === 'inside' && "bg-primary/15 ring-1 ring-primary/40 ring-inset"
       )}
     >
       <div className="flex items-center gap-2 flex-1 min-w-0">
         {isFolder ? (
-          <div className="flex items-center gap-1 text-muted-foreground/60">
+          <div className="flex shrink-0 items-center gap-1 text-muted-foreground">
             {node.isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            <Folder className={cn("h-4 w-4", node.isRoot ? "text-amber-500 fill-amber-500/10" : "text-blue-500 fill-blue-500/10")} />
+            <Folder className={cn("h-4 w-4", node.isRoot ? "text-primary fill-primary/10" : "text-muted-foreground fill-muted-foreground/10")} />
           </div>
         ) : (
-          <div>
+          <div className="shrink-0 pl-[18px]">
             {node.type === "workspace-template"
-              ? <LayoutTemplate className="h-4 w-4 text-cyan-500" />
+              ? <LayoutTemplate className="h-4 w-4 connection-icon connection-icon-remote" />
               : node.type === "local"
-              ? <Terminal className="h-4 w-4 text-blue-600/80" />
+              ? <Terminal className="h-4 w-4 connection-icon connection-icon-shell" />
               : node.type === "rdp"
-              ? <AppWindow className="h-4 w-4 text-sky-600/80" />
+              ? <AppWindow className="h-4 w-4 connection-icon connection-icon-remote" />
               : node.type === "vnc"
-              ? <ScreenShare className="h-4 w-4 text-emerald-600/80" />
+              ? <ScreenShare className="h-4 w-4 connection-icon connection-icon-remote" />
               : node.type === "serial"
-              ? <Usb className="h-4 w-4 text-purple-600/80" />
+              ? <Usb className="h-4 w-4 connection-icon connection-icon-device" />
               : node.type === "telnet"
-              ? <Terminal className="h-4 w-4 text-emerald-500/80" />
+              ? <Terminal className="h-4 w-4 connection-icon connection-icon-shell" />
               : node.type === "ai-cli"
-              ? <Terminal className="h-4 w-4 text-violet-600/80" />
-              : <Server className={cn("h-4 w-4 text-emerald-600/80", isUploading && "text-amber-700 dark:text-cyan-300 animate-pulse")} />
+              ? <Terminal className="h-4 w-4 connection-icon connection-icon-ai" />
+              : <Server className={cn("h-4 w-4 connection-icon connection-icon-remote", isUploading && "text-amber-700 dark:text-cyan-300 animate-pulse")} />
             }
           </div>
         )}
@@ -148,7 +150,7 @@ function NodeRowContent({
             className={cn(
               "truncate flex-1 select-none",
               node.isRoot ? "font-semibold text-foreground" : "font-medium text-muted-foreground group-hover:text-foreground",
-              isSelected && !node.isRoot && "text-accent-foreground",
+              isSelected && !node.isRoot && "text-foreground",
               isUploading && "text-amber-950 dark:text-cyan-50"
             )}
           >
@@ -229,7 +231,7 @@ function DraggableDroppableRow({
         ) : node.type === 'workspace-template' ? (
           <>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}>
-              <LayoutTemplate className="mr-2 h-4 w-4 text-cyan-500" />
+              <LayoutTemplate className="mr-2 h-4 w-4 connection-icon connection-icon-remote" />
               {t("连接")}
             </ContextMenuItem>
           </>
@@ -246,7 +248,7 @@ function DraggableDroppableRow({
         ) : node.type === 'local' ? (
           <>
             <ContextMenuItem className="py-1 text-xs" onClick={() => onAction('connect', node)}>
-              <Terminal className="mr-2 h-4 w-4 text-blue-600/80" />
+              <Terminal className="mr-2 h-4 w-4 connection-icon connection-icon-shell" />
               {t("连接")}
             </ContextMenuItem>
           </>
@@ -285,6 +287,7 @@ function DraggableDroppableRow({
 }
 
 export function SessionModule() {
+  const [scrollViewport, setScrollViewport] = useState<HTMLDivElement | null>(null);
   const { locale, t } = useI18n();
   const { nodes, addFolder, addProfile, duplicateProfile, removeNodes, updateNode, moveNode, ensureRoot, syncRootFolderName } = useSshProfilesStore();
   const { addTab, setActiveTabId, addSession } = useTabsStore();
@@ -704,69 +707,68 @@ export function SessionModule() {
         </div>
         <Button 
           variant="ghost" 
-          size="icon" 
-          className={cn(
-            "h-9 w-9 rounded-2xl border border-input bg-background/72 text-accent-foreground shadow-none transition-colors duration-200",
-            "hover:bg-background/88 hover:text-foreground",
-            "opacity-80 group-hover:opacity-100"
-          )}
+          size="icon-sm"
+          aria-label={t("快速连接")}
           onClick={() => { setInitialQuickConnectType(null); dialog.open('quickConnect'); }}
         >
           <Zap className="h-4 w-4" />
         </Button>
       </div>
       
-      <div className="flex-1 overflow-y-auto px-2 pt-0 pb-3">
-        <DndContext 
-          sensors={sensors} 
-          collisionDetection={pointerFirstCollisionDetection}
-          onDragStart={(e) => {
-            const activatorEvent = e.activatorEvent;
-            pointerYRef.current = "clientY" in activatorEvent
-              ? (activatorEvent as PointerEvent).clientY
-              : null;
-            updateDragState(e.active.id as string, null, null);
-          }}
-          onDragMove={handleDragMove}
-          onDragOver={handleDragMove}
-          onDragEnd={(e) => {
-            const { active, over } = e;
-            if (over && active.id !== over.id) {
-              const overNode = nodes.find((node) => node.id === over.id);
-              const activeRect = active.rect.current.translated ?? active.rect.current.initial;
-              const dropPos = overNode
-                ? getDropPosition(overNode, pointerYRef.current, activeRect, over.rect)
+      <div className="relative min-h-0 flex-1">
+        <div ref={setScrollViewport} className="h-full overflow-y-auto px-3 pt-1.5 pb-3">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={pointerFirstCollisionDetection}
+            onDragStart={(e) => {
+              const activatorEvent = e.activatorEvent;
+              pointerYRef.current = "clientY" in activatorEvent
+                ? (activatorEvent as PointerEvent).clientY
                 : null;
-              if (dropPos) {
-                moveNode(active.id as string, over.id as string, dropPos);
+              updateDragState(e.active.id as string, null, null);
+            }}
+            onDragMove={handleDragMove}
+            onDragOver={handleDragMove}
+            onDragEnd={(e) => {
+              const { active, over } = e;
+              if (over && active.id !== over.id) {
+                const overNode = nodes.find((node) => node.id === over.id);
+                const activeRect = active.rect.current.translated ?? active.rect.current.initial;
+                const dropPos = overNode
+                  ? getDropPosition(overNode, pointerYRef.current, activeRect, over.rect)
+                  : null;
+                if (dropPos) {
+                  moveNode(active.id as string, over.id as string, dropPos);
+                }
               }
-            }
-            updateDragState(null, null, null);
-          }}
-          onDragCancel={() => updateDragState(null, null, null)}
-        >
-          <div className="flex flex-col gap-1">
-            {sortedNodes.map((fn) => (
-              <DraggableDroppableRow
-                key={fn.id}
-                node={fn}
-                depth={fn.depth}
-                onAction={handleAction}
-                onSelect={handleSelectNode}
-                overId={dragState.overId}
-                dropPos={dragState.dropPos}
-                isSelected={selectedNodeIdSet.has(fn.id)}
-                isBulkSelected={selectedNodeIds.length > 1 && selectedNodeIdSet.has(fn.id)}
-              />
-            ))}
-          </div>
+              updateDragState(null, null, null);
+            }}
+            onDragCancel={() => updateDragState(null, null, null)}
+          >
+            <div className="flex flex-col gap-1">
+              {sortedNodes.map((fn) => (
+                <DraggableDroppableRow
+                  key={fn.id}
+                  node={fn}
+                  depth={fn.depth}
+                  onAction={handleAction}
+                  onSelect={handleSelectNode}
+                  overId={dragState.overId}
+                  dropPos={dragState.dropPos}
+                  isSelected={selectedNodeIdSet.has(fn.id)}
+                  isBulkSelected={selectedNodeIds.length > 1 && selectedNodeIdSet.has(fn.id)}
+                />
+              ))}
+            </div>
 
-          <DragOverlay dropAnimation={null} style={{ pointerEvents: 'none' }}>
-            {activeDragNode ? (
-              <NodeRowContent isOverlay node={activeDragNode} depth={0} />
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+            <DragOverlay dropAnimation={null} style={{ pointerEvents: 'none' }}>
+              {activeDragNode ? (
+                <NodeRowContent isOverlay node={activeDragNode} depth={0} />
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        </div>
+        <ScrollEdgeHints viewport={scrollViewport} />
       </div>
 
       {/* 快速连接弹窗 */}
@@ -934,7 +936,7 @@ export function SessionModule() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive" onClick={() => { 
+            <AlertDialogAction variant="destructive" onClick={() => {
               if (deleteTargetNodes.length > 0) {
                 removeNodes(deleteTargetNodes.map((node) => node.id));
                 setSelectedNodeIds([]);

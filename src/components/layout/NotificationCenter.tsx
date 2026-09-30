@@ -29,19 +29,19 @@ import { cn } from "@/lib/utils";
 const typeConfig: Record<NotificationType, { icon: typeof Info; className: string }> = {
   success: {
     icon: CheckCircle,
-    className: "text-emerald-500 bg-emerald-500/10",
+    className: "text-emerald-700 dark:text-emerald-400 bg-emerald-500/10",
   },
   error: {
     icon: XCircle,
-    className: "text-red-500 bg-red-500/10",
+    className: "text-destructive bg-destructive/10",
   },
   warning: {
     icon: AlertTriangle,
-    className: "text-amber-500 bg-amber-500/10",
+    className: "text-amber-700 dark:text-amber-400 bg-amber-500/10",
   },
   info: {
     icon: Info,
-    className: "text-sky-500 bg-sky-500/10",
+    className: "text-primary bg-primary/10",
   },
 };
 
@@ -124,13 +124,13 @@ function NotificationRow({ item, onClose }: { item: NotificationItem; onClose: (
     <button
       type="button"
       className={cn(
-        "flex w-full gap-3 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent/60",
-        !item.read && "bg-accent/35",
+        "flex w-full gap-3 rounded-md px-2.5 py-3 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/60",
+        !item.read && "bg-primary/8",
       )}
       onClick={handleClick}
     >
       <NotificationIcon item={item} />
-      <span className="min-w-0 flex-1 space-y-1">
+      <span className="min-w-0 flex-1 space-y-1.5">
         <span className="flex items-center gap-2">
           <span className="truncate text-sm font-medium text-foreground">{item.title}</span>
           {!item.read && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />}
@@ -181,8 +181,8 @@ export function NotificationCenter() {
           )}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={8} className="w-[360px] p-0">
-        <div className="flex items-center justify-between border-b border-border/70 px-3 py-2.5">
+      <DropdownMenuContent align="end" sideOffset={8} className="w-[360px] max-w-[calc(100vw-1rem)] p-0">
+        <div className="flex items-center justify-between border-b border-border/60 bg-muted/20 px-3 py-3">
           <div className="min-w-0">
             <div className="text-sm font-semibold text-foreground">通知中心</div>
             {unreadCount > 0 && (
@@ -192,7 +192,7 @@ export function NotificationCenter() {
           <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
               onClick={markAllAsRead}
               disabled={unreadCount === 0}
               aria-label="全部标记已读"
@@ -201,7 +201,7 @@ export function NotificationCenter() {
             </button>
             <button
               type="button"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
               onClick={clearNotifications}
               disabled={notifications.length === 0}
               aria-label="清空通知"
@@ -220,7 +220,7 @@ export function NotificationCenter() {
             </div>
           ) : (
             <div className="flex min-h-36 flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
-              <Bell className="h-8 w-8 opacity-60" />
+              <Bell className="h-10 w-10 rounded-lg bg-muted/50 p-2.5" />
             </div>
           )}
         </div>

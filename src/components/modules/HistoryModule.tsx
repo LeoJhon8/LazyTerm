@@ -15,7 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Trash2, Search, X, Send } from "lucide-react";
+import { Trash2, Search, X, Send, History } from "lucide-react";
 import type { ITerminalConnector, SessionConnector } from "@/types/terminal";
 import { useI18n } from "@/i18n";
 import { emitTerminalCommandSubmitted } from "@/lib/terminal-command-events";
@@ -94,28 +94,36 @@ export function HistoryModule() {
 
       {/* 列表区域 */}
       <div className="relative flex-1 min-h-0 w-full overflow-hidden">
-        <ScrollArea className="h-full w-full overflow-x-hidden">
-          <div className="px-0 py-1">
+        <ScrollArea showScrollHints className="h-full w-full overflow-x-hidden">
+          <div className="px-3 py-1.5">
+            {filteredCommands.length === 0 && (
+              <div className="module-empty-state">
+                {searchQuery.trim()
+                  ? <Search className="h-9 w-9 rounded-lg bg-muted/50 p-2" aria-hidden="true" />
+                  : <History className="h-9 w-9 rounded-lg bg-muted/50 p-2" aria-hidden="true" />}
+                <p>{searchQuery.trim() ? t("无匹配结果") : t("暂无历史记录")}</p>
+              </div>
+            )}
             {filteredCommands.length > 0 && filteredCommands.map((cmd) => (
                 <HoverTooltip key={cmd.id} content={t("点击执行: {command}", { command: cmd.command })}>
                   <div
-                    className="group relative flex h-7 w-full items-center gap-1 overflow-hidden rounded-md border-y border-transparent bg-transparent px-3 py-0.5 transition-colors hover:bg-accent/50"
+                    className="group relative flex h-8 w-full items-center gap-1 overflow-hidden rounded-md border-y border-transparent bg-transparent px-2 py-0.5 transition-colors hover:bg-accent/50 focus-within:bg-accent/50"
                     onClick={() => sendCommand(cmd.command)}
                   >
                     {/* 命令文本：w-0 flex-1 配合 truncate 确保不撑开容器 */}
-                    <div className="w-0 flex-1">
-                      <code className="block truncate font-mono text-[10px] leading-none text-foreground/75 group-hover:text-foreground">
+                    <div className="w-0 flex-1 group-hover:pr-14 group-focus-within:pr-14">
+                      <code className="block truncate font-mono text-xs leading-5 text-foreground/85 group-hover:text-foreground">
                         {cmd.command}
                       </code>
                     </div>
 
                     {/* 操作按钮：hover时显示 */}
-                    <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                    <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                       <HoverTooltip content={t("发送到全部")}>
                         <Button
                           variant="ghost"
-                          size="sm"
-                          className="h-5 w-5 rounded-sm p-0 hover:bg-accent/80 hover:text-foreground"
+                          size="icon-xs"
+                          className="hover:bg-accent/80 hover:text-foreground"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSendToAllState({ open: true, command: cmd.command });
@@ -128,8 +136,8 @@ export function HistoryModule() {
                       <HoverTooltip content={t("删除此条")}>
                         <Button
                           variant="ghost"
-                          size="sm"
-                          className="h-5 w-5 rounded-sm p-0 hover:bg-destructive/20 hover:text-destructive"
+                          size="icon-xs"
+                          className="hover:bg-destructive/20 hover:text-destructive"
                           onClick={(e) => {
                             e.stopPropagation(); // 阻止触发整行的 sendCommand
                             removeCommand(cmd.id);
@@ -185,7 +193,7 @@ export function HistoryModule() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setClearConfirmOpen(false)}>{t("取消")}</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive" onClick={() => { clearCommands(); setClearConfirmOpen(false); }}>{t("确认清空")}</AlertDialogAction>
+            <AlertDialogAction variant="destructive" onClick={() => { clearCommands(); setClearConfirmOpen(false); }}>{t("确认清空")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -29,9 +29,9 @@ function SettingField({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[150px_minmax(0,1fr)] items-center gap-4 px-4 py-3">
-      <Label className="text-right text-sm">{label}</Label>
-      <div className="space-y-1.5">
+    <div className="settings-form-row items-center px-4 py-3">
+      <Label className="settings-field-label text-sm">{label}</Label>
+      <div className="min-w-0 space-y-1.5">
         {children}
         {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>
@@ -159,10 +159,10 @@ export function AiSettings() {
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        <Label className="px-3 text-xs font-medium tracking-wide text-muted-foreground">
           {t("接口配置")}
         </Label>
-        <div className="divide-y divide-border/30 overflow-hidden rounded-xl border border-border/40 bg-muted/20">
+        <div className="divide-y divide-border/30 overflow-hidden settings-section">
           <SettingField
             label={t("API 服务地址")}
             description={t("填写服务根地址、/v1 地址，或完整的 /chat/completions 地址。")}
@@ -199,7 +199,7 @@ export function AiSettings() {
         </div>
       </div>
 
-      <div className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 px-4 py-3">
+      <div className="flex items-start gap-3 settings-section px-4 py-3">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
         <div className="text-xs leading-5 text-muted-foreground">
           {vaultStatus === "unlocked"
@@ -247,7 +247,7 @@ export function AiSettings() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive" onClick={() => void handleClear()}>
+            <AlertDialogAction variant="destructive" onClick={() => void handleClear()}>
               {t("确认清除")}
             </AlertDialogAction>
           </AlertDialogFooter>

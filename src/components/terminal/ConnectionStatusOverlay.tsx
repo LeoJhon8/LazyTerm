@@ -1,5 +1,5 @@
 import { HoverTooltip } from "@/components/ui/tooltip";
-import { LoaderCircle, Monitor, RefreshCcw } from "lucide-react";
+import { LoaderCircle, CircleAlert, RefreshCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
@@ -25,6 +25,24 @@ export function ConnectionStatusOverlay({
   zIndexClass = "z-30",
 }: ConnectionStatusOverlayProps) {
   const { t } = useI18n();
+  if (status.phase === "disconnected" && status.disconnectCause === "tmux-ended") {
+    return (
+      <div className={`absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 border-t border-border bg-background px-4 py-3 ${zIndexClass}`}>
+        <div role="status" className="min-w-0 text-sm">
+          <div className="font-medium">{t("远端后台会话已结束")}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {t("后台模式已关闭。重新连接将打开普通 SSH 会话。")}
+          </div>
+        </div>
+        {onReconnect && (
+          <Button size="sm" variant="outline" onClick={onReconnect}>
+            <RefreshCcw className="h-4 w-4" />
+            {t("重新连接")}
+          </Button>
+        )}
+      </div>
+    );
+  }
   const isConnecting = status.phase === "connecting"
     || status.phase === "authenticating"
     || status.phase === "reconnecting";
@@ -36,7 +54,9 @@ export function ConnectionStatusOverlay({
     return null;
   }
 
-  const phaseText = status.phase === "authenticating"
+  const phaseText = status.phase === "reconnecting" && status.retryPending
+    ? t("等待自动重试...")
+    : status.phase === "authenticating"
     ? t("正在验证凭据...")
     : status.phase === "reconnecting" || (isFailurePhase && !isTerminalFailure)
       ? t("正在重新连接...")
@@ -45,14 +65,14 @@ export function ConnectionStatusOverlay({
   if (isRecovering) {
     return (
       <div className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm ${zIndexClass}`}>
-        <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-popover/90 px-5 py-3 text-foreground shadow-2xl backdrop-blur-xl">
-          <LoaderCircle className="h-4 w-4 animate-spin text-sky-500" />
+        <div className="floating-surface flex max-w-[calc(100%-2rem)] items-center gap-3 rounded-xl border border-border/60 px-5 py-3">
+          <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-primary" />
           <div className="min-w-0">
             <div className="text-sm font-medium">{phaseText}</div>
             <div className="mt-0.5 max-w-80 truncate text-xs text-muted-foreground">
               {protocol} · {target}
-              {(status.phase === "reconnecting" || isFailurePhase) && status.attempt > 0
-                ? ` · ${t("第 {count} 次连接尝试", { count: status.attempt })}`
+              {(status.phase === "reconnecting" || isFailurePhase) && status.retryAttempt !== undefined && status.retryAttempt > 0
+                ? ` · ${t("第 {count} 次自动重试", { count: status.retryAttempt })}`
                 : ""}
             </div>
           </div>
@@ -89,10 +109,10 @@ export function ConnectionStatusOverlay({
       onKeyDown={(event) => event.stopPropagation()}
       onKeyUp={(event) => event.stopPropagation()}
     >
-      <div className="flex w-[460px] max-w-[calc(100%_-_2rem)] flex-col overflow-hidden rounded-2xl border border-border/50 bg-background/80 shadow-2xl backdrop-blur-3xl">
+      <div className="floating-surface flex max-h-[calc(100%-2rem)] w-[460px] max-w-[calc(100%_-_2rem)] flex-col overflow-y-auto rounded-xl border border-border/60">
         <div className="flex items-center justify-between border-b border-border/50 bg-muted/40 px-6 py-4">
           <div className="flex items-center gap-3">
-            <Monitor className="h-5 w-5 text-sky-500" />
+            <CircleAlert className="h-5 w-5 shrink-0 text-destructive" />
             <span className="font-semibold text-foreground/90">{title}</span>
           </div>
           <span className="rounded-md border border-border/50 bg-background/50 px-2.5 py-1 text-xs font-semibold text-muted-foreground shadow-sm">
@@ -105,10 +125,10 @@ export function ConnectionStatusOverlay({
             {status.reason || description || fallbackDescription}
           </p>
 
-          <div className="mb-5 grid grid-cols-2 gap-y-4 rounded-xl border border-border/30 bg-muted/30 p-4 shadow-inner">
+          <div className="mb-5 grid grid-cols-2 gap-y-4 rounded-xl border border-border/40 bg-muted/20 p-4">
             {diagnosticDetails.map((detail) => (
               <div key={detail.label} className="flex flex-col gap-1.5 overflow-hidden pr-2">
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
+                <span className="text-xs font-medium text-muted-foreground">
                   {detail.label}
                 </span>
                 <HoverTooltip content={detail.value}>
@@ -134,9 +154,9 @@ export function ConnectionStatusOverlay({
               <Button
                 onClick={onReconnect}
                 size="sm"
-                className="h-9 w-40 rounded-xl bg-sky-500 text-sm font-medium text-white shadow-md hover:bg-sky-400 active:scale-95"
+                className="h-9 w-40 rounded-xl text-sm font-medium"
               >
-                <RefreshCcw className="mr-2 h-4 w-4" />
+                <RefreshCcw className="h-4 w-4" />
                 {t("重新连接")}
               </Button>
             </div>

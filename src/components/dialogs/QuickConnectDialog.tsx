@@ -114,17 +114,21 @@ export function QuickConnectDialog({ open, onOpenChange, initialType, onConnect 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-24px)] overflow-hidden p-0 gap-0 sm:max-w-165">
+      <DialogContent className="max-h-[calc(100dvh-24px)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0 gap-0 sm:max-w-165">
         <DialogHeader className="px-6 pt-6 pb-4">
           <DialogTitle>{t("快速连接")}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex min-h-0 sm:min-h-[420px]">
-          {!IS_ANDROID && <ConnectionTypeList options={VISIBLE_CONNECTION_TYPES} selectedType={selectedType} onSelect={setSelectedType} />}
+        <div className="flex min-h-0">
+          {!IS_ANDROID && (
+            <div className="flex shrink-0 overflow-y-auto">
+              <ConnectionTypeList options={VISIBLE_CONNECTION_TYPES} selectedType={selectedType} onSelect={setSelectedType} />
+            </div>
+          )}
 
           {/* 右侧：配置面板 */}
-          <div className="flex-1 flex flex-col min-w-0">
-            <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto">
+            <div className="px-6 py-4 sm:min-h-[420px]">
               {/* 本地终端面板 */}
               {selectedType === "local" && (
                 <div className="space-y-4">

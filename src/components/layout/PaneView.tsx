@@ -260,10 +260,11 @@ export function PaneView({ paneId, isVisible }: PaneViewProps) {
   return (
     <div
       ref={containerRef}
+      data-focused={isFocused ? "true" : "false"}
       className={cn(
-        "group relative flex h-full w-full min-h-0 flex-col overflow-hidden transition-colors",
+        "workspace-pane group relative flex h-full w-full min-h-0 flex-col overflow-hidden transition-colors",
         paneCount > 1 && "border border-border/40",
-        paneCount > 1 && isFocused && "border-primary/50 ring-1 ring-inset ring-primary/40",
+        paneCount > 1 && isFocused && "border-primary/70",
       )}
       onClick={handlePaneClick}
     >
@@ -338,12 +339,12 @@ function DropZoneOverlay({ zone }: { zone: DropZone }) {
     <div className="pointer-events-none absolute inset-0 z-50">
       <div
         className={cn(
-          "absolute rounded-sm border-2 border-sky-400/50 bg-sky-500/20 transition-all duration-150",
+          "absolute rounded-sm border-2 border-primary/60 bg-primary/15 transition-all duration-150",
           overlayStyle[zone],
         )}
       >
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="rounded-md bg-sky-500/80 px-3 py-1.5 text-xs font-medium text-white shadow-lg">
+          <div className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-lg">
             {overlayLabel[zone]}
           </div>
         </div>

@@ -69,13 +69,13 @@ export function FormField({
 }) {
   return (
     <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-4 sm:gap-4">
-      <Label htmlFor={htmlFor} className="text-left text-[13px] sm:text-right">
+      <Label htmlFor={htmlFor} className="text-left text-[13px] leading-5 sm:pt-2.5 sm:text-right">
         {label}
         {required && <span className="text-destructive ml-0.5">*</span>}
       </Label>
-      <div className="space-y-1.5 sm:col-span-3">
+      <div className="min-w-0 space-y-1.5 sm:col-span-3">
         {children}
-        {description && <p className="text-xs text-muted-foreground">{description}</p>}
+        {description && <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>}
       </div>
     </div>
   );

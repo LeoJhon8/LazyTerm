@@ -257,7 +257,7 @@
     --destructive: oklch(0.62 0.225 25);
     --destructive-foreground: oklch(0.985 0.002 255);
     --border: oklch(0.865 0.006 255 / 0.72);
-    --input: oklch(0.925 0.004 255 / 0.72);
+    --input: oklch(0.84 0.006 255 / 0.85);
     --ring: oklch(0.62 0.09 205 / 0.36);
 
     --panel: color-mix(in srgb, white 82%, transparent);
@@ -292,7 +292,7 @@
     --destructive: oklch(0.68 0.185 25);
     --destructive-foreground: oklch(0.985 0.004 95);
     --border: oklch(0.44 0.018 248 / 0.5);
-    --input: oklch(0.36 0.018 248 / 0.65);
+    --input: oklch(0.47 0.018 248 / 0.75);
     --ring: oklch(0.74 0.11 198 / 0.35);
 
     --panel: color-mix(in srgb, oklch(0.22 0.015 252) 88%, transparent);
@@ -370,6 +370,137 @@
 }
 
 @layer components {
+  .connection-icon {
+    color: color-mix(in srgb, var(--connection-icon-tone, var(--primary)) 55%, var(--foreground));
+  }
+
+  .connection-icon-shell {
+    --connection-icon-tone: oklch(0.62 0.09 245);
+  }
+
+  .connection-icon-remote {
+    --connection-icon-tone: oklch(0.62 0.09 175);
+  }
+
+  .connection-icon-device {
+    --connection-icon-tone: oklch(0.62 0.09 305);
+  }
+
+  .connection-icon-ai {
+    --connection-icon-tone: oklch(0.62 0.09 280);
+  }
+
+  .settings-section {
+    border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--muted) 15%, transparent);
+  }
+
+  .settings-scroll [data-radix-scroll-area-viewport] > div {
+    display: block !important;
+    min-width: 0 !important;
+  }
+
+  .settings-content {
+    container: settings-content / inline-size;
+    min-width: 0;
+  }
+
+  .credential-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .credential-layout > * {
+    min-width: 0;
+  }
+
+  .settings-form-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .settings-field-label {
+    text-align: left;
+    line-height: 1.5;
+  }
+
+  .settings-row > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .settings-row > div:has(button) {
+    flex-wrap: wrap;
+  }
+
+  @container settings-content (min-width: 520px) {
+    .settings-form-row {
+      grid-template-columns: 120px minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    .settings-field-label {
+      text-align: right;
+    }
+
+    .settings-field-label-top {
+      padding-top: 8px;
+    }
+  }
+
+  @container settings-content (min-width: 680px) {
+    .credential-layout {
+      grid-template-columns: 200px minmax(0, 1fr);
+    }
+  }
+
+  @container settings-content (max-width: 440px) {
+    .settings-row > [role="combobox"] {
+      width: 100% !important;
+    }
+  }
+
+  .module-empty-state {
+    display: flex;
+    min-height: 160px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 24px 16px;
+    color: var(--muted-foreground);
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  /* 浮层共用高不透明度底色，避免背景图片干扰正文。 */
+  .floating-surface {
+    background: color-mix(in srgb, var(--popover) 85%, var(--background));
+    color: var(--popover-foreground);
+    box-shadow: 0 16px 40px color-mix(in srgb, black 16%, transparent),
+      0 2px 8px color-mix(in srgb, black 8%, transparent);
+    backdrop-filter: blur(20px);
+  }
+
+  .settings-nav-item {
+    position: relative;
+  }
+
+  .settings-nav-item[data-state="active"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 25%;
+    bottom: 25%;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--primary);
+  }
+
   .app-shell {
     position: relative;
     isolation: isolate;
@@ -378,6 +509,124 @@
   .app-frame {
     display: flex;
     flex-direction: column;
+  }
+
+  /* 桌面只保留连续外壳与工作区两层；不改变终端自身的配色。 */
+  .desktop-frame {
+    --workspace-inset: 6px;
+    --shell-surface: color-mix(in srgb, var(--background) 88%, var(--muted));
+    --workspace-surface: var(--background);
+    --workspace-edge: color-mix(in srgb, var(--foreground) 20%, transparent);
+    --shell-divider: color-mix(in srgb, var(--foreground) 12%, transparent);
+    background: var(--shell-surface);
+  }
+
+  .desktop-shell {
+    background: var(--shell-surface);
+  }
+
+  .desktop-frame > .window-titlebar {
+    border-bottom: 0;
+    background: var(--shell-surface);
+    backdrop-filter: none;
+  }
+
+  .desktop-frame .app-shell::before {
+    content: none;
+  }
+
+  .workspace-surface {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    min-width: 0;
+    min-height: 0;
+    margin-top: var(--workspace-inset);
+    margin-bottom: var(--workspace-inset);
+    border: 1px solid var(--workspace-edge);
+    border-radius: 6px;
+    background: var(--workspace-surface);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .desktop-shell .workspace-tabs {
+    margin-top: calc(var(--workspace-inset) + 1px);
+    border-radius: 5px 5px 0 0;
+    background: var(--workspace-surface);
+  }
+
+  .desktop-shell[data-tabs-collapsed="true"] .workspace-tabs {
+    margin-top: 0;
+  }
+
+  .desktop-shell .workspace-content {
+    margin-bottom: calc(var(--workspace-inset) + 1px);
+    border-radius: 0 0 5px 5px;
+  }
+
+  .desktop-shell[data-tabs-collapsed="true"] .workspace-content {
+    margin-top: calc(var(--workspace-inset) + 1px);
+    border-radius: 5px;
+  }
+
+  .desktop-shell .activity-panel-overlay.panel-surface {
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .desktop-shell .activity-panel-overlay > .module-shell > .module-header {
+    border-bottom-color: var(--shell-divider);
+    background: transparent;
+  }
+
+  .desktop-shell .history-search-bar {
+    background: transparent;
+  }
+
+  .desktop-shell .workspace-footer {
+    background: transparent;
+  }
+
+  .desktop-shell .tabbar-surface {
+    background: color-mix(in srgb, var(--foreground) 5%, transparent);
+    box-shadow: inset 0 -1px 0 var(--shell-divider);
+  }
+
+  .desktop-shell .tabbar-scroll {
+    padding-top: 0;
+  }
+
+  .desktop-shell .tab-item {
+    border-top: 0;
+    border-left-color: transparent;
+    border-right-color: var(--shell-divider);
+  }
+
+  .desktop-shell .tab-item-active,
+  .desktop-shell .tab-item-active:hover {
+    background: var(--workspace-surface);
+    border-left-color: var(--workspace-edge);
+    border-right-color: var(--workspace-edge);
+    box-shadow: inset 0 2px 0 var(--primary);
+  }
+
+  /* 背景图不叠加新的实色遮罩；侧栏和标签栏沿用用户的不透明度。 */
+  .has-background-image .workspace-surface {
+    background: transparent;
+  }
+
+  .has-background-image .desktop-shell .tab-item-active {
+    background: color-mix(in srgb, var(--workspace-surface) 35%, transparent);
+  }
+
+  .has-background-image .desktop-shell .activity-panel-overlay.panel-surface {
+    backdrop-filter: var(--panel-backdrop-filter);
+  }
+
+  .has-background-image .desktop-shell .workspace-tabs,
+  .has-background-image .desktop-shell .workspace-footer {
+    backdrop-filter: var(--panel-strong-backdrop-filter);
   }
 
   .window-titlebar {
@@ -448,19 +697,18 @@
     min-width: 38px !important;
     border-radius: 8px !important;
     color: color-mix(in srgb, var(--muted-foreground) 86%, transparent);
-    transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+    transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
   }
 
   .window-titlebar__activity-button:hover {
     background: color-mix(in srgb, var(--accent) 48%, transparent) !important;
     color: var(--foreground);
-    transform: translateY(-1px);
   }
 
   .window-titlebar__activity-button--active {
     background: color-mix(in srgb, var(--accent) 58%, transparent) !important;
     color: var(--foreground);
-    box-shadow: inset 0 -2px 0 var(--primary), 0 1px 2px rgba(0, 0, 0, 0.08);
+    box-shadow: inset 0 -2px 0 var(--primary);
   }
 
   .window-titlebar__activity-button--active::after {
@@ -623,7 +871,7 @@
   .panel-surface-strong {
     background: var(--panel-strong);
     border-color: var(--panel-border);
-    box-shadow: var(--panel-glow), var(--panel-shadow);
+    box-shadow: none;
     backdrop-filter: var(--panel-strong-backdrop-filter, blur(24px) saturate(150%));
   }
 
@@ -699,10 +947,6 @@
     background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
   }
 
-  .activity-panel-overlay > .module-shell > .module-header + * {
-    padding-top: 6px !important;
-  }
-
   .activity-panel-overlay > .module-shell > .history-module-header {
     background: color-mix(in srgb, var(--panel-strong) 42%, transparent);
   }
@@ -725,9 +969,8 @@
     white-space: nowrap;
     font-size: 13px !important;
     line-height: 20px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--foreground) 82%, transparent);
+    letter-spacing: 0;
+    color: var(--foreground);
   }
 
   .activity-panel-overlay > .module-shell > .module-header > button {
@@ -868,7 +1111,6 @@
     width: 3px;
     border-radius: 0 3px 3px 0;
     background: var(--primary);
-    box-shadow: 0 0 8px color-mix(in srgb, var(--primary) 60%, transparent);
     transition: opacity 160ms ease;
   }
 
@@ -891,6 +1133,59 @@
     min-width: 0;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  .activity-panel-overlay,
+  .activity-panel-overlay * {
+    scrollbar-width: none;
+  }
+
+  .activity-panel-overlay::-webkit-scrollbar,
+  .activity-panel-overlay *::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 保留 Radix 滚动条的挂载和测量，维持 viewport 的滚动能力。 */
+  .activity-panel-overlay [data-slot="scroll-area-scrollbar"] {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .scroll-edge-hints {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .scroll-edge-hint {
+    position: absolute;
+    right: 0;
+    left: 0;
+    height: 12px;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .scroll-edge-hint[data-visible="true"] {
+    opacity: 1;
+  }
+
+  .scroll-edge-hint-top {
+    top: 0;
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--foreground) 14%, transparent), transparent);
+  }
+
+  .scroll-edge-hint-bottom {
+    bottom: 0;
+    background: linear-gradient(to top, color-mix(in srgb, var(--foreground) 14%, transparent), transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scroll-edge-hint {
+      transition: none;
+    }
   }
 
   /*
@@ -919,7 +1214,21 @@
     min-height: 56px;
     padding: 14px 16px;
     border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 75%, transparent);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 80%, transparent), color-mix(in srgb, var(--panel) 35%, transparent));
+    background: color-mix(in srgb, var(--panel-strong) 65%, transparent);
+  }
+
+  .session-row {
+    transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .session-row-selected {
+    background: color-mix(in srgb, var(--primary) 12%, var(--panel));
+    box-shadow: inset 2px 0 0 var(--primary);
+    color: var(--foreground);
+  }
+
+  .session-row-selected:hover {
+    background: color-mix(in srgb, var(--primary) 17%, var(--panel));
   }
 
   .module-title {
@@ -1056,7 +1365,7 @@
     gap: 0;
     border-radius: 0;
     border: 0;
-    background: transparent;
+    background: color-mix(in srgb, var(--panel) 45%, transparent);
     box-shadow: none;
     backdrop-filter: none;
     overflow: hidden;
@@ -1100,7 +1409,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: space-between;
-    gap: 4px;
+    gap: 8px;
     width: max-content;
     height: 40px;
     min-width: 72px;
@@ -1112,35 +1421,39 @@
     padding: 0 8px;
     font-size: 0.8rem;
     font-weight: var(--app-font-weight-medium);
-    color: color-mix(in srgb, var(--muted-foreground) 92%, transparent);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 54%, transparent), color-mix(in srgb, var(--panel) 30%, transparent));
-    transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    color: var(--muted-foreground);
+    background: transparent;
+    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
   }
 
   .tab-item:hover {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--background) 48%, transparent), color-mix(in srgb, var(--panel) 36%, transparent));
+    background: color-mix(in srgb, var(--accent) 55%, transparent);
     color: var(--foreground);
   }
 
-  .tab-item-active {
+  .tab-item-active,
+  .tab-item-active:hover {
     height: 40px;
     padding: 0 8px;
     border-color: color-mix(in srgb, var(--panel-border) 82%, transparent);
     border-bottom-color: transparent;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--background) 94%, transparent), color-mix(in srgb, var(--background) 82%, transparent));
+    background: color-mix(in srgb, var(--background) 90%, var(--panel));
     color: var(--foreground);
     font-weight: var(--app-font-weight-bold);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.24),
-      inset 0 -3px 0 var(--primary),
-      0 -1px 0 color-mix(in srgb, var(--background) 80%, transparent);
+    box-shadow: inset 0 -2px 0 var(--primary);
     z-index: 2;
   }
 
   .tab-close {
-    height: 16px;
-    width: 16px;
+    height: 20px;
+    width: 20px;
+    flex-shrink: 0;
     border-radius: var(--radius);
+  }
+
+  .tab-item:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -3px;
   }
 
   .tab-session-icon {
@@ -1183,18 +1496,18 @@
     width: 100%;
     min-width: 0;
     align-items: stretch;
-    gap: 4px;
+    gap: 6px;
     border-radius: 0;
     border: 0;
     background: transparent;
-    padding: 0 4px;
+    padding: 2px 0;
     backdrop-filter: none;
   }
 
   .quickcmd-surface[data-mode="panel"] {
-    align-items: center;
+    align-items: flex-start;
     gap: 6px;
-    padding: 6px;
+    padding: 4px 0 6px;
   }
 
   .quickcmd-leading-icon {
@@ -1203,7 +1516,7 @@
     align-self: stretch;
     align-items: center;
     justify-content: center;
-    width: 22px;
+    width: 24px;
     height: 100%;
     color: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
     background: transparent;
@@ -1216,32 +1529,24 @@
     color: var(--foreground);
   }
 
-  .quickcmd-leading-icon:focus-visible {
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ring) 72%, transparent);
-  }
-
   .quickcmd-surface[data-mode="panel"] .quickcmd-leading-icon {
-    align-self: center;
+    align-self: flex-start;
     height: 32px;
     width: 24px;
-    border: 1px solid color-mix(in srgb, var(--panel-border) 46%, transparent);
-    background: color-mix(in srgb, var(--panel) 16%, transparent);
-  }
-
-  .quickcmd-surface[data-mode="panel"] .quickcmd-leading-icon:hover {
-    border-color: color-mix(in srgb, var(--primary) 38%, var(--panel-border));
-    background: color-mix(in srgb, var(--primary) 10%, var(--panel));
+    border: 1px solid transparent;
+    background: transparent;
   }
 
   .quickcmd-command-item {
     display: flex;
     height: 100%;
     align-items: stretch;
+    flex-shrink: 0;
   }
 
   .command-scroll {
     align-items: stretch;
-    gap: 0;
+    gap: 4px;
     height: 100%;
     padding-top: 0;
     padding-bottom: 0;
@@ -1269,19 +1574,17 @@
     align-items: center;
     justify-content: flex-start;
     gap: 0;
-    min-width: 80px;
+    min-width: 0;
     max-width: 156px;
     height: 100%;
-    min-height: 100%;
+    min-height: 0;
     border: 1px solid transparent;
-    border-top: 2px solid transparent;
-    border-bottom: 0;
-    border-radius: 0;
-    margin-right: -1px;
-    background: color-mix(in srgb, var(--panel) 18%, transparent);
+    border-radius: var(--radius);
+    margin-right: 0;
+    background: transparent;
     padding: 0 7px;
     font-size: var(--quick-command-font-size);
-    color: color-mix(in srgb, var(--foreground) 84%, transparent);
+    color: var(--muted-foreground);
     transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
   }
 
@@ -1291,18 +1594,6 @@
     max-width: none;
     height: 32px;
     min-height: 32px;
-    border: 1px solid color-mix(in srgb, var(--panel-border) 40%, transparent);
-    border-top-width: 1px;
-    border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 36%, transparent);
-    margin-right: 0;
-    background: color-mix(in srgb, var(--panel) 26%, transparent);
-  }
-
-  .command-card:hover {
-    border-color: color-mix(in srgb, var(--panel-border) 70%, transparent);
-    border-top-color: oklch(0.73 0.16 151);
-    background: color-mix(in srgb, var(--background) 24%, transparent);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
   }
 
   .command-card-main {
@@ -1320,7 +1611,7 @@
     white-space: nowrap;
     text-align: left;
     font-size: var(--quick-command-font-size);
-    font-weight: var(--app-font-weight-bold);
+    font-weight: var(--app-font-weight-medium);
   }
 
   .quickcmd-add-button {
@@ -1329,7 +1620,8 @@
     align-items: center;
     justify-content: center;
     height: 100%;
-    width: 22px;
+    width: 24px;
+    flex-shrink: 0;
     border-radius: 0;
     background: transparent;
     color: color-mix(in srgb, var(--muted-foreground) 90%, transparent);
@@ -1337,23 +1629,23 @@
 
   .quickcmd-surface[data-mode="panel"] .quickcmd-add-button {
     height: 32px;
-    width: 28px;
-    border: 1px solid color-mix(in srgb, var(--panel-border) 46%, transparent);
-    background: color-mix(in srgb, var(--panel) 16%, transparent);
+    width: 24px;
+    align-self: flex-start;
+    border: 1px solid transparent;
+    background: transparent;
   }
 
   .quickcmd-add-button:hover {
-    background: color-mix(in srgb, var(--background) 28%, transparent);
+    background: color-mix(in srgb, var(--accent) 55%, transparent);
     color: var(--foreground);
   }
 
   .quickcmd-empty {
     display: flex;
     height: 100%;
-    min-height: 32px;
+    min-height: 0;
     align-items: center;
-    border: 1px dashed color-mix(in srgb, var(--border) 70%, transparent);
-    padding: 0 16px;
+    padding: 0 10px;
     font-size: var(--quick-command-font-size);
     color: var(--muted-foreground);
   }
@@ -1488,6 +1780,17 @@
    ======================================== */
 
 /* 背景装饰光环 */
+.desktop-shell .workspace-pane:not([data-focused="true"]) {
+  border-color: transparent;
+}
+
+.desktop-shell .welcome-card {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
 .welcome-bg-rings {
   position: absolute;
   inset: 0;
@@ -1541,10 +1844,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
+  gap: 20px;
   text-align: center;
   max-width: min(480px, calc(100% - 48px));
-  animation: welcome-fade-in 0.6s ease-out both;
+  padding: 32px 28px 28px;
+  background: color-mix(in srgb, var(--panel-strong) 88%, var(--background));
+  box-shadow: 0 8px 28px color-mix(in srgb, black 6%, transparent);
+  animation: welcome-fade-in 240ms ease-out both;
 }
 
 @keyframes welcome-fade-in {
@@ -1558,29 +1864,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 190px;
+  min-height: 128px;
 }
 
 .welcome-logo-glow {
   position: absolute;
-  width: 190px;
-  height: 190px;
+  width: 128px;
+  height: 128px;
   border-radius: var(--radius);
   background: var(--primary);
   filter: blur(52px);
-  opacity: 0.36;
-  animation: welcome-glow 4s ease-in-out infinite;
-}
-
-@keyframes welcome-glow {
-  0%, 100% { opacity: 0.2; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(1.15); }
+  opacity: 0.18;
 }
 
 .welcome-logo {
   position: relative;
-  width: 176px;
-  height: 176px;
+  width: 120px;
+  height: 120px;
   object-fit: contain;
 }
 
@@ -1593,11 +1893,11 @@
 }
 
 .welcome-title {
-  font-size: 1.35rem;
-  font-weight: var(--app-font-weight-normal);
+  font-size: 1.2rem;
+  font-weight: var(--app-font-weight-medium);
   letter-spacing: 0;
   color: var(--foreground);
-  line-height: 1.2;
+  line-height: 1.5;
 }
 
 .welcome-subtitle {
@@ -1610,7 +1910,7 @@
 /* 快捷操作卡片网格 */
 .welcome-actions {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
   gap: 10px;
   width: 100%;
 }
@@ -1625,14 +1925,18 @@
   background: color-mix(in srgb, var(--background) 50%, transparent);
   text-align: left;
   cursor: pointer;
-  transition: all 180ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .welcome-action-card:hover {
   border-color: color-mix(in srgb, var(--primary) 50%, transparent);
   background: color-mix(in srgb, var(--accent) 40%, transparent);
-  transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(2, 6, 23, 0.08);
+}
+
+.welcome-action-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
 }
 
 .welcome-action-card:active {
@@ -1651,13 +1955,13 @@
 }
 
 .welcome-action-icon--terminal {
-  background: color-mix(in srgb, oklch(0.72 0.16 151) 18%, transparent);
-  color: oklch(0.72 0.16 151);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
 }
 
 .welcome-action-icon--ssh {
-  background: color-mix(in srgb, oklch(0.65 0.14 220) 18%, transparent);
-  color: oklch(0.65 0.14 220);
+  background: var(--muted);
+  color: var(--foreground);
 }
 
 .welcome-action-icon--rdp {
@@ -1676,16 +1980,6 @@
 .welcome-action-icon--telnet {
   background: color-mix(in srgb, oklch(0.70 0.14 170) 18%, transparent);
   color: oklch(0.70 0.14 170);
-}
-
-.dark .welcome-action-icon--terminal {
-  background: color-mix(in srgb, oklch(0.78 0.14 151) 22%, transparent);
-  color: oklch(0.78 0.14 151);
-}
-
-.dark .welcome-action-icon--ssh {
-  background: color-mix(in srgb, oklch(0.74 0.12 220) 22%, transparent);
-  color: oklch(0.74 0.12 220);
 }
 
 .dark .welcome-action-icon--rdp {
@@ -1718,6 +2012,7 @@
   font-size: 0.82rem;
   font-weight: var(--app-font-weight-bold);
   color: var(--foreground);
+  overflow-wrap: anywhere;
 }
 
 .welcome-action-desc {
@@ -1768,7 +2063,7 @@
   100% { box-shadow: inset 0 0 0 2px transparent; }
 }
 
-/* 按钮按下反馈（配合已有的 hover:-translate-y-0.5） */
+/* 按钮按下反馈 */
 button:active:not(:disabled) {
   transform: translateY(0.5px);
   transition-duration: 80ms;
@@ -1779,4 +2074,12 @@ button:active:not(:disabled) {
 .tab-item,
 .command-card {
   will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-card,
+  .welcome-ring,
+  .pane-focus-flash {
+    animation: none;
+  }
 }

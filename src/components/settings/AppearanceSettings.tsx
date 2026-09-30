@@ -230,7 +230,7 @@ export function AppearanceSettings() {
         <div className="flex flex-col gap-6 pb-10 px-1">
 
           {/* 整体配色方案 */}
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-muted/20 px-3 py-3">
+          <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-3 settings-section px-3 py-3">
             <div className="min-w-0 space-y-1">
               <Label htmlFor="mood-button-visible" className="cursor-pointer text-sm">{t("显示心情换色按钮")}</Label>
               <p id="mood-button-description" className="text-xs text-muted-foreground">
@@ -246,8 +246,8 @@ export function AppearanceSettings() {
           </div>
 
           <div className="flex flex-col gap-1">
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("整体配色方案")}</Label>
-            <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden px-3 py-3">
+            <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">{t("整体配色方案")}</Label>
+            <div className="settings-section overflow-hidden px-3 py-3">
               <div className="flex flex-wrap gap-2">
                 {APP_BACKGROUND_OPTIONS.map((opt) => (
                   <button
@@ -266,7 +266,7 @@ export function AppearanceSettings() {
               </div>
               {appBackgroundColor === "custom" && (
                 <div className="mt-3 border-t border-border/30 pt-3">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-3">
                     <label className="flex min-w-0 items-center gap-2 rounded-md bg-background/55 px-2 py-1.5">
                       <input
                         type="color"
@@ -292,8 +292,8 @@ export function AppearanceSettings() {
 
           {/* 终端区域配色 */}
           <div className="flex flex-col gap-1">
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("终端区域配色")}</Label>
-            <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden px-3 py-3">
+            <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">{t("终端区域配色")}</Label>
+            <div className="settings-section overflow-hidden px-3 py-3">
               <div className="flex flex-wrap gap-2">
                 {TERMINAL_BACKGROUND_OPTIONS.map((opt) => (
                   <button
@@ -312,7 +312,7 @@ export function AppearanceSettings() {
               </div>
               {terminalBackgroundMode === "custom" && (
                 <div className="mt-3 border-t border-border/30 pt-3">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-3">
                     <label className="flex min-w-0 items-center gap-2 rounded-md bg-background/55 px-2 py-1.5">
                       <input
                         type="color"
@@ -338,9 +338,9 @@ export function AppearanceSettings() {
 
           {/* 字体设置 */}
           <div className="flex flex-col gap-1">
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("字体设置")}</Label>
-            <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
-              <div className="flex items-center justify-between px-4 py-2.5">
+            <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">{t("字体设置")}</Label>
+            <div className="settings-section overflow-hidden divide-y divide-border/30">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("字体族")}</Label>
                 <Select value={fontFamily} onValueChange={(v) => setSettings({ fontFamily: v })}>
                   <SelectTrigger className="h-8 w-48 bg-background/80 border-0 shadow-none focus:ring-1 focus:ring-primary/30 text-sm">
@@ -357,7 +357,7 @@ export function AppearanceSettings() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("字体大小")}</Label>
                 <div className="flex items-center gap-3">
                   <Slider
@@ -369,7 +369,7 @@ export function AppearanceSettings() {
                   <span className="text-xs font-mono text-muted-foreground w-10 text-right">{fontSize}px</span>
                 </div>
               </div>
-              <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("正常字体粗细")}</Label>
                 <div className="flex items-center gap-3">
                   <Slider
@@ -381,7 +381,7 @@ export function AppearanceSettings() {
                   <span className="text-xs font-mono text-muted-foreground w-10 text-right">{normalFontWeight}</span>
                 </div>
               </div>
-              <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("粗体字体粗细")}</Label>
                 <div className="flex items-center gap-3">
                   <Slider
@@ -393,7 +393,7 @@ export function AppearanceSettings() {
                   <span className="text-xs font-mono text-muted-foreground w-10 text-right">{boldFontWeight}</span>
                 </div>
               </div>
-              <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("终端正常字体粗细")}</Label>
                 <div className="flex items-center gap-3">
                   <Slider
@@ -405,7 +405,7 @@ export function AppearanceSettings() {
                   <span className="text-xs font-mono text-muted-foreground w-10 text-right">{terminalNormalFontWeight}</span>
                 </div>
               </div>
-              <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("终端粗体字体粗细")}</Label>
                 <div className="flex items-center gap-3">
                   <Slider
@@ -422,9 +422,9 @@ export function AppearanceSettings() {
 
           {/* 终端输出主题 */}
           <div className="flex flex-col gap-1">
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("终端输出主题")}</Label>
-            <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2.5">
+            <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">{t("终端输出主题")}</Label>
+            <div className="settings-section overflow-hidden">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("配色方案")}</Label>
                 <div className="flex items-center gap-2">
                   <Tooltip>
@@ -468,7 +468,7 @@ export function AppearanceSettings() {
               {/* 自定义方案编辑区 */}
               {isCustomSelected && activeCustomTheme && (
                 <div className="border-t border-border/30 px-4 py-3 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="settings-row flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <Label className="text-xs font-medium text-muted-foreground shrink-0">{t("方案名称")}</Label>
                       <input
@@ -515,7 +515,7 @@ export function AppearanceSettings() {
               )}
 
               <div className="border-t border-border/30 divide-y divide-border/30">
-                <div className="flex items-center justify-between px-4 py-2.5">
+                <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                   <Label className="text-sm">{t("光标样式")}</Label>
                   <Select
                     value={terminalCursorStyle}
@@ -533,7 +533,7 @@ export function AppearanceSettings() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex items-center justify-between px-4 py-2.5">
+                <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                   <Label className="text-sm">{t("UI 侧栏不透明度")}</Label>
                   <div className="flex items-center gap-3">
                     <Slider
@@ -551,9 +551,9 @@ export function AppearanceSettings() {
 
           {/* 背景图片 */}
           <div className="flex flex-col gap-1">
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("背景图片")}</Label>
-            <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
-              <div className="flex items-center justify-between px-4 py-2.5">
+            <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">{t("背景图片")}</Label>
+            <div className="settings-section overflow-hidden divide-y divide-border/30">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label htmlFor="enable-bg-img" className="text-sm cursor-pointer">{t("图片背景")}</Label>
                 <Switch
                   id="enable-bg-img"
@@ -561,7 +561,7 @@ export function AppearanceSettings() {
                   onCheckedChange={(checked) => setSettings({ backgroundImageEnabled: !!checked })}
                 />
               </div>
-              <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("背景图片")}</Label>
                 <div className="flex items-center gap-2">
                   {backgroundImageEnabled && backgroundImage && (
@@ -594,7 +594,7 @@ export function AppearanceSettings() {
                   </HoverTooltip>
                 </div>
               )}
-              <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("界面呈现模式")}</Label>
                 <Select
                   value={backgroundImageUiMode}
@@ -610,7 +610,7 @@ export function AppearanceSettings() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("模糊度")}</Label>
                 <div className="flex items-center gap-3">
                   <Slider
@@ -623,7 +623,7 @@ export function AppearanceSettings() {
                   <span className="text-xs font-mono text-muted-foreground w-10 text-right">{backgroundBlur}px</span>
                 </div>
               </div>
-              <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("不透明度")}</Label>
                 <div className="flex items-center gap-3">
                   <Slider

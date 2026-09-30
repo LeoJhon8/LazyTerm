@@ -155,24 +155,24 @@ function SplitResizeHandle({ splitId, direction }: SplitResizeHandleProps) {
     <div
       ref={handleRef}
       className={cn(
-        "group relative z-10 flex items-center justify-center",
+        "group relative z-10 flex shrink-0 items-center justify-center",
         "transition-colors duration-150",
         isHorizontal
-          ? "w-[3px] cursor-col-resize hover:w-[4px]"
-          : "h-[3px] cursor-row-resize hover:h-[4px]",
+          ? "w-[3px] cursor-col-resize"
+          : "h-[3px] cursor-row-resize",
         isDragging
           ? "bg-primary/50"
-          : "bg-border/40 hover:bg-primary/30"
+          : "bg-transparent hover:bg-primary/30"
       )}
       onMouseDown={handleMouseDown}
     >
       <div
         className={cn(
-          "rounded-full transition-all duration-150",
-          isHorizontal ? "h-8 w-[1px]" : "w-8 h-[1px]",
+          "transition-colors duration-150",
+          isHorizontal ? "h-full w-px" : "w-full h-px",
           isDragging
             ? "bg-primary/80"
-            : "bg-muted-foreground/25 group-hover:bg-primary/50"
+            : "bg-border/70 group-hover:bg-primary/50"
         )}
       />
     </div>

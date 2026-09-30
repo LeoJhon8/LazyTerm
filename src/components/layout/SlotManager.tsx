@@ -90,10 +90,10 @@ export function SlotManager() {
       <aside
         id={`slot-${side}`}
         className={cn(
-          "activity-panel-overlay panel-surface",
+          "activity-panel-overlay panel-surface duration-150 motion-reduce:animate-none",
           side === "left"
-            ? "activity-panel-overlay--left border-r animate-in slide-in-from-left-2"
-            : "activity-panel-overlay--right border-l animate-in slide-in-from-right-2",
+            ? "activity-panel-overlay--left animate-in slide-in-from-left-2"
+            : "activity-panel-overlay--right animate-in slide-in-from-right-2",
         )}
         style={{
           width: `${width}px`,
@@ -122,12 +122,12 @@ export function SlotManager() {
 
       <header
         id="slot-mid-top"
-        className="panel-surface-strong relative z-10 overflow-hidden border-b transition-all duration-300"
+        className="workspace-tabs relative z-10 overflow-hidden"
         style={{
           gridArea: "mid-top",
           height: topPanelCollapsed ? "0px" : `${topPanelHeight}px`,
-          marginLeft: openLeftPanelWidth ? `${openLeftPanelWidth}px` : undefined,
-          marginRight: openRightPanelWidth ? `${openRightPanelWidth}px` : undefined,
+          marginLeft: `calc(${openLeftPanelWidth}px + var(--workspace-inset) + 1px)`,
+          marginRight: `calc(${openRightPanelWidth}px + var(--workspace-inset) + 1px)`,
           ...panelOpacityStyle,
         }}
       >
@@ -137,12 +137,12 @@ export function SlotManager() {
       {!hideBottom && (
         <footer
           id="slot-mid-bottom"
-          className="panel-surface-strong relative z-10 overflow-hidden border-t transition-all duration-300"
+          className="workspace-footer relative z-10 overflow-hidden"
           style={{
             gridArea: "mid-bottom",
             height: effectiveFooterHeight,
-            marginLeft: openLeftPanelWidth ? `${openLeftPanelWidth}px` : undefined,
-            marginRight: openRightPanelWidth ? `${openRightPanelWidth}px` : undefined,
+            marginLeft: `calc(${openLeftPanelWidth}px + var(--workspace-inset) + 1px)`,
+            marginRight: `calc(${openRightPanelWidth}px + var(--workspace-inset) + 1px)`,
             ...panelOpacityStyle,
           }}
         >

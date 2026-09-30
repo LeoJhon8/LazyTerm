@@ -157,7 +157,7 @@ export function TerminalAutocompleteUI({
 
   return (
     <div
-      className="absolute z-100 flex flex-col overflow-hidden rounded-xl border border-border bg-popover/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
+      className="absolute z-100 flex flex-col overflow-hidden rounded-xl border border-border/70 floating-surface"
       style={{
         left: leftPos,
         top: isOverflowingBottom ? "auto" : pos.y + 4,
@@ -168,9 +168,9 @@ export function TerminalAutocompleteUI({
         maxHeight: "350px",
       }}
     >
-      <div className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-widest bg-muted/40 border-b border-border flex items-center justify-between">
+      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground bg-muted/20 border-b border-border/60 flex items-center justify-between">
         <span>{t("智能提示")}</span>
-        <span className="text-[9px] opacity-40 font-mono lowercase">Enter</span>
+        <span className="rounded border border-border/60 px-1 text-[10px] font-mono text-muted-foreground">Enter</span>
       </div>
       <div className="flex flex-col py-1">
         {suggestions.map((item, index) => {
@@ -183,8 +183,8 @@ export function TerminalAutocompleteUI({
               onClick={() => handleAccept(item.command)}
               onPointerMove={() => setSelectedIndex(index)}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 text-[13px] cursor-pointer transition-all duration-100",
-                isSelected ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+                "flex items-center gap-3 px-3 py-2 text-[13px] cursor-pointer border-l-2 border-transparent transition-colors duration-150",
+                isSelected ? "border-l-primary bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
               )}
             >
               <div className={cn(
@@ -196,7 +196,7 @@ export function TerminalAutocompleteUI({
               <div className="flex flex-col min-w-0 flex-1">
                 <span className="truncate font-medium">{item.label}</span>
                 {item.type === "quick" && item.command !== item.label && (
-                  <span className="truncate text-[11px] opacity-50 font-mono mt-0.5 leading-tight">{item.command}</span>
+                  <span className="truncate text-[11px] text-muted-foreground font-mono mt-0.5 leading-4">{item.command}</span>
                 )}
               </div>
             </div>

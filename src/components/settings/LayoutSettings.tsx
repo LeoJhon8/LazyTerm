@@ -98,10 +98,10 @@ export function LayoutSettings() {
 
         {/* 模块分配 */}
         <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">
+          <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">
             {t("侧栏模块")}
           </Label>
-          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
+          <div className="settings-section overflow-hidden divide-y divide-border/30">
             {/* 表头 */}
             <div className="flex items-center px-4 py-2 bg-muted/30">
               <span className="flex-1 text-xs text-muted-foreground">{t("模块")}</span>
@@ -188,11 +188,11 @@ export function LayoutSettings() {
 
         {/* 快捷命令栏 */}
         <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">
+          <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">
             {t("工具栏")}
           </Label>
-          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
-            <div className="flex items-center justify-between px-4 py-3">
+          <div className="settings-section overflow-hidden divide-y divide-border/30">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="flex-1 min-w-0 mr-4">
                 <Label className="text-sm font-medium">{t("快捷命令栏")}</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -206,7 +206,7 @@ export function LayoutSettings() {
                 }
               />
             </div>
-            <div className="flex items-center justify-between px-4 py-3">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="flex-1 min-w-0 mr-4">
                 <Label className="text-sm font-medium">{t("快捷命令显示模式")}</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -228,7 +228,7 @@ export function LayoutSettings() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center justify-between px-4 py-3">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="flex-1 min-w-0 mr-4">
                 <Label className="text-sm font-medium">{t("快捷命令字体大小")}</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -257,11 +257,11 @@ export function LayoutSettings() {
 
         {/* 恢复默认布局 */}
         <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">
+          <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">
             {t("重置")}
           </Label>
-          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3">
+          <div className="settings-section overflow-hidden">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="flex-1 min-w-0 mr-4">
                 <Label className="text-sm font-medium">{t("恢复默认布局")}</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">

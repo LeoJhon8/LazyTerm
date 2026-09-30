@@ -189,9 +189,9 @@ export function AboutSettings() {
         <div className="flex flex-col gap-6 pb-10 px-1">
           {/* 关于 */}
           <div className="flex flex-col gap-1">
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("关于")}</Label>
-            <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
-              <div className="flex items-center justify-between px-4 py-3">
+            <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">{t("关于")}</Label>
+            <div className="settings-section overflow-hidden divide-y divide-border/30">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div>
                   <div className="text-base font-semibold">LazyTerm</div>
                   <div className="text-xs text-muted-foreground mt-0.5">{t("当前版本：{version}", { version: displayedVersion })}</div>
@@ -232,7 +232,7 @@ export function AboutSettings() {
                     )}
                     {downloadProgress !== null && (
                       <div className="space-y-1.5">
-                        <div className="flex items-center justify-between text-xs font-medium">
+                        <div className="settings-row flex flex-wrap items-center justify-between gap-3 text-xs font-medium">
                           <span className="animate-pulse">{t("正在下载更新包...")}</span>
                           <span className="font-mono">{downloadProgress.toFixed(1)}%</span>
                         </div>

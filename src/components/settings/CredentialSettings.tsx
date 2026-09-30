@@ -57,14 +57,14 @@ function CredentialFormField({
 }) {
   return (
     <div className={cn(
-      "grid grid-cols-[120px_minmax(0,1fr)] gap-4 px-4 py-2.5",
+      "settings-form-row px-4 py-2.5",
       align === "center" ? "items-center" : "items-start",
     )}>
-      <Label className={cn("text-sm text-right", align === "start" && "pt-2")}>
+      <Label className={cn("settings-field-label text-sm", align === "start" && "settings-field-label-top")}>
         {label}
         {required && <span className="text-destructive ml-0.5">*</span>}
       </Label>
-      <div className="space-y-1.5">
+      <div className="min-w-0 space-y-1.5">
         {children}
         {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>
@@ -207,15 +207,15 @@ export function CredentialSettings() {
   };
 
   return (
-    <div className="grid grid-cols-[240px_minmax(0,1fr)] gap-6">
+    <div className="credential-layout">
       <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between px-1">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">凭据列表</Label>
+        <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-1">
+          <Label className="text-xs font-medium text-muted-foreground tracking-wide">凭据列表</Label>
           <Button variant="outline" size="sm" className="h-8 px-2" onClick={startCreate}>
             <Plus className="h-3.5 w-3.5" />
           </Button>
         </div>
-        <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden">
+        <div className="settings-section overflow-hidden">
           {visibleCredentials.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">暂无保存的凭据</div>
           )}
@@ -241,10 +241,10 @@ export function CredentialSettings() {
 
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">
+          <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">
             {selectedId ? "编辑凭据" : "新增凭据"}
           </Label>
-          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
+          <div className="settings-section overflow-hidden divide-y divide-border/30">
             <CredentialFormField label="名称" required>
               <Input value={form.name} onChange={(event) => setField("name", event.target.value)} placeholder="请输入凭据名称" />
             </CredentialFormField>
@@ -292,7 +292,7 @@ export function CredentialSettings() {
           </div>
         </div>
 
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           {selectedId && (
             <Button variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => void handleDelete()} disabled={busy}>
               <Trash2 className="h-4 w-4 mr-2" />
@@ -306,10 +306,10 @@ export function CredentialSettings() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">
+          <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">
             凭据保护
           </Label>
-          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
+          <div className="settings-section overflow-hidden divide-y divide-border/30">
             <div className="flex items-start gap-3 px-4 py-3">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               <div>
@@ -339,7 +339,7 @@ export function CredentialSettings() {
                 autoComplete="new-password"
               />
             </CredentialFormField>
-            <div className="flex justify-end gap-2 px-4 py-3">
+            <div className="flex flex-wrap justify-end gap-2 px-4 py-3">
               {vault?.mode === "master" && (
                 <Button variant="outline" onClick={() => void handleDisableMasterPassword()} disabled={busy}>
                   关闭主密码

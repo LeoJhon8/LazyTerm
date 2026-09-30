@@ -119,19 +119,19 @@ function getTabIcon(type: TerminalSession["type"] | undefined, isSplit?: boolean
 
   switch (type) {
     case "ssh":
-      return <Server className="tab-session-icon text-emerald-600/80" />;
+      return <Server className="tab-session-icon connection-icon connection-icon-remote" />;
     case "rdp":
-      return <AppWindow className="tab-session-icon text-sky-600/80" />;
+      return <AppWindow className="tab-session-icon connection-icon connection-icon-remote" />;
     case "vnc":
-      return <ScreenShare className="tab-session-icon text-emerald-600/80" />;
+      return <ScreenShare className="tab-session-icon connection-icon connection-icon-remote" />;
     case "serial":
-      return <Usb className="tab-session-icon text-purple-600/80" />;
+      return <Usb className="tab-session-icon connection-icon connection-icon-device" />;
     case "telnet":
-      return <Terminal className="tab-session-icon text-emerald-500/80" />;
+      return <Terminal className="tab-session-icon connection-icon connection-icon-shell" />;
     case "ai-cli":
-      return <Terminal className="tab-session-icon text-violet-600/80" />;
+      return <Terminal className="tab-session-icon connection-icon connection-icon-ai" />;
     case "local":
-      return <Terminal className="tab-session-icon text-blue-600/80" />;
+      return <Terminal className="tab-session-icon connection-icon connection-icon-shell" />;
     default:
       return null;
   }
@@ -295,18 +295,18 @@ function SortableTab({
               {...listeners}
               onPointerDownCapture={handleContextMenuPointerDownCapture}
             >
-              <span className="pointer-events-none min-w-0 truncate text-[13px] flex items-center justify-center gap-1.5 leading-5">
+              <span className="pointer-events-none min-w-0 flex-1 text-[13px] flex items-center gap-1.5 leading-5">
                 {tabIcon}
                 {connectionPhase && (
                   <span className={cn(
                     "h-1.5 w-1.5 shrink-0 rounded-full",
-                    connectionPhase === "connected" ? "bg-emerald-400" :
-                      connectionPhase === "failed" ? "bg-red-400" :
-                        connectionPhase === "disconnected" ? "bg-amber-400" :
-                          connectionPhase === "closing" || connectionPhase === "idle" ? "bg-muted-foreground/50" : "bg-sky-400 animate-pulse",
+                    connectionPhase === "connected" ? "bg-emerald-600/80 dark:bg-emerald-400/80" :
+                      connectionPhase === "failed" ? "bg-destructive" :
+                        connectionPhase === "disconnected" ? "bg-amber-600 dark:bg-amber-400" :
+                          connectionPhase === "closing" || connectionPhase === "idle" ? "bg-muted-foreground/50" : "bg-primary animate-pulse",
                   )} />
                 )}
-                <span className="min-w-0 truncate">{displayTitle}</span>
+                <span className="min-w-0 flex-1 truncate">{displayTitle}</span>
                 {backgroundModeEnabled && (
                   <Radio
                     className="h-3 w-3 shrink-0 text-emerald-500"
@@ -317,15 +317,15 @@ function SortableTab({
 
               <Button
                 variant="ghost"
-                size="icon"
-                className={`tab-close h-4! w-4! min-w-0! p-0! text-muted-foreground transition-all hover:bg-background/40 hover:text-foreground ${
-                  active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                size="icon-xs"
+                className={`tab-close text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:ring-inset focus-visible:ring-offset-0 ${
+                  active ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
                 }`}
                 onPointerDown={handleClosePointerDown}
                 onClick={(event) => onClose(event, id)}
                 aria-label={t("关闭 {title}", { title })}
               >
-                <X className="h-2 w-2" />
+                <X />
               </Button>
             </div>
           </HoverTooltip>
@@ -1090,8 +1090,8 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
                   </span>
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="tab-close ml-1 text-muted-foreground opacity-100"
+                    size="icon-xs"
+                    className="tab-close text-muted-foreground opacity-100"
                   >
                     <X className="h-4 w-4" />
                   </Button>

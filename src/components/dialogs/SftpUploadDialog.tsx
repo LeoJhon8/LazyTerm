@@ -180,8 +180,7 @@ function UploadSelectionArea({
                 {!disabled && (
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 shrink-0"
+                    size="icon-xs"
                     onClick={(event) => {
                       event.stopPropagation();
                       onRemove(root.path);

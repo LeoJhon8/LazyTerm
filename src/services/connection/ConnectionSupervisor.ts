@@ -146,6 +146,20 @@ export class ConnectionSupervisor {
     }
 
     let event = normalizeConnectionStateEvent(sourceEvent);
+    if (event.phase === "disconnected" && event.disconnectCause === "tmux-ended") {
+      this.clearRetryTimer(entry);
+      this.clearStableTimer(entry);
+      entry.retryQueued = false;
+      entry.reconnecting = false;
+      entry.onState({
+        ...event,
+        failure: undefined,
+        terminal: true,
+        generation,
+        attempt: entry.attempt,
+      });
+      return;
+    }
     if (entry.reconnecting && event.phase === "idle") {
       return;
     }
@@ -185,6 +199,8 @@ export class ConnectionSupervisor {
       failure,
       generation,
       attempt: entry.attempt,
+      retryAttempt: entry.reconnecting && entry.retryCount > 0 ? entry.retryCount : undefined,
+      retryPending: false,
       terminal: false,
       technicalDetails: event.technicalDetails ?? failure?.technicalDetails,
     };
@@ -246,6 +262,8 @@ export class ConnectionSupervisor {
       terminal: false,
       generation: entry.generation,
       attempt: entry.attempt,
+      retryAttempt: entry.retryCount,
+      retryPending: true,
       retryAt,
     });
 
@@ -355,6 +373,8 @@ export class ConnectionSupervisor {
           terminal: false,
           generation: entry.generation,
           attempt: entry.attempt,
+          retryAttempt: entry.retryCount,
+          retryPending: true,
           retryAt: Date.now(),
         });
       }

@@ -128,7 +128,7 @@ function applyCustomPalette(root: HTMLElement, palette: AppColorPalette) {
   root.style.setProperty("--accent", accent);
   root.style.setProperty("--accent-foreground", accentForeground);
   root.style.setProperty("--border", `color-mix(in srgb, ${border} 42%, transparent)`);
-  root.style.setProperty("--input", `color-mix(in srgb, ${border} 34%, transparent)`);
+  root.style.setProperty("--input", `color-mix(in srgb, ${border} 68%, transparent)`);
   root.style.setProperty("--ring", `color-mix(in srgb, ${primary} 42%, transparent)`);
   root.style.setProperty("--panel", `color-mix(in srgb, ${panel} 84%, transparent)`);
   root.style.setProperty("--panel-strong", `color-mix(in srgb, ${panel} 94%, transparent)`);
@@ -345,14 +345,15 @@ function App() {
   }, [uiOpacity, shouldDisableUiBlur, normalFontWeight, boldFontWeight]);
 
   return (
-    <div className="app-frame relative h-screen w-screen overflow-hidden bg-background text-foreground">
+    <div className={`app-frame relative h-screen w-screen overflow-hidden text-foreground ${IS_ANDROID ? "bg-background" : "desktop-frame"}`}>
       {/* 正常/专注模式：固定标题栏；沉浸模式：隐藏 */}
       {!IS_ANDROID && !isImmersive && <CustomTitleBar />}
       {/* 沉浸模式：悬浮标题栏 */}
       {!IS_ANDROID && isImmersive && <ImmersiveHoverBar />}
       <div
         id="lazy-term-root"
-        className="app-shell relative min-h-0 flex-1 overflow-hidden bg-background text-foreground"
+        className={`app-shell relative min-h-0 flex-1 overflow-hidden text-foreground ${IS_ANDROID ? "bg-background" : isImmersive ? "desktop-immersive bg-background" : "desktop-shell"}`}
+        data-tabs-collapsed={th === 0 ? "true" : "false"}
         style={IS_ANDROID ? {
           display: "block",
         } : {
@@ -363,11 +364,11 @@ function App() {
             "left mid-bottom right"
           `,
           gridTemplateColumns: `${lw}px 1fr ${rw}px`,
-          gridTemplateRows: `${th}px 1fr ${bh}px`,
+          gridTemplateRows: `${th > 0 ? `calc(${th}px + var(--workspace-inset) + 1px)` : "0px"} minmax(0, 1fr) ${bh}px`,
         }}
       >
         {/* 背景装饰球 — 沉浸模式下隐藏 */}
-        {!isImmersive && (
+        {IS_ANDROID && !isImmersive && (
           <>
             <div
               aria-hidden="true"
@@ -420,14 +421,24 @@ function App() {
           <MobileAppShell />
         ) : (
           <>
+            {!isImmersive && (
+              <div
+                className="workspace-surface"
+                aria-hidden="true"
+                style={{
+                  marginLeft: `calc(${openLeftPanelWidth}px + var(--workspace-inset))`,
+                  marginRight: `calc(${openRightPanelWidth}px + var(--workspace-inset))`,
+                }}
+              />
+            )}
             {!isImmersive && <SlotManager />}
             <section
               id="slot-mid-main"
-              className="relative z-0 min-h-0 min-w-0 overflow-hidden"
+              className="workspace-content relative z-0 min-h-0 min-w-0 overflow-hidden"
               style={{
                 gridArea: "mid-main",
-                marginLeft: openLeftPanelWidth ? `${openLeftPanelWidth}px` : undefined,
-                marginRight: openRightPanelWidth ? `${openRightPanelWidth}px` : undefined,
+                marginLeft: isImmersive ? undefined : `calc(${openLeftPanelWidth}px + var(--workspace-inset) + 1px)`,
+                marginRight: isImmersive ? undefined : `calc(${openRightPanelWidth}px + var(--workspace-inset) + 1px)`,
               }}
             >
               <PaneContainer />

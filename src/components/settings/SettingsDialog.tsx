@@ -87,11 +87,11 @@ export function SettingsDialog() {
           }
         }}
         className={cn(
-          "max-w-[1000px] w-[95vw] h-[85vh] md:h-[80vh] flex flex-col p-0",
+          "max-w-[1000px] w-[95vw] h-[85vh] md:h-[80vh] flex flex-col gap-0 overflow-hidden p-0",
           IS_ANDROID && "h-[calc(100dvh-16px)] w-[calc(100vw-16px)]",
         )}
       >
-        <DialogHeader className={cn("border-b p-6 pb-4", IS_ANDROID && "p-4 pr-12")}>
+        <DialogHeader className={cn("shrink-0 border-b border-border/60 bg-muted/15 px-6 py-5 pr-14", IS_ANDROID && "p-4 pr-12")}>
           <div className="flex min-w-0 items-center gap-2">
             {IS_ANDROID && mobilePage && (
               <Button
@@ -116,8 +116,8 @@ export function SettingsDialog() {
 
         {IS_ANDROID ? (
           mobilePage ? (
-            <ScrollArea className="min-h-0 flex-1">
-              <div className="p-4">
+            <ScrollArea className="settings-scroll min-h-0 flex-1">
+              <div className="settings-content p-4">
                 <SettingsContent tab={mobilePage} />
               </div>
             </ScrollArea>
@@ -148,25 +148,25 @@ export function SettingsDialog() {
           )
         ) : (
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as SettingsTab)} className="flex-1 flex overflow-hidden flex-col md:flex-row">
-          <TabsList className="w-full md:w-48 flex flex-row md:flex-col h-auto md:h-full bg-muted/10 md:rounded-none border-b md:border-b-0 md:border-r p-3 gap-2 justify-start overflow-x-auto shrink-0">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as SettingsTab)} className="min-h-0 flex-1 flex overflow-hidden flex-col md:flex-row">
+          <TabsList className="w-full md:w-48 flex flex-row md:flex-col h-auto md:h-full bg-muted/20 rounded-none border-b md:border-b-0 md:border-r border-border/60 p-3 gap-1 justify-start overflow-x-auto shrink-0">
             {VISIBLE_SETTINGS_TABS.map(({ value, icon: Icon, labelKey }) => (
               <TabsTrigger
                 key={value}
                 value={value}
                 className={cn(
-                  "w-full justify-start gap-3 px-4 py-2.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all duration-200",
+                  "settings-nav-item w-auto shrink-0 md:w-full justify-start gap-3 px-4 py-2.5 hover:bg-accent/50 hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-foreground data-[state=active]:shadow-none transition-colors duration-150",
                   IS_ANDROID && "w-auto min-w-max",
                 )}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-4 w-4 shrink-0" />
                 <span className="font-medium">{t(labelKey as Parameters<typeof t>[0])}</span>
               </TabsTrigger>
             ))}
           </TabsList>
 
-          <ScrollArea className="flex-1">
-            <div className={cn("p-8", IS_ANDROID && "p-4")}>
+          <ScrollArea className="settings-scroll min-h-0 min-w-0 flex-1">
+            <div className={cn("settings-content p-5 md:p-7", IS_ANDROID && "p-4")}>
               <TabsContent value="general" className="m-0 focus-visible:outline-none">
                 <GeneralSettings />
               </TabsContent>

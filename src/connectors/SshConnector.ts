@@ -105,6 +105,8 @@ export class SshConnector implements ITerminalConnector {
   private backgroundModeEnabled: boolean;
   private tmuxPersistenceEnabled: boolean;
   private tmuxPersistenceActive = false;
+  private endingTmuxSession = false;
+  private pendingDisconnectReason: string | null = null;
   private readonly logicalSessionKey: string;
   private tmuxSessionName: string;
   private appliedBackgroundModeEnabled: boolean | null = null;
@@ -299,6 +301,25 @@ export class SshConnector implements ITerminalConnector {
     this.sessionId = null;
     this.tmuxPersistenceActive = false;
     this.appliedBackgroundModeEnabled = null;
+    this.cleanupListeners();
+    // kill-session can close the terminal before its command response arrives.
+    // Wait for that response before classifying this as an unexpected disconnect.
+    if (this.endingTmuxSession) {
+      this.pendingDisconnectReason = reason;
+      return;
+    }
+    this.publishDisconnect(reason);
+  }
+
+  private publishDisconnect(reason: string, tmuxEnded = false): void {
+    if (tmuxEnded) {
+      this.stateEmitter.emit({
+        phase: "disconnected",
+        stage: "steady",
+        disconnectCause: "tmux-ended",
+      });
+      return;
+    }
     const classifiedFailure = classifyConnectionFailure(this.protocol, reason, {
       stage: "steady",
       fallbackCode: "REMOTE_CLOSED",
@@ -312,7 +333,6 @@ export class SshConnector implements ITerminalConnector {
       reason: "SSH 连接已断开",
       failure,
     });
-    this.cleanupListeners();
   }
 
   private async ensureEventListeners(): Promise<void> {
@@ -484,16 +504,34 @@ export class SshConnector implements ITerminalConnector {
   }
 
   async killTmuxSession(): Promise<void> {
+    if (this.endingTmuxSession) {
+      throw new Error("远端 tmux 会话正在结束");
+    }
     if (!IS_SSH_BACKGROUND_MODE_SUPPORTED || !this.isConnected || !this.sessionId || !this.tmuxPersistenceActive) {
       throw new Error("当前 SSH 连接未附着可恢复 tmux 会话");
     }
 
-    await invokeTauri<void>("kill_ssh_tmux_session", {
-      sessionId: this.sessionId,
-    }, {
-      scope: "FE/connector/ssh/tmux-kill",
-    });
-    this.tmuxPersistenceActive = false;
+    this.endingTmuxSession = true;
+    this.pendingDisconnectReason = null;
+    try {
+      await invokeTauri<void>("kill_ssh_tmux_session", {
+        sessionId: this.sessionId,
+      }, {
+        scope: "FE/connector/ssh/tmux-kill",
+      });
+      this.backgroundModeEnabled = false;
+      this.tmuxPersistenceEnabled = false;
+      this.handleDisconnect("tmux-session-ended");
+      if (!this.closedBeforeConnect) this.publishDisconnect("tmux-session-ended", true);
+    } catch (error) {
+      if (this.pendingDisconnectReason !== null && !this.closedBeforeConnect) {
+        this.publishDisconnect(this.pendingDisconnectReason);
+      }
+      throw error;
+    } finally {
+      this.endingTmuxSession = false;
+      this.pendingDisconnectReason = null;
+    }
   }
 
   private syncBackgroundMode(): void {

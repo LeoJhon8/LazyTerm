@@ -105,7 +105,7 @@ export function RemoteDirSelector({ open, onOpenChange, targetNode, initialPath,
 
         <div className="space-y-4 py-2 w-full min-w-0">
           <div className="flex items-center gap-2 bg-muted/30 p-2 rounded-md w-full min-w-0">
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleNavigateUp} disabled={loading || currentPath === "/"}>
+            <Button variant="ghost" size="icon-sm" onClick={handleNavigateUp} disabled={loading || currentPath === "/"}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <div className="text-sm flex-1 min-w-0 truncate font-mono">

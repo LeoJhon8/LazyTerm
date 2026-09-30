@@ -79,8 +79,13 @@ export interface ConnectionStateEvent {
   failure?: ConnectionFailure;
   generation?: number;
   attempt?: number;
+  /** 本轮自动重试序号；不包含首次连接和手动重连。 */
+  retryAttempt?: number;
+  /** 自动重试正在等待延迟、网络恢复或并发名额。 */
+  retryPending?: boolean;
   retryAt?: number;
   reason?: string;
+  disconnectCause?: 'tmux-ended';
   technicalDetails?: string;
 }
 

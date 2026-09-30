@@ -87,9 +87,9 @@ function SortableQuickCommand({
               command: `${cmd.command.split("\n")[0].substring(0, 30)}${cmd.command.length > 30 ? "..." : ""}`,
             })}>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="command-card rounded-none px-3 shadow-none"
+              className="command-card h-full min-h-0 rounded-md border-transparent bg-transparent px-2.5 text-muted-foreground shadow-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-inset focus-visible:ring-primary/60 focus-visible:ring-offset-0"
               onClick={onClick}
               aria-label={t("命令：{command}", {
                 command: `${cmd.command.split("\n")[0].substring(0, 30)}${cmd.command.length > 30 ? "..." : ""}`,
@@ -267,7 +267,7 @@ export function QuickCmdBar() {
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="quickcmd-leading-icon rounded-none p-0"
+                className="quickcmd-leading-icon h-full max-h-8 rounded-md p-0 hover:bg-accent/60 focus-visible:ring-inset focus-visible:ring-primary/60 focus-visible:ring-offset-0"
                 aria-label={t("管理快捷命令")}
                 onClick={() => setManagerOpen(true)}
                 onContextMenu={(event) => event.stopPropagation()}
@@ -320,7 +320,7 @@ export function QuickCmdBar() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="quickcmd-add-button h-full rounded-none p-0"
+                  className="quickcmd-add-button h-full max-h-8 rounded-md p-0 hover:bg-accent/60 focus-visible:ring-inset focus-visible:ring-primary/60 focus-visible:ring-offset-0"
                   aria-label={t("添加快捷命令")}
                   onClick={() => setEditingCmd(null)}
                   onContextMenu={(event) => event.stopPropagation()}

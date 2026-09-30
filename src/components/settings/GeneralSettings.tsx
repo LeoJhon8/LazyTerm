@@ -57,9 +57,9 @@ export function GeneralSettings() {
 
         {/* 基础设置 */}
         <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("基础设置")}</Label>
-          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
-            <div className="flex items-center justify-between px-4 py-2.5">
+          <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">{t("基础设置")}</Label>
+          <div className="settings-section overflow-hidden divide-y divide-border/30">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label className="text-sm">{t("界面语言")}</Label>
               <Select value={language} onValueChange={(value) => setLanguage(value as typeof language)}>
                 <SelectTrigger className="h-8 w-36 bg-background/80 border-0 shadow-none focus:ring-1 focus:ring-primary/30 text-sm">
@@ -74,7 +74,7 @@ export function GeneralSettings() {
                 </SelectContent>
               </Select>
             </div>
-            {!IS_ANDROID && <div className="flex items-center justify-between px-4 py-2.5">
+            {!IS_ANDROID && <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label className="text-sm">{t("默认终端类型")}</Label>
               <Select value={defaultShell} onValueChange={(value) => setSettings({ defaultShell: value })}>
                 <SelectTrigger className="h-8 w-36 bg-background/80 border-0 shadow-none focus:ring-1 focus:ring-primary/30 text-sm">
@@ -89,7 +89,7 @@ export function GeneralSettings() {
                 </SelectContent>
               </Select>
             </div>}
-            {!IS_ANDROID && <div className="flex items-center justify-between px-4 py-2.5">
+            {!IS_ANDROID && <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <div className="flex flex-col gap-0.5">
                 <Label className="text-sm">{t("RDP 连接方案")}</Label>
                 {!isWindows && <span className="text-xs text-muted-foreground">{t("非 Windows 平台使用 FreeRDP")}</span>}
@@ -113,11 +113,11 @@ export function GeneralSettings() {
 
         {IS_ANDROID && (
           <div className="flex flex-col gap-1">
-            <Label className="mb-1 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <Label className="mb-1 px-3 text-xs font-medium tracking-wide text-muted-foreground">
               {t("手机版功能")}
             </Label>
-            <div className="divide-y divide-border/30 overflow-hidden rounded-xl border border-border/40 bg-muted/20">
-              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+            <div className="divide-y divide-border/30 overflow-hidden settings-section">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-4 px-4 py-2.5">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <Label htmlFor="mobile-history-visible" className="cursor-pointer text-sm">
                     {t("显示历史命令入口")}
@@ -133,7 +133,7 @@ export function GeneralSettings() {
                   onCheckedChange={(checked) => setSettings({ mobileHistoryVisible: !!checked })}
                 />
               </div>
-              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-4 px-4 py-2.5">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <Label htmlFor="mobile-quick-commands-visible" className="cursor-pointer text-sm">
                     {t("显示快捷命令入口")}
@@ -149,7 +149,7 @@ export function GeneralSettings() {
                   onCheckedChange={(checked) => setSettings({ mobileQuickCommandsVisible: !!checked })}
                 />
               </div>
-              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-4 px-4 py-2.5">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <Label htmlFor="mobile-terminal-keys-visible" className="cursor-pointer text-sm">
                     {t("显示终端快捷键栏")}
@@ -165,7 +165,7 @@ export function GeneralSettings() {
                   onCheckedChange={(checked) => setSettings({ mobileTerminalKeysVisible: !!checked })}
                 />
               </div>
-              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-4 px-4 py-2.5">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <Label htmlFor="mobile-ssh-background-service" className="cursor-pointer text-sm">
                     {t("后台保持 SSH 连接")}
@@ -181,7 +181,7 @@ export function GeneralSettings() {
                   onCheckedChange={(checked) => setSettings({ mobileSshBackgroundServiceEnabled: !!checked })}
                 />
               </div>
-              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-4 px-4 py-2.5">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <Label className="text-sm">{t("系统后台权限")}</Label>
                   <span className="text-xs text-muted-foreground">
@@ -208,9 +208,9 @@ export function GeneralSettings() {
 
         {/* SSH 连接安全 */}
         <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("SSH 连接安全")}</Label>
-          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
-            <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+          <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">{t("SSH 连接安全")}</Label>
+          <div className="settings-section overflow-hidden divide-y divide-border/30">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-4 px-4 py-2.5">
               <div className="flex min-w-0 flex-col gap-0.5">
                 <Label htmlFor="auto-update-changed-ssh-host-keys" className="text-sm cursor-pointer">
                   {t("主机密钥变更时自动更新")}
@@ -231,11 +231,11 @@ export function GeneralSettings() {
 
         {IS_SSH_BACKGROUND_MODE_SUPPORTED && (
           <div className="flex flex-col gap-1">
-            <Label className="mb-1 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <Label className="mb-1 px-3 text-xs font-medium tracking-wide text-muted-foreground">
               {t("SSH 后台模式")}
             </Label>
-            <div className="divide-y divide-border/30 overflow-hidden rounded-xl border border-border/40 bg-muted/20">
-              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+            <div className="divide-y divide-border/30 overflow-hidden settings-section">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-4 px-4 py-2.5">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <Label htmlFor="ssh-tmux-detach-other-clients" className="cursor-pointer text-sm">
                     {t("接管已附着的 tmux 会话")}
@@ -257,9 +257,9 @@ export function GeneralSettings() {
 
         {/* 终端行为 */}
         <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("终端行为")}</Label>
-          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
-            <div className="flex items-center justify-between px-4 py-2.5">
+          <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">{t("终端行为")}</Label>
+          <div className="settings-section overflow-hidden divide-y divide-border/30">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label htmlFor="confirm-close" className="text-sm cursor-pointer">{t("关闭非默认终端前确认")}</Label>
               <Switch
                 id="confirm-close"
@@ -267,7 +267,7 @@ export function GeneralSettings() {
                 onCheckedChange={(checked) => setSettings({ confirmCloseNonDefaultTabs: !!checked })}
               />
             </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label htmlFor="terminal-autocomplete" className="text-sm cursor-pointer">{t("终端自动补全")}</Label>
               <Switch
                 id="terminal-autocomplete"
@@ -276,7 +276,7 @@ export function GeneralSettings() {
               />
             </div>
             {terminalAutocomplete && (
-              <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <Label className="text-sm">{t("自动补全数据源")}</Label>
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 cursor-pointer">
@@ -320,7 +320,7 @@ export function GeneralSettings() {
                 </div>
               </div>
             )}
-            <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <div className="flex flex-col gap-0.5">
                 <Label htmlFor="terminal-timeline" className="text-sm cursor-pointer">{t("命令时间线")}</Label>
                 <span className="text-xs text-muted-foreground">{t("关闭时仍保留当前会话最近 500 条命令时间")}</span>
@@ -331,7 +331,7 @@ export function GeneralSettings() {
                 onCheckedChange={(checked) => setSettings({ terminalTimelineEnabled: !!checked })}
               />
             </div>
-            <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-4 px-4 py-2.5">
               <div className="flex min-w-0 flex-col gap-0.5">
                 <Label htmlFor="ssh-reliable-notification" className="text-sm cursor-pointer">
                   {t("SSH 可靠通知")}
@@ -356,7 +356,7 @@ export function GeneralSettings() {
               />
             </div>
             {sshReliableNotificationEnabled && (
-              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 gap-4 px-4 py-2.5">
                 <div className="flex flex-col gap-0.5">
                   <Label htmlFor="long-command-threshold" className="text-sm">
                     {t("长命令判定时间")}
@@ -387,7 +387,7 @@ export function GeneralSettings() {
                 </div>
               </div>
             )}
-            <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <div className="flex flex-col gap-0.5">
                 <Label htmlFor="copy-on-select" className="text-sm cursor-pointer">{t("选中即复制")}</Label>
                 <span className="text-xs text-muted-foreground">{t("选中文本后立即写入剪贴板")}</span>
@@ -398,7 +398,7 @@ export function GeneralSettings() {
                 onCheckedChange={(checked) => setSettings({ copyOnSelect: !!checked })}
               />
             </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label className="text-sm">{t("终端右键操作")}</Label>
               <Select
                 value={terminalRightClickBehavior}

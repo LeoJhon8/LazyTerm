@@ -20,7 +20,6 @@ import { useI18n } from "@/i18n";
 import { IS_SSH_BACKGROUND_MODE_SUPPORTED } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { useTabsStore, type TerminalSession } from "@/store/tabs";
-import { useNotificationsStore } from "@/store/notifications";
 import { useSettingsStore } from "@/store/settings";
 import { getErrorMessage } from "@/lib/errorUtils";
 import type { SshTmuxSessionInfo } from "@/types/terminal";
@@ -112,7 +111,9 @@ export function SshBackgroundModeMenuItem({
   };
 
   const label = enabled
-    ? t("关闭后台模式（保留远端任务）")
+    ? tmuxActive
+      ? t("关闭后台模式（仍留在 tmux 中）")
+      : t("关闭此会话的后台模式")
     : t("开启此会话的后台模式");
 
   return (
@@ -136,6 +137,11 @@ export function SshBackgroundModeMenuItem({
               </span>
             </HoverTooltip>
           </ContextMenuLabel>
+          {!enabled && (
+            <ContextMenuLabel className="max-w-72 py-1 text-xs font-normal text-muted-foreground">
+              {t("后台模式已关闭，当前终端仍在 tmux 中，远端任务继续运行。")}
+            </ContextMenuLabel>
+          )}
           <ContextMenuItem
             className="py-1 text-xs text-destructive focus:text-destructive"
             disabled={!connected}
@@ -179,17 +185,18 @@ export function SshBackgroundModeDialog({
   const connector = session?.type === "ssh" && session.connector?.protocol === "ssh"
     ? session.connector
     : null;
-  const useTmux = tmuxCheck.status === "available" && tmuxSelected;
+  const tmuxActive = session?.sshTmuxPersistenceActive === true;
+  const useTmux = !tmuxActive && tmuxCheck.status === "available" && tmuxSelected;
 
   useEffect(() => {
     const sequence = ++checkSequence.current;
-    setTmuxCheck({ status: open ? "checking" : "idle" });
+    setTmuxCheck({ status: open && !tmuxActive ? "checking" : "idle" });
     setTmuxSelected(false);
     setTmuxChoice(NEW_TMUX_SESSION);
     setNewTmuxSessionName("");
     setSelectionError(null);
 
-    if (!open || !connector?.isConnected) {
+    if (!open || tmuxActive || !connector?.isConnected) {
       return;
     }
 
@@ -209,13 +216,18 @@ export function SshBackgroundModeDialog({
         setTmuxCheck({ status: "failed" });
       }
     });
-  }, [connector, open, sessionId]);
+    return () => {
+      ++checkSequence.current;
+    };
+  }, [connector, open, sessionId, tmuxActive]);
 
   if (!IS_SSH_BACKGROUND_MODE_SUPPORTED || !session || !connector) {
     return null;
   }
 
-  const enableForSession = () => {
+  const enableForSession = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    if (!connector.isConnected) return;
     let tmuxSessionName = session.sshTmuxSessionName ?? session.id;
     if (useTmux) {
       if (tmuxChoice === NEW_TMUX_SESSION) {
@@ -250,7 +262,7 @@ export function SshBackgroundModeDialog({
     setSelectionError(null);
     updateSession(session.id, {
       sshBackgroundModeEnabled: true,
-      sshTmuxPersistenceEnabled: useTmux,
+      sshTmuxPersistenceEnabled: tmuxActive || useTmux,
       sshTmuxSessionName: tmuxSessionName,
     });
     onOpenChange(false);
@@ -261,7 +273,7 @@ export function SshBackgroundModeDialog({
     }
 
     connector.setTmuxSessionName?.(tmuxSessionName);
-    connector.setTmuxPersistenceEnabled?.(false);
+    connector.setTmuxPersistenceEnabled?.(tmuxActive);
     connector.setBackgroundMode?.(true);
   };
 
@@ -282,6 +294,14 @@ export function SshBackgroundModeDialog({
             <span className="block">• {t("大量持续输出会占用终端回滚缓冲区，较早的内容可能被丢弃。")}</span>
             <span className="block">• {t("未使用 tmux 时，SSH 断线后无法恢复原进程和 TUI 状态。")}</span>
 
+            {tmuxActive ? (
+              <span className="block rounded-md border border-border/60 bg-muted/30 p-3 text-foreground/90">
+                <span className="block break-all font-mono text-xs">
+                  {t("tmux 会话：{name}", { name: session.sshTmuxSessionName ?? "—" })}
+                </span>
+                {t("当前终端仍在此 tmux 会话中。开启后台模式将沿用此会话，无需重连，也不会创建新会话。")}
+              </span>
+            ) : (
             <span className="block rounded-md border border-border/60 bg-muted/30 p-3 text-foreground/90">
               {tmuxCheck.status === "checking" && (
                 <span className="flex items-center gap-2">
@@ -449,12 +469,13 @@ export function SshBackgroundModeDialog({
                 <span>{t("无法完成 tmux 检测，只能保持当前 SSH 连接。")}</span>
               )}
             </span>
+            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
           <AlertDialogAction
-            disabled={tmuxCheck.status === "checking"}
+            disabled={tmuxCheck.status === "checking" || !connector.isConnected}
             onClick={enableForSession}
           >
             {useTmux
@@ -481,7 +502,6 @@ export function SshEndTmuxSessionDialog({
   const { t } = useI18n();
   const sessions = useTabsStore((state) => state.sessions);
   const updateSession = useTabsStore((state) => state.updateSession);
-  const addNotification = useNotificationsStore((state) => state.addNotification);
   const [ending, setEnding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -505,7 +525,7 @@ export function SshEndTmuxSessionDialog({
 
   const endRemoteSession = async (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
-    if (ending) return;
+    if (ending || !connector.isConnected || !connector.killTmuxSession) return;
 
     const previousBackgroundEnabled = session.sshBackgroundModeEnabled === true;
     const previousTmuxEnabled = session.sshTmuxPersistenceEnabled === true;
@@ -519,13 +539,11 @@ export function SshEndTmuxSessionDialog({
     });
 
     try {
-      await connector.killTmuxSession?.();
-      updateSession(session.id, { sshTmuxPersistenceActive: false });
-      addNotification({
-        type: "success",
-        source: "terminal",
-        title: t("远端后台会话已结束"),
-        message: session.title,
+      await connector.killTmuxSession();
+      updateSession(session.id, {
+        sshTmuxPersistenceActive: false,
+        sshBackgroundModeEnabled: false,
+        sshTmuxPersistenceEnabled: false,
       });
       onOpenChange(false);
     } catch (killError) {
@@ -534,7 +552,7 @@ export function SshEndTmuxSessionDialog({
       updateSession(session.id, {
         sshBackgroundModeEnabled: previousBackgroundEnabled,
         sshTmuxPersistenceEnabled: previousTmuxEnabled,
-        sshTmuxPersistenceActive: true,
+        sshTmuxPersistenceActive: connector.isTmuxPersistenceActive?.() === true,
       });
       setError(getErrorMessage(killError));
       setEnding(false);
@@ -558,6 +576,9 @@ export function SshEndTmuxSessionDialog({
             <span className="block">
               {t("这会终止该 tmux 会话及其中正在运行的所有命令和程序，其他附着客户端也会断开。此操作无法撤销。")}
             </span>
+            <span className="block">
+              {t("当前终端连接也会断开，并关闭此标签页的后台模式和 tmux 自动恢复。")}
+            </span>
             {error && (
               <span className="block rounded-md border border-destructive/40 bg-destructive/10 p-3 text-destructive">
                 {t("结束远端会话失败：{error}", { error })}
@@ -568,8 +589,8 @@ export function SshEndTmuxSessionDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={ending}>{t("取消")}</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={ending}
+            variant="destructive"
+            disabled={ending || !connector.isConnected || !session.sshTmuxPersistenceActive}
             onClick={endRemoteSession}
           >
             {ending ? t("正在结束…") : t("结束远端会话")}

@@ -106,7 +106,7 @@ export function TerminalSearchBar({
 
   return (
     <div
-      className="absolute right-2 top-2 z-110 flex h-9 w-[420px] max-w-[calc(100%_-_1rem)] items-center gap-1 overflow-hidden rounded-xl border border-border/70 bg-popover/96 px-1.5 text-popover-foreground shadow-xl backdrop-blur-xl"
+      className="absolute right-2 top-2 z-110 flex h-9 w-[420px] max-w-[calc(100%_-_1rem)] items-center gap-1 overflow-hidden rounded-xl border border-border/70 floating-surface px-1.5 focus-within:border-primary/60"
       role="search"
       aria-label={t("查找终端内容")}
       onPointerDown={(event) => event.stopPropagation()}
@@ -124,7 +124,7 @@ export function TerminalSearchBar({
         aria-label={t("在终端中查找")}
         autoComplete="off"
         spellCheck={false}
-        className="h-7 min-w-20 flex-1 bg-transparent px-1.5 text-xs outline-none placeholder:text-muted-foreground/70"
+        className="h-7 min-w-20 flex-1 rounded-sm bg-transparent px-1.5 text-xs outline-none placeholder:text-muted-foreground focus-visible:bg-muted/30"
       />
 
       <span
@@ -166,7 +166,7 @@ export function TerminalSearchBar({
         <Button
           type="button"
           variant="ghost"
-          className="h-7 w-7 shrink-0 rounded-lg p-0"
+          size="icon-sm"
           onMouseDown={keepInputFocused}
           onClick={onPrevious}
           disabled={!query}
@@ -179,7 +179,7 @@ export function TerminalSearchBar({
         <Button
           type="button"
           variant="ghost"
-          className="h-7 w-7 shrink-0 rounded-lg p-0"
+          size="icon-sm"
           onMouseDown={keepInputFocused}
           onClick={onNext}
           disabled={!query}
@@ -192,7 +192,7 @@ export function TerminalSearchBar({
         <Button
           type="button"
           variant="ghost"
-          className="h-7 w-7 shrink-0 rounded-lg p-0"
+          size="icon-sm"
           onMouseDown={keepInputFocused}
           onClick={onClose}
           aria-label={t("关闭搜索")}
@@ -222,8 +222,8 @@ function SearchOptionButton({
       <Button
         type="button"
         variant="ghost"
+        size="icon-sm"
         className={cn(
-          "h-7 w-7 shrink-0 rounded-lg p-0",
           active && "bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary"
         )}
         aria-pressed={active}

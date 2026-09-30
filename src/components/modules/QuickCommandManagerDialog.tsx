@@ -616,7 +616,7 @@ export function QuickCommandManagerDialog({
           <AlertDialogFooter>
             <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/92"
+              variant="destructive"
               onClick={handleConfirmDelete}
             >
               {t("确认删除")}

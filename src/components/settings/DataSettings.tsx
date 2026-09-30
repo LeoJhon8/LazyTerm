@@ -211,15 +211,15 @@ export function DataSettings() {
 
         {/* 本地备份 */}
         <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("本地备份")}</Label>
-          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
-            <div className="flex items-center justify-between px-4 py-2.5">
+          <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">{t("本地备份")}</Label>
+          <div className="settings-section overflow-hidden divide-y divide-border/30">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label className="text-sm">{t("备份数据")}</Label>
               <Button variant="outline" size="sm" className="h-8 px-3" onClick={handleExportAll}>
                 <FileJson className="h-3.5 w-3.5 mr-1.5" />{t("导出 JSON 备份")}
               </Button>
             </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label className="text-sm">{t("恢复数据")}</Label>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" className="h-8 px-3" onClick={handleImportFromFile}>
@@ -228,7 +228,7 @@ export function DataSettings() {
               </div>
             </div>
             {selectedFileName && (
-              <div className="flex items-center justify-between px-4 py-2">
+              <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2">
                 <div className="flex-1 min-w-0 mr-3">
                   <div className="text-sm truncate">{selectedFileName}</div>
                   <div className="text-[10px] text-muted-foreground truncate">{selectedImportFile}</div>
@@ -236,7 +236,7 @@ export function DataSettings() {
                 <span className="text-[10px] font-medium text-muted-foreground bg-background/80 px-1.5 py-0.5 rounded shrink-0">JSON</span>
               </div>
             )}
-            <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label className="text-sm text-destructive">{t("清空所有数据")}</Label>
               <Button variant="ghost" size="sm" className="h-8 px-3 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setClearConfirmOpen(true)}>
                 <Trash2 className="h-3.5 w-3.5 mr-1.5" />{t("清空")}
@@ -259,9 +259,9 @@ export function DataSettings() {
 
         {/* Git 云端同步 */}
         <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">{t("Git 云端同步")}</Label>
-          <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden divide-y divide-border/30">
-            <div className="flex items-center justify-between px-4 py-2.5">
+          <Label className="text-xs font-medium text-muted-foreground tracking-wide px-3 mb-1">{t("Git 云端同步")}</Label>
+          <div className="settings-section overflow-hidden divide-y divide-border/30">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label className="text-sm">{t("本地仓库目录")}</Label>
               <Button variant="outline" size="sm" className="h-8 px-3" onClick={handleSelectGitRepo}>
                 <FolderOpen className="h-3.5 w-3.5 mr-1.5" />{gitRepoPath ? t("更换目录") : t("选择目录")}
@@ -274,19 +274,19 @@ export function DataSettings() {
                 </HoverTooltip>
               </div>
             )}
-            <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label className="text-sm">{t("同步到本地仓库")}</Label>
               <Button variant="outline" size="sm" className="h-8 px-3" onClick={handleSyncToLocal} disabled={!gitRepoPath || isSyncing}>
                 <FileJson className="h-3.5 w-3.5 mr-1.5" />{t("同步文件")}
               </Button>
             </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label className="text-sm">{t("推送至远端")}</Label>
               <Button size="sm" className="h-8 px-3" onClick={handleGitPush} disabled={!gitRepoPath || isSyncing}>
                 <Send className="h-3.5 w-3.5 mr-1.5" />{t("推送")}
               </Button>
             </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="settings-row flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <Label className="text-sm">{t("拉取到本地")}</Label>
               <Button variant="secondary" size="sm" className="h-8 px-3 border" onClick={handleGitPull} disabled={!gitRepoPath || isSyncing}>
                 <Download className="h-3.5 w-3.5 mr-1.5" />{t("拉取")}
@@ -325,7 +325,7 @@ export function DataSettings() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setClearConfirmOpen(false)}>{t("取消")}</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive" onClick={() => void handleConfirmClear()}>{t("确认清空")}</AlertDialogAction>
+            <AlertDialogAction variant="destructive" onClick={() => void handleConfirmClear()}>{t("确认清空")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
