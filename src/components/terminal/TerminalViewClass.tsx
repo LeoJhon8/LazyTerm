@@ -10,6 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon, type ISearchOptions } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { createWrappedTerminalLinkProvider } from "./wrapped-terminal-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -933,6 +934,11 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         }));
       });
 
+      // 优先识别 TUI 主动换行的完整地址，再回退到普通链接识别。
+      parserDisposables.push(term.registerLinkProvider(createWrappedTerminalLinkProvider(
+        term,
+        (_event, url) => requestTerminalLinkOpen(sessionId, url),
+      )));
       const webLinksAddon = new WebLinksAddon((_event, url) => {
         requestTerminalLinkOpen(sessionId, url);
       });

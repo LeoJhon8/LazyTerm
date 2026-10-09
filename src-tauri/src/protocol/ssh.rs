@@ -128,7 +128,12 @@ async fn execute_probe_command(
                 } => {
                     exit_status = Some(status);
                 }
-                ChannelMsg::Eof | ChannelMsg::Close => break,
+                // EOF 只表示远端不再发送输出，exit-status 仍可能随后到达。
+                // 提前返回会把成功的 tmux kill-session 误判为失败，进而
+                // 触发前端的结束失败和 SSH 断线提示。等通道关闭再判断结果；
+                // 外层超时仍负责处理远端不关闭通道的情况。
+                ChannelMsg::Eof => {}
+                ChannelMsg::Close => break,
                 _ => {}
             }
         }
