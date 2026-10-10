@@ -172,10 +172,14 @@ fi
 
 ensure_frameworks_rpath "$app_binary"
 
+# This bundle is distributed with ad-hoc signatures, which have no Team ID.
+# Hardened Runtime library validation would reject the bundled native libraries.
 {
   echo '{'
   echo '  "bundle": {'
   echo '    "macOS": {'
+  echo '      "signingIdentity": "-",'
+  echo '      "hardenedRuntime": false,'
   echo '      "frameworks": ['
   for index in "${!bundled_names[@]}"; do
     suffix=','
