@@ -60,6 +60,16 @@ The first frame is not the sole definition of connection success; `first-data` i
 - `request_rdp_refresh` requests a full refresh after reconnect or visual desynchronization.
 - `set_rdp_quality_policy` adjusts backend image budget based on session visibility.
 
+### Clipboard, Keyboard, and Display Control
+
+- The `cliprdr` channel supports bidirectional Unicode text. Ctrl+V, Shift+Insert, and Paste in the top-right RDP tools menu publish local text and wait for the remote format acknowledgement before sending Ctrl+V. Rejection or timeout produces a visible error.
+- Only the visible, focused desktop writes remote text to the system clipboard, preventing background tabs from replacing it. Image and file clipboard formats are not supported.
+- RDP tools provides Ctrl+Alt+Del, Ctrl+Alt+End, Alt+Tab, Alt+F4, Win, Win+R, PrintScreen, and Pause. Physical F13–F24 keys are mapped. Key sequences are pressed in order and released in reverse order on the backend.
+- Pointer images, hotspots, hidden state, and default state travel over a separate event Channel. Cursors larger than 128 pixels are scaled to fit WebView limits.
+- The `disp` channel sends a single-monitor layout after server capabilities arrive. Viewport updates are debounced by 200 ms and widths aligned to even pixels. Servers without display control retain the existing resolution and scrolling behavior.
+- A transparent textarea receives local IME composition. Only committed text is sent as Unicode keyboard input; composition keystrokes are not forwarded.
+- `send_rdp_action` handles the new actions; the session's `eventChannel` returns additional events. A lock protects clipboard, cursor, and layout state shared between FreeRDP channel threads and the session thread.
+
 ### Performance Costs
 
 - FreeRDP decode and region processing.

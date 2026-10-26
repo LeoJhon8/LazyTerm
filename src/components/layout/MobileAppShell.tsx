@@ -52,7 +52,10 @@ export function MobileAppShell() {
   ));
   const openSettings = useSettingsDialogStore((state) => state.openSettings);
   const connector = focusSession?.connector;
-  const canWrite = !!connector?.isConnected && isTerminalConnector(connector);
+  // Connector identity stays stable while connecting. Use the subscribed
+  // status so React's compiler does not cache a mutable isConnected getter.
+  const canWrite = focusSession?.connectionStatus.phase === "connected"
+    && isTerminalConnector(connector);
 
   useEffect(() => {
     const shell = shellRef.current;
@@ -124,9 +127,13 @@ export function MobileAppShell() {
   }, [mobileHistoryVisible, mobileQuickCommandsVisible]);
 
   const writeToTerminal = (data: string) => {
-    if (!canWrite || !isTerminalConnector(connector)) return;
+    if (!canWrite || !isTerminalConnector(connector) || !connector.isConnected) return;
     connector.write(data);
-    window.dispatchEvent(new Event("lazy-term-focus"));
+    const focusedElement = document.activeElement;
+    const terminalHasFocus = focusedElement instanceof HTMLTextAreaElement
+      && focusedElement.classList.contains("xterm-helper-textarea")
+      && focusedElement.closest<HTMLElement>("[data-session-id]")?.dataset.sessionId === focusSessionId;
+    if (!terminalHasFocus) window.dispatchEvent(new Event("lazy-term-focus"));
   };
 
   const runCommand = (command: string) => {

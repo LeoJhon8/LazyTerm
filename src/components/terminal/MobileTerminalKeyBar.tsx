@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type MouseEvent,
   type PointerEvent,
 } from "react";
 import { PencilLine } from "lucide-react";
@@ -33,7 +34,7 @@ function MobileTerminalKeyButton({
   const activePointerIdRef = useRef<number | null>(null);
   const repeatDelayRef = useRef<number | null>(null);
   const repeatIntervalRef = useRef<number | null>(null);
-  const suppressClickRef = useRef(false);
+  const hasRepeatedRef = useRef(false);
 
   const stopRepeating = useCallback(() => {
     if (repeatDelayRef.current !== null) {
@@ -48,11 +49,7 @@ function MobileTerminalKeyButton({
     setPressed(false);
     setRepeating(false);
 
-    if (suppressClickRef.current) {
-      window.setTimeout(() => {
-        suppressClickRef.current = false;
-      }, 0);
-    }
+    hasRepeatedRef.current = false;
   }, []);
 
   useEffect(() => stopRepeating, [stopRepeating]);
@@ -77,13 +74,16 @@ function MobileTerminalKeyButton({
 
   const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     if (disabled || event.button !== 0 || activePointerIdRef.current !== null) return;
+    // Keep the terminal focused so Android's soft keyboard does not hide and
+    // move the key bar before the pointer is released. Native panning still works.
+    event.preventDefault();
     activePointerIdRef.current = event.pointerId;
     setPressed(true);
 
     if (!definition.repeatable) return;
     repeatDelayRef.current = window.setTimeout(() => {
       repeatDelayRef.current = null;
-      suppressClickRef.current = true;
+      hasRepeatedRef.current = true;
       setRepeating(true);
       onSend(definition.data);
       repeatIntervalRef.current = window.setInterval(() => {
@@ -108,12 +108,17 @@ function MobileTerminalKeyButton({
     stopRepeating();
   };
 
-  const handleClick = () => {
-    if (disabled) return;
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
+  const handlePointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+    if (activePointerIdRef.current !== event.pointerId) return;
+    const shouldSend = !disabled && !hasRepeatedRef.current;
+    stopRepeating();
+    if (shouldSend) onSend(definition.data);
+  };
+
+  const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
+    // Pointer activation is handled on release; keep keyboard and assistive
+    // activation working without sending a second key for the generated click.
+    if (disabled || event.detail !== 0) return;
     onSend(definition.data);
   };
 
@@ -127,7 +132,7 @@ function MobileTerminalKeyButton({
       disabled={disabled}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerEnd}
+      onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerEnd}
       onPointerLeave={stopRepeating}
       onClick={handleClick}

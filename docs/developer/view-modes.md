@@ -47,12 +47,14 @@ type ViewMode = "normal" | "focus" | "immersive";
 
 ## 快捷键与切换规则
 
-`useViewMode` 优先通过 Tauri global-shortcut 注册：
+`App` 通过 `useViewMode(true)` 统一注册 Tauri global-shortcut；其他组件只读取视图状态，不重复注册。快捷键回调仅在当前 LazyTerm 窗口聚焦时执行：
 
 - `F11`：当前不是 `immersive` 时进入 `immersive`；已在 `immersive` 时返回 `normal`。
 - `Ctrl/Command + Shift + F`：当前不是 `focus` 时进入 `focus`；已在 `focus` 时返回 `normal`。
 
 因此从 `focus` 按 `F11` 会直接进入 `immersive`，从 `immersive` 按专注快捷键会直接进入 `focus`。注册失败时，应用会回退到窗口内 `keydown` 监听。
+
+在 `focus` 下点击可用的侧栏模块图标，会返回 `normal` 并展开目标模块，即使该模块在进入专注模式前已展开。图标仅在对应侧栏实际显示时高亮，专注模式下不高亮。
 
 ## 图形会话影响
 

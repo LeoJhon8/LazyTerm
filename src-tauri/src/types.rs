@@ -112,6 +112,8 @@ pub struct RdpPointerEventPayload {
 pub struct RdpKeyboardEventPayload {
     pub scancode: u16,
     pub down: bool,
+    #[serde(default, rename = "keyboardSyncFlags")]
+    pub keyboard_sync_flags: Option<u32>,
 }
 
 /// 图形远端会话的统一质量预算
@@ -126,7 +128,26 @@ pub struct ConnectionQualityPolicyPayload {
 }
 
 /// RDP 控制消息
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RdpAction {
+    Paste { text: String },
+    Text { text: String },
+    Keys { scancodes: Vec<u16> },
+    Pause,
+    Resize { width: u32, height: u32 },
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RdpEvent {
+    Clipboard { text: String },
+    Cursor { mode: String, width: u32, height: u32, x: u32, y: u32, rgba: Vec<u8> },
+    Warning { message: String },
+}
+
 pub enum RdpControlMsg {
+    Action(RdpAction),
     Pointer(RdpPointerEventPayload),
     Key(RdpKeyboardEventPayload),
     Refresh,

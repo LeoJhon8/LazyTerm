@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { getValidActivityModules } from "@/components/layout/activity-registry";
 import { useSlotConfigStore } from "@/store/slot-config";
 import { useTabsStore } from "@/store/tabs";
+import { useSettingsStore } from "@/store/settings";
 import { cn } from "@/lib/utils";
 import { isAiConfigured, useAiConfigStore } from "@/store/ai";
 
@@ -36,6 +37,7 @@ export function TitleBarActivityNav() {
     toggleSlotCollapse,
   } = useSlotConfigStore();
   const { focusSessionId, sessions } = useTabsStore();
+  const viewMode = useSettingsStore((state) => state.viewMode);
   const aiConfigured = useAiConfigStore(isAiConfigured);
   const focusSession = sessions.find((session) => session.id === focusSessionId);
   const isRdpActive = focusSession?.type === "rdp" || focusSession?.type === "vnc";
@@ -48,7 +50,7 @@ export function TitleBarActivityNav() {
       icon: module.icon,
       label: getModuleDisplayName(module.id, locale),
       disabled: isRdpActive && module.id === "HistoryModule",
-      active: slot.activeModule === module.id && !slot.collapsed,
+      active: viewMode === "normal" && slot.activeModule === module.id && !slot.collapsed,
     }));
   });
 
@@ -58,6 +60,12 @@ export function TitleBarActivityNav() {
 
   const handleEntryClick = (entry: ActivityEntry) => {
     if (entry.disabled) return;
+
+    if (useSettingsStore.getState().viewMode === "focus") {
+      useSettingsStore.getState().setSettings({ viewMode: "normal" });
+      setActiveAndExpand(entry.side, entry.id);
+      return;
+    }
 
     const slot = currentConfig[entry.side];
     if (slot.collapsed) {

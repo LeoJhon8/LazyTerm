@@ -43,6 +43,8 @@ import {
 } from "@/components/ui/context-menu";
 import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
+import { IS_ANDROID } from "@/lib/platform";
+import { attachTerminalTouchScroll } from "./terminal-touch-scroll";
 import { normalizePasteTextForConnector } from "@/lib/terminal-paste";
 import { onTerminalTextInsertionRequested } from "@/lib/terminal-text-insertion";
 import { TerminalAutocompleteUI } from "./TerminalAutocompleteUI";
@@ -290,6 +292,11 @@ function applyTerminalResizeSnapshot(
   if (snapshot.sources.every((source) => source === "move")) {
     return;
   }
+
+  // Android's IME changes the native and visual viewports in separate steps.
+  // Keep the current terminal grid until layout settles to avoid repeated
+  // reflow, canvas refreshes and remote PTY resizes while the keyboard opens.
+  if (IS_ANDROID && snapshot.phase !== "idle") return;
 
   const isAlternateScreen = instance.terminal.buffer.active.type === "alternate";
   if (snapshot.phase !== "idle" && isAlternateScreen) {
@@ -1199,6 +1206,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         capture: true,
       });
       terminalElement.addEventListener("mousedown", handleSshMouseDown, { capture: true });
+      const disposeTouchScroll = IS_ANDROID ? attachTerminalTouchScroll(term) : undefined;
       document.addEventListener("mousemove", handleSshMouseMove, { capture: true });
       document.addEventListener("mouseup", handleSshMouseUp, { capture: true });
 
@@ -1311,6 +1319,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
         visible: isVisible,
 
         dispose: () => {
+          disposeTouchScroll?.();
           selectionCopyDisposed = true;
           window.clearTimeout(selectionCopyTimeoutId);
           terminalElement.removeEventListener("mousedown", handleSelectionMouseDown, { capture: true });

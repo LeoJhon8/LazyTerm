@@ -2,7 +2,11 @@ import { useEffect, useCallback } from "react";
 import { useSettingsStore, type ViewMode } from "@/store/settings";
 import { useTabsStore } from "@/store/tabs";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { IS_ANDROID } from "@/lib/platform";
+
+// 等待上一次卸载完成，避免异步注销移除新挂载的快捷键。
+let shortcutLifecycle: Promise<void> = Promise.resolve();
 
 /**
  * 视图模式快捷键 & 状态管理 hook
@@ -11,27 +15,37 @@ import { IS_ANDROID } from "@/lib/platform";
  * - Ctrl+Shift+F: 切换专注模式（normal ↔ focus，或 immersive → focus）
  * - 所有会话关闭时自动回到 normal
  */
-export function useViewMode() {
+export function useViewMode(enableShortcuts = false) {
   const { viewMode, setSettings } = useSettingsStore();
   const sessionCount = useTabsStore((s) => s.sessions.length);
 
-  // 注册全局快捷键
+  // 仅由 App 注册快捷键，读取视图状态的组件不重复注册。
   useEffect(() => {
-    if (IS_ANDROID) return;
+    if (IS_ANDROID || !enableShortcuts) return;
 
     const IMMERSIVE_SHORTCUT = "F11";
     const FOCUS_SHORTCUT = "CommandOrControl+Shift+F";
+    let disposed = false;
+    const registeredShortcuts: string[] = [];
 
-    const handleImmersiveShortcut = (event: { state: string }) => {
-      if (event.state === "Pressed") {
+    const isWindowFocused = async () => {
+      try {
+        return !disposed && await getCurrentWindow().isFocused();
+      } catch {
+        return false;
+      }
+    };
+
+    const handleImmersiveShortcut = async (event: { state: string }) => {
+      if (event.state === "Pressed" && await isWindowFocused() && !disposed) {
         const current = useSettingsStore.getState().viewMode;
         const next: ViewMode = current === "immersive" ? "normal" : "immersive";
         setSettings({ viewMode: next });
       }
     };
 
-    const handleFocusShortcut = (event: { state: string }) => {
-      if (event.state === "Pressed") {
+    const handleFocusShortcut = async (event: { state: string }) => {
+      if (event.state === "Pressed" && await isWindowFocused() && !disposed) {
         const current = useSettingsStore.getState().viewMode;
         const next: ViewMode = current === "focus" ? "normal" : "focus";
         setSettings({ viewMode: next });
@@ -40,14 +54,16 @@ export function useViewMode() {
 
     const setup = async () => {
       const fallbacks: (() => void)[] = [];
+      if (disposed) return fallbacks;
 
       try {
         await register(IMMERSIVE_SHORTCUT, handleImmersiveShortcut);
+        registeredShortcuts.push(IMMERSIVE_SHORTCUT);
       } catch (err) {
         // 回退到 JS keydown
         console.warn("[view-mode] F11 global-shortcut 注册失败，回退到 keydown:", err);
         const handleKeyDown = (e: KeyboardEvent) => {
-          if (e.key === "F11") {
+          if (e.key === "F11" && !e.repeat && document.hasFocus()) {
             e.preventDefault();
             handleImmersiveShortcut({ state: "Pressed" });
           }
@@ -58,10 +74,13 @@ export function useViewMode() {
 
       try {
         await register(FOCUS_SHORTCUT, handleFocusShortcut);
+        registeredShortcuts.push(FOCUS_SHORTCUT);
       } catch (err) {
         console.warn("[view-mode] Ctrl+Shift+F global-shortcut 注册失败，回退到 keydown:", err);
         const handleKeyDown = (e: KeyboardEvent) => {
-          if (e.key === "F" && e.ctrlKey && e.shiftKey) {
+          const isMac = /Mac/i.test(navigator.platform);
+          const commandPressed = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+          if (e.key.toLowerCase() === "f" && commandPressed && e.shiftKey && !e.altKey && !e.repeat && document.hasFocus()) {
             e.preventDefault();
             handleFocusShortcut({ state: "Pressed" });
           }
@@ -74,18 +93,25 @@ export function useViewMode() {
     };
 
     let fallbackCleanups: (() => void)[] = [];
-    const promise = setup().then((cleanups) => {
+    const promise = shortcutLifecycle.then(setup).then((cleanups) => {
       fallbackCleanups = cleanups ?? [];
     });
+    shortcutLifecycle = promise;
 
     return () => {
-      void promise.then(() => {
-        void unregister(IMMERSIVE_SHORTCUT);
-        void unregister(FOCUS_SHORTCUT);
+      disposed = true;
+      shortcutLifecycle = promise.then(async () => {
         fallbackCleanups.forEach((fn) => fn());
+        await Promise.all(registeredShortcuts.map(async (shortcut) => {
+          try {
+            await unregister(shortcut);
+          } catch (error) {
+            console.warn("[view-mode] 快捷键注销失败:", shortcut, error);
+          }
+        }));
       });
     };
-  }, [setSettings]);
+  }, [enableShortcuts, setSettings]);
 
   // 所有会话关闭 → 回到 normal
   useEffect(() => {

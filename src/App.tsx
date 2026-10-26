@@ -162,7 +162,7 @@ function App() {
   }, []);
 
   const { locale, t } = useI18n();
-  const { isImmersive, isFocus } = useViewMode();
+  const { isImmersive, isFocus } = useViewMode(true);
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );

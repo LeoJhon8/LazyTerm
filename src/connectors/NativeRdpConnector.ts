@@ -41,6 +41,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
   private visibilityApplied: boolean | null = null;
   private finalStateLocked = false;
   private everConnected = false;
+  private authenticationWarningVisible = false;
   private latestState: NativeRdpStatePayload = {
     state: "launching",
     detail: "正在准备 MsTscAx 原生宿主进程。",
@@ -76,6 +77,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
       this.failureEmitted = false;
       this.finalStateLocked = false;
       this.everConnected = false;
+      this.authenticationWarningVisible = false;
       this.latestState = {
         state: "launching",
         detail: "正在准备 MsTscAx 原生宿主进程。",
@@ -267,6 +269,30 @@ export class NativeRdpConnector implements INativeRdpConnector {
       return;
     }
 
+    if (payload.state === "warning" || payload.state === "logon-error") {
+      // Native logon events also include interactive, recoverable conditions.
+      // Observe them without failing readiness or triggering a reconnect.
+      logger.warn("FE/connector/native-rdp/native-event", payload.state, { detail: payload.detail });
+      return;
+    }
+
+    if (payload.state === "authentication-warning-displayed" || payload.state === "authentication-warning-dismissed") {
+      this.authenticationWarningVisible = payload.state === "authentication-warning-displayed";
+      this.latestState = { ...this.latestState, authenticationWarningVisible: this.authenticationWarningVisible };
+      this.notifyStateHandlers(this.latestState);
+      return;
+    }
+
+    if (["error", "disconnected", "closed"].includes(this.latestState.state)
+      && ["state", "hidden", "visible", "focused", "mounted"].includes(payload.state)) {
+      return;
+    }
+
+    if (["error", "disconnected", "closed"].includes(payload.state)) {
+      this.authenticationWarningVisible = false;
+    }
+    payload = { ...payload, authenticationWarningVisible: this.authenticationWarningVisible };
+
     if (["hidden", "visible", "focused", "connected"].includes(payload.state)) {
       this.everConnected = true;
     }
@@ -313,6 +339,10 @@ export class NativeRdpConnector implements INativeRdpConnector {
         failure,
       });
     }
+    this.notifyStateHandlers(payload);
+  }
+
+  private notifyStateHandlers(payload: NativeRdpStatePayload): void {
     this.stateHandlers.forEach((handler) => {
       try {
         handler(payload);
@@ -354,7 +384,9 @@ export class NativeRdpConnector implements INativeRdpConnector {
     if (this.latestState.state !== "error") {
       this.emitState({
         state: "closed",
-        detail: "Native RDP 原生宿主会话已关闭。",
+        detail: this.latestState.state === "disconnected"
+          ? this.latestState.detail
+          : "Native RDP 原生宿主会话已关闭。",
       });
     }
 

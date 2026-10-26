@@ -47,12 +47,14 @@ These values affect WebView session views and, through `windowResizeCoordinator`
 
 ## Shortcuts and Transitions
 
-`useViewMode` first attempts to register Tauri global shortcuts:
+`App` registers Tauri global shortcuts once through `useViewMode(true)`; other components only consume view state. Shortcut callbacks execute only while the current LazyTerm window is focused:
 
 - `F11`: enters `immersive` from any other mode; returns to `normal` when already immersive.
 - `Ctrl/Command + Shift + F`: enters `focus` from any other mode; returns to `normal` when already focused.
 
 Therefore, `F11` in `focus` goes directly to `immersive`, and the focus shortcut in `immersive` goes directly to `focus`. Failed global registration falls back to a window `keydown` listener.
+
+Clicking an enabled sidebar module icon in `focus` returns to `normal` and expands the selected module, even if it was already expanded before entering focus mode. Icons are highlighted only while their sidebar is visible, so they are not highlighted in focus mode.
 
 ## Graphical Session Effects
 

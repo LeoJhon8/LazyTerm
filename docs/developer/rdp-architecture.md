@@ -60,6 +60,16 @@ flowchart LR
 - `request_rdp_refresh` 请求完整刷新，用于重连或画面不同步。
 - `set_rdp_quality_policy` 根据会话可见性调整后端图像预算。
 
+### 剪贴板、键盘与显示控制
+
+- `cliprdr` 通道支持双向 Unicode 文本剪贴板。Ctrl+V、Shift+Insert 和右上角「RDP 工具」中的粘贴入口会发送本地文本，等待远端确认格式后再发送 Ctrl+V；远端拒绝或超时会显示错误。
+- 仅当前获得输入焦点的可见会话可以将远端文本写入系统剪贴板，避免后台标签页覆盖用户正在使用的剪贴板。暂不支持图片和文件剪贴板。
+- 「RDP 工具」提供 Ctrl+Alt+Del、Ctrl+Alt+End、Alt+Tab、Alt+F4、Win、Win+R、PrintScreen 和 Pause；物理键盘补齐 F13–F24。组合键在后端按顺序按下、逆序释放。
+- FreeRDP 光标缓存通过独立事件 Channel 传递光标图像、热点、隐藏和默认状态。超过 128 像素的光标缩小到 WebView 可接受的尺寸。
+- `disp` 通道在服务端能力就绪后发送单显示器布局；视口变化防抖 200 ms，宽度按协议对齐到偶数。服务端未提供通道时维持原分辨率和滚动显示。
+- 聚焦桌面后，透明 textarea 接收本地输入法组合事件，只将确认的文本通过 Unicode 键盘事件发送，组合过程不向远端转发拼音按键。
+- 新增控制入口 `send_rdp_action`，额外事件通过创建会话时传入的 `eventChannel` 返回；FreeRDP 通道线程和会话线程之间的剪贴板、光标、布局状态由锁保护。
+
 ### 性能成本
 
 - FreeRDP 解码和区域帧处理。

@@ -171,6 +171,7 @@ export interface RdpPointerPayload {
 export interface RdpKeyboardPayload {
   scancode: number;
   down: boolean;
+  keyboardSyncFlags?: number;
 }
 
 export interface VncPointerPayload {
@@ -218,6 +219,10 @@ export type NativeRdpSessionState =
   | 'connected'
   | 'disconnected'
   | 'state'
+  | 'authentication-warning-displayed'
+  | 'authentication-warning-dismissed'
+  | 'warning'
+  | 'logon-error'
   | 'error'
   | 'closed';
 
@@ -225,6 +230,7 @@ export interface NativeRdpStatePayload {
   state: NativeRdpSessionState;
   detail?: string;
   rect?: NativeHostRect;
+  authenticationWarningVisible?: boolean;
 }
 
 export interface IRdpConnector extends ISessionConnector {
@@ -235,11 +241,24 @@ export interface IRdpConnector extends ISessionConnector {
   onClose(handler: () => void): () => void;
   sendPointer(payload: RdpPointerPayload): void;
   sendKey(payload: RdpKeyboardPayload): void;
+  sendAction(action: RdpAction): Promise<void>;
+  onEvent(handler: (event: RdpEvent) => void): () => void;
   releaseInputs(): void;
   setInitialViewportSize(width: number, height: number): void;
   requestFrame(): void;
   getFrameSize(): { width: number; height: number } | null;
 }
+
+export type RdpAction =
+  | { kind: 'paste' | 'text'; text: string }
+  | { kind: 'keys'; scancodes: number[] }
+  | { kind: 'pause' }
+  | { kind: 'resize'; width: number; height: number };
+
+export type RdpEvent =
+  | { kind: 'clipboard'; text: string }
+  | { kind: 'cursor'; mode: 'image' | 'hidden' | 'default'; width: number; height: number; x: number; y: number; rgba: number[] }
+  | { kind: 'warning'; message: string };
 
 export interface INativeRdpConnector extends ISessionConnector {
   readonly protocol: 'rdp';

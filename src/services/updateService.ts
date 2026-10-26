@@ -226,6 +226,7 @@ async function githubAssetIsReachable(downloadUrl: string): Promise<boolean> {
 
 async function getLatestInstaller(androidArchitecture?: string): Promise<Installer> {
   const sourceErrors: string[] = [];
+  let githubInstaller: Installer | undefined;
 
   try {
     const githubResponse = await fetchWithTimeout(
@@ -247,7 +248,7 @@ async function getLatestInstaller(androidArchitecture?: string): Promise<Install
       throw new Error("安装包下载链路不可用");
     }
 
-    return await attachGitHubChecksum(release, installer);
+    githubInstaller = await attachGitHubChecksum(release, installer);
   } catch (error) {
     sourceErrors.push(`GitHub: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -263,11 +264,14 @@ async function getLatestInstaller(androidArchitecture?: string): Promise<Install
       throw new Error("未找到当前平台的有效安装包");
     }
 
-    return installer;
+    return githubInstaller && compareVersions(githubInstaller.version, installer.version) >= 0
+      ? githubInstaller
+      : installer;
   } catch (error) {
     sourceErrors.push(`Gitee: ${error instanceof Error ? error.message : String(error)}`);
   }
 
+  if (githubInstaller) return githubInstaller;
   throw new Error(`所有更新源均不可用（${sourceErrors.join("；")}）`);
 }
 
@@ -283,27 +287,6 @@ export async function checkForUpdate(): Promise<UpdateCheckResult> {
 
   const resolvedCurrentVersion = currentVersion ?? "0.0.0";
   const androidArchitecture = await resolveAndroidArchitecture();
-
-  if (IS_ANDROID) {
-    try {
-      const response = await fetchWithTimeout(
-        GITHUB_RELEASES_API_URL,
-        "application/vnd.github+json",
-      );
-      if (response.ok) {
-        const latestVersion = parseGitHubReleaseVersion((await response.json()) as GitHubRelease);
-        if (latestVersion && compareVersions(latestVersion, resolvedCurrentVersion) <= 0) {
-          return {
-            status: "up-to-date",
-            currentVersion: resolvedCurrentVersion,
-            latestVersion,
-          };
-        }
-      }
-    } catch {
-      // 元数据预检失败时继续走原有的 GitHub → Gitee 更新源回退。
-    }
-  }
 
   const latestInstaller = await getLatestInstaller(androidArchitecture);
 

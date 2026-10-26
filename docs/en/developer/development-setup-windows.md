@@ -127,6 +127,10 @@ Do not link an MSYS2/MinGW build into the `x86_64-pc-windows-msvc` target.
 
 ## FreeRDP 3
 
+Text clipboard and dynamic resolution require these FreeRDP CMake options:
+`WITH_CHANNELS=ON`, `WITH_CLIENT_CHANNELS=ON`, `CHANNEL_CLIPRDR=ON`, `CHANNEL_CLIPRDR_CLIENT=ON`, `CHANNEL_DRDYNVC=ON`, `CHANNEL_DRDYNVC_CLIENT=ON`, `CHANNEL_DISP=ON`, and `CHANNEL_DISP_CLIENT=ON`.
+Passing `cargo check` with headers and import libraries does not prove that the runtime contains these channels. Inspect the corresponding macros in the installed `include\freerdp3\freerdp\config.h`. Older builds with disabled channels must be rebuilt and installed, and release runtime assets updated. The release workflow enables these options explicitly.
+
 Embedded RDP uses the default `rdp-freerdp` feature. Windows discovery order is:
 
 1. `FREERDP_INCLUDE_DIR` plus `FREERDP_LIB_DIR`
@@ -195,6 +199,30 @@ cargo check --manifest-path .\src-tauri\Cargo.toml
 ```
 
 If `cargo check` cannot find a native library, inspect the current PowerShell environment and install prefixes rather than bypassing discovery in application code.
+
+## Android Compilation Checks (Windows)
+
+Install the Android SDK, NDK, JDK 17, and Rust's `aarch64-linux-android` target, and set `ANDROID_HOME`, `NDK_HOME`, and `JAVA_HOME`. Run these commands from the repository root. Environment changes affect only the current PowerShell session; these commands neither package an APK nor run tests.
+
+```powershell
+$androidToolchainBin = Join-Path $env:NDK_HOME 'toolchains\llvm\prebuilt\windows-x86_64\bin'
+$env:CC_aarch64_linux_android = Join-Path $androidToolchainBin 'clang.exe'
+$env:CFLAGS_aarch64_linux_android = '--target=aarch64-linux-android24'
+$env:AR_aarch64_linux_android = Join-Path $androidToolchainBin 'llvm-ar.exe'
+New-Item -ItemType Directory -Force -Path .\src-tauri\target\check-temp | Out-Null
+$env:TEMP = (Resolve-Path .\src-tauri\target\check-temp).Path
+$env:TMP = $env:TEMP
+cargo check --manifest-path .\src-tauri\Cargo.toml --target aarch64-linux-android --offline
+& .\node_modules\.bin\tsc.cmd -p tsconfig.app.json --noEmit
+Push-Location .\src-tauri\gen\android
+try {
+    .\gradlew.bat :app:compileArm64DebugKotlin --offline --console=plain
+} finally {
+    Pop-Location
+}
+```
+
+`--offline` requires cached dependencies; omit it for initial downloads. Tauri plugin compilation updates `android\.tauri\tauri-api` inside the Cargo cache. If a restricted environment reports `failed to copy tauri-api` with `os error 183`, check write access to the Cargo cache: the plugin ignores failure to remove the old directory, then reports that the directory already exists. Run checks with access to the Cargo and Gradle caches instead of modifying dependency sources. The project-local temporary directory above also avoids restricted system temporary directories when NDK compilation reports `Permission denied`.
 
 ## Common Problems
 

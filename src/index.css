@@ -1763,6 +1763,19 @@
   width: 8px !important;
 }
 
+/* Android uses touch gestures to browse terminal history. */
+.android-app .terminal-xterm-wrapper .xterm .scrollbar {
+  display: none !important;
+}
+
+.android-app .terminal-xterm-wrapper .xterm .xterm-viewport {
+  scrollbar-width: none;
+}
+
+.android-app .terminal-xterm-wrapper .xterm .xterm-viewport::-webkit-scrollbar {
+  display: none;
+}
+
 /* Ensure terminal transparency can reveal background images */
 .xterm,
 .xterm .xterm-viewport,

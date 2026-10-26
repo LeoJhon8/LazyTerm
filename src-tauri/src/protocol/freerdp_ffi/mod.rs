@@ -62,6 +62,12 @@ impl Default for LazyFreeRdpFrame {
 }
 
 unsafe extern "C" {
+    pub fn lazy_freerdp_client_clipboard(client: *mut LazyFreeRdpClient, data: *const u8, length: u32) -> c_int;
+    pub fn lazy_freerdp_client_resize(client: *mut LazyFreeRdpClient, width: u32, height: u32) -> c_int;
+    pub fn lazy_freerdp_client_take_event(client: *mut LazyFreeRdpClient, event: *mut LazyFreeRdpEvent) -> c_int;
+    pub fn lazy_freerdp_event_free(event: *mut LazyFreeRdpEvent);
+    pub fn lazy_freerdp_client_unicode(client: *mut LazyFreeRdpClient, code: u16, down: u8) -> c_int;
+    pub fn lazy_freerdp_client_pause(client: *mut LazyFreeRdpClient) -> c_int;
     pub fn lazy_freerdp_client_new(config: *const LazyFreeRdpConfig) -> *mut LazyFreeRdpClient;
     pub fn lazy_freerdp_client_connect(client: *mut LazyFreeRdpClient) -> c_int;
     pub fn lazy_freerdp_client_poll(
@@ -77,6 +83,10 @@ unsafe extern "C" {
         flags: c_ushort,
         wheel_delta: i16,
     ) -> c_int;
+    pub fn lazy_freerdp_client_synchronize_keyboard(
+        client: *mut LazyFreeRdpClient,
+        flags: c_uint,
+    ) -> c_int;
     pub fn lazy_freerdp_client_send_key(
         client: *mut LazyFreeRdpClient,
         scancode: c_uint,
@@ -90,3 +100,15 @@ unsafe extern "C" {
 }
 
 pub type OpaqueVoid = c_void;
+
+#[repr(C)]
+#[derive(Default)]
+pub struct LazyFreeRdpEvent {
+    pub kind: u32,
+    pub width: u32,
+    pub height: u32,
+    pub x: u32,
+    pub y: u32,
+    pub data: *mut u8,
+    pub length: u32,
+}

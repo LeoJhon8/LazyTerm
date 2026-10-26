@@ -234,6 +234,7 @@ mod freerdp_runtime {
         target: String,
         mut client: FreeRdpClient,
         frame_channel: Channel<Response>,
+        event_channel: Channel<crate::types::RdpEvent>,
         control_rx: std_mpsc::Receiver<RdpControlMsg>,
     ) -> Result<(), String> {
         let mut encoder_state = RdpFrameEncoderState::new();
@@ -259,6 +260,7 @@ mod freerdp_runtime {
                     &mut input_state,
                     &mut encoder_state,
                     &mut quality_state,
+                    &event_channel,
                 )? {
                     log_rdp_info(
                         &session_id,
@@ -306,6 +308,16 @@ mod freerdp_runtime {
                 pending_frame = Some(frame);
             }
 
+            while let Some((kind, event)) = client.take_event() {
+                if kind == 3 {
+                    release_keys(&mut client, &mut input_state)?;
+                    send_key_sequence(&mut client, &[0x1d, 0x2f])?;
+                }
+                if let Some(event) = event {
+                    let _ = event_channel.send(event);
+                }
+            }
+
             if quality_state.suspend_visuals {
                 pending_frame = None;
                 continue;
@@ -339,20 +351,73 @@ mod freerdp_runtime {
         Some(interval.saturating_sub(elapsed))
     }
 
+    fn release_keys(client: &mut FreeRdpClient, input: &mut RdpInputState) -> Result<(), String> {
+        for key in input.pressed_keys.drain() {
+            client.send_key(key, false)?;
+        }
+        Ok(())
+    }
+
+    fn send_key_sequence(client: &mut FreeRdpClient, keys: &[u16]) -> Result<(), String> {
+        let mut pressed = Vec::new();
+        let mut result = Ok(());
+        for &key in keys {
+            result = client.send_key(key, true);
+            if result.is_err() {
+                break;
+            }
+            pressed.push(key);
+        }
+        for key in pressed.into_iter().rev() {
+            let released = client.send_key(key, false);
+            if result.is_ok() {
+                result = released;
+            }
+        }
+        result
+    }
+
     fn handle_rdp_control(
         control: RdpControlMsg,
         client: &mut FreeRdpClient,
         input_state: &mut RdpInputState,
         encoder_state: &mut RdpFrameEncoderState,
         quality_state: &mut RdpQualityState,
+        event_channel: &Channel<crate::types::RdpEvent>,
     ) -> Result<bool, String> {
         match control {
+            RdpControlMsg::Action(action) => {
+                use crate::types::{RdpAction, RdpEvent};
+                if !matches!(&action, RdpAction::Resize { .. }) {
+                    encoder_state.mark_interaction(RdpInteractionKind::Keyboard);
+                }
+                let result = match action {
+                    RdpAction::Resize { width, height } => client.resize(width, height),
+                    RdpAction::Paste { text } => client.paste(&text),
+                    RdpAction::Text { text } => {
+                        release_keys(client, input_state)?;
+                        client.type_text(&text)
+                    }
+                    RdpAction::Keys { scancodes } => {
+                        release_keys(client, input_state)?;
+                        send_key_sequence(client, &scancodes)
+                    }
+                    RdpAction::Pause => client.pause(),
+                };
+                if let Err(message) = result {
+                    let _ = event_channel.send(RdpEvent::Warning { message });
+                }
+                Ok(true)
+            }
             RdpControlMsg::Pointer(payload) => {
                 handle_pointer(payload, client, input_state, encoder_state)?;
                 Ok(true)
             }
             RdpControlMsg::Key(payload) => {
                 encoder_state.mark_interaction(RdpInteractionKind::Keyboard);
+                if let Some(flags) = payload.keyboard_sync_flags {
+                    client.synchronize_keyboard(flags)?;
+                }
                 if payload.down {
                     input_state.pressed_keys.insert(payload.scancode);
                 } else {
@@ -601,6 +666,7 @@ mod disabled_runtime {
         _: String,
         _: DisabledRdpClient,
         _: Channel<Response>,
+        _: Channel<crate::types::RdpEvent>,
         _: std_mpsc::Receiver<RdpControlMsg>,
     ) -> Result<(), String> {
         Err("RDP FreeRDP backend is disabled at compile time.".to_string())

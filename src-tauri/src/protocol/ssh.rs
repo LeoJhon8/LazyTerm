@@ -1089,7 +1089,7 @@ pub async fn resize_ssh_session(
 }
 
 /// 使用现有已认证连接的独立 channel 检测远端 tmux，不污染可见终端。
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(target_os = "ios"))]
 #[tauri::command]
 pub async fn check_ssh_tmux_capability(
     state: State<'_, AppState>,
@@ -1117,7 +1117,7 @@ pub async fn check_ssh_tmux_capability(
 }
 
 /// 退出当前 tmux pane 的浏览模式。用户输入仍由原 PTY 通道发送，避免重复注入。
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(target_os = "ios"))]
 #[tauri::command]
 pub async fn exit_ssh_tmux_copy_mode(
     state: State<'_, AppState>,
@@ -1157,7 +1157,7 @@ pub async fn exit_ssh_tmux_copy_mode(
 }
 
 /// 结束当前 LazyTerm SSH 连接所附着的远端 tmux 会话。
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(target_os = "ios"))]
 #[tauri::command]
 pub async fn kill_ssh_tmux_session(
     state: State<'_, AppState>,

@@ -36,6 +36,66 @@ pub struct FreeRdpClient {
 unsafe impl Send for FreeRdpClient {}
 
 impl FreeRdpClient {
+    pub fn paste(&mut self, text: &str) -> Result<(), String> {
+        let text = text.replace("\r\n", "\n").replace('\n', "\r\n");
+        let bytes: Vec<u8> = text.encode_utf16().chain(std::iter::once(0))
+            .flat_map(u16::to_le_bytes).collect();
+        if unsafe { ffi::lazy_freerdp_client_clipboard(self.raw, bytes.as_ptr(), bytes.len() as u32) } == 0 {
+            return Err(self.last_error());
+        }
+        Ok(())
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) -> Result<(), String> {
+        if unsafe { ffi::lazy_freerdp_client_resize(self.raw, width.clamp(200, 8192), height.clamp(200, 8192)) } == 0 {
+            return Err("Failed to send RDP display layout".into());
+        }
+        Ok(())
+    }
+
+    pub fn type_text(&mut self, text: &str) -> Result<(), String> {
+        for code in text.encode_utf16() {
+            if unsafe { ffi::lazy_freerdp_client_unicode(self.raw, code, 1) } == 0 ||
+                unsafe { ffi::lazy_freerdp_client_unicode(self.raw, code, 0) } == 0 {
+                return Err("Failed to send RDP Unicode input".into());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn pause(&mut self) -> Result<(), String> {
+        if unsafe { ffi::lazy_freerdp_client_pause(self.raw) } == 0 {
+            return Err("Failed to send RDP Pause key".into());
+        }
+        Ok(())
+    }
+
+    pub fn take_event(&mut self) -> Option<(u32, Option<crate::types::RdpEvent>)> {
+        use crate::types::RdpEvent;
+        let mut raw = ffi::LazyFreeRdpEvent::default();
+        if unsafe { ffi::lazy_freerdp_client_take_event(self.raw, &mut raw) } == 0 {
+            return None;
+        }
+        let data = if raw.data.is_null() || raw.length == 0 { Vec::new() } else {
+            unsafe { std::slice::from_raw_parts(raw.data, raw.length as usize) }.to_vec()
+        };
+        unsafe { ffi::lazy_freerdp_event_free(&mut raw) };
+        let event = match raw.kind {
+            1 => {
+                let units: Vec<u16> = data.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]]))
+                    .take_while(|&code| code != 0).collect();
+                Some(RdpEvent::Clipboard { text: String::from_utf16_lossy(&units) })
+            }
+            2 | 4 | 5 => Some(RdpEvent::Cursor {
+                mode: match raw.kind { 2 => "image", 4 => "hidden", _ => "default" }.into(),
+                width: raw.width, height: raw.height, x: raw.x, y: raw.y, rgba: data,
+            }),
+            6 => Some(RdpEvent::Warning { message: "Remote clipboard rejected the paste or did not respond in time".into() }),
+            _ => None,
+        };
+        Some((raw.kind, event))
+    }
+
     pub fn connect(config: &FreeRdpClientConfig) -> Result<Self, String> {
         let host = cstring("host", &config.host)?;
         let username = cstring("username", &config.username)?;
@@ -131,6 +191,14 @@ impl FreeRdpClient {
         };
 
         self.send_pointer(x, y, flags, delta)
+    }
+
+    pub fn synchronize_keyboard(&mut self, flags: u32) -> Result<(), String> {
+        let result = unsafe { ffi::lazy_freerdp_client_synchronize_keyboard(self.raw, flags) };
+        if result == 0 {
+            return Err(self.last_error());
+        }
+        Ok(())
     }
 
     pub fn send_key(&mut self, scancode: u16, down: bool) -> Result<(), String> {

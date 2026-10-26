@@ -19,6 +19,7 @@ pub async fn create_rdp_session<R: Runtime>(
     session_id: String,
     config: RdpConnectConfig,
     frame_channel: Channel<Response>,
+    event_channel: Channel<crate::types::RdpEvent>,
 ) -> Result<String, String> {
     let target = rdp_target_label(&config);
     log_rdp_info(
@@ -69,6 +70,7 @@ pub async fn create_rdp_session<R: Runtime>(
                     target_clone.clone(),
                     client,
                     frame_channel,
+                    event_channel,
                     control_rx,
                 )
             }
@@ -109,6 +111,33 @@ pub async fn create_rdp_session<R: Runtime>(
             Err(message)
         }
     }
+}
+
+/// 发送剪贴板、文本、组合键和显示布局操作。
+#[tauri::command]
+pub fn send_rdp_action(
+    state: State<'_, AppState>,
+    session_id: String,
+    action: crate::types::RdpAction,
+) -> Result<(), String> {
+    use crate::types::RdpAction;
+    match &action {
+        RdpAction::Paste { text } | RdpAction::Text { text }
+            if text.len() > 1_000_000 || text.contains('\0') =>
+        {
+            return Err("RDP text is too large or contains a NUL character".into());
+        }
+        RdpAction::Keys { scancodes } if scancodes.is_empty() || scancodes.len() > 8 => {
+            return Err("Invalid RDP key sequence".into());
+        }
+        _ => {}
+    }
+    let sessions = state.rdp_sessions.lock().unwrap();
+    let session = sessions.get(&session_id).ok_or("RDP 会话不存在")?;
+    session
+        .control_tx
+        .send(RdpControlMsg::Action(action))
+        .map_err(|e| e.to_string())
 }
 
 /// 发送 RDP 鼠标事件

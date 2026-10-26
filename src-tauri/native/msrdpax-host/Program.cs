@@ -278,6 +278,11 @@ internal sealed class HostForm : Form
     private readonly System.Windows.Forms.Timer _revealTimer;
     private readonly System.Windows.Forms.Timer _scrollBarVisibilityTimer;
     private RdpActiveXHost? _rdpHost;
+    private RdpNativeEvents? _rdpEvents;
+    private bool _nativeDisconnected;
+    private bool _disposing;
+    private string? _lastLogonDetail;
+    private string? _fatalErrorDetail;
     private SidecarInitPayload? _init;
     private IntPtr _parentHwnd;
     private int? _lastConnectedState;
@@ -827,6 +832,9 @@ internal sealed class HostForm : Form
     {
         if (disposing)
         {
+            _disposing = true;
+            _rdpEvents?.Dispose();
+            _rdpEvents = null;
             _scrollBarVisibilityTimer.Stop();
             _scrollBarVisibilityTimer.Dispose();
             _revealTimer.Stop();
@@ -887,6 +895,7 @@ internal sealed class HostForm : Form
             }
 
             _waitingForOcxReady = false;
+            AttachNativeNotifications(client);
             var loginUser = string.IsNullOrWhiteSpace(_init.Domain)
                 ? _init.Username
                 : $"{_init.Domain}\\{_init.Username}";
@@ -928,7 +937,10 @@ internal sealed class HostForm : Form
             InvokeComMethod(client, "Connect");
             _connectIssued = true;
             HideStatus();
-            EmitState("connecting", $"MsTscAx 正在连接 {_init.Host}:{_init.Port}", CurrentRect);
+            if (!_nativeDisconnected && _fatalErrorDetail is null)
+            {
+                EmitState("connecting", $"MsTscAx 正在连接 {_init.Host}:{_init.Port}", CurrentRect);
+            }
         }
         catch (Exception ex)
         {
@@ -936,6 +948,130 @@ internal sealed class HostForm : Form
             EmitState("error", $"MsTscAx Connect 调用失败: {ex.Message}", CurrentRect);
         }
     }
+
+    private void AttachNativeNotifications(object client)
+    {
+        if (_rdpEvents is null)
+        {
+            try
+            {
+                _rdpEvents = new RdpNativeEvents(client, (eventId, code) => HandleNativeEvent(client, eventId, code));
+            }
+            catch (Exception ex)
+            {
+                EmitState("warning", $"MsTscAx event subscription failed: {ex.GetBaseException().Message}", CurrentRect);
+            }
+        }
+
+        try
+        {
+            ((IMsRdpClientNonScriptable2)client).SetUIParentWindowHandle(_parentHwnd);
+        }
+        catch (Exception ex)
+        {
+            // Diagnostics must not change whether an existing connection is allowed.
+            EmitState("warning", $"MsTscAx UIParentWindowHandle failed: {ex.GetBaseException().Message}", CurrentRect);
+        }
+    }
+
+    private void HandleNativeEvent(object client, int eventId, int? code)
+    {
+        if (_disposing || IsDisposed)
+        {
+            return;
+        }
+
+        try
+        {
+            switch (eventId)
+            {
+                case 3: // OnLoginComplete: an earlier recoverable logon error is now stale.
+                    _lastLogonDetail = null;
+                    break;
+                case 18:
+                    EmitState("authentication-warning-displayed", "OnAuthenticationWarningDisplayed", CurrentRect);
+                    break;
+                case 19:
+                    EmitState("authentication-warning-dismissed", "OnAuthenticationWarningDismissed", CurrentRect);
+                    break;
+                case 22:
+                    _lastLogonDetail = $"OnLogonError: {FormatNativeCode(code!.Value)}; {DescribeLogonEvent(code.Value)}";
+                    // This event also reports recoverable password/logon prompts and
+                    // session arbitration. It is not a terminal connection failure.
+                    EmitState("logon-error", _lastLogonDetail, CurrentRect);
+                    break;
+                case 11:
+                    EmitState("warning", $"OnWarning: {FormatNativeCode(code!.Value)}", CurrentRect);
+                    break;
+                case 10:
+                    _fatalErrorDetail = $"OnFatalError: {FormatNativeCode(code!.Value)}";
+                    EmitState("error", _lastLogonDetail is null
+                        ? _fatalErrorDetail
+                        : $"{_fatalErrorDetail}; {_lastLogonDetail}", CurrentRect);
+                    break;
+                case 4:
+                    _nativeDisconnected = true;
+                    _lastConnectedState = 0;
+                    var extended = TryGetComProperty(client, "ExtendedDisconnectReason");
+                    var detail = $"OnDisconnected: {FormatNativeCode(code!.Value)}; ExtendedDisconnectReason: {extended ?? "unavailable"}";
+                    if (extended is not null)
+                    {
+                        try
+                        {
+                            var description = client.GetType().InvokeMember("GetErrorDescription",
+                                BindingFlags.InvokeMethod, null, client,
+                                new object[] { unchecked((uint)code.Value), Convert.ToUInt32(extended) }) as string;
+                            if (!string.IsNullOrWhiteSpace(description))
+                            {
+                                detail += $"; {description.Trim()}";
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            detail += $"; GetErrorDescription unavailable: {ex.GetBaseException().Message}";
+                        }
+                    }
+                    if (_lastLogonDetail is not null)
+                    {
+                        detail += $"; {_lastLogonDetail}";
+                    }
+                    if (_fatalErrorDetail is not null)
+                    {
+                        detail += $"; {_fatalErrorDetail}";
+                    }
+                    HideStatus();
+                    UpdateHostVisibility();
+                    EmitState("disconnected", detail, CurrentRect);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Never propagate an observer exception back into the COM control.
+            EmitState("warning", $"MsTscAx event {eventId} failed: {ex.GetBaseException().Message}", CurrentRect);
+        }
+    }
+
+    private static string FormatNativeCode(int code) => $"{code} (0x{unchecked((uint)code):X8})";
+
+    private static string DescribeLogonEvent(int code) => code switch
+    {
+        0 => "LOGON_FAILED_BAD_PASSWORD",
+        1 => "LOGON_FAILED_UPDATE_PASSWORD",
+        2 => "LOGON_FAILED_OTHER",
+        3 => "LOGON_WARNING",
+        -1 => "ERROR_CODE_ACCESS_DENIED",
+        -2 => "ARBITRATION_CODE_CONTINUE_LOGON",
+        -3 => "ARBITRATION_CODE_CONTINUE_TERMINATE",
+        -4 => "ARBITRATION_CODE_RECONN_OPTIONS",
+        -5 => "ARBITRATION_CODE_BUMP_OPTIONS",
+        -6 => "ARBITRATION_CODE_NOPERM_DIALOG",
+        -7 => "ARBITRATION_CODE_REFUSED_DIALOG",
+        unchecked((int)0xC000006E) => "STATUS_ACCOUNT_RESTRICTION",
+        unchecked((int)0xC000006D) => "STATUS_LOGON_FAILURE",
+        unchecked((int)0xC0000224) => "STATUS_PASSWORD_MUST_CHANGE",
+        _ => "Unrecognized native logon event",
+    };
 
     private void DisconnectRdp()
     {
@@ -989,6 +1125,12 @@ internal sealed class HostForm : Form
             }
 
             var state = ReadConnectedState(client);
+            if (_nativeDisconnected || _fatalErrorDetail is not null)
+            {
+                // Preserve event diagnostics instead of replacing them with a
+                // generic polling message after the terminal native event.
+                return;
+            }
             if (_lastConnectedState == state)
             {
                 return;

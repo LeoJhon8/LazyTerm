@@ -5,6 +5,12 @@
 #endif
 
 #include <freerdp/client.h>
+#include <freerdp/config.h>
+#include <freerdp/client/cmdline.h>
+#include <freerdp/client/cliprdr.h>
+#include <freerdp/client/disp.h>
+#include <freerdp/graphics.h>
+#include <freerdp/event.h>
 #include <freerdp/codec/color.h>
 #include <freerdp/display.h>
 #include <freerdp/error.h>
@@ -80,6 +86,29 @@ struct LazyFreeRdpClient
     BOOL has_pending_frame;
     LazyFreeRdpFrame pending_frame;
     char last_error[1024];
+    CRITICAL_SECTION extension_lock;
+    CliprdrClientContext* clipboard;
+    DispClientContext* display;
+    BOOL clipboard_ready;
+    BOOL paste_pending;
+    BOOL paste_ready;
+    BOOL paste_failed;
+    BOOL clipboard_announcement_pending;
+    UINT64 paste_started_at;
+    BOOL clipboard_request_pending;
+    BOOL clipboard_request_again;
+    BOOL remote_has_text;
+    BYTE* local_text;
+    UINT32 local_text_len;
+    BYTE* remote_text;
+    UINT32 remote_text_len;
+    BOOL remote_text_ready;
+    BYTE* cursor_data;
+    UINT32 cursor_width, cursor_height, cursor_x, cursor_y, cursor_kind;
+    BOOL cursor_ready;
+    BOOL display_ready;
+    UINT32 requested_width, requested_height;
+    UINT64 max_monitor_area;
 };
 
 static void lazy_set_error(LazyFreeRdpClient* client, const char* message)
@@ -274,10 +303,13 @@ static BOOL lazy_desktop_resize(rdpContext* context)
     return lazy_capture_region(client, gdi, 0, 0, width, height, TRUE);
 }
 
+#include "extensions.h"
+
 static BOOL lazy_pre_connect(freerdp* instance)
 {
-    (void)instance;
-    return TRUE;
+    PubSub_SubscribeChannelConnected(instance->context->pubSub, lazy_channel_connected);
+    PubSub_SubscribeChannelDisconnected(instance->context->pubSub, lazy_channel_disconnected);
+    return freerdp_client_load_addins(instance->context->channels, instance->context->settings);
 }
 
 static BOOL lazy_post_connect(freerdp* instance)
@@ -292,6 +324,7 @@ static BOOL lazy_post_connect(freerdp* instance)
     context->update->BeginPaint = lazy_begin_paint;
     context->update->EndPaint = lazy_end_paint;
     context->update->DesktopResize = lazy_desktop_resize;
+    lazy_register_pointer(context);
 
     if (context->gdi)
         (void)lazy_capture_region(lazy_client_from_context(context), context->gdi, 0, 0,
@@ -383,6 +416,10 @@ static BOOL lazy_apply_settings(LazyFreeRdpClient* client, const LazyFreeRdpConf
         return FALSE;
     if (!freerdp_settings_set_bool(settings, FreeRDP_FastPathOutput, TRUE))
         return FALSE;
+    if (!freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, TRUE) ||
+        !freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE) ||
+        !freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate, TRUE))
+        return FALSE;
     if (!freerdp_settings_set_bool(settings, FreeRDP_DeviceRedirection, FALSE))
         return FALSE;
     if (!freerdp_settings_set_bool(settings, FreeRDP_RedirectDrives, FALSE))
@@ -418,6 +455,8 @@ LazyFreeRdpClient* lazy_freerdp_client_new(const LazyFreeRdpConfig* config)
     if (!client)
         return NULL;
 
+    InitializeCriticalSection(&client->extension_lock);
+
     RDP_CLIENT_ENTRY_POINTS entry_points;
     memset(&entry_points, 0, sizeof(entry_points));
     entry_points.Version = RDP_CLIENT_INTERFACE_VERSION;
@@ -436,6 +475,7 @@ LazyFreeRdpClient* lazy_freerdp_client_new(const LazyFreeRdpConfig* config)
     if (!client->context)
     {
         lazy_set_error(client, "failed to create FreeRDP client context");
+        DeleteCriticalSection(&client->extension_lock);
         free(client);
         return NULL;
     }
@@ -599,6 +639,21 @@ int lazy_freerdp_client_send_pointer(LazyFreeRdpClient* client, uint16_t x, uint
     return 1;
 }
 
+int lazy_freerdp_client_synchronize_keyboard(LazyFreeRdpClient* client, uint32_t flags)
+{
+    if (!client || !client->connected || !client->context || !client->context->input)
+        return 0;
+
+    flags &= KBD_SYNC_SCROLL_LOCK | KBD_SYNC_NUM_LOCK | KBD_SYNC_CAPS_LOCK | KBD_SYNC_KANA_LOCK;
+    if (!freerdp_input_send_synchronize_event(client->context->input, flags))
+    {
+        lazy_set_error(client, "failed to synchronize FreeRDP keyboard state");
+        return 0;
+    }
+
+    return 1;
+}
+
 int lazy_freerdp_client_send_key(LazyFreeRdpClient* client, uint32_t scancode, uint8_t down)
 {
     if (!client || !client->connected || !client->context || !client->context->input)
@@ -663,6 +718,10 @@ void lazy_freerdp_client_free(LazyFreeRdpClient* client)
     }
 
     lazy_clear_frame(&client->pending_frame);
+    free(client->local_text);
+    free(client->remote_text);
+    free(client->cursor_data);
+    DeleteCriticalSection(&client->extension_lock);
     free(client);
 }
 

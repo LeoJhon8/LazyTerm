@@ -4,11 +4,14 @@ import type {
   RDPConfig,
   RdpFramePayload,
   RdpKeyboardPayload,
+  RdpAction,
+  RdpEvent,
   RdpPointerPayload,
 } from "@/types/terminal";
 import { logger } from "@/lib/logger";
 import { invokeTauri } from "@/services/tauri";
 import { BaseGraphicalConnector } from "./BaseGraphicalConnector";
+import { Channel } from "@tauri-apps/api/core";
 
 export class RdpConnector
   extends BaseGraphicalConnector<RDPConfig, RdpFramePayload, RdpPointerPayload, RdpKeyboardPayload>
@@ -19,6 +22,14 @@ export class RdpConnector
   private readonly requestedSessionId = crypto.randomUUID();
   private initialViewportSize: { width: number; height: number } | null = null;
   private initialViewportLocked = false;
+  private readonly eventHandlers = new Set<(event: RdpEvent) => void>();
+  private latestCursor: RdpEvent | null = null;
+  private lastRequestedSize = "";
+  private readonly eventChannel = new Channel<RdpEvent>((event) => {
+    if (this.isConnectionClosed()) return;
+    if (event.kind === "cursor") this.latestCursor = event;
+    for (const handler of this.eventHandlers) handler(event);
+  });
   private resolveInitialViewport: (() => void) | null = null;
   private readonly initialViewportReady = new Promise<void>((resolve) => {
     this.resolveInitialViewport = resolve;
@@ -77,17 +88,53 @@ export class RdpConnector
     });
   }
 
+  async sendAction(action: RdpAction): Promise<void> {
+    if (!this.isConnected || !this.sessionId) return;
+    await invokeTauri("send_rdp_action", { sessionId: this.sessionId, action }, { scope: "FE/connector/rdp/action" });
+  }
+
+  onEvent(handler: (event: RdpEvent) => void): () => void {
+    this.eventHandlers.add(handler);
+    if (this.latestCursor) handler(this.latestCursor);
+    return () => { this.eventHandlers.delete(handler); };
+  }
+
+  async open(): Promise<void> {
+    await super.open();
+    this.resizeToViewport();
+  }
+
+  private resizeToViewport(): void {
+    if (!this.isConnected || !this.initialViewportSize) return;
+    const { width, height } = this.initialViewportSize;
+    const size = `${width}x${height}`;
+    if (this.lastRequestedSize === size) return;
+    this.lastRequestedSize = size;
+    void this.sendAction({ kind: "resize", width, height }).catch((error) => {
+      this.lastRequestedSize = "";
+      logger.error("FE/connector/rdp/resize", "Resize failed", { error });
+    });
+  }
+
+  protected cleanupListeners(): void {
+    super.cleanupListeners();
+    this.eventHandlers.clear();
+    this.latestCursor = null;
+    this.lastRequestedSize = "";
+  }
+
   setInitialViewportSize(width: number, height: number): void {
-    if (this.initialViewportLocked || width <= 0 || height <= 0) {
+    if (width <= 0 || height <= 0) {
       return;
     }
 
     this.initialViewportSize = {
-      width: Math.min(8192, Math.max(200, Math.floor(width))),
+      width: Math.min(8192, Math.max(200, Math.floor(width))) & ~1,
       height: Math.min(8192, Math.max(200, Math.floor(height))),
     };
     this.resolveInitialViewport?.();
     this.resolveInitialViewport = null;
+    if (this.initialViewportLocked) this.resizeToViewport();
   }
 
   applyQualityPolicy(policy: ConnectionQualityPolicy): void {
@@ -136,6 +183,7 @@ export class RdpConnector
         height: initialSize.height,
       },
       frameChannel: this.frameChannel,
+      eventChannel: this.eventChannel,
     };
   }
 

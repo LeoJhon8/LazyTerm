@@ -16,6 +16,10 @@ function defineMessages<const T extends MessageMap>(messages: T) {
 }
 
 const zhMessages = defineMessages({
+  "请在 Windows 原生认证弹窗中确认后继续连接。": "请在 Windows 原生认证弹窗中确认后继续连接。",
+  "RDP 工具": "RDP 工具",
+  "远程桌面输入": "远程桌面输入",
+  "RDP 操作失败": "RDP 操作失败",
   "开心": "开心",
   "平静": "平静",
   "活力": "活力",
@@ -760,6 +764,10 @@ const zhMessages = defineMessages({
 type TranslationKey = keyof typeof zhMessages;
 
 const enMessages = defineMessages({
+  "请在 Windows 原生认证弹窗中确认后继续连接。": "Respond to the Windows authentication dialog to continue connecting.",
+  "RDP 工具": "RDP tools",
+  "远程桌面输入": "Remote desktop input",
+  "RDP 操作失败": "RDP action failed",
   "开心": "Happy",
   "平静": "Calm",
   "活力": "Energetic",

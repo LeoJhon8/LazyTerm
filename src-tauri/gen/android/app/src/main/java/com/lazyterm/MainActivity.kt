@@ -10,7 +10,6 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
@@ -45,18 +44,8 @@ class MainActivity : TauriActivity() {
       applyImeInset(view, insets)
       insets
     }
-    ViewCompat.setWindowInsetsAnimationCallback(
-      webView,
-      object : WindowInsetsAnimationCompat.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
-        override fun onProgress(
-          insets: WindowInsetsCompat,
-          runningAnimations: MutableList<WindowInsetsAnimationCompat>,
-        ): WindowInsetsCompat {
-          applyImeInset(webView, insets)
-          return insets
-        }
-      },
-    )
+    // Apply the final IME inset through the listener above. Resizing the WebView
+    // on every animation frame repeatedly reflows the terminal and causes flicker.
     ViewCompat.requestApplyInsets(webView)
   }
 
@@ -69,7 +58,6 @@ class MainActivity : TauriActivity() {
   override fun onDestroy() {
     appWebView?.let { webView ->
       ViewCompat.setOnApplyWindowInsetsListener(webView, null)
-      ViewCompat.setWindowInsetsAnimationCallback(webView, null)
     }
     appWebView = null
     super.onDestroy()

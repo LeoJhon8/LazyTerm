@@ -127,6 +127,10 @@ lib\vncclient.lib
 
 ## FreeRDP 3
 
+文本剪贴板和动态分辨率要求 FreeRDP 启用以下 CMake 选项：
+`WITH_CHANNELS=ON`、`WITH_CLIENT_CHANNELS=ON`、`CHANNEL_CLIPRDR=ON`、`CHANNEL_CLIPRDR_CLIENT=ON`、`CHANNEL_DRDYNVC=ON`、`CHANNEL_DRDYNVC_CLIENT=ON`、`CHANNEL_DISP=ON`、`CHANNEL_DISP_CLIENT=ON`。
+仅有头文件和导入库能通过 `cargo check`，不能证明运行库包含这些通道。可检查安装目录中 `include\freerdp3\freerdp\config.h` 的对应宏；旧构建关闭通道时，必须重新构建、安装 FreeRDP 并同步发布运行库。发布工作流已显式开启这些选项。
+
 内嵌 RDP 默认 feature 为 `rdp-freerdp`。Windows 构建按以下顺序发现 FreeRDP：
 
 1. `FREERDP_INCLUDE_DIR` + `FREERDP_LIB_DIR`
@@ -195,6 +199,30 @@ cargo check --manifest-path .\src-tauri\Cargo.toml
 ```
 
 如果 `cargo check` 提示找不到原生库，先检查当前 PowerShell 中的环境变量和安装目录，不要通过修改业务代码绕过探测逻辑。
+
+## Android 编译检查（Windows）
+
+先安装 Android SDK、NDK、JDK 17 和 Rust 的 `aarch64-linux-android` target，并设置 `ANDROID_HOME`、`NDK_HOME` 和 `JAVA_HOME`。在项目根目录执行以下命令；环境变量仅影响当前 PowerShell，不打包 APK，也不运行测试。
+
+```powershell
+$androidToolchainBin = Join-Path $env:NDK_HOME 'toolchains\llvm\prebuilt\windows-x86_64\bin'
+$env:CC_aarch64_linux_android = Join-Path $androidToolchainBin 'clang.exe'
+$env:CFLAGS_aarch64_linux_android = '--target=aarch64-linux-android24'
+$env:AR_aarch64_linux_android = Join-Path $androidToolchainBin 'llvm-ar.exe'
+New-Item -ItemType Directory -Force -Path .\src-tauri\target\check-temp | Out-Null
+$env:TEMP = (Resolve-Path .\src-tauri\target\check-temp).Path
+$env:TMP = $env:TEMP
+cargo check --manifest-path .\src-tauri\Cargo.toml --target aarch64-linux-android --offline
+& .\node_modules\.bin\tsc.cmd -p tsconfig.app.json --noEmit
+Push-Location .\src-tauri\gen\android
+try {
+    .\gradlew.bat :app:compileArm64DebugKotlin --offline --console=plain
+} finally {
+    Pop-Location
+}
+```
+
+`--offline` 要求依赖已经缓存；首次使用可去掉它以下载依赖。Tauri 插件的编译过程需要更新 Cargo 缓存中 `android\.tauri\tauri-api` 的内容。如果受限环境出现 `failed to copy tauri-api` 和 `os error 183`，先确认进程能修改 Cargo 缓存；插件忽略旧目录删除失败后，会把权限问题表现为目录已存在。应在允许访问 Cargo、Gradle 缓存的环境执行检查，不需要修改依赖源码。NDK 临时文件出现 `Permission denied` 时，上述项目内临时目录可避免使用受限系统临时目录。
 
 ## 常见问题
 

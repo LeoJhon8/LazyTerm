@@ -31,7 +31,8 @@ const TMUX_SESSION_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 type TmuxCheckState =
   | { status: "idle" | "checking" }
   | { status: "available"; version?: string; sessions: SshTmuxSessionInfo[] }
-  | { status: "unavailable" | "failed" };
+  | { status: "unavailable" }
+  | { status: "failed"; error: string };
 
 function isSameSshTarget(left: TerminalSession, right: TerminalSession): boolean {
   const leftConfig = left.config?.sshConfig;
@@ -211,9 +212,9 @@ export function SshBackgroundModeDialog({
       } else {
         setTmuxCheck({ status: "unavailable" });
       }
-    }).catch(() => {
+    }).catch((error: unknown) => {
       if (sequence === checkSequence.current) {
-        setTmuxCheck({ status: "failed" });
+        setTmuxCheck({ status: "failed", error: getErrorMessage(error) });
       }
     });
     return () => {
@@ -466,7 +467,12 @@ export function SshBackgroundModeDialog({
                 <span>{t("当前服务器未检测到 tmux，只能保持当前 SSH 连接。")}</span>
               )}
               {tmuxCheck.status === "failed" && (
-                <span>{t("无法完成 tmux 检测，只能保持当前 SSH 连接。")}</span>
+                <span>
+                  {t("无法完成 tmux 检测，只能保持当前 SSH 连接。")}
+                  <span className="mt-2 block select-text whitespace-pre-wrap break-words font-mono text-xs">
+                    {tmuxCheck.error}
+                  </span>
+                </span>
               )}
             </span>
             )}

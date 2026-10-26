@@ -257,7 +257,9 @@ export function NativeRdpHostView({
 
     const disposeClose = connector.onClose(() => {
       if (!disposed) {
-        if (stateRef.current.state === "error") {
+        const latestState = connector.getLatestState();
+        if (latestState.state === "error") {
+          setState(latestState);
           return;
         }
 
@@ -267,9 +269,9 @@ export function NativeRdpHostView({
         setOverlayMode(hasConnectionHistory ? "disconnected" : "failed");
         setState({
           state: hasConnectionHistory ? "closed" : "error",
-          detail: hasConnectionHistory
+          detail: latestState.detail ?? (hasConnectionHistory
             ? t("Native RDP 原生宿主会话已断开。")
-            : (stateRef.current.detail ?? t("Windows 远程桌面连接未能建立。")),
+            : t("Windows 远程桌面连接未能建立。")),
         });
       }
     });
@@ -479,6 +481,7 @@ export function NativeRdpHostView({
     }
 
     const hasOverlay = blockingOverlayVisible
+      || state.authenticationWarningVisible
       || overlayMode !== "none"
       || connectionStatus?.phase !== "connected";
     if (hasOverlay) {
@@ -486,7 +489,7 @@ export function NativeRdpHostView({
     } else {
       void connector.setVisible(true);
     }
-  }, [connectionStatus?.phase, hostRectMounted, isVisible, blockingOverlayVisible, overlayMode, connector]);
+  }, [connectionStatus?.phase, hostRectMounted, isVisible, blockingOverlayVisible, state.authenticationWarningVisible, overlayMode, connector]);
 
   useEffect(() => {
     if (isVisible) {
@@ -638,6 +641,12 @@ export function NativeRdpHostView({
           onReconnect={handleReconnect}
         />
       ) : null}
+
+      {state.authenticationWarningVisible && (
+        <div role="status" aria-live="polite" className="pointer-events-none absolute inset-x-4 bottom-4 z-40 rounded-lg border border-border bg-background px-4 py-3 text-sm shadow-lg">
+          {t("请在 Windows 原生认证弹窗中确认后继续连接。")}
+        </div>
+      )}
 
     </main>
   );

@@ -439,6 +439,7 @@ fn main() {
 
     println!("cargo:rerun-if-changed=src/protocol/vnc_ffi/wrapper.c");
     println!("cargo:rerun-if-changed=src/protocol/freerdp_ffi/wrapper.c");
+    println!("cargo:rerun-if-changed=src/protocol/freerdp_ffi/extensions.h");
     for variable in [
         "FREERDP_ROOT",
         "FREERDP_INCLUDE_DIR",

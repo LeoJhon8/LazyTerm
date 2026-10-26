@@ -9,7 +9,7 @@ import { IS_ANDROID } from "@/lib/platform";
 export const GITHUB_RELEASES_API_URL =
   "https://api.github.com/repos/LeoJhon8/LazyTerm/releases/latest";
 
-/** Gitee 更新页：GitHub 不可用时回退。 */
+/** Gitee 更新页：与 GitHub 比较版本，选择较新的可用安装包。 */
 export const GITEE_UPDATE_SERVER_URL =
   "https://gitee.com/LeoJohn8/LazyTerm/releases/";
 
@@ -31,7 +31,7 @@ export const IS_UPDATE_SUPPORTED = IS_ANDROID || IS_MAC || IS_WINDOWS;
 export const GITEE_INSTALLER_REGEX = IS_MAC
   ? /href="([^"]*LazyTerm[_-]?v?(\d+\.\d+\.\d+)[^"]*\.dmg)"/gi
   : IS_ANDROID
-    ? /href="([^"]*LazyTerm[_-]?v?(\d+\.\d+\.\d+)[^"]*\.apk)"/gi
+    ? /href="([^"]*LazyTerm[_-]?(?:Android[_-])?v?(\d+\.\d+\.\d+)[^"]*\.apk)"/gi
     : /href="([^"]*LazyTerm[_-]?v?(\d+\.\d+\.\d+)[^"]*\.exe)"/gi;
 
 /** GitHub Release 资产扩展名。 */

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { logger } from "@/lib/logger";
 import { useTabsStore } from "@/store/tabs";
 import { NativeRdpHostView } from "@/components/terminal/NativeRdpHostView";
-import type { INativeRdpConnector, IRdpConnector, RdpFramePayload } from "@/types/terminal";
+import type { INativeRdpConnector, IRdpConnector, RdpFramePayload, RdpAction } from "@/types/terminal";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   type BaseSessionViewProps,
   VIEW_CONTAINER_CLASSNAME,
@@ -80,6 +81,44 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   const [visibleScrollbars, setVisibleScrollbars] = useState({ horizontal: false, vertical: false });
   const [draggingScrollbar, setDraggingScrollbar] = useState<"horizontal" | "vertical" | null>(null);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const composingRef = useRef(false);
+  const committedCompositionRef = useRef<string | null>(null);
+  const suppressedKeysRef = useRef(new Set<string>());
+  const [cursorStyle, setCursorStyle] = useState("default");
+  const [inputError, setInputError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCursorStyle("default");
+    setInputError(null);
+    if (!canvasConnector) return;
+    return canvasConnector.onEvent((event) => {
+      if (event.kind === "warning") {
+        setInputError(event.message);
+      } else if (event.kind === "clipboard") {
+        // Only the focused desktop may replace the shared system clipboard.
+        if (!isVisible || !document.hasFocus() || !containerRef.current?.contains(document.activeElement)) return;
+        void writeText(event.text).catch((error) => setInputError(String(error)));
+      } else if (event.mode !== "image") {
+        setCursorStyle(event.mode === "hidden" ? "none" : "default");
+      } else if (event.width > 0 && event.height > 0 && event.width <= 384 && event.height <= 384
+        && event.rgba.length === event.width * event.height * 4) {
+        const source = document.createElement("canvas");
+        source.width = event.width;
+        source.height = event.height;
+        source.getContext("2d")?.putImageData(new ImageData(new Uint8ClampedArray(event.rgba), event.width, event.height), 0, 0);
+        // WebView cursors are limited to 128 pixels on Chromium.
+        const scale = Math.min(1, 128 / Math.max(event.width, event.height));
+        const cursor = document.createElement("canvas");
+        cursor.width = Math.max(1, Math.floor(event.width * scale));
+        cursor.height = Math.max(1, Math.floor(event.height * scale));
+        cursor.getContext("2d")?.drawImage(source, 0, 0, cursor.width, cursor.height);
+        const x = Math.min(cursor.width - 1, Math.max(0, Math.floor(event.x * scale)));
+        const y = Math.min(cursor.height - 1, Math.max(0, Math.floor(event.y * scale)));
+        setCursorStyle(`url(${cursor.toDataURL("image/png")}) ${x} ${y}, default`);
+      }
+    });
+  }, [canvasConnector, isVisible, containerRef]);
 
   useEffect(() => {
     notifyVisualReadyRef.current = notifyVisualReady;
@@ -99,9 +138,13 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
     };
 
     publishInitialViewport();
-    const observer = new ResizeObserver(publishInitialViewport);
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(publishInitialViewport, 200);
+    });
     observer.observe(container);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); clearTimeout(resizeTimer); };
   }, [canvasConnector, containerRef]);
 
   useLayoutEffect(() => {
@@ -473,13 +516,54 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
   };
 
   const handleKey = (event: React.KeyboardEvent<HTMLDivElement>, down: boolean) => {
+    if (event.nativeEvent.isComposing || composingRef.current || event.keyCode === 229) return;
+    if (down) committedCompositionRef.current = null;
+    if (!down && suppressedKeysRef.current.delete(event.code)) {
+      event.preventDefault();
+      return;
+    }
+    if (event.code === "Pause") {
+      event.preventDefault();
+      if (down && !event.repeat) runAction({ kind: "pause" });
+      return;
+    }
+    if (down && ((event.code === "KeyV" && (event.ctrlKey || event.metaKey) && !event.altKey)
+      || (event.code === "Insert" && event.shiftKey && !event.ctrlKey))) {
+      event.preventDefault();
+      if (!event.repeat) {
+        suppressedKeysRef.current.add(event.code);
+        pasteClipboard();
+      }
+      return;
+    }
     const scancode = getRdpScancode(event);
     if (!scancode) {
       return;
     }
 
     event.preventDefault();
-    canvasConnector.sendKey({ scancode, down });
+    // Sync before keypad input, and after NumLock is released so its keydown
+    // does not toggle the newly synchronized remote state a second time.
+    const syncKeyboard = (down && event.code.startsWith("Numpad"))
+      || (!down && event.code === "NumLock");
+    const keyboardSyncFlags = syncKeyboard
+      ? (event.getModifierState("ScrollLock") ? 0x01 : 0)
+        | (event.getModifierState("NumLock") ? 0x02 : 0)
+        | (event.getModifierState("CapsLock") ? 0x04 : 0)
+        | (event.nativeEvent.getModifierState("KanaMode") ? 0x08 : 0)
+      : undefined;
+    canvasConnector.sendKey({ scancode, down, keyboardSyncFlags });
+  };
+
+  const runAction = (action: RdpAction) => {
+    setInputError(null);
+    void canvasConnector.sendAction(action).catch((error) => setInputError(String(error)));
+  };
+
+  const pasteClipboard = () => {
+    canvasConnector.releaseInputs();
+    void readText().then((text) => canvasConnector.sendAction({ kind: "paste", text }))
+      .catch((error) => setInputError(String(error)));
   };
 
   // 渲染内容
@@ -500,20 +584,68 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
         ref={containerRef}
         className="no-scrollbar relative h-full w-full overflow-auto outline-none"
         tabIndex={0}
-        onClick={(event) => event.currentTarget.focus()}
+        onClick={(event) => {
+          const input = inputRef.current;
+          if (input) {
+            input.style.left = `${event.clientX}px`;
+            input.style.top = `${event.clientY}px`;
+            input.focus({ preventScroll: true });
+          }
+        }}
         onMouseMove={(event) => handlePointer(event, "move")}
         onMouseDown={(event) => handlePointer(event, "down")}
         onMouseUp={(event) => handlePointer(event, "up")}
         onWheel={handleWheel}
         onKeyDown={(event) => handleKey(event, true)}
         onKeyUp={(event) => handleKey(event, false)}
-        onBlur={() => canvasConnector.releaseInputs()}
+        onFocus={(event) => {
+          if (event.target === event.currentTarget) inputRef.current?.focus({ preventScroll: true });
+        }}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            canvasConnector.releaseInputs();
+            suppressedKeysRef.current.clear();
+            composingRef.current = false;
+          }
+        }}
+        onPaste={(event) => {
+          event.preventDefault();
+          runAction({ kind: "paste", text: event.clipboardData.getData("text/plain") });
+        }}
       >
+        <textarea
+          ref={inputRef}
+          aria-label={t("远程桌面输入")}
+          className="fixed h-px w-px resize-none overflow-hidden border-0 p-0 opacity-0 outline-none"
+          style={{ left: 0, top: 0 }}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          onCompositionStart={() => {
+            composingRef.current = true;
+            committedCompositionRef.current = null;
+            canvasConnector.releaseInputs();
+          }}
+          onCompositionEnd={(event) => {
+            composingRef.current = false;
+            committedCompositionRef.current = event.data;
+            if (event.data) runAction({ kind: "text", text: event.data });
+            event.currentTarget.value = "";
+          }}
+          onInput={(event) => {
+            if (composingRef.current || (event.nativeEvent as InputEvent).isComposing) return;
+            const text = event.currentTarget.value;
+            if (text && text !== committedCompositionRef.current) runAction({ kind: "text", text });
+            committedCompositionRef.current = null;
+            event.currentTarget.value = "";
+          }}
+        />
         <div className="flex h-max min-h-full w-max min-w-full items-center justify-center">
           <canvas
             ref={canvasRef}
             className={frameSize ? "block shrink-0 select-none" : HIDDEN_CLASSNAME}
-            style={frameSize ? { width: frameSize.width, height: frameSize.height } : undefined}
+            style={frameSize ? { width: frameSize.width, height: frameSize.height, cursor: cursorStyle } : undefined}
           />
         </div>
       </div>
@@ -532,6 +664,32 @@ export function RemoteDesktopViewClass(props: BaseSessionViewProps) {
           }
         }}
       />
+
+      <details className="absolute right-3 top-3 z-20 rounded border border-border bg-background/95 text-xs shadow">
+        <summary className="cursor-pointer px-3 py-2">{t("RDP 工具")}</summary>
+        <div className="flex min-w-40 flex-col p-1">
+          {[
+            { label: "Ctrl+Alt+Del", scancodes: [0x1d, 0x38, 0xe053] },
+            { label: "Ctrl+Alt+End", scancodes: [0x1d, 0x38, 0xe04f] },
+            { label: "Alt+Tab", scancodes: [0x38, 0x0f] },
+            { label: "Alt+F4", scancodes: [0x38, 0x3e] },
+            { label: "Win", scancodes: [0xe05b] },
+            { label: "Win+R", scancodes: [0xe05b, 0x13] },
+            { label: "PrintScreen", scancodes: [0xe037] },
+          ].map(({ label, scancodes }) => (
+            <button key={label} type="button" className="rounded px-3 py-2 text-left hover:bg-muted"
+              onClick={() => { runAction({ kind: "keys", scancodes }); inputRef.current?.focus({ preventScroll: true }); }}>
+              {label}
+            </button>
+          ))}
+          <button type="button" className="rounded px-3 py-2 text-left hover:bg-muted" onClick={() => runAction({ kind: "pause" })}>Pause</button>
+          <button type="button" className="rounded px-3 py-2 text-left hover:bg-muted" onClick={pasteClipboard}>{t("粘贴剪贴板")}</button>
+        </div>
+      </details>
+      {inputError && <div role="alert" className="absolute bottom-3 left-3 right-3 z-20 rounded bg-destructive p-2 text-xs text-white">
+        {t("RDP 操作失败")}: {inputError}
+        <button type="button" className="ml-3 underline" onClick={() => setInputError(null)}>{t("关闭")}</button>
+      </div>}
 
       <ConnectionStatusOverlay
         status={activeSession.connectionStatus}
