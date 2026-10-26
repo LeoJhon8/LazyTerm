@@ -21,6 +21,7 @@
 #include <freerdp/update.h>
 #include <winpr/crt.h>
 #include <winpr/synch.h>
+#include <winpr/sysinfo.h>
 #include <winpr/wtypes.h>
 
 #include <inttypes.h>
