@@ -1,14 +1,16 @@
-## 26.102.9155 更新 / Changes
+## 26.112.285 更新 / Changes
 
 - 支持给 tmux 会话添加本地标签，在恢复列表和已连接会话对应的标签页上悬停查看。
 - 支持保存和切换多套 AI 配置。AI 可按所选权限在本地或 SSH 终端执行命令，用户可以查看进度、确认命令或停止接管。
 - 改进 Windows 原生 RDP 的连接状态、窗口定位和侧栏拖动。认证失败后可使用仅限当前会话的新凭据重试。
 - Windows x64 安装包随附 Visual C++ 运行库。新增面向开发和演示的独立 Demo 构建，可模拟本地终端、SSH 和 SFTP。
+- 修复 Android 签名 APK 发布构建中的 Gradle 与 JDK 兼容问题。
 
 - Add local tags to tmux sessions and view them by hovering over a session in the restore list or an attached session's tab.
 - Save and switch between AI profiles. AI can run commands in local or SSH terminals according to the selected permissions, with progress, command approval, and stop controls.
 - Improve native Windows RDP connection status, positioning, and sidebar resizing. Retry authentication with credentials that apply only to the current session.
 - Bundle the Visual C++ runtime with Windows x64 installers. A separate Demo build for development and demonstrations simulates local terminals, SSH, and SFTP.
+- Fix the Gradle and JDK incompatibility that blocked signed Android APK builds.
 
 ## 下载 / Downloads
 
