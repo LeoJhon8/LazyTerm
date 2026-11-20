@@ -1,8 +1,9 @@
 import { HoverTooltip } from "@/components/ui/tooltip";
 import { useEffect, useRef, useState } from "react";
-import { History, LoaderCircle, Plus, Radio, Server, Trash2 } from "lucide-react";
+import { History, LoaderCircle, Plus, Radio, Server, Tag, Trash2 } from "lucide-react";
 import type { MouseEvent } from "react";
 
+import { TmuxSessionTagsDialog } from "@/components/dialogs/TmuxSessionTagsDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ContextMenuItem, ContextMenuLabel } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
@@ -21,6 +23,14 @@ import { IS_SSH_BACKGROUND_MODE_SUPPORTED } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { useTabsStore, type TerminalSession } from "@/store/tabs";
 import { useSettingsStore } from "@/store/settings";
+import {
+  getConnectedTmuxTagTarget,
+  getTmuxSessionTagsKey,
+  isConnectedTmuxSession,
+  loadConnectedTmuxTagTarget,
+  useTmuxSessionTagsStore,
+  type TmuxSessionTagTarget,
+} from "@/store/tmux-session-tags";
 import { getErrorMessage } from "@/lib/errorUtils";
 import type { SshTmuxSessionInfo } from "@/types/terminal";
 
@@ -73,12 +83,14 @@ interface SshBackgroundModeMenuItemProps {
   sessionId: string;
   onRequestEnable: (sessionId: string) => void;
   onRequestEndTmux: (sessionId: string) => void;
+  onRequestEditTags: (sessionId: string) => void;
 }
 
 export function SshBackgroundModeMenuItem({
   sessionId,
   onRequestEnable,
   onRequestEndTmux,
+  onRequestEditTags,
 }: SshBackgroundModeMenuItemProps) {
   const { t } = useI18n();
   const session = useTabsStore((state) =>
@@ -143,6 +155,16 @@ export function SshBackgroundModeMenuItem({
               {t("后台模式已关闭，当前终端仍在 tmux 中，远端任务继续运行。")}
             </ContextMenuLabel>
           )}
+          {session.sshTmuxSessionName && connector.checkTmuxCapability && (
+            <ContextMenuItem
+              className="py-1 text-xs"
+              disabled={!connected}
+              onSelect={() => onRequestEditTags(session.id)}
+            >
+              <Tag className="mr-2 h-3.5 w-3.5" />
+              {t("编辑 tmux 会话标签")}
+            </ContextMenuItem>
+          )}
           <ContextMenuItem
             className="py-1 text-xs text-destructive focus:text-destructive"
             disabled={!connected}
@@ -173,11 +195,13 @@ export function SshBackgroundModeDialog({
   const sessions = useTabsStore((state) => state.sessions);
   const updateSession = useTabsStore((state) => state.updateSession);
   const reconnectSession = useTabsStore((state) => state.reconnectSession);
+  const tagsBySession = useTmuxSessionTagsStore((state) => state.tagsBySession);
   const [tmuxCheck, setTmuxCheck] = useState<TmuxCheckState>({ status: "idle" });
   const [tmuxSelected, setTmuxSelected] = useState(false);
   const [tmuxChoice, setTmuxChoice] = useState<string | null>(NEW_TMUX_SESSION);
   const [newTmuxSessionName, setNewTmuxSessionName] = useState("");
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [tagTarget, setTagTarget] = useState<TmuxSessionTagTarget | null>(null);
   const checkSequence = useRef(0);
 
   const session = sessionId
@@ -196,6 +220,7 @@ export function SshBackgroundModeDialog({
     setTmuxChoice(NEW_TMUX_SESSION);
     setNewTmuxSessionName("");
     setSelectionError(null);
+    setTagTarget(null);
 
     if (!open || tmuxActive || !connector?.isConnected) {
       return;
@@ -225,6 +250,8 @@ export function SshBackgroundModeDialog({
   if (!IS_SSH_BACKGROUND_MODE_SUPPORTED || !session || !connector) {
     return null;
   }
+
+  const sshConfig = session.config?.sshConfig;
 
   const enableForSession = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -396,54 +423,74 @@ export function SshBackgroundModeDialog({
                             const hasAttachedClients = tmuxSession.attachedClients > 0;
                             const attachedClientsBlocked = hasAttachedClients && !detachOtherClients;
                             const unavailable = usedByAnotherTab || attachedClientsBlocked;
+                            const tagKey = sshConfig ? getTmuxSessionTagsKey(sshConfig, tmuxSession) : undefined;
+                            const tags = tagKey ? tagsBySession[tagKey] : undefined;
+                            const tagSummary = tags?.length ? t("标签：{tags}", { tags: tags.join(" · ") }) : undefined;
+                            const tagAction = tags?.length ? t("编辑标签") : t("添加标签");
                             return (
-                              <label
+                              <span
                                 key={tmuxSession.name}
-                                className={cn(
-                                  "flex items-start gap-2 rounded-md border border-border/70 bg-background/60 p-2.5",
-                                  unavailable
-                                    ? "cursor-not-allowed opacity-55"
-                                    : "cursor-pointer hover:bg-accent/40",
-                                )}
+                                className="flex items-start gap-1 rounded-md border border-border/70 bg-background/60"
                               >
-                                <input
-                                  type="radio"
-                                  name={`tmux-session-${session.id}`}
-                                  className="mt-1 accent-primary"
-                                  checked={tmuxChoice === tmuxSession.name}
-                                  disabled={unavailable}
-                                  onChange={() => {
-                                    setTmuxChoice(tmuxSession.name);
-                                    setSelectionError(null);
-                                  }}
-                                />
-                                <History className="mt-0.5 h-4 w-4 shrink-0 text-sky-500" />
-                                <span className="min-w-0">
-                                  <span className="block truncate font-mono text-xs font-medium text-foreground">
-                                    {tmuxSession.name}
-                                  </span>
-                                  <span className="block text-xs text-muted-foreground">
-                                    {t("上次活动 {time} · {windows} 个窗口 · {clients} 个已附着客户端", {
-                                      time: formatTmuxTimestamp(
-                                        tmuxSession.lastActivityAt || tmuxSession.createdAt,
-                                        locale,
-                                      ),
-                                      windows: tmuxSession.windows,
-                                      clients: tmuxSession.attachedClients,
-                                    })}
-                                  </span>
-                                  {usedByAnotherTab && (
-                                    <span className="block text-xs text-amber-600 dark:text-amber-400">
-                                      {t("此会话已被另一个 LazyTerm 标签页使用")}
+                                <HoverTooltip content={tagSummary}>
+                                  <label className={cn(
+                                    "flex min-w-0 flex-1 items-start gap-2 rounded-md p-2.5",
+                                    unavailable ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:bg-accent/40",
+                                  )}>
+                                    <input
+                                      type="radio"
+                                      name={`tmux-session-${session.id}`}
+                                      className="mt-1 accent-primary"
+                                      checked={tmuxChoice === tmuxSession.name}
+                                      disabled={unavailable}
+                                      onChange={() => {
+                                        setTmuxChoice(tmuxSession.name);
+                                        setSelectionError(null);
+                                      }}
+                                    />
+                                    <History className="mt-0.5 h-4 w-4 shrink-0 text-sky-500" />
+                                    <span className="min-w-0">
+                                      <span className="block truncate font-mono text-xs font-medium text-foreground">
+                                        {tmuxSession.name}
+                                      </span>
+                                      <span className="block text-xs text-muted-foreground">
+                                        {t("上次活动 {time} · {windows} 个窗口 · {clients} 个已附着客户端", {
+                                          time: formatTmuxTimestamp(
+                                            tmuxSession.lastActivityAt || tmuxSession.createdAt,
+                                            locale,
+                                          ),
+                                          windows: tmuxSession.windows,
+                                          clients: tmuxSession.attachedClients,
+                                        })}
+                                      </span>
+                                      {usedByAnotherTab && (
+                                        <span className="block text-xs text-amber-600 dark:text-amber-400">
+                                          {t("此会话已被另一个 LazyTerm 标签页使用")}
+                                        </span>
+                                      )}
+                                      {!usedByAnotherTab && attachedClientsBlocked && (
+                                        <span className="block text-xs text-amber-600 dark:text-amber-400">
+                                          {t("此会话已有客户端附着，暂不可恢复")}
+                                        </span>
+                                      )}
                                     </span>
-                                  )}
-                                  {!usedByAnotherTab && attachedClientsBlocked && (
-                                    <span className="block text-xs text-amber-600 dark:text-amber-400">
-                                      {t("此会话已有客户端附着，暂不可恢复")}
-                                    </span>
-                                  )}
-                                </span>
-                              </label>
+                                  </label>
+                                </HoverTooltip>
+                                {tagKey && (
+                                  <HoverTooltip content={tagSummary ? `${tagAction}\n${tagSummary}` : tagAction}>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon-xs"
+                                      className="mr-1.5 mt-1.5 shrink-0 text-muted-foreground"
+                                      aria-label={`${tagAction} (${tmuxSession.name})`}
+                                      onClick={() => setTagTarget({ key: tagKey, name: tmuxSession.name })}
+                                    >
+                                      <Tag />
+                                    </Button>
+                                  </HoverTooltip>
+                                )}
+                              </span>
                             );
                           })}
                         </span>
@@ -489,9 +536,36 @@ export function SshBackgroundModeDialog({
               : t("了解风险并为当前会话开启")}
           </AlertDialogAction>
         </AlertDialogFooter>
+        {open && tagTarget && <TmuxSessionTagsDialog target={tagTarget} onClose={() => setTagTarget(null)} />}
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+export function SshActiveTmuxTagsDialog({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+  const session = useTabsStore((state) => state.sessions.find((candidate) => candidate.id === sessionId));
+  const connector = session?.connector?.protocol === "ssh" ? session.connector : undefined;
+  const name = session?.sshTmuxSessionName;
+  const target = session ? getConnectedTmuxTagTarget(session) : null;
+  const canCheck = Boolean(session && isConnectedTmuxSession(session) && connector?.checkTmuxCapability && name);
+  const [completedLookup, setCompletedLookup] = useState<{
+    connector: typeof connector;
+    name: typeof name;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!canCheck) return;
+
+    let cancelled = false;
+    void loadConnectedTmuxTagTarget(sessionId).then(() => {
+      if (!cancelled) setCompletedLookup({ connector, name });
+    });
+
+    return () => { cancelled = true; };
+  }, [canCheck, connector, name, sessionId]);
+
+  const loading = canCheck && !target && !(completedLookup?.connector === connector && completedLookup?.name === name);
+  return <TmuxSessionTagsDialog target={target} loading={loading} onClose={onClose} />;
 }
 
 interface SshEndTmuxSessionDialogProps {

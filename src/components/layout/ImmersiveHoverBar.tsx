@@ -1,14 +1,17 @@
-import { HoverTooltip } from "@/components/ui/tooltip";
+import { HoverTooltip, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MoodButton } from "@/components/layout/MoodButton";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AnimatePresence, motion } from "framer-motion";
 import { Copy, Maximize2, Minus, Settings, Square, X } from "lucide-react";
-import { useTabsStore } from "@/store/tabs";
+import { useTabsStore, type TerminalSession } from "@/store/tabs";
+import { usePanesStore } from "@/store/panes";
 import { useSettingsStore } from "@/store/settings";
 import { useSettingsDialogStore } from "@/store/settings-dialog";
 import { useI18n } from "@/i18n";
 import { useViewMode } from "@/hooks/useViewMode";
+import { useTmuxTabTags } from "@/hooks/useTmuxTabTags";
+import { getAllLeaves } from "@/lib/pane-utils";
 import { cn } from "@/lib/utils";
 
 const appWindow = getCurrentWindow();
@@ -17,6 +20,39 @@ const appWindow = getCurrentWindow();
 const TRIGGER_ZONE_PX = 4;
 const TITLE_BAR_HEIGHT_PX = 36;
 const TAB_STRIP_HEIGHT_PX = 32;
+
+function ImmersiveTab({ title, active, sessions, onClick }: {
+  title: string;
+  active: boolean;
+  sessions: TerminalSession[];
+  onClick: () => void;
+}) {
+  const { lines, loadTags, hasConnectedTmux } = useTmuxTabTags(sessions);
+  const button = (
+    <button
+      className={cn(
+        "max-w-32 truncate rounded-md px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+        active ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+      )}
+      onClick={onClick}
+      onPointerEnter={loadTags}
+      onFocus={loadTags}
+    >
+      {title}
+    </button>
+  );
+
+  if (!hasConnectedTmux) return button;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="bottom" className="z-[10000]">
+        {[title, ...lines].join("\n")}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 /**
  * 沉浸模式悬浮标题栏 + 标签条
@@ -28,6 +64,7 @@ export function ImmersiveHoverBar() {
   const { t } = useI18n();
   const { immersiveHoverBarDelay, immersiveShowTabStrip } = useSettingsStore();
   const { focusSessionId, sessions, tabs, activeTabId, setActiveTabId } = useTabsStore();
+  const workspaces = usePanesStore((state) => state.workspaces);
   const openSettings = useSettingsDialogStore((s) => s.openSettings);
   const { setViewMode } = useViewMode();
 
@@ -206,20 +243,21 @@ export function ImmersiveHoverBar() {
                 "bg-background/75 border-b border-border/30 backdrop-blur-xl",
               )}
             >
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  className={cn(
-                    "max-w-32 truncate rounded-md px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-                    tab.id === activeTabId
-                      ? "bg-primary/15 text-foreground"
-                      : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
-                  )}
-                  onClick={() => handleTabClick(tab.id)}
-                >
-                  {tab.title}
-                </button>
-              ))}
+              {tabs.map((tab) => {
+                const tabSessions = getAllLeaves(workspaces[tab.id]?.rootNode ?? null)
+                  .map((leaf) => sessions.find((session) => session.id === leaf.sessionId))
+                  .filter((session): session is TerminalSession => session !== undefined);
+
+                return (
+                  <ImmersiveTab
+                    key={tab.id}
+                    title={tab.title}
+                    active={tab.id === activeTabId}
+                    sessions={tabSessions}
+                    onClick={() => handleTabClick(tab.id)}
+                  />
+                );
+              })}
             </div>
           )}
 

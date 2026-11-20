@@ -74,6 +74,8 @@ export interface TerminalSession {
   sshTmuxPersistenceActive?: boolean;
   /** 同一标签重连时复用的远端 tmux 会话名。 */
   sshTmuxSessionName?: string;
+  /** 当前连接的远端 tmux 创建时间，用于区分同名重建的会话。 */
+  sshTmuxSessionCreatedAt?: number;
 }
 
 // SessionConnectionError 类型从 connectionErrorService 导入
@@ -306,7 +308,7 @@ export const useTabsStore = create<TabsState>()(
           sessions: state.sessions.map((session) => session.id === sessionId ? {
             ...session,
             connector: newConnector,
-            ...(session.type === "ssh" ? { sshTmuxPersistenceActive: false } : {}),
+            ...(session.type === "ssh" ? { sshTmuxPersistenceActive: false, sshTmuxSessionCreatedAt: undefined } : {}),
             connectionStatus: {
               ...session.connectionStatus,
               phase: "reconnecting",

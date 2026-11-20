@@ -1,6 +1,7 @@
 import { HoverTooltip } from "@/components/ui/tooltip";
 import { useTabsStore, type TerminalSession } from "@/store/tabs";
 import { usePanesStore } from "@/store/panes";
+import { useTmuxTabTags } from "@/hooks/useTmuxTabTags";
 import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +73,7 @@ import {
   SshBackgroundModeDialog,
   SshBackgroundModeMenuItem,
   SshEndTmuxSessionDialog,
+  SshActiveTmuxTagsDialog,
 } from "@/components/layout/SshBackgroundModeControl";
 import { IS_ANDROID } from "@/lib/platform";
 import { emitQuickConnect } from "@/lib/quick-connect-event";
@@ -159,6 +161,7 @@ function SortableTab({
   tmuxPersistenceEnabled,
   tmuxPersistenceActive,
   tmuxSessionName,
+  tabSessions,
   connectionPhase,
   onSwitch,
   onClose,
@@ -172,6 +175,7 @@ function SortableTab({
   onSftpDownload,
   onRequestSshBackgroundEnable,
   onRequestSshEndTmux,
+  onRequestSshTmuxTags,
 }: {
   id: string;
   title: string;
@@ -186,6 +190,7 @@ function SortableTab({
   tmuxPersistenceEnabled?: boolean;
   tmuxPersistenceActive?: boolean;
   tmuxSessionName?: string;
+  tabSessions: TerminalSession[];
   connectionPhase?: SessionConnectionPhase;
   onSwitch: (id: string) => void;
   onClose: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
@@ -199,9 +204,11 @@ function SortableTab({
   onSftpDownload: (sessionId: string) => void;
   onRequestSshBackgroundEnable: (sessionId: string) => void;
   onRequestSshEndTmux: (sessionId: string) => void;
+  onRequestSshTmuxTags: (sessionId: string) => void;
   isSplit?: boolean;
 }) {
   const { t } = useI18n();
+  const { lines: tmuxTagLines, loadTags } = useTmuxTabTags(tabSessions);
   const {
     attributes,
     listeners,
@@ -261,7 +268,7 @@ function SortableTab({
         ? t("后台模式已开启")
         : null;
   const tmuxSessionStatus = tmuxSessionName ? `tmux: ${tmuxSessionName}` : null;
-  const tabTooltip = [title, backgroundStatus, tmuxSessionStatus].filter(Boolean).join("\n");
+  const tabTooltip = [title, backgroundStatus, tmuxSessionStatus, ...tmuxTagLines].filter(Boolean).join("\n");
 
   return (
     <div
@@ -291,6 +298,8 @@ function SortableTab({
               aria-current={active ? "page" : undefined}
               onClick={() => onSwitch(id)}
               onKeyUp={handleKeyUp}
+              onPointerEnter={loadTags}
+              onFocus={loadTags}
               {...attributes}
               {...listeners}
               onPointerDownCapture={handleContextMenuPointerDownCapture}
@@ -349,6 +358,7 @@ function SortableTab({
               sessionId={sessionId}
               onRequestEnable={onRequestSshBackgroundEnable}
               onRequestEndTmux={onRequestSshEndTmux}
+              onRequestEditTags={onRequestSshTmuxTags}
             />
           ) : null}
           <ContextMenuItem className="py-1 text-xs" disabled={!canDuplicate} onClick={() => onDuplicate(id)}>
@@ -420,6 +430,7 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
   const [templateWorkspaceId, setTemplateWorkspaceId] = useState<string | null>(null);
   const [sshBackgroundSessionId, setSshBackgroundSessionId] = useState<string | null>(null);
   const [sshEndTmuxSessionId, setSshEndTmuxSessionId] = useState<string | null>(null);
+  const [sshTmuxTagsSessionId, setSshTmuxTagsSessionId] = useState<string | null>(null);
   const [sftpDialog, setSftpDialog] = useState<SftpDialogState | null>(null);
 
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -1050,6 +1061,7 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
                     tmuxPersistenceEnabled={tmuxPersistenceEnabled}
                     tmuxPersistenceActive={tmuxPersistenceActive}
                     tmuxSessionName={tmuxSessionName}
+                    tabSessions={tabSessions}
                     connectionPhase={connectionPhase}
                     onSwitch={handleTabSwitch}
                     onClose={handleCloseTab}
@@ -1063,6 +1075,7 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
                     onSftpDownload={(sessionId) => openSftpDialog("download", sessionId)}
                     onRequestSshBackgroundEnable={setSshBackgroundSessionId}
                     onRequestSshEndTmux={setSshEndTmuxSessionId}
+                    onRequestSshTmuxTags={setSshTmuxTagsSessionId}
                   />
                 );
               })}
@@ -1120,6 +1133,14 @@ export function TabBar({ onTabActivate }: TabBarProps = {}) {
         open={sshEndTmuxSessionId !== null}
         onOpenChange={handleSshEndTmuxDialogChange}
       />
+
+      {sshTmuxTagsSessionId && (
+        <SshActiveTmuxTagsDialog
+          key={sshTmuxTagsSessionId}
+          sessionId={sshTmuxTagsSessionId}
+          onClose={() => setSshTmuxTagsSessionId(null)}
+        />
+      )}
 
       <SftpUploadDialog
         open={sftpDialog?.type === "upload"}
