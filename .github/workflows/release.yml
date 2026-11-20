@@ -297,6 +297,13 @@ jobs:
         with:
           targets: aarch64-linux-android
 
+      # Gradle 8.13 cannot run with the runner's Java 25 default.
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
