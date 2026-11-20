@@ -1,3 +1,4 @@
+import { appStorage } from '@/services/appStorage';
 import { useEffect, useLayoutEffect, useState } from "react";
 import { DEFAULT_APP_COLOR_PALETTE, useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
@@ -230,7 +231,7 @@ function App() {
   const bh = isImmersive ? 0 : effectiveBottomRowHeight;
 
   useLayoutEffect(() => {
-    windowResizeCoordinator.requestLayout();
+    windowResizeCoordinator.requestLayout("sidebar");
   }, [openLeftPanelWidth, openRightPanelWidth]);
 
   useEffect(() => {
@@ -271,7 +272,7 @@ function App() {
 
   // 清理旧版本遗留的持久化数据（tabs/sessions 不再持久化）
   useEffect(() => {
-    localStorage.removeItem("lazy-term-sessions");
+    appStorage.removeItem("lazy-term-sessions");
   }, []);
 
   useEffect(() => {

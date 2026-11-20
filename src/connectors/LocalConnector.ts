@@ -2,6 +2,7 @@ import type { ConnectionStateEvent, ITerminalConnector, LocalConfig } from "@/ty
 import { ConnectionStateEmitter } from "./ConnectionStateEmitter";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
+import { notifyAiTerminalInput } from "@/services/aiTerminalBridge";
 import { invokeTauri, invokeTauriBackground, invokeTauriSerialized } from "@/services/tauri";
 
 export class LocalConnector implements ITerminalConnector {
@@ -103,7 +104,8 @@ export class LocalConnector implements ITerminalConnector {
     logger.info("FE/connector/local/startup-command", "本地终端启动命令已发送");
   }
 
-  write(data: string | Uint8Array): void {
+  write(data: string | Uint8Array, source?: "ai"): void {
+    if (source !== "ai") notifyAiTerminalInput(this, data);
     if (!this.sessionId) return;
     
     const sessionId = this.sessionId;

@@ -68,3 +68,17 @@ internal interface IMsRdpClientNonScriptable2
     void SetUIParentWindowHandle(IntPtr parent);
     IntPtr GetUIParentWindowHandle();
 }
+
+// IUnknown vtable: 50 inherited slots (10 + 2 + 2 + 20 + 16),
+// then 10 IMsRdpClientNonScriptable5 slots before AllowPromptingForCredentials.
+// This property is not available through IDispatch.
+[ComImport]
+[Guid("4F6996D5-D7B1-412C-B0FF-063718566907")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMsRdpClientNonScriptable5
+{
+    void _VtblGap1_60();
+    void SetAllowPromptingForCredentials([MarshalAs(UnmanagedType.VariantBool)] bool allow);
+    [return: MarshalAs(UnmanagedType.VariantBool)]
+    bool GetAllowPromptingForCredentials();
+}

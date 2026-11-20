@@ -1,3 +1,4 @@
+import { appStorage } from '@/services/appStorage';
 /**
  * Git 目录感知的 Zustand 持久化存储适配器
  * 
@@ -37,7 +38,7 @@ function normalizePath(path: string): string {
  */
 function getGitRepoPath(): string | null {
   try {
-    const raw = localStorage.getItem("lazy-term-git-sync");
+    const raw = appStorage.getItem("lazy-term-git-sync");
     if (raw) {
       const parsed = JSON.parse(raw);
       return parsed.state?.gitRepoPath || null;
@@ -71,7 +72,7 @@ async function writeAllToDisk(): Promise<boolean> {
   try {
     const configBundle: Record<string, unknown> = {};
     for (const key of SYNC_KEYS) {
-      const value = localStorage.getItem(key);
+      const value = appStorage.getItem(key);
       if (value) {
         try {
           // 解析 localStorage 中的字符串，以避免在最终 JSON 中产生双重转义
@@ -99,16 +100,16 @@ async function writeAllToDisk(): Promise<boolean> {
 export const gitAwareStorage: StateStorage = {
   getItem: (key: string): string | null => {
     // 始终从 localStorage 读取，性能最优
-    return localStorage.getItem(key);
+    return appStorage.getItem(key);
   },
 
   setItem: (key: string, value: string): void => {
     // 仅更新主数据源 localStorage
-    localStorage.setItem(key, value);
+    appStorage.setItem(key, value);
   },
 
   removeItem: (key: string): void => {
-    localStorage.removeItem(key);
+    appStorage.removeItem(key);
   },
 };
 
@@ -131,7 +132,7 @@ export async function syncFromGitDir(): Promise<number> {
         if (value !== null && value !== undefined) {
           // 将对象转回字符串存入 localStorage
           const stringValue = typeof value === "string" ? value : JSON.stringify(value);
-          localStorage.setItem(key, stringValue);
+          appStorage.setItem(key, stringValue);
           successCount++;
         }
       }

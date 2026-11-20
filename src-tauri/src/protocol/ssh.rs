@@ -1156,6 +1156,93 @@ pub async fn exit_ssh_tmux_copy_mode(
     Ok(())
 }
 
+#[cfg(not(target_os = "ios"))]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiTmuxPaneSnapshot {
+    pane_id: String,
+    alternate_screen: bool,
+    output: String,
+}
+
+/// AI operations are restricted to a pane in this connection's attached session.
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+pub async fn ai_ssh_tmux_pane(
+    state: State<'_, AppState>,
+    session_id: String,
+    pane_id: Option<String>,
+    action: String,
+    data: Option<String>,
+) -> Result<AiTmuxPaneSnapshot, String> {
+    let (handle, name) = {
+        let sessions = state.ssh_sessions.lock().await;
+        let session = sessions.get(&session_id).ok_or("SSH session no longer exists")?;
+        let name = session.tmux_session_name.clone().ok_or("SSH session is not attached to tmux")?;
+        if !is_valid_tmux_session_name(&name) { return Err("Invalid tmux session name".into()); }
+        (Arc::clone(&session.handle), name)
+    };
+    if let Some(pane) = &pane_id {
+        if !pane.starts_with('%') || pane.len() < 2 || !pane[1..].bytes().all(|c| c.is_ascii_digit()) {
+            return Err("Invalid tmux pane ID".into());
+        }
+    }
+    if action != "read" && pane_id.is_none() { return Err("A bound pane is required".into()); }
+    let operation = match action.as_str() {
+        "read" => String::new(),
+        "send" => {
+            let data = data.ok_or("Missing command")?;
+            if data.is_empty() || data.len() > 3500 || data.chars().any(|c| c.is_control()) {
+                return Err("Invalid command length or control characters".into());
+            }
+            let quoted = data.replace('\'', "'\\''");
+            format!(r#"
+                [ "$(tmux display-message -p -t "$pane" '#{{alternate_on}}')" = 0 ] || exit 43
+                [ "$(tmux show-options -w -v -t "$pane" synchronize-panes)" != on ] || exit 45
+                if [ "$(tmux display-message -p -t "$pane" '#{{pane_in_mode}}')" = 1 ]; then
+                    tmux send-keys -t "$pane" -X cancel || exit 44
+                fi
+                tmux send-keys -t "$pane" -l -- '{quoted}' && tmux send-keys -t "$pane" Enter || exit 44
+            "#)
+        }
+        "interrupt" => r#"
+            [ "$(tmux show-options -w -v -t "$pane" synchronize-panes)" != on ] || exit 45
+            if [ "$(tmux display-message -p -t "$pane" '#{pane_in_mode}')" = 1 ]; then
+                tmux send-keys -t "$pane" -X cancel || exit 44
+            fi
+            tmux send-keys -t "$pane" C-c || exit 44
+        "#.into(),
+        _ => return Err("Unsupported tmux action".into()),
+    };
+    let lookup = tmux_session_id_lookup_command(&name);
+    let expected = pane_id.unwrap_or_default();
+    // Interrupt may still target the original pane after the user switches panes.
+    let check_active = if action == "interrupt" { "" } else { r#"[ "$pane" = "$active" ] || exit 42"# };
+    let command = format!(r#"
+        sid=$({lookup}); [ -n "$sid" ] || exit 41
+        active=$(tmux display-message -p -t "$sid:" '#{{pane_id}}') || exit 41
+        pane='{expected}'; [ -n "$pane" ] || pane="$active"
+        [ "$(tmux display-message -p -t "$pane" '#{{session_id}}')" = "$sid" ] || exit 41
+        {check_active}
+        {operation}
+        tmux display-message -p -t "$pane" '#{{pane_id}}|#{{alternate_on}}' || exit 41
+        captured=$(tmux capture-pane -p -J -t "$pane" -S -200) || exit 41
+        printf '%s\n' "$captured" | tail -c 24000
+    "#);
+    let (status, output) = execute_probe_command(&handle, &command).await?;
+    if status != Some(0) {
+        return Err(match status {
+            Some(42) => "AI_TMUX_PANE_CHANGED",
+            Some(43) => "AI_TMUX_INTERACTIVE",
+            Some(45) => "AI_TMUX_SYNCHRONIZED",
+            _ => "AI_TMUX_UNAVAILABLE",
+        }.into());
+    }
+    let (header, content) = output.split_once('\n').unwrap_or((&output, ""));
+    let (pane, alternate) = header.trim().split_once('|').ok_or("Invalid tmux pane metadata")?;
+    Ok(AiTmuxPaneSnapshot { pane_id: pane.into(), alternate_screen: alternate == "1", output: content.into() })
+}
+
 /// 结束当前 LazyTerm SSH 连接所附着的远端 tmux 会话。
 #[cfg(not(target_os = "ios"))]
 #[tauri::command]

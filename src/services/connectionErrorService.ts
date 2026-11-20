@@ -183,7 +183,9 @@ function buildRdpErrorPresentation(failure: ConnectionFailure): ConnectionErrorP
 
   if (failure.code === "AUTH_REJECTED") {
     return {
-      summary: tCurrent("RDP 认证或会话初始化失败。"),
+      summary: /\bOnDisconnected:\s*(2055|2567)\b|\bOnLogonError:\s*(0|-1073741715)\b/i.test(technicalDetails)
+        ? tCurrent("Windows 登录凭据未通过验证，请检查用户名、密码和域后重试。")
+        : tCurrent("RDP 认证或会话初始化失败。"),
       guidance: [
         tCurrent("检查用户名、密码和域是否正确。"),
         tCurrent("确认服务器允许该账号使用远程桌面登录。"),

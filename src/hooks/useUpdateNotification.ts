@@ -1,3 +1,4 @@
+import { appStorage } from '@/services/appStorage';
 import { useEffect } from "react";
 import { IS_UPDATE_SUPPORTED } from "@/config/update-config";
 import {
@@ -35,7 +36,7 @@ export function notifyUpdateAvailable(update: AvailableUpdateResult) {
     },
   });
 
-  localStorage.setItem(LAST_NOTIFIED_UPDATE_VERSION_KEY, update.latestVersion);
+  appStorage.setItem(LAST_NOTIFIED_UPDATE_VERSION_KEY, update.latestVersion);
 }
 
 export function useUpdateNotification() {
@@ -45,14 +46,14 @@ export function useUpdateNotification() {
     }
 
     const timer = window.setTimeout(async () => {
-      const lastCheckAt = Number(localStorage.getItem(LAST_UPDATE_CHECK_AT_KEY) ?? "0");
+      const lastCheckAt = Number(appStorage.getItem(LAST_UPDATE_CHECK_AT_KEY) ?? "0");
       const now = Date.now();
 
       if (Number.isFinite(lastCheckAt) && now - lastCheckAt < UPDATE_CHECK_INTERVAL_MS) {
         return;
       }
 
-      localStorage.setItem(LAST_UPDATE_CHECK_AT_KEY, String(now));
+      appStorage.setItem(LAST_UPDATE_CHECK_AT_KEY, String(now));
 
       try {
         const result = await checkForUpdate();
@@ -61,7 +62,7 @@ export function useUpdateNotification() {
           return;
         }
 
-        const lastNotifiedVersion = localStorage.getItem(LAST_NOTIFIED_UPDATE_VERSION_KEY);
+        const lastNotifiedVersion = appStorage.getItem(LAST_NOTIFIED_UPDATE_VERSION_KEY);
 
         if (lastNotifiedVersion === result.latestVersion) {
           return;

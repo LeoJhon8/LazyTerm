@@ -1,3 +1,4 @@
+import { appStorage } from '@/services/appStorage';
 import { create } from "zustand";
 import type {
   Credential,
@@ -59,7 +60,7 @@ function cleanInput(input: CredentialInput): CredentialInput {
 }
 
 function persistDocument(document: CredentialVaultDocument) {
-  localStorage.setItem(CREDENTIAL_VAULT_STORAGE_KEY, serializeVaultDocument(document));
+  appStorage.setItem(CREDENTIAL_VAULT_STORAGE_KEY, serializeVaultDocument(document));
 }
 
 async function saveCredentials(
@@ -83,7 +84,7 @@ export const useCredentialsStore = create<CredentialsState>((set, get) => ({
     if (initializePromise) return initializePromise;
     initializePromise = (async () => {
       try {
-        const raw = localStorage.getItem(CREDENTIAL_VAULT_STORAGE_KEY);
+        const raw = appStorage.getItem(CREDENTIAL_VAULT_STORAGE_KEY);
         const document = parseVaultDocument(raw);
 
         if (document) {

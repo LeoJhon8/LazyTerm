@@ -1,3 +1,4 @@
+import { appStorage } from '@/services/appStorage';
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -9,9 +10,17 @@ export interface AiConfiguration {
   credentialId: string;
 }
 
+export interface AiProfile extends AiConfiguration {
+  id: string;
+  name: string;
+}
+
 interface AiConfigState extends AiConfiguration {
-  saveConfiguration: (configuration: AiConfiguration) => void;
-  clearConfiguration: () => void;
+  profiles: AiProfile[];
+  activeProfileId: string;
+  saveConfiguration: (configuration: AiConfiguration & { name: string; id?: string }) => string;
+  removeConfiguration: (id: string) => void;
+  selectConfiguration: (id: string) => void;
 }
 
 const EMPTY_AI_CONFIGURATION: AiConfiguration = {
@@ -32,17 +41,61 @@ export const useAiConfigStore = create<AiConfigState>()(
   persist(
     (set) => ({
       ...EMPTY_AI_CONFIGURATION,
-      saveConfiguration: (configuration) => set({
-        baseUrl: configuration.baseUrl.trim().replace(/\/+$/, ""),
-        model: configuration.model.trim(),
-        credentialId: configuration.credentialId,
+      profiles: [],
+      activeProfileId: "",
+      saveConfiguration: (configuration) => {
+        const profile: AiProfile = {
+          id: configuration.id ?? crypto.randomUUID(),
+          name: configuration.name.trim(),
+          baseUrl: configuration.baseUrl.trim().replace(/\/+$/, ""),
+          model: configuration.model.trim(),
+          credentialId: configuration.credentialId,
+        };
+        set((state) => {
+          const profiles = state.profiles.some(({ id }) => id === profile.id)
+            ? state.profiles.map((item) => item.id === profile.id ? profile : item)
+            : [...state.profiles, profile];
+          const activeProfileId = state.activeProfileId || profile.id;
+          const active = profiles.find(({ id }) => id === activeProfileId)!;
+          return { profiles, activeProfileId, baseUrl: active.baseUrl, model: active.model, credentialId: active.credentialId };
+        });
+        return profile.id;
+      },
+      removeConfiguration: (id) => set((state) => {
+        const profiles = state.profiles.filter((profile) => profile.id !== id);
+        const active = profiles.find((profile) => profile.id === state.activeProfileId) ?? profiles[0];
+        return {
+          profiles,
+          activeProfileId: active?.id ?? "",
+          baseUrl: active?.baseUrl ?? "",
+          model: active?.model ?? "",
+          credentialId: active?.credentialId ?? "",
+        };
       }),
-      clearConfiguration: () => set(EMPTY_AI_CONFIGURATION),
+      selectConfiguration: (id) => set((state) => {
+        const active = state.profiles.find((profile) => profile.id === id);
+        return active ? { activeProfileId: id, baseUrl: active.baseUrl, model: active.model, credentialId: active.credentialId } : {};
+      }),
     }),
     {
       name: "lazy-term-ai-config",
-      storage: createJSONStorage(() => localStorage),
-      partialize: ({ baseUrl, model, credentialId }) => ({ baseUrl, model, credentialId }),
+      storage: createJSONStorage(() => appStorage),
+      partialize: ({ profiles, activeProfileId }) => ({ profiles, activeProfileId }),
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<AiConfigState> | undefined;
+        const profiles = saved?.profiles ?? (saved?.baseUrl && saved.model && saved.credentialId
+          ? [{ id: "legacy", name: saved.model, baseUrl: saved.baseUrl, model: saved.model, credentialId: saved.credentialId }]
+          : []);
+        const active = profiles.find(({ id }) => id === saved?.activeProfileId) ?? profiles[0];
+        return {
+          ...current,
+          profiles,
+          activeProfileId: active?.id ?? "",
+          baseUrl: active?.baseUrl ?? "",
+          model: active?.model ?? "",
+          credentialId: active?.credentialId ?? "",
+        };
+      },
     },
   ),
 );
@@ -96,7 +149,7 @@ export const useAiConversationStore = create<AiConversationState>()(
     }),
     {
       name: "lazy-term-ai-conversation",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => appStorage),
       partialize: ({ messages, currentTopicId }) => ({ messages, currentTopicId }),
       merge: (persisted, current) => {
         const saved = persisted as Partial<AiConversationState>;

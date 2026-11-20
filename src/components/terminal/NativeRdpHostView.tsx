@@ -11,6 +11,8 @@ import type {
   NativeRdpStatePayload,
 } from "@/types/terminal";
 import { ConnectionStatusOverlay } from "./ConnectionStatusOverlay";
+import { RdpCredentialsDialog, type RdpCredentials } from "@/components/dialogs/RdpCredentialsDialog";
+import { resolveRdpCredential } from "@/store/credentials";
 import { useI18n } from "@/i18n";
 import { windowResizeCoordinator } from "@/services/windowResizeCoordinator";
 
@@ -82,35 +84,26 @@ function resolveOverlayMode(
 
 // Returns physical screen coordinates so the Win32 sidecar can use them with
 // SetWindowPos without any child-window DPI or parent-origin adjustments.
-async function readScreenRect(
-  viewportRect: Pick<DOMRect, "left" | "top" | "width" | "height">,
-  refreshDpiScale = false,
-): Promise<NativeHostRect> {
-  const scaleFactor = window.devicePixelRatio || 1;
-  // innerPosition() gives the content-area origin in physical screen pixels.
-  const winPos = await getCurrentWindow().innerPosition();
-  const rect = {
-    x: winPos.x + viewportRect.left * scaleFactor,
-    y: winPos.y + viewportRect.top * scaleFactor,
-    width: Math.max(0, viewportRect.width * scaleFactor),
-    height: Math.max(0, viewportRect.height * scaleFactor),
-  };
-  const virtualizationScale = await resolveDpiVirtualizationScale(refreshDpiScale);
-
-  return {
-    x: Math.round(rect.x * virtualizationScale),
-    y: Math.round(rect.y * virtualizationScale),
-    width: Math.max(0, Math.round(rect.width * virtualizationScale)),
-    height: Math.max(0, Math.round(rect.height * virtualizationScale)),
-    scaleFactor: scaleFactor * virtualizationScale,
-  };
-}
-
 async function readHostRect(
   element: HTMLDivElement,
   refreshDpiScale = false,
 ): Promise<NativeHostRect> {
-  return readScreenRect(element.getBoundingClientRect(), refreshDpiScale);
+  // innerPosition() gives the content-area origin in physical screen pixels.
+  const [winPos, virtualizationScale] = await Promise.all([
+    getCurrentWindow().innerPosition(),
+    resolveDpiVirtualizationScale(refreshDpiScale),
+  ]);
+  // The sidebar can move the viewport while these native queries are in flight.
+  const viewportRect = element.getBoundingClientRect();
+  const scaleFactor = window.devicePixelRatio || 1;
+
+  return {
+    x: Math.round((winPos.x + viewportRect.left * scaleFactor) * virtualizationScale),
+    y: Math.round((winPos.y + viewportRect.top * scaleFactor) * virtualizationScale),
+    width: Math.max(0, Math.round(viewportRect.width * scaleFactor * virtualizationScale)),
+    height: Math.max(0, Math.round(viewportRect.height * scaleFactor * virtualizationScale)),
+    scaleFactor: scaleFactor * virtualizationScale,
+  };
 }
 
 function readMenuOverlayBounds(): DOMRect | null {
@@ -189,6 +182,7 @@ export function NativeRdpHostView({
   );
   const [blockingOverlayVisible, setBlockingOverlayVisible] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [editingCredentials, setEditingCredentials] = useState(false);
   const [overlayMode, setOverlayMode] = useState<"connecting" | "failed" | "disconnected" | "none">(initialOverlayMode);
   const [state, setState] = useState<NativeRdpStatePayload>(initialState);
   const stateRef = useRef(state);
@@ -315,19 +309,6 @@ export function NativeRdpHostView({
             return;
           }
 
-          const queuedAfterMeasure = pendingPush as {
-            initial: boolean;
-            generation: number;
-            refreshDpiScale: boolean;
-          } | null;
-          if (
-            !request.initial
-            && queuedAfterMeasure
-            && queuedAfterMeasure.generation > request.generation
-          ) {
-            continue;
-          }
-
           if (!request.initial && sameHostRect(lastMountedRectRef.current, rect)) {
             continue;
           }
@@ -337,6 +318,9 @@ export function NativeRdpHostView({
             generation: request.generation,
           };
           await connector.mount(mountedRect);
+          if (disposed) {
+            return;
+          }
           lastMountedRectRef.current = mountedRect;
           if (request.initial && !initialMountDone) {
             initialMountDone = true;
@@ -392,7 +376,13 @@ export function NativeRdpHostView({
         return;
       }
       if (snapshot.phase === "resizing") {
-        requestLivePush(snapshot.generation);
+        // The coordinator already coalesces sidebar changes to one per frame.
+        // A stale HWND can cover the sidebar and receive clicks meant for it.
+        if (snapshot.sources.includes("sidebar")) {
+          requestPush(false, snapshot.generation, false);
+        } else {
+          requestLivePush(snapshot.generation);
+        }
       } else if (snapshot.phase === "idle") {
         requestPush(false, snapshot.generation, true);
       }
@@ -613,6 +603,32 @@ export function NativeRdpHostView({
     reconnectSession(sessionId);
   };
 
+  const handleCredentialRetry = (credentials: RdpCredentials) => {
+    const store = useTabsStore.getState();
+    const currentSession = store.sessions.find((item) => item.id === sessionId);
+    if (!currentSession?.config?.rdpConfig || currentSession.connector !== connector) {
+      setEditingCredentials(false);
+      return;
+    }
+    store.updateSession(sessionId, {
+      config: {
+        ...currentSession.config,
+        rdpConfig: {
+          ...currentSession.config.rdpConfig,
+          ...credentials,
+          // A shared credential must not override the values just entered.
+          // This only changes the in-memory session, never the credential store.
+          credentialId: undefined,
+        },
+      },
+    });
+    store.clearConnectionError();
+    setEditingCredentials(false);
+    handleReconnect();
+  };
+
+  const authenticationFailed = connectionStatus?.failure?.code === "AUTH_REJECTED";
+
   return (
     <main
       className="terminal-container relative z-0 h-full min-h-0 w-full min-w-0 overflow-hidden bg-(--terminal-shell) shadow-(--panel-shadow)"
@@ -638,9 +654,19 @@ export function NativeRdpHostView({
             { label: t("身份凭据"), value: session?.config?.rdpConfig?.username || t("交互式登录") }
           ]}
           description={state.detail?.replace(/MsTscAx\s*/gi, "Windows ")}
-          onReconnect={handleReconnect}
+          onReconnect={authenticationFailed ? () => setEditingCredentials(true) : handleReconnect}
+          reconnectLabel={authenticationFailed ? t("修改凭据并重试") : undefined}
         />
       ) : null}
+
+      {editingCredentials && session?.config?.rdpConfig && (
+        <RdpCredentialsDialog
+          initialUsername={resolveRdpCredential(session.config.rdpConfig).username}
+          initialDomain={session.config.rdpConfig.domain}
+          onCancel={() => setEditingCredentials(false)}
+          onSubmit={handleCredentialRetry}
+        />
+      )}
 
       {state.authenticationWarningVisible && (
         <div role="status" aria-live="polite" className="pointer-events-none absolute inset-x-4 bottom-4 z-40 rounded-lg border border-border bg-background px-4 py-3 text-sm shadow-lg">

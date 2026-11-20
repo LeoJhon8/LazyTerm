@@ -1,3 +1,4 @@
+import { appStorage } from '@/services/appStorage';
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { SlotConfig } from "../config/default-slot-config";
@@ -148,7 +149,7 @@ export const useSlotConfigStore = create<SlotConfigState>()(
       saveCustomConfig: (name) => {
         // 这里可以扩展为保存多个配置文件
         const config = get().currentConfig;
-        localStorage.setItem(`lazy-term-slot-config-${name}`, JSON.stringify(config));
+        appStorage.setItem(`lazy-term-slot-config-${name}`, JSON.stringify(config));
       },
 
       loadConfig: (config) =>

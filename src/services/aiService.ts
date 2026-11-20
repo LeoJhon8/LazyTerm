@@ -13,6 +13,7 @@ export interface AiRequestMessage {
 }
 
 interface AiCompletionRequest {
+  systemPrompt?: string;
   baseUrl: string;
   model: string;
   apiKey: string;
@@ -79,7 +80,7 @@ export async function streamAiCompletion(request: AiCompletionRequest): Promise<
       model: request.model,
       stream: true,
       messages: [
-        { role: "system", content: LAZY_TERM_AI_SYSTEM_PROMPT },
+        { role: "system", content: request.systemPrompt ?? LAZY_TERM_AI_SYSTEM_PROMPT },
         ...request.messages,
       ],
     }),

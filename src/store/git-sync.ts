@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { appStorage } from "@/services/appStorage";
 import { invalidateCache, migrateToGitDir } from "@/store/git-aware-storage";
 import { logger } from "@/lib/logger";
 
@@ -40,6 +41,7 @@ export const useGitSyncStore = create<GitSyncState>()(
     }),
     {
       name: "lazy-term-git-sync",
+      storage: createJSONStorage(() => appStorage),
       partialize: (state) => ({
         gitRepoPath: state.gitRepoPath,
         lastSyncTime: state.lastSyncTime,

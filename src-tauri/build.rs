@@ -457,7 +457,7 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(libvncclient_available)");
     println!("cargo:rustc-check-cfg=cfg(freerdp_available)");
 
-    if target_os != "android" && target_os != "ios" {
+    if target_os != "android" && target_os != "ios" && !feature_enabled("CARGO_FEATURE_DEMO") {
         probe_vnc(&target_os);
         probe_freerdp(&target_os);
     }

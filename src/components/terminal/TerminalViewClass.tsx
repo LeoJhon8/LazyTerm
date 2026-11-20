@@ -1,5 +1,7 @@
 import { useEffect, useRef, useCallback, useState, type WheelEvent as ReactWheelEvent } from "react";
 import { logger } from "@/lib/logger";
+import { registerAiTerminal, publishAiTerminalOutput } from "@/services/aiTerminalBridge";
+import { isTakeoverRunning, useAiTakeoverStore } from "@/services/aiTakeoverService";
 import { useTabsStore } from "@/store/tabs";
 import { DEFAULT_APP_COLOR_PALETTE, useSettingsStore } from "@/store/settings";
 import { useSlotConfigStore } from "@/store/slot-config";
@@ -451,6 +453,8 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
 
   // Terminal 特有状态
   const { sessions } = useTabsStore();
+  const isFocusedSession = useTabsStore((state) => state.focusSessionId === sessionId);
+  const isTakenOver = useAiTakeoverStore((state) => state.sessionId === sessionId && isTakeoverRunning(state.status));
   const reconnectSession = useTabsStore((s) => s.reconnectSession);
   const { addCommand: addHistoryCommand } = useHistoryStore();
   const fontSize = useSettingsStore((state) => state.fontSize);
@@ -577,6 +581,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     function activateTerminalInternal(
       targetSessionId?: string | null,
       requireFocus: boolean = true,
+      showLatest: boolean = false,
       retryCount: number = 0
     ) {
       if (!targetSessionId) return;
@@ -586,6 +591,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       if (instance && container && instance.visible) {
         requestAnimationFrame(() => {
           try {
+            if (!instance.visible || terminalMap.current.get(targetSessionId) !== instance) return;
             const hasLayoutSize = container.clientWidth > 0 && container.clientHeight > 0;
 
             if (hasLayoutSize) {
@@ -600,9 +606,11 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
               helperTextarea?.focus();
             }
 
+            if (showLatest && hasLayoutSize) instance.terminal.scrollToBottom();
+
             if (!hasLayoutSize && retryCount < 6) {
               window.setTimeout(() => {
-                activateTerminalInternal(targetSessionId, requireFocus, retryCount + 1);
+                activateTerminalInternal(targetSessionId, requireFocus, showLatest, retryCount + 1);
               }, 50);
             }
           } catch (error) {
@@ -641,6 +649,7 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
     const setupEarlyListener = async () => {
       return await connector.onData((data) => {
         if (!isCurrentConnector) return;
+        publishAiTerminalOutput(sessionId, connector, data);
         if (currentTermInstance) {
           currentTermInstance.output.write(data);
         } else {
@@ -1354,6 +1363,20 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       instance.resizeUnsubscribe = observeTerminalContainer(instance, containerEl);
 
       terminalMap.current.set(sessionId, instance);
+      const unregisterAiTerminal = registerAiTerminal(sessionId, {
+        connector: () => instance.connector,
+        isAlternateScreen: () => term.buffer.active.type === "alternate",
+        read: () => {
+          const buffer = term.buffer.active;
+          const lines: string[] = [];
+          for (let index = Math.max(0, buffer.length - 120); index < buffer.length; index += 1) {
+            lines.push(buffer.getLine(index)?.translateToString(true) ?? "");
+          }
+          return lines.join("\n").slice(-12000);
+        },
+      });
+      const disposeTerminal = instance.dispose;
+      instance.dispose = () => { unregisterAiTerminal(); disposeTerminal(); };
 
       currentTermInstance = instance;
       if (tempBuffer) {
@@ -1481,6 +1504,12 @@ export function TerminalViewClass(props: BaseSessionViewProps) {
       activateTerminal(sessionId);
     }
   }, [sessionId, isVisible, activateTerminal]);
+
+  useEffect(() => {
+    if (isVisible && isFocusedSession && isTakenOver) {
+      activateTerminal(sessionId, false, true);
+    }
+  }, [sessionId, isVisible, isFocusedSession, isTakenOver, activateTerminal]);
 
   useEffect(() => {
     const handler = () => {

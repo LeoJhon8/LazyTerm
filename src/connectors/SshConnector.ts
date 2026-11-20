@@ -1,7 +1,9 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { notifyAiTerminalInput } from "@/services/aiTerminalBridge";
 import type {
   ConnectionStateEvent,
   ITerminalConnector,
+  AiTmuxPaneSnapshot,
   SSHConfig,
   SshTmuxCapability,
 } from "@/types/terminal";
@@ -396,7 +398,17 @@ export class SshConnector implements ITerminalConnector {
     }
   }
 
-  write(data: string | Uint8Array): void {
+  write(data: string | Uint8Array, source?: "ai"): void {
+    if (source !== "ai") {
+      const sessionId = this.sessionId;
+      const handoff = notifyAiTerminalInput(this, data);
+      if (handoff) {
+        void handoff.then(() => {
+          if (this.sessionId === sessionId) this.write(data, "ai");
+        });
+        return;
+      }
+    }
     if (!this.isConnected || !this.sessionId) return;
 
     const sessionId = this.sessionId;
@@ -488,6 +500,16 @@ export class SshConnector implements ITerminalConnector {
 
   isTmuxPersistenceActive(): boolean {
     return this.tmuxPersistenceActive;
+  }
+
+  async aiTmuxPane(action: "read" | "send" | "interrupt", paneId?: string, data?: string): Promise<AiTmuxPaneSnapshot> {
+    if (!this.isConnected || !this.sessionId || !this.tmuxPersistenceActive) {
+      throw new Error("SSH tmux session is no longer connected");
+    }
+    const sessionId = this.sessionId;
+    return invokeTauriSerialized<AiTmuxPaneSnapshot>(`ssh:${sessionId}:ai-tmux`, "ai_ssh_tmux_pane", {
+      sessionId, paneId: paneId ?? null, action, data: data ?? null,
+    });
   }
 
   async exitTmuxCopyMode(): Promise<void> {

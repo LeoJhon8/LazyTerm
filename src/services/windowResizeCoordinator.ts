@@ -1,7 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export type WindowResizePhase = "idle" | "resizing" | "settling";
-export type WindowResizeSource = "window" | "layout" | "move" | "manual";
+export type WindowResizeSource = "window" | "layout" | "sidebar" | "move" | "manual";
 
 export interface WindowResizeSnapshot {
   phase: WindowResizePhase;
@@ -128,8 +128,8 @@ class WindowResizeCoordinator {
     };
   }
 
-  requestLayout(): void {
-    this.signal("layout", true);
+  requestLayout(source: "layout" | "sidebar" = "layout"): void {
+    this.signal(source, true);
   }
 
   private readonly handleBrowserResize = () => {

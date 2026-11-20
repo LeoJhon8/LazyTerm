@@ -1,4 +1,7 @@
 import { HoverTooltip } from "@/components/ui/tooltip";
+import { AiProfileSelect } from "@/components/ai/AiProfileSelect";
+import { AiTakeoverPanel } from "@/components/ai/AiTakeoverPanel";
+import { isTakeoverRunning, stopAiTakeover, useAiTakeoverStore } from "@/services/aiTakeoverService";
 import {
   Children,
   isValidElement,
@@ -346,6 +349,8 @@ function toRequestMessages(messages: AiMessage[]): AiRequestMessage[] {
 
 export function AiModule() {
   const { t } = useI18n();
+  const [takeoverOpen, setTakeoverOpen] = useState(false);
+  const takeoverRunning = useAiTakeoverStore((state) => isTakeoverRunning(state.status));
   const configuration = useAiConfigStore();
   const {
     messages,
@@ -370,6 +375,7 @@ export function AiModule() {
   }, [messages]);
 
   useEffect(() => () => {
+    stopAiTakeover();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       const messageId = activeAssistantIdRef.current;
@@ -524,7 +530,7 @@ export function AiModule() {
             <span className="module-heading truncate">{t("AI 助手")}</span>
           </div>
         </div>
-        {messages.length > 0 && (
+        {!takeoverOpen && messages.length > 0 && (
           <HoverTooltip content={t("清空对话")}>
             <Button
               type="button"
@@ -539,6 +545,14 @@ export function AiModule() {
         )}
       </div>
 
+      <div className="shrink-0 px-3 pb-2">
+        {!takeoverRunning && <AiProfileSelect />}
+        <div className={cn("flex gap-1", !takeoverRunning && "mt-2")}>
+          <Button size="sm" variant={takeoverOpen ? "ghost" : "secondary"} disabled={takeoverRunning} onClick={() => setTakeoverOpen(false)}>{t("对话")}</Button>
+          <Button size="sm" variant={takeoverOpen ? "secondary" : "ghost"} disabled={requestState === "generating"} onClick={() => setTakeoverOpen(true)}>{t("接管会话")}</Button>
+        </div>
+      </div>
+      {takeoverOpen ? <AiTakeoverPanel /> : <>
       <ScrollArea showScrollHints className="ai-conversation-scroll min-h-0 min-w-0 w-full flex-1">
         <div className="min-w-0 w-full space-y-4 px-3 py-1.5">
           {messages.length === 0 && (
@@ -679,6 +693,7 @@ export function AiModule() {
         )}
       </div>
 
+      </>}
       <AlertDialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

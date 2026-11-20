@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Save, ShieldCheck, Trash2 } from "lucide-react";
+import { Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AiProfileSelect } from "@/components/ai/AiProfileSelect";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -41,44 +43,43 @@ function SettingField({
 
 export function AiSettings() {
   const { t } = useI18n();
-  const configuredBaseUrl = useAiConfigStore((state) => state.baseUrl);
-  const configuredModel = useAiConfigStore((state) => state.model);
-  const configuredCredentialId = useAiConfigStore((state) => state.credentialId);
-  const configuration = useMemo(() => ({
-    baseUrl: configuredBaseUrl,
-    model: configuredModel,
-    credentialId: configuredCredentialId,
-  }), [configuredBaseUrl, configuredCredentialId, configuredModel]);
+  const profiles = useAiConfigStore((state) => state.profiles);
+  const [editingId, setEditingId] = useState(() => useAiConfigStore.getState().activeProfileId);
+  const configuration = profiles.find((profile) => profile.id === editingId);
   const saveConfiguration = useAiConfigStore((state) => state.saveConfiguration);
-  const clearConfiguration = useAiConfigStore((state) => state.clearConfiguration);
+  const removeConfiguration = useAiConfigStore((state) => state.removeConfiguration);
+  const [name, setName] = useState(configuration?.name ?? "");
   const credentials = useCredentialsStore((state) => state.credentials);
   const vaultStatus = useCredentialsStore((state) => state.status);
   const addCredential = useCredentialsStore((state) => state.addCredential);
   const updateCredential = useCredentialsStore((state) => state.updateCredential);
   const removeCredential = useCredentialsStore((state) => state.removeCredential);
-  const [baseUrl, setBaseUrl] = useState(configuration.baseUrl);
-  const [model, setModel] = useState(configuration.model);
+  const [baseUrl, setBaseUrl] = useState(configuration?.baseUrl ?? "");
+  const [model, setModel] = useState(configuration?.model ?? "");
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const existingCredential = useMemo(
-    () => credentials.find((credential) => credential.id === configuration.credentialId),
-    [configuration.credentialId, credentials],
+    () => credentials.find((credential) => credential.id === configuration?.credentialId),
+    [configuration?.credentialId, credentials],
   );
-  const configured = isAiConfigured(configuration);
+  const configured = Boolean(configuration && isAiConfigured(configuration));
   const canSave = Boolean(
-    baseUrl.trim()
+    name.trim()
+    && baseUrl.trim()
     && model.trim()
     && (apiKey || existingCredential?.apiKey)
     && vaultStatus === "unlocked",
   );
 
   useEffect(() => {
-    setBaseUrl(configuration.baseUrl);
-    setModel(configuration.model);
-  }, [configuration.baseUrl, configuration.model]);
+    setName(configuration?.name ?? "");
+    setBaseUrl(configuration?.baseUrl ?? "");
+    setModel(configuration?.model ?? "");
+    setApiKey("");
+  }, [editingId, configuration]);
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -94,21 +95,22 @@ export function AiSettings() {
       if (existingCredential) {
         credentialId = existingCredential.id;
         await updateCredential(credentialId, {
-          name: "LazyTerm AI API Key",
+          name: `LazyTerm AI: ${name.trim()}`,
           type: "api-key",
           apiKey: apiKey || existingCredential.apiKey,
           note: "由 AI 设置管理",
         });
       } else {
         credentialId = await addCredential({
-          name: "LazyTerm AI API Key",
+          name: `LazyTerm AI: ${name.trim()}`,
           type: "api-key",
           apiKey,
           note: "由 AI 设置管理",
         });
       }
 
-      saveConfiguration({ baseUrl, model, credentialId });
+      const savedId = saveConfiguration({ id: configuration?.id, name, baseUrl, model, credentialId });
+      setEditingId(savedId);
       setApiKey("");
       setMessage({ type: "success", text: t("AI 配置已保存，现在可以在布局管理中设置位置。") });
     } catch (error) {
@@ -122,23 +124,27 @@ export function AiSettings() {
   };
 
   const handleClear = async () => {
+    if (!configuration) return;
     setBusy(true);
     setMessage(null);
-    const credentialId = configuration.credentialId;
-    clearConfiguration();
+    const credentialId = configuration?.credentialId;
+    removeConfiguration(configuration.id);
+    setEditingId(useAiConfigStore.getState().activeProfileId);
     const slotStore = useSlotConfigStore.getState();
-    slotStore.removeModuleFromSlot("left", AI_MODULE_ID);
-    slotStore.removeModuleFromSlot("right", AI_MODULE_ID);
+    if (!useAiConfigStore.getState().profiles.length) {
+      slotStore.removeModuleFromSlot("left", AI_MODULE_ID);
+      slotStore.removeModuleFromSlot("right", AI_MODULE_ID);
+    }
     setBaseUrl("");
     setModel("");
     setApiKey("");
     setClearConfirmOpen(false);
 
     try {
-      if (credentialId && useCredentialsStore.getState().getCredential(credentialId)) {
+      if (credentialId && !useAiConfigStore.getState().profiles.some((profile) => profile.credentialId === credentialId) && useCredentialsStore.getState().getCredential(credentialId)) {
         await removeCredential(credentialId);
       }
-      setMessage({ type: "success", text: t("AI 配置已清除，对话内容仍会保留。") });
+      setMessage({ type: "success", text: t("接口配置已删除，对话内容仍会保留。") });
     } catch (error) {
       setMessage({
         type: "error",
@@ -154,7 +160,7 @@ export function AiSettings() {
       <div className="space-y-2 px-1">
         <h3 className="text-base font-semibold">{t("AI 助手")}</h3>
         <p className="text-sm text-muted-foreground">
-          {t("配置一个 OpenAI 兼容接口，用于通用问答、搜索式查询和内容辅助。")}
+          {t("保存多个 OpenAI 兼容接口，全局启用一个，也可在 AI 助手中快速切换。")}
         </p>
       </div>
 
@@ -162,7 +168,29 @@ export function AiSettings() {
         <Label className="px-3 text-xs font-medium tracking-wide text-muted-foreground">
           {t("接口配置")}
         </Label>
-        <div className="divide-y divide-border/30 overflow-hidden settings-section">
+        {profiles.length > 0 && (
+          <div className="mb-3 space-y-2">
+            <Label>{t("当前启用接口")}</Label>
+            <AiProfileSelect disabled={busy} />
+          </div>
+        )}
+        <Label>{t("编辑接口配置")}</Label>
+        <div className="mb-3 flex items-center gap-2">
+          <Select value={editingId || "new"} onValueChange={(value) => { setEditingId(value === "new" ? "" : value); setMessage(null); }} disabled={busy}>
+            <SelectTrigger aria-label={t("编辑接口配置")}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="new">{t("新增接口配置")}</SelectItem>
+              {profiles.map((profile) => <SelectItem key={profile.id} value={profile.id}>{profile.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={() => { setEditingId(""); setMessage(null); }} disabled={busy || !editingId}>
+            <Plus className="mr-2 h-4 w-4" />{t("新增接口配置")}
+          </Button>
+        </div>
+        <fieldset disabled={busy} className="min-w-0 divide-y divide-border/30 overflow-hidden settings-section">
+          <SettingField label={t("配置名称")}>
+            <Input value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
+          </SettingField>
           <SettingField
             label={t("API 服务地址")}
             description={t("填写服务根地址、/v1 地址，或完整的 /chat/completions 地址。")}
@@ -196,7 +224,7 @@ export function AiSettings() {
               autoComplete="new-password"
             />
           </SettingField>
-        </div>
+        </fieldset>
       </div>
 
       <div className="flex items-start gap-3 settings-section px-4 py-3">
@@ -228,7 +256,7 @@ export function AiSettings() {
             disabled={busy}
           >
             <Trash2 className="mr-2 h-4 w-4" />
-            {t("清除配置")}
+            {t("删除接口配置")}
           </Button>
         )}
         <Button onClick={() => void handleSave()} disabled={!canSave || busy}>
@@ -240,15 +268,15 @@ export function AiSettings() {
       <AlertDialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("清除 AI 配置？")}</AlertDialogTitle>
+            <AlertDialogTitle>{t("删除此接口配置？")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("AI 模块会立即从侧栏和布局管理中移除，但当前对话会保留。")}
+              {t("删除当前启用的接口后，将启用剩余的第一套配置；删除最后一套配置会移除 AI 模块。对话内容会保留。")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={() => void handleClear()}>
-              {t("确认清除")}
+              {t("删除")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

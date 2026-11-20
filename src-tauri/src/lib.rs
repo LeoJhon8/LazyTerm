@@ -6,26 +6,42 @@
 //! VNC 协议基于 LibVNCClient C 库实现，通过 FFI 与 Rust 集成。
 //! 需要系统安装 libvncclient 开发库才能构建。
 
+#[cfg(not(feature = "demo"))]
 mod error;
+#[cfg(not(feature = "demo"))]
 mod logging;
+#[cfg(not(feature = "demo"))]
 mod protocol;
+#[cfg(not(feature = "demo"))]
 mod state;
+#[cfg(not(feature = "demo"))]
 mod types;
+#[cfg(not(feature = "demo"))]
 mod utils;
 
 #[cfg(target_os = "android")]
+#[cfg(not(feature = "demo"))]
 mod android_ssh_background;
 #[cfg(target_os = "android")]
+#[cfg(not(feature = "demo"))]
 mod android_updater;
 
+#[cfg(not(feature = "demo"))]
 use std::collections::{HashMap, HashSet};
+#[cfg(not(feature = "demo"))]
 use std::sync::{Arc, Mutex as StdMutex};
+#[cfg(not(feature = "demo"))]
 use tokio::sync::Mutex as TokioMutex;
 
+#[cfg(not(feature = "demo"))]
 pub use error::into_tauri_result;
+#[cfg(not(feature = "demo"))]
 pub use error::AppError;
+#[cfg(not(feature = "demo"))]
 pub use error::AppResult;
+#[cfg(not(feature = "demo"))]
 pub use state::AppState;
+#[cfg(not(feature = "demo"))]
 pub use utils::{
     log_rdp_error, log_rdp_info, log_vnc_error, log_vnc_info, map_sftp_error, rdp_target_label,
     vnc_target_label,
@@ -33,7 +49,9 @@ pub use utils::{
 
 // 从 types 模块导入并重新导出纯数据类型
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(feature = "demo"))]
 pub use crate::types::LocalTerminalSession;
+#[cfg(not(feature = "demo"))]
 pub use crate::types::{
     NativeHostRect, NativeRdpStateEventPayload, NativeRdpTraceEventPayload, RdpConnectConfig,
     RdpControlMsg, RdpKeyboardEventPayload, RdpPointerEventPayload, RdpSession,
@@ -48,6 +66,7 @@ pub use crate::types::{
 // --- 程序入口 ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(not(feature = "demo"))]
 pub fn run() {
     logging::init();
 
@@ -92,6 +111,7 @@ pub fn run() {
         protocol::resize_ssh_session,
         protocol::check_ssh_tmux_capability,
         protocol::exit_ssh_tmux_copy_mode,
+        protocol::ai_ssh_tmux_pane,
         protocol::kill_ssh_tmux_session,
         protocol::set_ssh_background_mode,
         protocol::close_ssh_session,
@@ -157,6 +177,7 @@ pub fn run() {
         protocol::resize_ssh_session,
         protocol::check_ssh_tmux_capability,
         protocol::exit_ssh_tmux_copy_mode,
+        protocol::ai_ssh_tmux_pane,
         protocol::kill_ssh_tmux_session,
         protocol::set_ssh_background_mode,
         protocol::request_rdp_refresh,
@@ -176,4 +197,17 @@ pub fn run() {
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// A Demo executable has no protocol command handlers or filesystem/HTTP/updater plugins.
+#[cfg(feature = "demo")]
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init());
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    builder
+        .run(tauri::generate_context!())
+        .expect("error while running LazyTerm Demo");
 }

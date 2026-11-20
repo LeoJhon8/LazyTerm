@@ -4,6 +4,15 @@ LazyTerm includes, links, or redistributes the third-party components listed bel
 
 ## Directly bundled or linked components
 
+### Microsoft Visual C++ Runtime (Windows x64)
+
+- Upstream: https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files
+- License: Microsoft Software License Terms for the Visual Studio installation supplying the redistributable files; these files are not licensed under LazyTerm's GPL license
+- Usage: the complete Release x64 `Microsoft.VC*.CRT` DLL set is installed beside the LazyTerm executable by both Windows installers (application-local deployment)
+- Source: the build machine's Visual Studio `VC/Redist/MSVC` directory, or `VCToolsRedistDir`; the selected version is recorded in the packaging log
+
+Only redistributable Release files are packaged. Publishers must comply with the supplying Visual Studio license and its REDIST list. Application-local runtime security updates are delivered through new LazyTerm releases; update the build machine's C++ redistributable files when publishing maintenance releases.
+
 ### LibVNCServer / LibVNCClient
 
 - Upstream: https://github.com/LibVNC/libvncserver

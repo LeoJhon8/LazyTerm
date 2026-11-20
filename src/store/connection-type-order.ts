@@ -1,3 +1,4 @@
+import { appStorage } from '@/services/appStorage';
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
@@ -47,7 +48,7 @@ export const useConnectionTypeOrderStore = create<ConnectionTypeOrderState>()(
     }),
     {
       name: "lazy-term-connection-type-order",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => appStorage),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<ConnectionTypeOrderState> | undefined;
         return {

@@ -287,6 +287,7 @@ internal sealed class HostForm : Form
     private IntPtr _parentHwnd;
     private int? _lastConnectedState;
     private bool _connectIssued;
+    private bool _connectInProgress;
     private bool _waitingForOcxReady;
     private bool _showRequested;
     private bool _hostVisible;
@@ -876,7 +877,8 @@ internal sealed class HostForm : Form
 
     private void ConnectRdp()
     {
-        if (_rdpHost is null || _init is null || _remoteDesktopSize.IsEmpty)
+        if (_rdpHost is null || _init is null || _remoteDesktopSize.IsEmpty
+            || _connectIssued || _nativeDisconnected || _fatalErrorDetail is not null)
         {
             return;
         }
@@ -896,6 +898,14 @@ internal sealed class HostForm : Form
 
             _waitingForOcxReady = false;
             AttachNativeNotifications(client);
+            // Credentials are entered in LazyTerm, including retries after NLA
+            // rejects them. This does not disable certificate authentication UI.
+            var credentialUi = (IMsRdpClientNonScriptable5)client;
+            credentialUi.SetAllowPromptingForCredentials(false);
+            if (credentialUi.GetAllowPromptingForCredentials())
+            {
+                throw new InvalidOperationException("MsTscAx credential prompt suppression failed.");
+            }
             var loginUser = string.IsNullOrWhiteSpace(_init.Domain)
                 ? _init.Username
                 : $"{_init.Domain}\\{_init.Username}";
@@ -934,8 +944,18 @@ internal sealed class HostForm : Form
                 TrySetComProperty(secured, "KeyboardHookMode", 1);
             }
 
-            InvokeComMethod(client, "Connect");
+            // Connect can display modal authentication UI and pump timer messages.
+            // Mark the attempt before entering COM so a nested tick cannot connect again.
             _connectIssued = true;
+            _connectInProgress = true;
+            try
+            {
+                InvokeComMethod(client, "Connect");
+            }
+            finally
+            {
+                _connectInProgress = false;
+            }
             HideStatus();
             if (!_nativeDisconnected && _fatalErrorDetail is null)
             {
@@ -944,8 +964,9 @@ internal sealed class HostForm : Form
         }
         catch (Exception ex)
         {
+            _fatalErrorDetail = $"MsTscAx Connect 调用失败: {ex.Message}";
             ShowStatus("RDP 连接失败", ex.Message, true);
-            EmitState("error", $"MsTscAx Connect 调用失败: {ex.Message}", CurrentRect);
+            EmitState("error", _fatalErrorDetail, CurrentRect);
         }
     }
 
@@ -1099,7 +1120,8 @@ internal sealed class HostForm : Form
 
     private void PollConnectionState()
     {
-        if (_rdpHost is null || _rdpHost.IsDisposed)
+        if (_rdpHost is null || _rdpHost.IsDisposed || _connectInProgress
+            || _nativeDisconnected || _fatalErrorDetail is not null)
         {
             return;
         }
@@ -1125,6 +1147,11 @@ internal sealed class HostForm : Form
             }
 
             var state = ReadConnectedState(client);
+            if (state is null)
+            {
+                // A failed COM property read is not a remote disconnect.
+                return;
+            }
             if (_nativeDisconnected || _fatalErrorDetail is not null)
             {
                 // Preserve event diagnostics instead of replacing them with a
@@ -1136,11 +1163,16 @@ internal sealed class HostForm : Form
                 return;
             }
 
+            var previousState = _lastConnectedState;
             _lastConnectedState = state;
             switch (state)
             {
                 case 0:
-                    if (_connectIssued)
+                    // OnDisconnected carries the authoritative result, including
+                    // failures before a connection is established. During modal
+                    // authentication, an initial zero is not a completed attempt.
+                    // Polling is only a fallback if event subscription failed.
+                    if (_rdpEvents is null && previousState is 1 or 2)
                     {
                         HideStatus();
                         UpdateHostVisibility();
@@ -1194,14 +1226,14 @@ internal sealed class HostForm : Form
         });
     }
 
-    private static int ReadConnectedState(object client)
+    private static int? ReadConnectedState(object client)
     {
         var value = TryGetComProperty(client, "Connected");
         return value switch
         {
             short shortValue => shortValue,
             int intValue => intValue,
-            _ => 0,
+            _ => null,
         };
     }
 

@@ -35,3 +35,5 @@ src-tauri/native/msrdpax-host/.vs/
 
 # Local Superpowers design previews
 .superpowers/
+dist-demo/
+src-tauri/target-demo/

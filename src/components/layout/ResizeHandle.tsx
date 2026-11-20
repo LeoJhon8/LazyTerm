@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { useSettingsStore } from "@/store/settings";
 import { cn } from "@/lib/utils";
 
@@ -6,60 +6,68 @@ interface ResizeHandleProps {
   side: "left" | "right";
 }
 
-export function ResizeHandle({ side }: ResizeHandleProps) {
-  const { setSettings } = useSettingsStore();
-  const [isDragging, setIsDragging] = useState(false);
+const MIN_WIDTH = 220;
+const MAX_WIDTH = 400;
 
-  const onMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      setIsDragging(true);
-    },
-    []
-  );
+export function ResizeHandle({ side }: ResizeHandleProps) {
+  const setSettings = useSettingsStore((state) => state.setSettings);
+  const [isDragging, setIsDragging] = useState(false);
+  const activePointerId = useRef<number | null>(null);
+
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || activePointerId.current !== null) return;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    activePointerId.current = event.pointerId;
+    setIsDragging(true);
+  };
+
+  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (activePointerId.current !== event.pointerId) return;
+
+    activePointerId.current = null;
+    setIsDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (activePointerId.current !== event.pointerId) return;
+    if (event.pointerType === "mouse" && (event.buttons & 1) === 0) {
+      endDrag(event);
+      return;
+    }
+
+    const rawWidth = side === "left" ? event.clientX : window.innerWidth - event.clientX;
+    const width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, rawWidth));
+    setSettings(side === "left" ? { leftPanelWidth: width } : { rightPanelWidth: width });
+  };
 
   useEffect(() => {
     if (!isDragging) return;
 
-    const MIN_WIDTH = 220;
-    const MAX_WIDTH = 400;
     const previousCursor = document.body.style.cursor;
     const previousUserSelect = document.body.style.userSelect;
     document.body.style.cursor = "ew-resize";
     document.body.style.userSelect = "none";
 
-    const onMouseMove = (e: MouseEvent) => {
-      if (side === "left") {
-        const raw = e.clientX;
-        const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, raw));
-        setSettings({ leftPanelWidth: newWidth });
-      } else {
-        const raw = window.innerWidth - e.clientX;
-        const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, raw));
-        setSettings({ rightPanelWidth: newWidth });
-      }
-    };
-
-    const onMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-
     return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
       document.body.style.cursor = previousCursor;
       document.body.style.userSelect = previousUserSelect;
     };
-  }, [isDragging, side, setSettings]);
+  }, [isDragging]);
 
   return (
     <div
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
       className={cn(
-        "group absolute inset-y-0 z-50 w-3 cursor-ew-resize select-none",
+        "group absolute inset-y-0 z-50 w-3 touch-none cursor-ew-resize select-none",
         side === "left" ? "right-0 translate-x-1/2" : "left-0 -translate-x-1/2",
       )}
     >

@@ -1,8 +1,12 @@
 {
+  "build": {
+    "beforeBuildCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-windows-crt.ps1 && npm run build"
+  },
   "bundle": {
     "resources": {
       "native/msrdpax-host/publish/win-x64/*": "msrdpax-host/",
-      "native/freerdp-runtime/win-x64/*.dll": ""
+      "native/freerdp-runtime/win-x64/*.dll": "",
+      "native/vc-runtime/win-x64/*.dll": ""
     }
   }
 }

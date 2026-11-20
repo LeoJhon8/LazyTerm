@@ -11,6 +11,7 @@ import { logger } from "@/lib/logger";
 import { getErrorMessage } from "@/lib/errorUtils";
 import { invokeTauri, invokeTauriBackground } from "@/services/tauri";
 import { classifyConnectionFailure } from "@/services/connection/connectionErrors";
+import { getConnectionErrorPresentation } from "@/services/connectionErrorService";
 import { ConnectionReadinessBarrier } from "@/services/connection/ConnectionReadinessBarrier";
 
 const FINAL_NATIVE_STATES: NativeRdpStatePayload["state"][] = ["closed"];
@@ -293,7 +294,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
     }
     payload = { ...payload, authenticationWarningVisible: this.authenticationWarningVisible };
 
-    if (["hidden", "visible", "focused", "connected"].includes(payload.state)) {
+    if (payload.state === "connected") {
       this.everConnected = true;
     }
 
@@ -302,7 +303,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
     }
 
     this.latestState = payload;
-    if (["connected", "visible", "hidden", "focused"].includes(payload.state)) {
+    if (payload.state === "connected") {
       this.readiness.mark(this.readinessCycle, "remote");
       if (this.readiness.has(this.readinessCycle, NATIVE_USABLE_CHECKPOINTS)) {
         this.connectionStateEmitter.emit({ phase: "connected", stage: "steady", health: "healthy" });
@@ -322,7 +323,7 @@ export class NativeRdpConnector implements INativeRdpConnector {
       this.connectionStateEmitter.emit({
         phase: "failed",
         stage: failure.stage,
-        reason: "RDP 连接失败",
+        reason: getConnectionErrorPresentation(this.protocol, failure).summary,
         failure,
       });
     } else if (payload.state === "disconnected" || payload.state === "closed") {
@@ -335,7 +336,9 @@ export class NativeRdpConnector implements INativeRdpConnector {
       this.connectionStateEmitter.emit({
         phase: "disconnected",
         stage: "steady",
-        reason: payload.detail || "RDP 连接已断开",
+        reason: failure.code === "AUTH_REJECTED"
+          ? getConnectionErrorPresentation(this.protocol, failure).summary
+          : payload.detail || "RDP 连接已断开",
         failure,
       });
     }

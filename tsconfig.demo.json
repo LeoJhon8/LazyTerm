@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "paths": {
+      "@/connectors/ConnectorFactory": ["./src/demo/ConnectorFactory.ts"],
+      "@/services/appStorage": ["./src/demo/storage.ts"],
+      "@/services/tauri": ["./src/demo/tauri.ts"],
+      "@/services/gitService": ["./src/demo/unavailable.ts"],
+      "@/services/systemNotificationService": ["./src/demo/systemNotifications.ts"],
+      "@/hooks/useUpdateNotification": ["./src/demo/updateNotification.ts"],
+      "@/components/dialogs/SftpUploadDialog": ["./src/demo/SftpDialogs.tsx"],
+      "@/components/dialogs/SftpDownloadDialog": ["./src/demo/SftpDialogs.tsx"],
+      "@/*": ["./src/*"]
+    }
+  }
+}

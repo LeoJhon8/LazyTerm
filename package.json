@@ -1,7 +1,7 @@
 {
   "name": "lazy-term",
   "private": true,
-  "version": "26.101.495",
+  "version": "26.102.9155",
   "description": "A modern terminal workspace for Android SSH and multi-protocol desktop sessions.",
   "license": "GPL-3.0-or-later",
   "repository": {
@@ -13,6 +13,10 @@
   },
   "type": "module",
   "scripts": {
+    "dev:demo": "vite --mode demo --port 5174 --strictPort",
+    "build:demo": "tsc --noEmit -p tsconfig.demo.json && vite build --mode demo",
+    "tauri:dev:demo": "node scripts/demo-tauri.mjs dev",
+    "tauri:build:demo": "node scripts/demo-tauri.mjs build",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:msrdpax-sidecar:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-msrdpax-sidecar.ps1 Debug",

@@ -12,6 +12,7 @@ export interface ConnectionStatusOverlayProps {
   details?: Array<{ label: string; value: string }>;
   description?: string;
   onReconnect?: () => void;
+  reconnectLabel?: string;
   zIndexClass?: string;
 }
 
@@ -22,6 +23,7 @@ export function ConnectionStatusOverlay({
   details = [],
   description,
   onReconnect,
+  reconnectLabel,
   zIndexClass = "z-30",
 }: ConnectionStatusOverlayProps) {
   const { t } = useI18n();
@@ -154,10 +156,10 @@ export function ConnectionStatusOverlay({
               <Button
                 onClick={onReconnect}
                 size="sm"
-                className="h-9 w-40 rounded-xl text-sm font-medium"
+                className="h-9 min-w-40 rounded-xl text-sm font-medium"
               >
                 <RefreshCcw className="h-4 w-4" />
-                {t("重新连接")}
+                {reconnectLabel ?? t("重新连接")}
               </Button>
             </div>
           )}

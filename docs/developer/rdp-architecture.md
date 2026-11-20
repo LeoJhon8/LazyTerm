@@ -115,6 +115,13 @@ sidecar 位于 `src-tauri/native/msrdpax-host`，发布输出由 Tauri 作为资
 
 前端不直接持有或操作 HWND。
 
+### 凭据交互
+
+- MsTscAx 通过 `IMsRdpClientNonScriptable5.AllowPromptingForCredentials = false` 禁用本地原生凭据弹窗；认证失败交由 LazyTerm 的连接错误弹窗展示。
+- 原生断开和登录错误码用于识别认证失败，不依赖 Windows 的显示语言；已识别的认证失败不会自动重试。
+- 会话内的「修改凭据并重试」仅更新当前标签页的内存配置，并解除该次会话对共享凭据的引用，不修改已保存的会话或凭据。
+- 证书校验和原生证书确认仍由 Windows 控件处理，`AuthenticationLevel` 保持为 `2`。本地凭据弹窗的禁用不等同于跳过服务器身份校验；远端登录、锁屏与密码修改画面也不在此开关的控制范围内。
+
 ### 必须处理的场景
 
 - 切换到其他标签页或工作区时隐藏原生 surface。

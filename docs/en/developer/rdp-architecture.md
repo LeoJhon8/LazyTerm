@@ -115,6 +115,13 @@ In addition to unified connection state, `NativeRdpConnector` tracks host states
 
 The frontend never owns or manipulates HWND values directly.
 
+### Credential interaction
+
+- MsTscAx disables local native credential prompts with `IMsRdpClientNonScriptable5.AllowPromptingForCredentials = false`. LazyTerm displays authentication failures in its connection error dialog.
+- Native disconnect and logon codes identify authentication failures independently of the Windows display language. Recognized authentication failures are not retried automatically.
+- “Edit credentials and retry” updates only the current tab's in-memory configuration and detaches that session from its shared credential reference. Saved sessions and credentials remain unchanged.
+- Windows still handles certificate validation and native certificate confirmation, with `AuthenticationLevel` remaining `2`. Disabling credential prompts does not bypass server identity validation or suppress remote logon, lock-screen, or password-change screens.
+
 ### Required Scenarios
 
 - Hide the native surface when switching to another tab or workspace.

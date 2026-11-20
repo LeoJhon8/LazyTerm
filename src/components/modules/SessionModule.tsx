@@ -102,7 +102,7 @@ function NodeRowContent({
     <div
       style={{ paddingLeft: `${isOverlay ? 8 : depth * 14 + 6}px` }}
       className={cn(
-        "session-row flex items-center gap-2 py-2 px-2 rounded-lg text-sm leading-5 relative border-y border-transparent",
+        "session-row flex items-center gap-2 py-1 px-2 rounded-md text-sm leading-5 relative border-y border-transparent",
         !isOverlay && "group",
         !isOverlay && !isSelected && "hover:bg-accent/50",
         isSelected && !isOverlay && "session-row-selected",
@@ -745,7 +745,7 @@ export function SessionModule() {
             }}
             onDragCancel={() => updateDragState(null, null, null)}
           >
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-0.5">
               {sortedNodes.map((fn) => (
                 <DraggableDroppableRow
                   key={fn.id}

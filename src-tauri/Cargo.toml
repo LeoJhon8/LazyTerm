@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "26.101.495"
+version = "26.102.9155"
 description = "A modern terminal workspace for Android SSH and multi-protocol desktop sessions"
 authors = ["LazyTerm Contributors"]
 license = "GPL-3.0-or-later"
@@ -13,6 +13,7 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
+demo = []
 default = ["vnc-libvncclient", "rdp-freerdp"]
 vnc-libvncclient = []
 vnc-rust = []

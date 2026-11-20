@@ -78,6 +78,21 @@ export function classifyConnectionFailure(
   const normalized = technicalDetails.toLowerCase();
   const stage = options.stage ?? "transport";
 
+  if (protocol === "rdp") {
+    // Native codes are stable across Windows display languages. Do not depend
+    // on GetErrorDescription's localized text to prevent credential retries.
+    const disconnectCode = /\bOnDisconnected:\s*(\d+)\b/i.exec(technicalDetails)?.[1];
+    const logonCode = /\bOnLogonError:\s*(-?\d+)\b/i.exec(technicalDetails)?.[1];
+    const authenticationDisconnectCodes = new Set([
+      2055, 2567, 2823, 3079, 3335, 3591, 3847, 4615, 5639, 5895, 6151, 8455,
+    ]);
+    const authenticationLogonCodes = new Set([0, -1, -1073741715, -1073741714]);
+    if ((disconnectCode !== undefined && authenticationDisconnectCodes.has(Number(disconnectCode)))
+      || (logonCode !== undefined && authenticationLogonCodes.has(Number(logonCode)))) {
+      return createConnectionFailure("AUTH_REJECTED", technicalDetails, "authentication");
+    }
+  }
+
   if (includesAny(normalized, [
     "host key has changed",
     "host key changed",

@@ -1,0 +1,26 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "LazyTerm Demo",
+  "mainBinaryName": "lazyterm-demo",
+  "identifier": "com.lazy.term.demo",
+  "build": {
+    "frontendDist": "../dist-demo",
+    "devUrl": "http://localhost:5174",
+    "beforeDevCommand": "npm run dev:demo",
+    "beforeBuildCommand": "npm run build:demo",
+    "features": ["demo"]
+  },
+  "app": {
+    "windows": [{ "label": "main", "title": "LazyTerm Demo", "width": 1280, "height": 720, "minWidth": 900, "minHeight": 600, "decorations": false, "resizable": true }],
+    "security": {
+      "assetProtocol": { "enable": true, "scope": [] },
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ipc: http://ipc.localhost",
+      "capabilities": [{
+        "identifier": "demo",
+        "windows": ["main"],
+        "permissions": ["core:default", "core:window:allow-close", "core:window:allow-minimize", "core:window:allow-toggle-maximize", "core:window:allow-start-dragging", "clipboard-manager:allow-read-text", "clipboard-manager:allow-write-text", "global-shortcut:allow-register", "global-shortcut:allow-unregister", "global-shortcut:allow-is-registered"]
+      }]
+    }
+  },
+  "bundle": { "resources": ["../LICENSE", "../THIRD_PARTY_NOTICES.md"] }
+}

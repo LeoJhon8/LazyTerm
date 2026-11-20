@@ -131,8 +131,15 @@ export interface ITerminalConnector extends ISessionConnector {
   readonly protocol: 'ssh' | 'local' | 'serial' | 'telnet' | 'ai-cli';
 
   onData(handler: (data: string) => void): Promise<void | (() => void)>;
-  write(data: string | Uint8Array): void;
+  write(data: string | Uint8Array, source?: "ai"): void;
   resize(cols: number, rows: number): void;
+  aiTmuxPane?(action: "read" | "send" | "interrupt", paneId?: string, data?: string): Promise<AiTmuxPaneSnapshot>;
+}
+
+export interface AiTmuxPaneSnapshot {
+  paneId: string;
+  alternateScreen: boolean;
+  output: string;
 }
 
 export interface RdpFramePayload {
